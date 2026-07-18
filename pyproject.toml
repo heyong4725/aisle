@@ -1,0 +1,36 @@
+[project]
+name = "aisle"
+version = "0.1.0"
+description = "AISLE: agentic auto-research for robot manipulation on open infrastructure"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aisle"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "unit: no sim, no dora, <1 s each (CON-12)",
+    "sim: imports genesis; headless (CON-12)",
+    "graph: launches a dora dataflow (CON-12)",
+    "accept: spec-acceptance; cites requirement IDs (CON-12)",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
