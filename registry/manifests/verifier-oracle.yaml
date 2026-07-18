@@ -1,0 +1,16 @@
+id: verifier-oracle
+kind: node
+provides: [episode_verification]
+requires: []
+inputs:
+  oracle_state: {schema: posearray7d_f32, rate_hz: 30}
+  episode_goal: {schema: json_utf8, rate_hz: 1}
+outputs:
+  episode_result: {schema: json_utf8, latency_class: best_effort}
+embodiment:
+  arm: [franka, so101]
+  gripper: any
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/verifier/oracle.py

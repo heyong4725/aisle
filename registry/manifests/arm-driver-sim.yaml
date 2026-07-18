@@ -1,0 +1,16 @@
+id: arm-driver-sim
+kind: node
+provides: [arm_actuation]
+requires: []
+inputs:
+  joint_cmd: {schema: jointvec_f32, rate_hz: 100}
+outputs:
+  joint_state: {schema: jointvec_f32, latency_class: hard_rt}
+embodiment:
+  arm: [franka, so101]
+  gripper: any
+safety_class: motion
+# eval null pending M0 evalcards from TC-A1..A3 runs (CAP-6 exception, ADR-3)
+eval: null
+origin: hub
+source: src/aisle/nodes/dora_genesis.py

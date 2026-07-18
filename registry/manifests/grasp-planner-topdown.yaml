@@ -1,0 +1,18 @@
+id: grasp-planner-topdown
+kind: node
+provides: [grasp_planning]
+requires: [object_pose]
+inputs:
+  target_pose: {schema: pose7d_f32, rate_hz: 30}
+outputs:
+  grasp_pose: {schema: pose7d_f32, latency_class: soft_rt}
+params:
+  approach_height_m: {type: float, default: 0.15, range: [0.05, 0.30]}
+  grasp_depth_m: {type: float, default: 0.02, range: [0.0, 0.05]}
+embodiment:
+  arm: [franka, so101]
+  gripper: parallel
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/nodes/grasp_topdown.py

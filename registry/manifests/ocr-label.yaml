@@ -1,0 +1,16 @@
+id: ocr-label
+kind: node
+provides: [label_text]
+requires: [rgb_stream, object_detection]
+inputs:
+  rgb: {schema: rgb8_image, rate_hz: 30}
+  detections: {schema: json_utf8, rate_hz: 30}
+outputs:
+  labels: {schema: json_utf8, latency_class: best_effort}
+embodiment:
+  arm: [franka, so101]
+  gripper: any
+safety_class: perception
+eval: null
+origin: hub
+source: pip:dora-ocr

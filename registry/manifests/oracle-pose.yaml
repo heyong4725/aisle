@@ -1,0 +1,16 @@
+id: oracle-pose
+kind: node
+provides: [object_pose]
+requires: []
+inputs:
+  poses: {schema: posearray7d_f32, rate_hz: 30}
+  target_request: {schema: json_utf8, rate_hz: 1}
+outputs:
+  target_pose: {schema: pose7d_f32, latency_class: soft_rt}
+embodiment:
+  arm: [franka, so101]
+  gripper: any
+safety_class: perception
+eval: null
+origin: hub
+source: src/aisle/nodes/oracle_pose.py

@@ -1,0 +1,18 @@
+id: pose-estimator
+kind: node
+provides: [object_pose]
+requires: [rgb_stream, depth_stream, object_detection]
+inputs:
+  rgb: {schema: rgb8_image, rate_hz: 30}
+  depth: {schema: depth_f32, rate_hz: 15}
+  detections: {schema: json_utf8, rate_hz: 30}
+  target_request: {schema: json_utf8, rate_hz: 1}
+outputs:
+  target_pose: {schema: pose7d_f32, latency_class: best_effort}
+embodiment:
+  arm: [franka, so101]
+  gripper: any
+safety_class: perception
+eval: null
+origin: hub
+source: pip:dora-pose
