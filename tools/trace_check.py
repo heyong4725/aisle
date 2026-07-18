@@ -3,7 +3,7 @@
 
 Scans specs/*.md for requirement IDs (`- <ID>: text` bullets), flags the
 MUST-bearing ones (RFC 2119 MUST / REQUIRED / SHALL in the requirement text),
-and scans tests/**/*.py docstrings for ID citations. Exits nonzero listing
+and scans test_* function docstrings under tests/ for citations. Exits nonzero listing
 uncovered MUSTs, citations or waivers of undefined IDs, duplicate IDs, and
 unparseable test files.
 
@@ -58,8 +58,10 @@ def extract_requirements(specs_dir: Path) -> tuple[dict[str, str], dict[str, set
 
 
 def extract_citations(tests_dir: Path) -> tuple[set[str], list[str]]:
-    """Collect requirement IDs cited in docstrings of test modules, classes,
-    and functions; report unparseable files instead of crashing (CON-8)."""
+    """Collect requirement IDs cited in docstrings of test callables
+    (test_* functions/methods only — module, class, and helper docstrings do
+    not count as coverage); report unparseable files instead of crashing
+    (CON-8)."""
     cited: set[str] = set()
     parse_errors: list[str] = []
     for path in sorted(tests_dir.rglob("*.py")):
@@ -69,7 +71,10 @@ def extract_citations(tests_dir: Path) -> tuple[set[str], list[str]]:
             parse_errors.append(f"{path}: {exc.msg} (line {exc.lineno})")
             continue
         for node in ast.walk(tree):
-            if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            # pytest's default collection pattern is test*, not test_*
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name.startswith(
+                "test"
+            ):
                 doc = ast.get_docstring(node)
                 if doc:
                     cited.update(re.findall(ID_PATTERN, doc))
@@ -85,16 +90,6 @@ def load_waivers(root: Path) -> dict[str, str]:
         return tomllib.load(f).get("waivers", {})
 
 
-def scoped_ids(by_spec_number: dict[str, set[str]], specs_range: str) -> set[str]:
-    """IDs from spec files whose numeric NNN- prefix falls in 'NNN-MMM'."""
-    lo, hi = (int(part) for part in specs_range.split("-"))
-    ids: set[str] = set()
-    for number, file_ids in by_spec_number.items():
-        if lo <= int(number) <= hi:
-            ids.update(file_ids)
-    return ids
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
@@ -106,10 +101,30 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    errors: list[str] = []
+    span = None
+    if args.specs is not None:
+        match = re.fullmatch(r"(\d{1,4})-(\d{1,4})", args.specs)
+        span = (int(match.group(1)), int(match.group(2))) if match else None
+        if span is None or span[0] > span[1]:
+            errors.append(f"invalid --specs range {args.specs!r} (expected NNN-MMM, NNN <= MMM)")
+            span = None
+
     requirements, by_spec_number, duplicates = extract_requirements(args.root / "specs")
+    errors += [
+        f"spec file without NNN- numeric prefix: {prefix}"
+        for prefix in sorted(by_spec_number)
+        if not prefix.isdigit()
+    ]
     must_ids = {rid for rid, text in requirements.items() if MUST_KEYWORD.search(text)}
-    if args.specs:
-        must_ids &= scoped_ids(by_spec_number, args.specs)
+    if span:
+        in_range = {n for n in by_spec_number if n.isdigit() and span[0] <= int(n) <= span[1]}
+        if in_range:
+            must_ids &= {rid for n in in_range for rid in by_spec_number[n]}
+        else:
+            errors.append(f"--specs {args.specs} matches no spec files")
+    if args.specs is not None and (span is None or not in_range):
+        must_ids = set()  # range unusable: report the error, not a misleading uncovered list
     cited, parse_errors = extract_citations(args.root / "tests")
     known_prefixes = {rid.split("-")[0] for rid in requirements}
     cited = {c for c in cited if c.split("-")[0] in known_prefixes}
@@ -118,7 +133,8 @@ def main() -> int:
     unknown_citations = sorted(cited - requirements.keys())
     unknown_waivers = sorted(set(waivers) - requirements.keys())
     uncovered = sorted(must_ids - cited - waivers.keys())
-    errors = [] if requirements else [f"no requirement IDs found under {args.root / 'specs'}"]
+    if not requirements:
+        errors.append(f"no requirement IDs found under {args.root / 'specs'}")
     ok = not (
         uncovered or unknown_citations or unknown_waivers or duplicates or parse_errors or errors
     )

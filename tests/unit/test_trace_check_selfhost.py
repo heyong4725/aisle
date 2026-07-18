@@ -114,6 +114,71 @@ def test_unknown_citation_fails(tmp_path):
     assert "ZZ-77" in report["unknown_citations"]
 
 
+def test_non_test_docstrings_do_not_count_as_coverage(tmp_path):
+    """HAR-9: only docstrings of test callables (test_* functions/methods)
+    count as citations; module, class, and helper docstrings do not, so a
+    stray mention cannot fake coverage."""
+    root = make_fixture(
+        tmp_path,
+        "- ZZ-1: Producers MUST publish heartbeats.\n",
+        '"""Module docstring citing ZZ-1."""\n\n'
+        "class TestGroup:\n"
+        '    """Class docstring citing ZZ-1."""\n\n'
+        "def helper():\n"
+        '    """Helper docstring citing ZZ-1."""\n',
+    )
+    code, report = check("--root", str(root))
+    assert code != 0
+    assert "ZZ-1" in report["uncovered"]
+
+
+def test_invalid_specs_range_reported_as_json(tmp_path):
+    """CON-8: a malformed, reversed, or empty --specs range yields a
+    full-shape JSON error report on stdout (all standard keys present, the
+    bad value named in errors) and a nonzero exit, not a Python traceback."""
+    root = make_fixture(tmp_path, "- ZZ-1: Producers MUST publish heartbeats.\n")
+    for bad in ("nope", "10-", "080", "080-000", ""):
+        proc = run_tool("trace_check.py", "--root", str(root), "--specs", bad)
+        report = json.loads(proc.stdout)
+        assert proc.returncode != 0
+        assert report["ok"] is False
+        assert any(f"{bad!r}" in e for e in report["errors"]), (bad, report["errors"])
+        assert "uncovered" in report and "parse_errors" in report  # full shape
+
+
+def test_specs_range_matching_no_spec_files_fails(tmp_path):
+    """HAR-9: a --specs range that selects zero spec files is an error, not a
+    vacuously green gate."""
+    root = make_fixture(tmp_path, "- ZZ-1: Producers MUST publish heartbeats.\n")
+    code, report = check("--root", str(root), "--specs", "100-150")
+    assert code != 0
+    assert report["ok"] is False
+    assert any("100-150" in e for e in report["errors"])
+
+
+def test_non_numeric_spec_filename_fails(tmp_path):
+    """HAR-9: a specs/ file without the NNN- numeric prefix is a hard error
+    (it could never be scoped by --specs and breaks the naming convention)."""
+    root = make_fixture(tmp_path, "- ZZ-1: Producers MUST publish heartbeats.\n")
+    (root / "specs" / "notes.md").write_text("- YY-1: Stray requirement.\n")
+    code, report = check("--root", str(root))
+    assert code != 0
+    assert any("notes.md" in e for e in report["errors"])
+
+
+def test_pytest_style_test_names_count_as_coverage(tmp_path):
+    """HAR-9: any pytest-collected test callable counts (default collection
+    pattern is test*, not only test_*)."""
+    root = make_fixture(
+        tmp_path,
+        "- ZZ-1: Producers MUST publish heartbeats.\n",
+        'def testHeartbeat():\n    """ZZ-1: heartbeats are published."""\n    assert True\n',
+    )
+    code, report = check("--root", str(root))
+    assert code == 0, report
+    assert "ZZ-1" in report["covered"]
+
+
 def test_ordinary_hyphenated_tokens_are_not_citations(tmp_path):
     """HAR-9: docstring tokens whose prefix matches no spec (SHA-256, UTF-8)
     are ignored, not flagged as citations."""
