@@ -1,0 +1,12 @@
+# CON-6: runs/ is gitignored (keep the directory itself)
+runs/*
+!runs/.gitkeep
+
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+.DS_Store

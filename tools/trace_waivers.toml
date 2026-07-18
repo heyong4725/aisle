@@ -1,0 +1,52 @@
+# Pre-M0 traceability waivers (see docs/decisions/ADR-1.md).
+# Each entry defers one MUST-bearing requirement ID until the task that
+# implements it lands tests. The implementing PR MUST remove its waivers.
+# tools/trace_check.py --strict ignores this file (the M0 gate runs
+# --strict --specs 000-080).
+
+[waivers]
+# Process/conduct rules — enforced by repo governance (CODEOWNERS, branch
+# protection, human PR review), not unit-testable; revisit proxy tests at T10.
+CON-10 = "process rule: risk-class review, enforced by CODEOWNERS/human review"
+CON-11 = "process rule: commit/PR conventions, enforced by human review"
+CON-14 = "process rule: spec edits need spec-change PR, enforced by CODEOWNERS"
+CON-15 = "process rule: ADR-on-ambiguity, enforced by human review"
+
+# SPEC 010 topic contract — deferred to T05 (bridge + contract acceptance).
+TC-2 = "deferred to T05"
+TC-3 = "deferred to T05"
+TC-4 = "deferred to T05"
+TC-5 = "deferred to T05"
+TC-6 = "deferred to T05"
+
+# SPEC 020 scene — deferred to T04.
+SCN-1 = "deferred to T04"
+SCN-3 = "deferred to T04"
+SCN-4 = "deferred to T04"
+SCN-5 = "deferred to T04"
+
+# SPEC 030 bridge node — deferred to T05.
+BRG-2 = "deferred to T05"
+BRG-6 = "deferred to T05"
+BRG-7 = "deferred to T05"
+
+# SPEC 040 verifier/reset — deferred to T06.
+RST-1 = "deferred to T06"
+
+# SPEC 060 validator — deferred to T03.
+VAL-3 = "deferred to T03"
+VAL-5 = "deferred to T03"
+VAL-7 = "deferred to T03"
+
+# SPEC 070 harness — deferred to T09.
+HAR-2 = "deferred to T09"
+
+# SPEC 080 budget guard — deferred to T07.
+BG-3 = "deferred to T07"
+
+# SPEC 090 M0 gate — deferred to T10.
+M0-4 = "deferred to T10"
+
+# SPEC 210 mobility — post-M0, deferred to T11.
+MOB-3 = "deferred to T11 (post-M0)"
+MOB-4 = "deferred to T11 (post-M0)"
