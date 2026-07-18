@@ -1,0 +1,13 @@
+name: ci
+on: [pull_request, push]
+jobs:
+  unit:
+    name: ci/unit
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run ruff format --check . && uv run ruff check .
+      - run: uv run pytest -m unit
+      - run: uv run python tools/trace_check.py
