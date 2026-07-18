@@ -1,0 +1,10 @@
+# Class C paths — human review required (CON-7, CON-10, CON-14)
+/specs/                 @heyong4725
+/CLAUDE.md              @heyong4725
+/AGENTS.md              @heyong4725
+/src/aisle/scenes/      @heyong4725
+/src/aisle/verifier/    @heyong4725
+/src/aisle/reset/       @heyong4725
+/graphs/expert_*        @heyong4725
+/registry/schema/       @heyong4725
+/.github/               @heyong4725
