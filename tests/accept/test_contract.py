@@ -1,0 +1,205 @@
+"""SPEC 010 contract acceptance (spec section 4, cases A1..A3) against the live bridge.
+
+Marker `accept` (CON-12): launches dora dataflows with genesis inside the
+bridge node. Requires the sim extra and the dora CLI.
+"""
+
+import importlib.util
+import json
+import shutil
+
+import pytest
+
+pytestmark = [
+    pytest.mark.accept,
+    pytest.mark.skipif(
+        importlib.util.find_spec("genesis") is None or shutil.which("dora") is None,
+        reason="sim extra or dora CLI not installed",
+    ),
+]
+
+RATES = {
+    "rgb_overhead": 30,
+    "rgb_wrist": 30,
+    "depth_overhead": 15,
+    "joint_state": 100,
+    "gripper_state": 100,
+    "oracle_state": 30,
+}
+FRANKA_N_DOF = 9
+
+
+def capture(dataflow, tmp_path, bridge_env, driver_env, duration_s=10.0, **kw):
+    out = tmp_path / "records.jsonl"
+    graph = dataflow.write(
+        tmp_path, out, bridge_env=bridge_env, driver_env=driver_env, duration_s=duration_s, **kw
+    )
+    # startup budget: genesis build can exceed 3 min under CPU contention
+    run = dataflow.run(graph, timeout_s=duration_s + 300)
+    records = dataflow.read(out)
+    assert records, f"recorder captured nothing; dora stderr tail: {run.stderr[-2000:]}"
+    # an early bridge crash must fail the test, not shorten it silently:
+    # the capture window must actually span the requested duration
+    span = max(r["wall_t"] for r in records) - min(r["wall_t"] for r in records)
+    assert span >= duration_s * 0.8, f"capture ended early ({span:.1f}s of {duration_s}s)"
+    assert run.timed_out, f"dataflow ended by itself: rc={run.returncode}\n{run.stderr[-1500:]}"
+    return records
+
+
+def test_schema_conformance(tmp_path, dataflow):
+    """Acceptance A1 (TC-1, TC-2, TC-3, TC-4, TC-5): 10 s headless run — every
+    observed message carries sim_time_ns/env_id/seq metadata, image topics
+    carry h/w/enc with h*w*3 payloads, producer rates stay within the ±20%
+    contract band, and joint_state serves the franka profile's n_dof with
+    names metadata."""
+    records = capture(
+        dataflow,
+        tmp_path,
+        bridge_env={"AISLE_SEED": 7},
+        driver_env={"DRIVER_MODE": "conformance", "DRIVER_N_DOF": FRANKA_N_DOF},
+    )
+    by_topic: dict[str, list[dict]] = {}
+    for r in records:
+        by_topic.setdefault(r["id"], []).append(r)
+
+    for topic, rate in RATES.items():
+        msgs = by_topic.get(topic, [])
+        assert msgs, f"no {topic} messages observed"
+        for m in msgs:
+            meta = m["metadata"]
+            assert {"sim_time_ns", "env_id", "seq"} <= set(meta), (topic, meta)  # TC-2
+        seqs = [int(m["metadata"]["seq"]) for m in msgs]
+        assert seqs == sorted(seqs), f"{topic} seq not monotonic"  # TC-2
+        # TC-4: the contract band is WALL-clock — producers must publish
+        # within +/-20% of the declared rate as consumers experience it
+        wall_span = msgs[-1]["wall_t"] - msgs[0]["wall_t"]
+        if wall_span > 2.0:
+            measured = (len(msgs) - 1) / wall_span
+            assert 0.8 * rate <= measured <= 1.2 * rate, (topic, measured)
+        # scheduler correctness: sim-time rates are exact by construction
+        span_ns = int(msgs[-1]["metadata"]["sim_time_ns"]) - int(msgs[0]["metadata"]["sim_time_ns"])
+        if span_ns > 2e9:
+            sim_rate = (len(msgs) - 1) / (span_ns / 1e9)
+            assert 0.8 * rate <= sim_rate <= 1.2 * rate, (topic, sim_rate)
+
+    for topic in ("rgb_overhead", "rgb_wrist"):
+        m = by_topic[topic][0]
+        meta = m["metadata"]
+        assert meta["enc"] == "rgb8"  # TC-3
+        assert m["len"] == int(meta["h"]) * int(meta["w"]) * 3
+    depth = by_topic["depth_overhead"][0]
+    assert depth["len"] == int(depth["metadata"]["h"]) * int(depth["metadata"]["w"])
+
+    joint = by_topic["joint_state"][0]
+    assert joint["len"] == FRANKA_N_DOF  # TC-5 franka n_dof = 7+2
+    assert joint["dtype"] == "float"  # TC-1: float32 ("float" is arrow f32)
+    assert joint["metadata"]["names"], "joint_state missing names metadata"
+    # PD control provably changes state: late joint values differ from first
+    first_vals = by_topic["joint_state"][0]["values"]
+    late_vals = by_topic["joint_state"][-1]["values"]
+    assert first_vals != late_vals, "joint_state never moved under PD commands"
+
+    # TC-1/TC-3 payload typing across the contract table
+    assert by_topic["gripper_state"][0]["dtype"] == "float"
+    assert by_topic["gripper_state"][0]["len"] == 1
+    assert 0.0 <= by_topic["gripper_state"][0]["values"][0] <= 1.0
+    oracle = by_topic["oracle_state"][0]
+    assert oracle["dtype"] == "float" and oracle["len"] == 35
+    for i in range(5):  # TC-1: quaternions are (x,y,z,w) — w LAST
+        block = oracle["values"][i * 7 + 3 : i * 7 + 7]
+        assert abs(block[3]) > 0.9, (i, block)
+    assert by_topic["rgb_overhead"][0]["dtype"] == "uint8"
+    assert by_topic["rgb_wrist"][0]["dtype"] == "uint8"
+    assert by_topic["depth_overhead"][0]["dtype"] == "float"
+
+    info = by_topic["bridge_info"][0]
+    assert int(info["metadata"]["seq"]) == 0  # BRG-6: the one pre-loop announcement
+    assert info["len"] == 1
+    assert len(by_topic["bridge_info"]) == 1  # exactly once
+    # BRG-3: joint_state documents coalescing in metadata dropped:int
+    assert all("dropped" in m["metadata"] for m in by_topic["joint_state"])
+    assert any(int(m["metadata"]["dropped"]) > 0 for m in by_topic["joint_state"]), (
+        "driver double-sends per tick; some coalescing must be observed"
+    )
+
+
+def test_reset_service(tmp_path, dataflow):
+    """Acceptance A2 (TC-6, CON-5): seeded resets — every request gets a reset_done
+    echoing its request_id, no observation interleaves a reset and its
+    reply, and identical seeds reproduce an identical first oracle_state
+    after reset."""
+    seeds = [1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 1]
+    records = capture(
+        dataflow,
+        tmp_path,
+        bridge_env={"AISLE_SEED": 7},
+        driver_env={
+            "DRIVER_MODE": "reset",
+            "DRIVER_RESET_SEEDS": ",".join(str(s) for s in seeds),
+            "DRIVER_RESET_SPACING": 10,
+        },
+        duration_s=18.0,
+    )
+    dones = [r for r in records if r["id"] == "reset_done"]
+    assert len(dones) == len(seeds), f"{len(dones)} reset_done for {len(seeds)} requests"
+    for done in dones:
+        meta = done["metadata"]
+        assert meta["request_id"].startswith("req-")  # TC-6 request/reply correlation
+        assert int(meta["t_reset_ms"]) >= 0
+
+    # CON-5: first oracle_state after a reset is a pure function of the seed
+    first_oracle_after: dict[int, str] = {}
+    pending_seed = None
+    for r in records:
+        if r["id"] == "reset_done":
+            pending_seed = int(r["metadata"]["seed"])
+        elif r["id"] == "oracle_state" and pending_seed is not None:
+            first_oracle_after.setdefault(pending_seed, r["sha256"])
+            if r["sha256"] != first_oracle_after[pending_seed]:
+                pytest.fail(f"seed {pending_seed} reproduced different oracle_state")
+            pending_seed = None
+    assert 1 in first_oracle_after  # seed 1 was requested three times
+
+    # TC-6 send-side ordering: dora preserves per-producer order, so the
+    # bridge message FOLLOWING each reset_done must be the post-reset
+    # oracle snapshot — nothing interleaves the service completion
+    for i, r in enumerate(records):
+        if r["id"] != "reset_done":
+            continue
+        following = next((x for x in records[i + 1 :]), None)
+        assert following is not None and following["id"] == "oracle_state", following
+
+
+def test_episode_action_lifecycle(tmp_path, dataflow):
+    """Acceptance A3 (TC-7, TC-8): a scripted trivial episode CLOSED THROUGH
+    THE BRIDGE — the client sends only the goal; the verifier stub emits
+    feedback and the schema-valid episode_result only after receiving live
+    oracle_state from the bridge, so a dead bridge fails this test."""
+    records = capture(
+        dataflow,
+        tmp_path,
+        bridge_env={"AISLE_SEED": 7},
+        driver_env={"DRIVER_MODE": "episode"},
+        duration_s=8.0,
+        with_verifier_stub=True,
+    )
+    goals = [r for r in records if r["id"] == "episode_goal"]
+    feedback = [r for r in records if r["id"] == "episode_feedback"]
+    results = [r for r in records if r["id"] == "episode_result"]
+    assert goals and feedback and results
+    goal_id = goals[0]["metadata"]["goal_id"]
+    assert all(f["metadata"]["goal_id"] == goal_id for f in feedback)
+    assert results[0]["metadata"]["goal_id"] == goal_id
+    result = json.loads(results[0]["text"])
+    assert result["status"] in ("success", "fail")
+    assert result["failure"] in (
+        None,
+        "wrong_object",
+        "dropped",
+        "timeout",
+        "never_grasped",
+        "collision",
+    )
+    assert result["goal_id"] == goal_id
+    assert result["verifier"] == "oracle"  # TC-8: oracle verdicts are ground truth
+    assert isinstance(result["t_end"], float) and isinstance(result["seed"], int)

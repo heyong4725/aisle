@@ -9,7 +9,7 @@ import itertools
 import tomllib
 
 import pytest
-from conftest import REPO_ROOT, run_cli
+from cli_helpers import REPO_ROOT, run_cli
 
 pytestmark = pytest.mark.unit
 

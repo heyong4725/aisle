@@ -9,7 +9,7 @@ import subprocess
 
 import pytest
 import yaml
-from conftest import REPO_ROOT, make_registry_root, run_json, run_module, write_manifest
+from cli_helpers import REPO_ROOT, make_registry_root, run_json, run_module, write_manifest
 
 pytestmark = pytest.mark.unit
 

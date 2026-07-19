@@ -174,3 +174,18 @@ def test_so101_requires_asset():
         pytest.skip("assets/so101 not present (acquisition pending human sign-off, ADR-6)")
     handle = build_scene(seed=7, embodiment="so101", headless=True)
     assert list(handle.boxes) == MED_NAMES
+
+
+def test_physics_stability_at_substeps_one():
+    """SCN-2/ADR-7: with substeps=1 (the bridge tick-budget setting),
+    contact-rich stacking stays stable — 200 steps leave every box resting
+    on its shelf level, not exploded or fallen through."""
+    handle = build_scene(seed=7, embodiment="franka", headless=True)
+    initial = {n: to_numpy(e.get_pos()).reshape(-1)[2] for n, e in handle.boxes.items()}
+    for _ in range(200):
+        handle.scene.step()
+    for name, entity in handle.boxes.items():
+        z = float(to_numpy(entity.get_pos()).reshape(-1)[2])
+        assert abs(z - initial[name]) < 0.02, (name, initial[name], z)
+        vel = to_numpy(entity.get_dofs_velocity()).reshape(-1)
+        assert float(abs(vel).max()) < 0.5, (name, vel)

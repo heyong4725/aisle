@@ -12,22 +12,15 @@ CON-11 = "process rule: commit/PR conventions, enforced by human review"
 CON-14 = "process rule: spec edits need spec-change PR, enforced by CODEOWNERS"
 CON-15 = "process rule: ADR-on-ambiguity, enforced by human review"
 
-# SPEC 010 topic contract — deferred to T05 (bridge + contract acceptance).
-TC-2 = "deferred to T05"
-TC-3 = "deferred to T05"
-TC-4 = "deferred to T05"
-TC-5 = "deferred to T05"
-TC-6 = "deferred to T05"
+# SPEC 010 — TC-5 requires BOTH embodiment profiles; so101 is asset-blocked
+# (same blocker as SCN-4). Franka half verified by TC-A1.
+TC-5 = "so101 asset blocked on owner acquisition; franka half verified (TC-A1)"
 
 # SPEC 020 — SCN-4 is franka-verified but so101 is asset-blocked: the URDF
 # acquisition needs owner provenance/licensing sign-off (PR 5 review).
 # Removing this waiver before both embodiments build would be misleading.
 SCN-4 = "so101 asset blocked on owner acquisition (ADR-6); franka half verified"
 
-# SPEC 030 bridge node — deferred to T05.
-BRG-2 = "deferred to T05"
-BRG-6 = "deferred to T05"
-BRG-7 = "deferred to T05"
 
 # SPEC 040 verifier/reset — deferred to T06.
 RST-1 = "deferred to T06"
