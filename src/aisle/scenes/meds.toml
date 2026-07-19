@@ -1,0 +1,22 @@
+# SCN-2: the five fixed medicine boxes. Sizes in meters (x, y, z), colors
+# RGBA. File order IS oracle_state order (SCN-1, TC table).
+
+[amoxicillin]
+size = [0.060, 0.040, 0.100]
+color = [0.85, 0.20, 0.20, 1.0]
+
+[ibuprofen]
+size = [0.055, 0.035, 0.090]
+color = [0.95, 0.60, 0.10, 1.0]
+
+[cetirizine]
+size = [0.065, 0.030, 0.110]
+color = [0.20, 0.55, 0.85, 1.0]
+
+[omeprazole]
+size = [0.050, 0.045, 0.085]
+color = [0.55, 0.30, 0.70, 1.0]
+
+[metformin]
+size = [0.070, 0.035, 0.095]
+color = [0.25, 0.70, 0.35, 1.0]

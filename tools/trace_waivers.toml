@@ -19,11 +19,10 @@ TC-4 = "deferred to T05"
 TC-5 = "deferred to T05"
 TC-6 = "deferred to T05"
 
-# SPEC 020 scene — deferred to T04.
-SCN-1 = "deferred to T04"
-SCN-3 = "deferred to T04"
-SCN-4 = "deferred to T04"
-SCN-5 = "deferred to T04"
+# SPEC 020 — SCN-4 is franka-verified but so101 is asset-blocked: the URDF
+# acquisition needs owner provenance/licensing sign-off (PR 5 review).
+# Removing this waiver before both embodiments build would be misleading.
+SCN-4 = "so101 asset blocked on owner acquisition (ADR-6); franka half verified"
 
 # SPEC 030 bridge node — deferred to T05.
 BRG-2 = "deferred to T05"

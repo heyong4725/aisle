@@ -5,6 +5,7 @@ description = "AISLE: agentic auto-research for robot manipulation on open infra
 requires-python = ">=3.11"
 dependencies = [
     "jsonschema>=4.26.0",
+    "numpy>=2.4.6",
     "pyyaml>=6.0.3",
 ]
 
@@ -16,6 +17,23 @@ dev = [
 
 [project.scripts]
 harness = "aisle.harness.cli:main"
+
+# CON-1: linux resolves torch from the CPU index so the sim extra never
+# drags CUDA/NVIDIA wheels; a future `cuda` extra is the sanctioned home
+# for GPU builds
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[project.optional-dependencies]
+sim = [
+    "genesis-world>=1.2.3",
+    "torch>=2.13.0",
+]
 
 [build-system]
 requires = ["hatchling"]
