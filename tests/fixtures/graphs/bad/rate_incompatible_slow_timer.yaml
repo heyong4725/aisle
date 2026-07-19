@@ -1,0 +1,7 @@
+nodes:
+- id: detector-openvocab
+  inputs:
+    rgb: dora/timer/millis/1000
+  outputs:
+  - boxes
+  - labels

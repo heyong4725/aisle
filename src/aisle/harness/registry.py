@@ -14,7 +14,8 @@ import tomllib
 from pathlib import Path
 
 import yaml
-from jsonschema import Draft202012Validator
+
+from aisle.harness.common import DEFAULT_ROOT, emit_report
 
 # CAP-6: the two sim drivers ship eval=null until their M0 evalcards are
 # generated from the SPEC 010 acceptance runs (ADR-3) — lint warns instead
@@ -45,11 +46,20 @@ def load_manifests(root: Path) -> tuple[list[tuple[Path, dict]], list[dict]]:
     return manifests, errors
 
 
+def load_vocabulary(root: Path) -> dict:
+    """The CAP-2 closed schema vocabulary; raises OSError/TOMLDecodeError."""
+    with open(root / "registry" / "schema" / "schemas.toml", "rb") as f:
+        return tomllib.load(f)
+
+
 def lint(root: Path) -> dict:
+    # imported lazily: jsonschema is lint-only, and the validate CLI path
+    # shares this module via load_manifests/load_vocabulary
+    from jsonschema import Draft202012Validator
+
     try:
         schema = json.loads((root / "registry" / "schema" / "capability.schema.json").read_text())
-        with open(root / "registry" / "schema" / "schemas.toml", "rb") as f:
-            vocabulary_entries = tomllib.load(f)
+        vocabulary_entries = load_vocabulary(root)
     except (OSError, json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:
         return {
             "ok": False,
@@ -143,14 +153,11 @@ def search(root: Path, provides: str, embodiment: str | None) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    # dev-harness assumption: a src-layout checkout (uv editable install);
-    # non-editable installs must pass --root explicitly
-    default_root = Path(__file__).resolve().parents[3]
     subparsers = parser.add_subparsers(dest="command", required=True)
     lint_parser = subparsers.add_parser("lint", help="validate every manifest")
-    lint_parser.add_argument("--root", type=Path, default=default_root)
+    lint_parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     search_parser = subparsers.add_parser("search", help="find manifests by capability")
-    search_parser.add_argument("--root", type=Path, default=default_root)
+    search_parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     search_parser.add_argument("--provides", required=True)
     search_parser.add_argument("--embodiment")
     args = parser.parse_args()
@@ -160,14 +167,9 @@ def main() -> int:
     else:
         report = search(args.root, args.provides, args.embodiment)
 
-    # default=str: YAML scalars like unquoted dates parse to non-JSON types;
-    # serializing them must never break the CON-8 stdout contract
-    print(json.dumps(report, default=str))
-    for level in ("errors", "warnings"):
-        for entry in report.get(level, []):
-            line = f"{args.command} {level[:-1]}: {entry['manifest']}: {entry['message']}"
-            print(line, file=sys.stderr)
-    return 0 if report["ok"] else 1
+    return emit_report(
+        report, lambda level, e: f"{args.command} {level}: {e['manifest']}: {e['message']}"
+    )
 
 
 if __name__ == "__main__":

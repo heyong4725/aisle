@@ -1,0 +1,95 @@
+# VAL-7 golden corpus expectations: file stem -> EXACT expected error-code set
+# (and optional embodiment flag / expected warning codes).
+# Every agent-discovered failure class MUST gain an entry here in the same
+# PR that handles it (VAL-7).
+
+[manifest_missing_typo_oracle_pos]
+codes = ["MANIFEST_MISSING"]
+
+[manifest_missing_unknown_node]
+codes = ["MANIFEST_MISSING"]
+
+[manifest_missing_typo_verifier]
+codes = ["MANIFEST_MISSING"]
+
+# duplicate ids also break edge resolution (the second camera-source wins),
+# so the detector edge loses its producer — both codes are inherent
+[node_id_duplicate_camera]
+codes = ["NODE_ID_DUPLICATE", "INPUT_NO_PRODUCER"]
+
+[node_id_duplicate_detector]
+codes = ["NODE_ID_DUPLICATE"]
+
+[input_no_producer_missing_node]
+codes = ["INPUT_NO_PRODUCER"]
+
+[input_no_producer_typo_edge]
+codes = ["INPUT_NO_PRODUCER"]
+
+[input_no_producer_wrong_output]
+codes = ["INPUT_NO_PRODUCER"]
+
+[input_no_producer_undeclared_graph_output]
+codes = ["INPUT_NO_PRODUCER"]
+
+[schema_mismatch_depth_to_rgb]
+codes = ["SCHEMA_MISMATCH"]
+
+[schema_mismatch_labels_to_boxes]
+codes = ["SCHEMA_MISMATCH"]
+
+[schema_mismatch_boxes_to_pose]
+codes = ["SCHEMA_MISMATCH"]
+
+[schema_mismatch_undeclared_port]
+codes = ["SCHEMA_MISMATCH"]
+
+[oracle_leak_oracle_pose]
+codes = ["ORACLE_LEAK"]
+
+[oracle_leak_grasp_planner]
+codes = ["ORACLE_LEAK", "SCHEMA_MISMATCH"]
+
+[motion_ungated_arm]
+codes = ["MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+
+[motion_ungated_gripper]
+codes = ["MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+
+[eval_missing_for_motion]
+codes = ["EVAL_MISSING_FOR_MOTION", "MOTION_UNGATED"]
+
+[embodiment_mismatch_mobile]
+codes = ["EMBODIMENT_MISMATCH"]
+embodiment = "mobile"
+
+[rate_incompatible_slow_timer]
+codes = []
+warnings = ["RATE_INCOMPATIBLE"]
+
+[graph_invalid_not_dataflow]
+codes = ["GRAPH_INVALID"]
+
+[graph_invalid_yaml_syntax]
+codes = ["GRAPH_INVALID"]
+
+# discovered by the T03 review pass (VAL-7: new failure classes join the
+# corpus in the PR that handles them)
+
+[motion_ungated_timer_direct]
+codes = ["MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+
+[input_no_producer_bad_timer]
+codes = ["INPUT_NO_PRODUCER"]
+
+[input_no_producer_timer_zero]
+codes = ["INPUT_NO_PRODUCER"]
+
+[graph_invalid_list_inputs]
+codes = ["GRAPH_INVALID"]
+
+[graph_invalid_nonstring_id]
+codes = ["GRAPH_INVALID"]
+
+[graph_invalid_empty_nodes]
+codes = ["GRAPH_INVALID"]

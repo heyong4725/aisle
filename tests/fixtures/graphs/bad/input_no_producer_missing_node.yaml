@@ -1,0 +1,7 @@
+nodes:
+- id: detector-openvocab
+  inputs:
+    rgb: sim/rgb_overhead
+  outputs:
+  - boxes
+  - labels

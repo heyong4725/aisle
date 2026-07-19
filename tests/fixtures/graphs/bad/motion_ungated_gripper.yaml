@@ -1,0 +1,10 @@
+nodes:
+- id: ik-trajectory
+  inputs: {}
+  outputs:
+  - gripper_cmd
+- id: gripper-driver-sim
+  inputs:
+    gripper_cmd: ik-trajectory/gripper_cmd
+  outputs:
+  - gripper_state

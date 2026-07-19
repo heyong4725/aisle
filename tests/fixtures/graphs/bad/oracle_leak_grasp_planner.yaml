@@ -1,0 +1,7 @@
+nodes:
+- id: camera-source
+  outputs:
+  - oracle_state
+- id: grasp-planner-topdown
+  inputs:
+    target_pose: camera-source/oracle_state

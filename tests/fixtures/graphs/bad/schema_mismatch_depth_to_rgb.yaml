@@ -1,0 +1,10 @@
+nodes:
+- id: camera-source
+  outputs:
+  - depth_overhead
+- id: detector-openvocab
+  inputs:
+    rgb: camera-source/depth_overhead
+  outputs:
+  - boxes
+  - labels

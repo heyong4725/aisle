@@ -1,0 +1,25 @@
+nodes:
+- id: camera-source
+  outputs:
+  - rgb_overhead
+  - depth_overhead
+- id: detector-openvocab
+  inputs:
+    rgb: camera-source/rgb_overhead
+  outputs:
+  - boxes
+  - labels
+- id: ocr-label
+  inputs:
+    rgb: camera-source/rgb_overhead
+    boxes: detector-openvocab/boxes
+  outputs:
+  - labels
+- id: pose-estimator
+  inputs:
+    rgb: camera-source/rgb_overhead
+    depth: camera-source/depth_overhead
+    boxes: detector-openvocab/boxes
+    labels: detector-openvocab/labels
+  outputs:
+  - target_pose

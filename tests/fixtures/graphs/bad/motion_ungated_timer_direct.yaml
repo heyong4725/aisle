@@ -1,0 +1,6 @@
+nodes:
+- id: arm-driver-sim
+  inputs:
+    joint_cmd: dora/timer/millis/10
+  outputs:
+  - joint_state

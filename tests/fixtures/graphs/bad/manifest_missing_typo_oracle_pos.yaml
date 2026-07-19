@@ -1,0 +1,10 @@
+nodes:
+- id: camera-source
+  outputs:
+  - rgb_overhead
+  - oracle_state
+- id: oracle-pos
+  inputs:
+    poses: camera-source/oracle_state
+  outputs:
+  - target_pose

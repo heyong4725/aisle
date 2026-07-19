@@ -1,0 +1,10 @@
+nodes:
+- id: camera-source
+  outputs:
+  - rgb_overhead
+- id: detector-openvocab
+  inputs:
+    rgb: camera-source/rgb_side
+  outputs:
+  - boxes
+  - labels
