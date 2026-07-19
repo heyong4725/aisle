@@ -1,0 +1,174 @@
+"""Capability registry CLI: lint and search (SPEC 050 CAP-3/CAP-4, CON-8).
+
+lint: validate every manifest in registry/manifests/ against
+capability.schema.json (CAP-1), the closed schema vocabulary in
+registry/schema/schemas.toml (CAP-2), and the CAP-6 eval rule.
+search: return manifests matching --provides (and optionally --embodiment)
+as JSON. Single JSON object on stdout, logs on stderr, exit 0 iff ok.
+"""
+
+import argparse
+import json
+import sys
+import tomllib
+from pathlib import Path
+
+import yaml
+from jsonschema import Draft202012Validator
+
+# CAP-6: the two sim drivers ship eval=null until their M0 evalcards are
+# generated from the SPEC 010 acceptance runs (ADR-3) — lint warns instead
+# of erroring.
+PENDING_M0_EVALCARDS = {"arm-driver-sim", "gripper-driver-sim"}
+
+
+def load_manifests(root: Path) -> tuple[list[tuple[Path, dict]], list[dict]]:
+    """Parse every manifest; a missing or empty manifests dir is an error,
+    never a silent empty registry."""
+    manifests_dir = root / "registry" / "manifests"
+    if not manifests_dir.is_dir():
+        return [], [{"manifest": "(registry)", "message": f"{manifests_dir} not found"}]
+    manifests: list[tuple[Path, dict]] = []
+    errors: list[dict] = []
+    for path in sorted(manifests_dir.glob("*.yaml")):
+        try:
+            data = yaml.safe_load(path.read_text())
+        except yaml.YAMLError as exc:
+            errors.append({"manifest": path.name, "message": f"unparseable YAML: {exc}"})
+            continue
+        if not isinstance(data, dict):
+            errors.append({"manifest": path.name, "message": "manifest is not a mapping"})
+            continue
+        manifests.append((path, data))
+    if not manifests and not errors:
+        errors.append({"manifest": "(registry)", "message": f"no manifests in {manifests_dir}"})
+    return manifests, errors
+
+
+def lint(root: Path) -> dict:
+    try:
+        schema = json.loads((root / "registry" / "schema" / "capability.schema.json").read_text())
+        with open(root / "registry" / "schema" / "schemas.toml", "rb") as f:
+            vocabulary_entries = tomllib.load(f)
+    except (OSError, json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:
+        return {
+            "ok": False,
+            "checked": 0,
+            "errors": [{"manifest": "(schema)", "message": f"cannot load schema files: {exc}"}],
+            "warnings": [],
+        }
+    validator = Draft202012Validator(schema)
+
+    manifests, errors = load_manifests(root)
+    vocabulary = set(vocabulary_entries)
+    for name, entry in vocabulary_entries.items():
+        well_formed = (
+            isinstance(entry, dict)
+            and set(entry) == {"arrow", "shape"}
+            and all(isinstance(v, str) for v in entry.values())
+        )
+        if not well_formed:
+            errors.append(
+                {
+                    "manifest": "(schema)",
+                    "message": f"schemas.toml entry {name!r} must map exactly "
+                    "{arrow, shape} to strings (CAP-2)",
+                }
+            )
+    warnings: list[dict] = []
+    for path, manifest in manifests:
+        for error in validator.iter_errors(manifest):
+            where = "/".join(str(p) for p in error.absolute_path) or "(root)"
+            errors.append({"manifest": path.name, "message": f"{where}: {error.message}"})
+        # filenames are unique per directory, so id == stem also implies
+        # registry-wide id uniqueness
+        if manifest.get("id") != path.stem:
+            errors.append(
+                {"manifest": path.name, "message": f"id {manifest.get('id')!r} != filename stem"}
+            )
+        for direction in ("inputs", "outputs"):
+            ports = manifest.get(direction)
+            if not isinstance(ports, dict):
+                continue
+            for port, spec in ports.items():
+                schema_name = spec.get("schema") if isinstance(spec, dict) else None
+                if schema_name is not None and schema_name not in vocabulary:
+                    errors.append(
+                        {
+                            "manifest": path.name,
+                            "message": f"{direction}/{port}: schema {schema_name!r} not in "
+                            "registry/schema/schemas.toml (CAP-2)",
+                        }
+                    )
+        if "eval" in manifest and manifest["eval"] is None:
+            origin_hub = manifest.get("origin") == "hub"
+            if not origin_hub or manifest.get("safety_class") == "motion":
+                pending = origin_hub and manifest.get("id") in PENDING_M0_EVALCARDS
+                suffix = " — pending M0 evalcard (ADR-3)" if pending else ""
+                (warnings if pending else errors).append(
+                    {
+                        "manifest": path.name,
+                        "message": "eval may be null only while origin=hub and "
+                        f"safety_class!=motion (CAP-6){suffix}",
+                    }
+                )
+
+    return {
+        "ok": not errors,
+        "checked": len(manifests),
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
+def search(root: Path, provides: str, embodiment: str | None) -> dict:
+    manifests, errors = load_manifests(root)
+    if errors:
+        return {"ok": False, "matches": [], "errors": errors}
+
+    def matches(manifest: dict) -> bool:
+        provided = manifest.get("provides")
+        if not isinstance(provided, list) or provides not in provided:
+            return False
+        if embodiment is None:
+            return True
+        arms = manifest.get("embodiment")
+        arm_list = arms.get("arm") if isinstance(arms, dict) else None
+        return isinstance(arm_list, list) and embodiment in arm_list
+
+    # load_manifests iterates sorted filenames, and lint enforces id ==
+    # filename stem, so this is already id order for any lint-clean registry
+    return {"ok": True, "matches": [manifest for _, manifest in manifests if matches(manifest)]}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    # dev-harness assumption: a src-layout checkout (uv editable install);
+    # non-editable installs must pass --root explicitly
+    default_root = Path(__file__).resolve().parents[3]
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    lint_parser = subparsers.add_parser("lint", help="validate every manifest")
+    lint_parser.add_argument("--root", type=Path, default=default_root)
+    search_parser = subparsers.add_parser("search", help="find manifests by capability")
+    search_parser.add_argument("--root", type=Path, default=default_root)
+    search_parser.add_argument("--provides", required=True)
+    search_parser.add_argument("--embodiment")
+    args = parser.parse_args()
+
+    if args.command == "lint":
+        report = lint(args.root)
+    else:
+        report = search(args.root, args.provides, args.embodiment)
+
+    # default=str: YAML scalars like unquoted dates parse to non-JSON types;
+    # serializing them must never break the CON-8 stdout contract
+    print(json.dumps(report, default=str))
+    for level in ("errors", "warnings"):
+        for entry in report.get(level, []):
+            line = f"{args.command} {level[:-1]}: {entry['manifest']}: {entry['message']}"
+            print(line, file=sys.stderr)
+    return 0 if report["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

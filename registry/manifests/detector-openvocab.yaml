@@ -1,0 +1,18 @@
+id: detector-openvocab
+kind: node
+provides: [object_detection]
+requires: [rgb_stream]
+inputs:
+  rgb: {schema: rgb8_image, rate_hz: 30}
+outputs:
+  boxes: {schema: detections_f32, latency_class: best_effort}
+  labels: {schema: labels_utf8, latency_class: best_effort}
+params:
+  confidence_threshold: {type: float, default: 0.4, range: [0.0, 1.0]}
+embodiment:
+  arm: [franka, so101]
+  gripper: any
+safety_class: perception
+eval: null
+origin: hub
+source: pip:dora-yolo

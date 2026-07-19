@@ -1,0 +1,18 @@
+id: camera-source
+kind: node
+provides: [rgb_stream, depth_stream]
+requires: []
+inputs: {}
+outputs:
+  rgb_overhead: {schema: rgb8_image, latency_class: soft_rt}
+  rgb_wrist: {schema: rgb8_image, latency_class: soft_rt}
+  depth_overhead: {schema: depth_f32, latency_class: soft_rt}
+  # privileged sim ground truth; consumable only by verifier-* nodes (VAL-6)
+  oracle_state: {schema: posearray7d_f32, latency_class: soft_rt}
+embodiment:
+  arm: [franka, so101]
+  gripper: any
+safety_class: perception
+eval: null
+origin: hub
+source: src/aisle/nodes/dora_genesis.py
