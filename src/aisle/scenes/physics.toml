@@ -38,10 +38,15 @@ home_qpos = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04]
 
 [embodiment.so101]
 reach_m = 0.450
-shelf_pos = [0.28, 0.0, 0.0]
-shelf_level_heights = [0.02, 0.12, 0.22]
-shelf_level_size = [0.16, 0.30]
-tray_pos = [0.18, -0.18, 0.01]
+shelf_pos = [0.24, 0.0, 0.0]
+# smaller arm, smaller approach clearance (overrides [ik].pregrasp_height_m)
+pregrasp_height_m = 0.06
+# 0.135 m board-to-board clearance: tallest med (0.11) + board + margin;
+# the reach pre-filter naturally excludes candidates the 0.45 m arm cannot
+# pre-grasp top-down (upper level may go unused for so101)
+shelf_level_heights = [0.02, 0.175, 0.33]
+shelf_level_size = [0.16, 0.40]
+tray_pos = [0.16, -0.16, 0.01]
 tray_size = [0.14, 0.18, 0.03]
 
 [ik]

@@ -18,6 +18,17 @@ dev = [
 [project.scripts]
 harness = "aisle.harness.cli:main"
 
+# CON-1: linux resolves torch from the CPU index so the sim extra never
+# drags CUDA/NVIDIA wheels; a future `cuda` extra is the sanctioned home
+# for GPU builds
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
 [project.optional-dependencies]
 sim = [
     "genesis-world>=1.2.3",

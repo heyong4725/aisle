@@ -94,6 +94,10 @@ def test_no_cuda_in_default_dependencies():
     assert closure, "default dependency closure resolved to nothing — check lock parsing"
     for name in sorted(closure):
         assert not any(k in name.lower() for k in forbidden), name
+    # stronger invariant now that linux torch resolves from the CPU index:
+    # no CUDA/NVIDIA package anywhere in the lock, any extra, any platform
+    for name in graph:
+        assert not any(k in name.lower() for k in forbidden), f"{name} (in lock universe)"
 
 
 def test_ci_script_gate_order():

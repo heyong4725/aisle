@@ -64,7 +64,14 @@ def resolve_layout(physics: dict, embodiment: str) -> dict:
             "size": profile["tray_size"],
         },
         "reach_m": profile["reach_m"],
-        "ik": physics["ik"],
+        "ik": {
+            **physics["ik"],
+            **(
+                {"pregrasp_height_m": profile["pregrasp_height_m"]}
+                if "pregrasp_height_m" in profile
+                else {}
+            ),
+        },
     }
 
 
@@ -82,11 +89,12 @@ class DRToggle:
 
 @dataclass(frozen=True)
 class SceneCfg:
+    # SCN-3's build-time reachability assert is unconditional by spec —
+    # deliberately NOT a toggle here
     lighting: DRToggle = field(default_factory=DRToggle)
     textures: DRToggle = field(default_factory=DRToggle)
     friction_jitter: DRToggle = field(default_factory=DRToggle)
     camera_jitter: DRToggle = field(default_factory=DRToggle)
-    assert_reachable: bool = True
 
 
 @dataclass(frozen=True)
@@ -124,12 +132,31 @@ def sample_placements(seed: int, med_names: list[str], layout: dict) -> list[Pla
     max_target = layout["reach_m"] * ik["reach_margin_frac"]
     meds = load_meds()
     depth, width = shelf["level_size"]
+    # levels whose nearest-point candidates can never pass the reach filter
+    # (e.g. so101's top level) are excluded up front, not burned as tries
+    tallest = max(spec["size"][2] for spec in meds.values())
+    usable_levels = [
+        lvl
+        for lvl, height in enumerate(shelf["level_heights"])
+        if math.hypot(
+            abs(shelf["pos"][0]) - depth / 2 + shelf["edge_margin"],
+            0.0,
+            shelf["pos"][2]
+            + height
+            + shelf["board_thickness"] / 2
+            + tallest / 2
+            + ik["pregrasp_height_m"],
+        )
+        <= max_target
+    ]
+    if not usable_levels:
+        raise AssertionError("no shelf level is inside the reach envelope (check layout profile)")
     placed: list[Placement] = []
     for name in med_names:
         size = meds[name]["size"]
         half_x, half_y = size[0] / 2, size[1] / 2
         for _ in range(_MAX_PLACEMENT_TRIES):
-            level = rng.randrange(len(shelf["level_heights"]))
+            level = usable_levels[rng.randrange(len(usable_levels))]
             local_x = rng.uniform(
                 -depth / 2 + shelf["edge_margin"] + half_x,
                 depth / 2 - shelf["edge_margin"] - half_x,
@@ -153,6 +180,13 @@ def sample_placements(seed: int, med_names: list[str], layout: dict) -> list[Pla
             )
             if pregrasp_distance > max_target:
                 continue
+            # the box (and its pre-grasp approach) must clear the board above
+            heights = shelf["level_heights"]
+            if level + 1 < len(heights):
+                board_bottom = heights[level + 1] - shelf["board_thickness"] / 2
+                box_top = heights[level] + shelf["board_thickness"] / 2 + size[2]
+                if box_top + shelf["min_separation"] > board_bottom:
+                    continue
             if _separated(candidate, half_x, half_y, placed, meds, shelf["min_separation"]):
                 placed.append(candidate)
                 break
@@ -186,12 +220,19 @@ def _separated(
 def _ensure_genesis():
     import genesis as gs
 
+    expected = gs.metal if platform.system() == "Darwin" else gs.cpu
     if not getattr(gs, "_initialized", False):
-        backend = gs.metal if platform.system() == "Darwin" else gs.cpu
         # fixed seed: genesis's internal RNG must never be an input to build
         # outcomes (CON-5); reachability IK is additionally made
         # deterministic via explicit init_qpos and max_samples=1
-        gs.init(backend=backend, logging_level="warning", seed=0)
+        gs.init(backend=expected, logging_level="warning", seed=0)
+    elif gs.backend != expected:
+        # a foreign pre-initialization would silently change build results
+        # for identical arguments (CON-5) — refuse loudly instead
+        raise RuntimeError(
+            f"genesis already initialized with backend {gs.backend}; "
+            f"build_scene requires {expected}"
+        )
     return gs
 
 
@@ -275,6 +316,7 @@ def build_scene(
 
     box_physics = physics["materials"]["box"]
     applied_frictions: dict[str, float] = {}
+    applied_colors: dict[str, list[float]] = {}
     boxes: dict[str, Any] = {}
     for placement in sample_placements(seed, list(meds), layout):
         friction = box_physics["friction"]
@@ -287,6 +329,7 @@ def build_scene(
             color = [
                 min(1.0, c * (scale_min + textures_rng.random() * scale_range)) for c in color[:3]
             ] + [color[3]]
+        applied_colors[placement.name] = color
         boxes[placement.name] = scene.add_entity(
             gs.morphs.Box(
                 size=tuple(meds[placement.name]["size"]),
@@ -317,6 +360,13 @@ def build_scene(
     else:
         scene.build(n_envs=n_envs)
 
+    # start the robot AT its home pose: the qpos0 zeros pose violates franka
+    # joint limits and self-collides (T05 control would inherit that state)
+    profile = physics["embodiment"][embodiment]
+    if "home_qpos" in profile:
+        home = np.asarray(profile["home_qpos"], dtype=np.float32)
+        robot.set_qpos(home if n_envs == 1 else np.tile(home, (n_envs, 1)))
+
     ee_link = robot.get_link(FRANKA_EE_LINK) if embodiment == "franka" else robot.links[-1]
     offset = np.eye(4, dtype=np.float32)
     offset[:3, 3] = cam_cfg["wrist_offset_m"]
@@ -335,15 +385,17 @@ def build_scene(
             "ambient": ambient,
             "overhead_pos": overhead_pos,
             "frictions": applied_frictions,
+            "colors": applied_colors,
         },
     )
 
-    if cfg.assert_reachable and n_envs == 1:
-        _assert_reachable(handle, ee_link, layout["ik"])
+    # SCN-3: asserted at build time, unconditionally; placements are seed-
+    # identical across batched envs, so env 0 witnesses reachability for all
+    _assert_reachable(handle, ee_link, layout["ik"], n_envs)
     return handle
 
 
-def _assert_reachable(handle: SceneHandle, ee_link, ik_cfg: dict) -> None:
+def _assert_reachable(handle: SceneHandle, ee_link, ik_cfg: dict, n_envs: int = 1) -> None:
     """SCN-3: every box placement must admit an IK solution to its pre-grasp
     pose. Deterministic multi-start (CON-5): explicit seeded init_qpos
     perturbations with max_samples=1, so genesis's global RNG never
@@ -353,7 +405,7 @@ def _assert_reachable(handle: SceneHandle, ee_link, ik_cfg: dict) -> None:
     if "home_qpos" in profile:
         home = np.asarray(profile["home_qpos"], dtype=np.float32)
     else:
-        home = to_numpy(handle.robot.get_qpos()).reshape(-1)
+        home = to_numpy(handle.robot.get_qpos()).reshape(-1)[: handle.robot.n_dofs]
     failures: list[str] = []
     for name, entity in handle.boxes.items():
         target = to_numpy(entity.get_pos()).reshape(-1)[:3] + np.array(
@@ -372,16 +424,23 @@ def _assert_reachable(handle: SceneHandle, ee_link, ik_cfg: dict) -> None:
                     dtype=np.float32,
                 )
                 init_qpos = home + perturbation
+            if n_envs > 1:  # genesis requires batch-shaped inputs
+                pos_arg = np.tile(target, (n_envs, 1))
+                quat_arg = np.tile(np.asarray(DOWNWARD_QUAT, dtype=np.float32), (n_envs, 1))
+                init_arg = np.tile(init_qpos, (n_envs, 1))
+            else:
+                pos_arg, quat_arg, init_arg = target, DOWNWARD_QUAT, init_qpos
             _, error = handle.robot.inverse_kinematics(
                 link=ee_link,
-                pos=target,
-                quat=DOWNWARD_QUAT,
-                init_qpos=init_qpos,
+                pos=pos_arg,
+                quat=quat_arg,
+                init_qpos=init_arg,
                 max_samples=1,
                 max_solver_iters=ik_cfg["max_solver_iters"],
                 return_error=True,
             )
-            error = to_numpy(error).reshape(-1)
+            # env 0 witnesses all envs: placements are seed-identical
+            error = to_numpy(error).reshape(-1)[:6]
             pos_error = float(np.linalg.norm(error[:3]))
             rot_error = float(np.linalg.norm(error[3:6]))
             best = min(best or (pos_error, rot_error), (pos_error, rot_error))
@@ -394,10 +453,15 @@ def _assert_reachable(handle: SceneHandle, ee_link, ik_cfg: dict) -> None:
 
 
 def oracle_state(handle: SceneHandle) -> np.ndarray:
-    """Initial ground-truth state: per box (meds.toml order) position (3)
-    then quaternion (4), flat float32 (TC table layout)."""
+    """Ground-truth state: per box (meds.toml order) position (3) then
+    quaternion in TC-1 (x, y, z, w) order — genesis returns (w, x, y, z),
+    reordered here so the wire format matches the topic contract. Shape
+    (n_obj*7,) for a single env, (n_envs, n_obj*7) for batched builds."""
     parts = []
     for entity in handle.boxes.values():
-        parts.append(to_numpy(entity.get_pos()).reshape(-1)[:3])
-        parts.append(to_numpy(entity.get_quat()).reshape(-1)[:4])
-    return np.concatenate(parts).astype(np.float32)
+        pos = np.atleast_2d(to_numpy(entity.get_pos()))
+        quat_wxyz = np.atleast_2d(to_numpy(entity.get_quat()))
+        quat_xyzw = np.roll(quat_wxyz, -1, axis=-1)
+        parts.extend((pos, quat_xyzw))
+    state = np.concatenate(parts, axis=-1).astype(np.float32)
+    return state[0] if state.shape[0] == 1 else state

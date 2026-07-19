@@ -35,3 +35,23 @@ reach_margin_frac so seed sweeps cannot abort builds on corner placements;
 separation is per-axis AABB clearance (the earlier L1 rule provably
 admitted overlaps — regression-tested across 200 seeds). (10) numpy is a
 default dependency (CON-1-clean); genesis/torch stay behind the sim extra.
+
+Amendments from the PR 5 request-changes round:
+(11) oracle_state reorders genesis (w,x,y,z) quaternions to TC-1 (x,y,z,w)
+wire order, and returns (n_envs, n_obj*7) for batched builds — no env is
+silently dropped. (12) SCN-3's reachability assert is UNCONDITIONAL (the
+cfg escape hatch was removed; batched builds tile IK inputs and env 0
+witnesses all envs since placements are seed-identical); the SCN-4 trace
+waiver is RESTORED until so101 actually builds — an ADR cannot relax a
+MUST, only record why it is blocked (owner asset sign-off). (13) The robot
+STARTS at home_qpos (franka's qpos0 zeros violate joint limits and
+self-collide — T05 must not inherit that); levels/board clearances are
+config-validated against the tallest med, and so101's profile (shelf 0.24,
+pregrasp override 0.06, width 0.40) was chosen by a 200-seed capacity
+search — still provisional until the asset lands. (14) linux resolves
+torch from the PyTorch CPU index, so NO CUDA/NVIDIA package exists
+anywhere in the lock (test-pinned); a future `cuda` extra is the
+sanctioned home for GPU wheels per CON-1. (15) "Textures" DR is color
+modulation in v0 (the rasterizer path has no texture-swap machinery yet)
+— recorded as a known gap, not renamed away; genesis pre-initialization
+with a foreign backend now raises instead of silently changing results.

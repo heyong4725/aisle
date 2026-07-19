@@ -111,6 +111,16 @@ def test_placements_never_interpenetrate_or_exceed_reach(embodiment):
         for p in placements:
             target = (p.x**2 + p.y**2 + (p.z + ik["pregrasp_height_m"]) ** 2) ** 0.5
             assert target <= max_target, (seed, p)
+        shelf = layout["shelf"]
+        for p in placements:
+            if p.level + 1 < len(shelf["level_heights"]):
+                board_bottom = (
+                    shelf["pos"][2]
+                    + shelf["level_heights"][p.level + 1]
+                    - shelf["board_thickness"] / 2
+                )
+                box_top = p.z + meds[p.name]["size"][2] / 2
+                assert box_top < board_bottom, (seed, p.name, "intersects board above")
         for a, b in itertools.combinations(placements, 2):
             if a.level != b.level:
                 continue
@@ -118,6 +128,22 @@ def test_placements_never_interpenetrate_or_exceed_reach(embodiment):
             half_y = (meds[a.name]["size"][1] + meds[b.name]["size"][1]) / 2
             overlap = abs(a.x - b.x) < half_x and abs(a.y - b.y) < half_y
             assert not overlap, (seed, a.name, b.name)
+
+
+@pytest.mark.parametrize("embodiment", ["franka", "so101"])
+def test_shelf_levels_clear_tallest_box(embodiment):
+    """SCN-3: every embodiment's board-to-board clearance fits the tallest
+    medicine plus board thickness and separation margin — a box standing on
+    any level can never intersect the board above (the so101 regression the
+    review found)."""
+    physics = load_physics()
+    profile = physics["embodiment"][embodiment]
+    shelf = physics["shelf"]
+    tallest = max(spec["size"][2] for spec in load_meds().values())
+    heights = profile["shelf_level_heights"]
+    for below, above in zip(heights, heights[1:]):
+        clearance = (above - shelf["board_thickness"] / 2) - (below + shelf["board_thickness"] / 2)
+        assert clearance >= tallest + shelf["min_separation"], (embodiment, below, above)
 
 
 def test_unknown_embodiment_rejected():

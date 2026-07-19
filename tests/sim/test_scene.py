@@ -83,6 +83,36 @@ def test_cameras(handle):
     assert type(handle.scene.visualizer.renderer).__name__ == "Rasterizer"
 
 
+def test_oracle_quaternions_are_xyzw(handle):
+    """TC-1: oracle_state quaternions are (x, y, z, w) wire order — boxes
+    rest axis-aligned, so each quaternion block must be ~identity with w
+    LAST, not first (genesis's native order)."""
+    state = oracle_state(handle)
+    for i in range(len(MED_NAMES)):
+        quat = state[i * 7 + 3 : i * 7 + 7]
+        assert abs(quat[3]) > 0.99, quat  # w last
+        assert np.all(np.abs(quat[:3]) < 0.1), quat
+
+
+def test_robot_starts_at_home_qpos(handle):
+    """SCN-1: the built robot rests AT its configured home pose — the
+    all-zeros qpos0 violates franka joint limits and self-collides, which
+    T05 control must never inherit."""
+    home = np.asarray(load_physics()["embodiment"]["franka"]["home_qpos"], dtype=np.float32)
+    actual = to_numpy(handle.robot.get_qpos()).reshape(-1)[: home.shape[0]]
+    assert np.allclose(actual, home, atol=1e-4)
+
+
+def test_batched_build_oracle_covers_all_envs():
+    """SCN-1: a batched build returns oracle_state of shape (n_envs,
+    n_obj*7) — no environment is silently discarded — and reachability is
+    still asserted at build time."""
+    batched = build_scene(seed=7, embodiment="franka", n_envs=2, headless=True)
+    state = oracle_state(batched)
+    assert state.shape == (2, len(MED_NAMES) * 7)
+    assert np.array_equal(state[0], state[1])  # identical initial placements
+
+
 def test_boxes_follow_oracle_order(handle):
     """SCN-1: boxes dict insertion order is the fixed meds.toml order, which
     is the oracle_state layout (TC table)."""
@@ -115,6 +145,14 @@ def test_dr_toggles_are_effective_seeded_and_isolated(handle):
         cfg=SceneCfg(lighting=DRToggle(enabled=True, seed=5)),
     )
     assert lit.dr_applied["ambient"] != handle.dr_applied["ambient"]
+    textured = build_scene(
+        seed=7,
+        embodiment="franka",
+        headless=True,
+        cfg=SceneCfg(textures=DRToggle(enabled=True, seed=9)),
+    )
+    assert textured.dr_applied["colors"] != handle.dr_applied["colors"]
+    assert np.array_equal(oracle_state(handle), oracle_state(textured))
     shaken = build_scene(
         seed=7,
         embodiment="franka",
