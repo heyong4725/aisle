@@ -1,0 +1,71 @@
+# SCN-2: all physics and layout constants for the pharmacy scene.
+# NO physics constants inline in code.
+
+[sim]
+dt = 0.01
+substeps = 2
+gravity = [0.0, 0.0, -9.81]
+
+[materials.box]
+friction = 0.80
+density_kg_m3 = 250.0
+
+[materials.shelf]
+friction = 0.60
+
+[materials.tray]
+friction = 0.70
+
+# shared shelf/tray geometry; positions and scale are per-embodiment
+# (M0-5: an embodiment is a scene+driver PROFILE swap)
+[shelf]
+board_thickness = 0.02
+min_separation = 0.02
+edge_margin = 0.03
+
+[tray]
+wall_thickness = 0.01
+
+[embodiment.franka]
+reach_m = 0.855
+shelf_pos = [0.55, 0.0, 0.0]
+shelf_level_heights = [0.05, 0.25, 0.45]
+shelf_level_size = [0.30, 0.60]
+tray_pos = [0.35, -0.35, 0.02]
+tray_size = [0.20, 0.28, 0.04]
+# elbow-bent ready pose: the deterministic IK start (all-zeros is singular)
+home_qpos = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04]
+
+[embodiment.so101]
+reach_m = 0.450
+shelf_pos = [0.28, 0.0, 0.0]
+shelf_level_heights = [0.02, 0.12, 0.22]
+shelf_level_size = [0.16, 0.30]
+tray_pos = [0.18, -0.18, 0.01]
+tray_size = [0.14, 0.18, 0.03]
+
+[ik]
+pregrasp_height_m = 0.10
+pos_tol_m = 0.015
+rot_tol_rad = 0.15
+max_starts = 4
+max_solver_iters = 100
+init_perturbation_rad = 0.3
+# sampler-side geometric pre-filter: candidate pre-grasp targets must lie
+# within this fraction of the arm's reach (rejects corner placements the
+# IK backstop would otherwise abort the build on)
+reach_margin_frac = 0.92
+
+[cameras]
+overhead_pos = [0.55, 0.0, 1.20]
+overhead_lookat = [0.55, 0.0, 0.20]
+wrist_offset_m = [0.0, 0.0, 0.05]
+
+[domain_randomization]
+ambient_default = 0.5
+ambient_min = 0.3
+ambient_range = 0.5
+texture_scale_min = 0.8
+texture_scale_range = 0.4
+friction_jitter_frac = 0.2
+camera_jitter_m = 0.04

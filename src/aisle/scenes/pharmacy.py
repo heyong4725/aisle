@@ -1,0 +1,403 @@
+"""Pharmacy scene builder (SPEC 020).
+
+`build_scene` is a pure function of its arguments (SCN-1, CON-5): all
+randomness flows from the injected seed through explicit `random.Random`
+instances (genesis's own RNG is pinned and never relied on), every physical
+constant lives in meds.toml / physics.toml (SCN-2), and genesis is imported
+lazily so unit tests and the validator never pay for sim dependencies.
+An embodiment is a scene+driver profile swap (M0-5): shelf/tray placement
+and scale come from the per-embodiment layout sections in physics.toml.
+"""
+
+from __future__ import annotations
+
+import math
+import platform
+import random
+import tomllib
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+_SCENES_DIR = Path(__file__).parent
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+SO101_URDF = _REPO_ROOT / "assets" / "so101" / "so101.urdf"
+FRANKA_MJCF = "xml/franka_emika_panda/panda.xml"
+FRANKA_EE_LINK = "hand"
+# genesis quaternions are (w, x, y, z); gripper pointing straight down
+DOWNWARD_QUAT = (0.0, 1.0, 0.0, 0.0)
+
+_MAX_PLACEMENT_TRIES = 1000
+
+
+def load_meds() -> dict:
+    with open(_SCENES_DIR / "meds.toml", "rb") as f:
+        return tomllib.load(f)
+
+
+def load_physics() -> dict:
+    with open(_SCENES_DIR / "physics.toml", "rb") as f:
+        return tomllib.load(f)
+
+
+def resolve_layout(physics: dict, embodiment: str) -> dict:
+    """Merge shared geometry with the embodiment's layout profile: shelf
+    position/levels/size, tray position/size, reach, and the ik section."""
+    profiles = physics["embodiment"]
+    if embodiment not in profiles:
+        raise ValueError(
+            f"unknown embodiment {embodiment!r}; add [embodiment.{embodiment}] to physics.toml"
+        )
+    profile = profiles[embodiment]
+    return {
+        "shelf": {
+            **physics["shelf"],
+            "pos": profile["shelf_pos"],
+            "level_heights": profile["shelf_level_heights"],
+            "level_size": profile["shelf_level_size"],
+        },
+        "tray": {
+            **physics["tray"],
+            "pos": profile["tray_pos"],
+            "size": profile["tray_size"],
+        },
+        "reach_m": profile["reach_m"],
+        "ik": physics["ik"],
+    }
+
+
+MED_NAMES = list(load_meds())
+
+
+@dataclass(frozen=True)
+class DRToggle:
+    """One domain-randomization axis: off by default, independently seeded
+    (SCN-6)."""
+
+    enabled: bool = False
+    seed: int = 0
+
+
+@dataclass(frozen=True)
+class SceneCfg:
+    lighting: DRToggle = field(default_factory=DRToggle)
+    textures: DRToggle = field(default_factory=DRToggle)
+    friction_jitter: DRToggle = field(default_factory=DRToggle)
+    camera_jitter: DRToggle = field(default_factory=DRToggle)
+    assert_reachable: bool = True
+
+
+@dataclass(frozen=True)
+class Placement:
+    name: str
+    level: int
+    x: float
+    y: float
+    z: float
+
+
+@dataclass
+class SceneHandle:
+    scene: Any
+    robot: Any
+    boxes: dict[str, Any]
+    tray: Any
+    cams: dict[str, Any]
+    embodiment: str
+    seed: int
+    med_sizes: dict[str, list[float]]
+    dr_applied: dict[str, Any] = field(default_factory=dict)
+    reachability_errors: list[str] = field(default_factory=list)
+
+
+def sample_placements(seed: int, med_names: list[str], layout: dict) -> list[Placement]:
+    """Rejection-sample per-seed box placements on the 3-level shelf
+    (SCN-3): inside the level bounds minus edge margins, per-axis AABB
+    separation of min_separation, and a geometric reach pre-filter so the
+    IK backstop cannot abort the build on corner placements. Pure function
+    of the seed."""
+    rng = random.Random(seed)
+    shelf = layout["shelf"]
+    ik = layout["ik"]
+    max_target = layout["reach_m"] * ik["reach_margin_frac"]
+    meds = load_meds()
+    depth, width = shelf["level_size"]
+    placed: list[Placement] = []
+    for name in med_names:
+        size = meds[name]["size"]
+        half_x, half_y = size[0] / 2, size[1] / 2
+        for _ in range(_MAX_PLACEMENT_TRIES):
+            level = rng.randrange(len(shelf["level_heights"]))
+            local_x = rng.uniform(
+                -depth / 2 + shelf["edge_margin"] + half_x,
+                depth / 2 - shelf["edge_margin"] - half_x,
+            )
+            local_y = rng.uniform(
+                -width / 2 + shelf["edge_margin"] + half_y,
+                width / 2 - shelf["edge_margin"] - half_y,
+            )
+            candidate = Placement(
+                name=name,
+                level=level,
+                x=shelf["pos"][0] + local_x,
+                y=shelf["pos"][1] + local_y,
+                z=shelf["pos"][2]
+                + shelf["level_heights"][level]
+                + shelf["board_thickness"] / 2
+                + size[2] / 2,
+            )
+            pregrasp_distance = math.hypot(
+                candidate.x, candidate.y, candidate.z + ik["pregrasp_height_m"]
+            )
+            if pregrasp_distance > max_target:
+                continue
+            if _separated(candidate, half_x, half_y, placed, meds, shelf["min_separation"]):
+                placed.append(candidate)
+                break
+        else:
+            raise AssertionError(f"could not place {name!r} after {_MAX_PLACEMENT_TRIES} tries")
+    return placed
+
+
+def _separated(
+    candidate: Placement,
+    half_x: float,
+    half_y: float,
+    placed: list[Placement],
+    meds: dict,
+    min_separation: float,
+) -> bool:
+    """AABBs overlap iff BOTH axis gaps are below their half-extent sums, so
+    separation requires at least one axis to clear its sum plus margin."""
+    for other in placed:
+        if other.level != candidate.level:
+            continue
+        required_x = half_x + meds[other.name]["size"][0] / 2 + min_separation
+        required_y = half_y + meds[other.name]["size"][1] / 2 + min_separation
+        clear_x = abs(candidate.x - other.x) >= required_x
+        clear_y = abs(candidate.y - other.y) >= required_y
+        if not (clear_x or clear_y):
+            return False
+    return True
+
+
+def _ensure_genesis():
+    import genesis as gs
+
+    if not getattr(gs, "_initialized", False):
+        backend = gs.metal if platform.system() == "Darwin" else gs.cpu
+        # fixed seed: genesis's internal RNG must never be an input to build
+        # outcomes (CON-5); reachability IK is additionally made
+        # deterministic via explicit init_qpos and max_samples=1
+        gs.init(backend=backend, logging_level="warning", seed=0)
+    return gs
+
+
+def to_numpy(tensor) -> np.ndarray:
+    if hasattr(tensor, "cpu"):
+        tensor = tensor.cpu()
+    return np.asarray(tensor, dtype=np.float32)
+
+
+def build_scene(
+    seed: int,
+    embodiment: str = "franka",
+    n_envs: int = 1,
+    headless: bool = True,
+    cfg: SceneCfg | None = None,
+) -> SceneHandle:
+    cfg = cfg or SceneCfg()
+    gs = _ensure_genesis()
+    meds = load_meds()
+    physics = load_physics()
+    layout = resolve_layout(physics, embodiment)
+    shelf, tray_cfg = layout["shelf"], layout["tray"]
+    dr_cfg = physics["domain_randomization"]
+
+    for label, target in (("tray", tray_cfg["pos"]), ("shelf", shelf["pos"])):
+        distance = math.hypot(*target)
+        assert distance <= layout["reach_m"], (
+            f"{label} at {target} outside {embodiment} workspace (SCN-4)"
+        )
+
+    lighting_rng = random.Random(cfg.lighting.seed)
+    textures_rng = random.Random(cfg.textures.seed)
+    friction_rng = random.Random(cfg.friction_jitter.seed)
+    camera_rng = random.Random(cfg.camera_jitter.seed)
+
+    ambient = (dr_cfg["ambient_default"],) * 3
+    if cfg.lighting.enabled:
+        ambient = tuple(
+            min(1.0, dr_cfg["ambient_min"] + lighting_rng.random() * dr_cfg["ambient_range"])
+            for _ in range(3)
+        )
+
+    scene = gs.Scene(
+        sim_options=gs.options.SimOptions(
+            dt=physics["sim"]["dt"],
+            substeps=physics["sim"]["substeps"],
+            gravity=tuple(physics["sim"]["gravity"]),
+        ),
+        vis_options=gs.options.VisOptions(ambient_light=ambient),
+        renderer=gs.renderers.Rasterizer(),  # SCN-5: Metal-safe default path
+        show_viewer=not headless,
+    )
+    scene.add_entity(gs.morphs.Plane())
+
+    shelf_material = gs.materials.Rigid(friction=physics["materials"]["shelf"]["friction"])
+    depth, width = shelf["level_size"]
+    for level_height in shelf["level_heights"]:
+        scene.add_entity(
+            gs.morphs.Box(
+                size=(depth, width, shelf["board_thickness"]),
+                pos=(shelf["pos"][0], shelf["pos"][1], shelf["pos"][2] + level_height),
+                fixed=True,
+            ),
+            material=shelf_material,
+        )
+
+    tray_material = gs.materials.Rigid(friction=physics["materials"]["tray"]["friction"])
+    tray = scene.add_entity(
+        gs.morphs.Box(size=tuple(tray_cfg["size"]), pos=tuple(tray_cfg["pos"]), fixed=True),
+        material=tray_material,
+    )
+
+    if embodiment == "franka":
+        robot = scene.add_entity(gs.morphs.MJCF(file=FRANKA_MJCF))
+    else:
+        if not SO101_URDF.exists():
+            raise FileNotFoundError(
+                f"so101 asset missing: {SO101_URDF} (acquisition pending, ADR-6)"
+            )
+        robot = scene.add_entity(gs.morphs.URDF(file=str(SO101_URDF), fixed=True))
+
+    box_physics = physics["materials"]["box"]
+    applied_frictions: dict[str, float] = {}
+    boxes: dict[str, Any] = {}
+    for placement in sample_placements(seed, list(meds), layout):
+        friction = box_physics["friction"]
+        if cfg.friction_jitter.enabled:
+            friction *= 1.0 + (friction_rng.random() - 0.5) * dr_cfg["friction_jitter_frac"]
+        applied_frictions[placement.name] = friction
+        color = list(meds[placement.name]["color"])
+        if cfg.textures.enabled:
+            scale_min, scale_range = dr_cfg["texture_scale_min"], dr_cfg["texture_scale_range"]
+            color = [
+                min(1.0, c * (scale_min + textures_rng.random() * scale_range)) for c in color[:3]
+            ] + [color[3]]
+        boxes[placement.name] = scene.add_entity(
+            gs.morphs.Box(
+                size=tuple(meds[placement.name]["size"]),
+                pos=(placement.x, placement.y, placement.z),
+            ),
+            material=gs.materials.Rigid(friction=friction, rho=box_physics["density_kg_m3"]),
+            surface=gs.surfaces.Default(color=tuple(color)),
+        )
+
+    cam_cfg = physics["cameras"]
+    overhead_pos = list(cam_cfg["overhead_pos"])
+    if cfg.camera_jitter.enabled:
+        jitter = dr_cfg["camera_jitter_m"]
+        overhead_pos = [p + (camera_rng.random() - 0.5) * jitter for p in overhead_pos]
+    cams = {
+        "overhead": scene.add_camera(
+            res=(640, 480),
+            pos=tuple(overhead_pos),
+            lookat=tuple(cam_cfg["overhead_lookat"]),
+            fov=55,
+            GUI=False,
+        ),
+        "wrist": scene.add_camera(res=(320, 240), fov=70, GUI=False),
+    }
+
+    if n_envs == 1:
+        scene.build()
+    else:
+        scene.build(n_envs=n_envs)
+
+    ee_link = robot.get_link(FRANKA_EE_LINK) if embodiment == "franka" else robot.links[-1]
+    offset = np.eye(4, dtype=np.float32)
+    offset[:3, 3] = cam_cfg["wrist_offset_m"]
+    cams["wrist"].attach(ee_link, offset_T=offset)
+
+    handle = SceneHandle(
+        scene=scene,
+        robot=robot,
+        boxes=boxes,
+        tray=tray,
+        cams=cams,
+        embodiment=embodiment,
+        seed=seed,
+        med_sizes={name: list(meds[name]["size"]) for name in meds},
+        dr_applied={
+            "ambient": ambient,
+            "overhead_pos": overhead_pos,
+            "frictions": applied_frictions,
+        },
+    )
+
+    if cfg.assert_reachable and n_envs == 1:
+        _assert_reachable(handle, ee_link, layout["ik"])
+    return handle
+
+
+def _assert_reachable(handle: SceneHandle, ee_link, ik_cfg: dict) -> None:
+    """SCN-3: every box placement must admit an IK solution to its pre-grasp
+    pose. Deterministic multi-start (CON-5): explicit seeded init_qpos
+    perturbations with max_samples=1, so genesis's global RNG never
+    influences the outcome; position AND rotation error are both checked."""
+    rng = random.Random(handle.seed)
+    profile = load_physics()["embodiment"][handle.embodiment]
+    if "home_qpos" in profile:
+        home = np.asarray(profile["home_qpos"], dtype=np.float32)
+    else:
+        home = to_numpy(handle.robot.get_qpos()).reshape(-1)
+    failures: list[str] = []
+    for name, entity in handle.boxes.items():
+        target = to_numpy(entity.get_pos()).reshape(-1)[:3] + np.array(
+            [0.0, 0.0, ik_cfg["pregrasp_height_m"]], dtype=np.float32
+        )
+        best = None
+        for attempt in range(ik_cfg["max_starts"]):
+            if attempt == 0:
+                init_qpos = home
+            else:
+                perturbation = np.array(
+                    [
+                        (rng.random() - 0.5) * 2 * ik_cfg["init_perturbation_rad"]
+                        for _ in range(home.shape[0])
+                    ],
+                    dtype=np.float32,
+                )
+                init_qpos = home + perturbation
+            _, error = handle.robot.inverse_kinematics(
+                link=ee_link,
+                pos=target,
+                quat=DOWNWARD_QUAT,
+                init_qpos=init_qpos,
+                max_samples=1,
+                max_solver_iters=ik_cfg["max_solver_iters"],
+                return_error=True,
+            )
+            error = to_numpy(error).reshape(-1)
+            pos_error = float(np.linalg.norm(error[:3]))
+            rot_error = float(np.linalg.norm(error[3:6]))
+            best = min(best or (pos_error, rot_error), (pos_error, rot_error))
+            if pos_error <= ik_cfg["pos_tol_m"] and rot_error <= ik_cfg["rot_tol_rad"]:
+                break
+        else:
+            failures.append(f"{name}: best ik error pos {best[0]:.4f} m rot {best[1]:.4f} rad")
+    handle.reachability_errors = failures
+    assert not failures, f"unreachable placements (SCN-3): {failures}"
+
+
+def oracle_state(handle: SceneHandle) -> np.ndarray:
+    """Initial ground-truth state: per box (meds.toml order) position (3)
+    then quaternion (4), flat float32 (TC table layout)."""
+    parts = []
+    for entity in handle.boxes.values():
+        parts.append(to_numpy(entity.get_pos()).reshape(-1)[:3])
+        parts.append(to_numpy(entity.get_quat()).reshape(-1)[:4])
+    return np.concatenate(parts).astype(np.float32)

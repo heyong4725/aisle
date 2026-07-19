@@ -61,17 +61,38 @@ def test_python_version_and_layout_cfg():
 
 
 def test_no_cuda_in_default_dependencies():
-    """CON-1: CUDA-only dependencies MUST NOT enter the default dependency
-    set — checked in the declared dependencies AND the resolved lock graph,
-    so a transitive CUDA pull-in also fails."""
+    """CON-1: CUDA-only dependencies MUST NOT enter the DEFAULT dependency
+    set — checked over the resolved lock closure reachable from the
+    declared default dependencies, so a transitive CUDA pull-in fails.
+    Optional extras (sim) MAY carry platform-markered CUDA wheels; CON-1
+    explicitly permits CUDA behind optional extras."""
     forbidden = ("cuda", "nvidia", "cu11", "cu12")
     project = load_pyproject()["project"]
     for dep in project.get("dependencies", []):
         assert not any(k in dep.lower() for k in forbidden), dep
+
     with open(REPO_ROOT / "uv.lock", "rb") as f:
         lock = tomllib.load(f)
-    for package in lock.get("package", []):
-        name = package.get("name", "")
+    # merge duplicate [[package]] entries (multi-platform locks repeat names)
+    graph: dict[str, list[str]] = {}
+    for p in lock.get("package", []):
+        graph.setdefault(p["name"], []).extend(d["name"] for d in p.get("dependencies", []))
+    roots = [
+        dep.split(">")[0].split("<")[0].split("=")[0].split("[")[0].strip().lower()
+        for dep in project.get("dependencies", [])
+    ]
+    missing_roots = [r for r in roots if r not in graph]
+    assert not missing_roots, f"declared deps absent from lock graph: {missing_roots}"
+    closure: set[str] = set()
+    frontier = list(roots)
+    while frontier:
+        name = frontier.pop()
+        if name in closure:
+            continue
+        closure.add(name)
+        frontier.extend(graph.get(name, []))
+    assert closure, "default dependency closure resolved to nothing — check lock parsing"
+    for name in sorted(closure):
         assert not any(k in name.lower() for k in forbidden), name
 
 

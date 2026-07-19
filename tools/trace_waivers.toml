@@ -19,12 +19,6 @@ TC-4 = "deferred to T05"
 TC-5 = "deferred to T05"
 TC-6 = "deferred to T05"
 
-# SPEC 020 scene — deferred to T04.
-SCN-1 = "deferred to T04"
-SCN-3 = "deferred to T04"
-SCN-4 = "deferred to T04"
-SCN-5 = "deferred to T04"
-
 # SPEC 030 bridge node — deferred to T05.
 BRG-2 = "deferred to T05"
 BRG-6 = "deferred to T05"
