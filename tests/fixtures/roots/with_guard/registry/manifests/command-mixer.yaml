@@ -1,7 +1,7 @@
-id: command-smoother
+id: command-mixer
 kind: node
 provides:
-- command_smoother
+- command_mixing
 requires: []
 inputs:
   cmd:

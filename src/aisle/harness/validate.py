@@ -33,28 +33,45 @@ def _closest(name: str, candidates: list[str]) -> str:
     return matches[0] if matches else ""
 
 
-def _guard_source_ids(node: dict) -> list[str | None]:
-    """Backward-edge source ids of a node; None for timers/roots/dora sources."""
+def _backward_sources(node: dict) -> list[str | None]:
+    """Backward-edge sources of a node; None for timers/dora/malformed."""
     sources: list[str | None] = []
     for raw in (node.get("inputs") or {}).values():
         source = raw.get("source") if isinstance(raw, dict) else raw
         if isinstance(source, str) and source and not source.startswith("dora/"):
-            sources.append(source.partition("/")[0])
+            sources.append(source)
         else:
             sources.append(None)
     return sources
 
 
-def _gated_by_guard(
-    src_id: str, graph_nodes: dict, manifests: dict, memo: dict, stack: set
+def _guard_resolved(out_port: str, graph_nodes: dict, manifests: dict) -> bool:
+    """The guard hop counts only when fully resolved: a budget-guard graph
+    node AND manifest exist, and the referenced output is declared by both
+    — a manifest alone (or a phantom output) is not a gate."""
+    node = graph_nodes.get(GUARD_ID)
+    manifest = manifests.get(GUARD_ID)
+    return (
+        node is not None
+        and manifest is not None
+        and out_port in (node.get("outputs") or [])
+        and out_port in (manifest.get("outputs") or {})
+    )
+
+
+def _gated_source(
+    source: str | None, graph_nodes: dict, manifests: dict, memo: dict, stack: set
 ) -> bool:
-    """VAL-5 traversal semantics: True iff EVERY backward path from src_id
-    reaches the resolved budget-guard before terminating at a root, timer,
-    or unresolvable source. Conservative dataflow assumption: all of a
-    node's inputs feed its outputs, so one unguarded input taints the node;
-    cycles without a guard on them are ungated."""
-    if src_id == GUARD_ID and GUARD_ID in manifests:
-        return True
+    """VAL-5 traversal semantics: True iff EVERY backward path from this
+    source reaches the fully resolved budget-guard before terminating at a
+    root, timer, or unresolvable source. Conservative dataflow assumption:
+    all of a node's inputs feed its outputs, so one unguarded input taints
+    the node; cycles without a guard on them are ungated."""
+    if source is None:
+        return False
+    src_id, _, out_port = source.partition("/")
+    if src_id == GUARD_ID:
+        return _guard_resolved(out_port, graph_nodes, manifests)
     if src_id in memo:
         return memo[src_id]
     if src_id in stack:
@@ -65,8 +82,8 @@ def _gated_by_guard(
         return False
     stack.add(src_id)
     result = all(
-        upstream is not None and _gated_by_guard(upstream, graph_nodes, manifests, memo, stack)
-        for upstream in _guard_source_ids(node)
+        _gated_source(upstream, graph_nodes, manifests, memo, stack)
+        for upstream in _backward_sources(node)
     )
     stack.discard(src_id)
     memo[src_id] = result
@@ -219,6 +236,20 @@ def validate_nodes(
                             "add it via a Class C schema-vocabulary change (CAP-2) or fix the name",
                         )
                     )
+        # every graph-declared output must exist in the manifest, consumed
+        # or not — the graph cannot invent ports the typed contract lacks
+        manifest_outputs = manifest.get("outputs") or {}
+        for out in node.get("outputs") or []:
+            if out not in manifest_outputs:
+                errors.append(
+                    _entry(
+                        "SCHEMA_MISMATCH",
+                        {"node": node_id},
+                        f"graph declares output {out!r} but {node_id}'s manifest does not",
+                        f"use one of the manifest outputs {sorted(manifest_outputs)}, "
+                        "or extend the manifest (Class B change)",
+                    )
+                )
         arms = manifest.get("embodiment", {}).get("arm", [])
         if embodiment not in arms:
             errors.append(
@@ -280,7 +311,7 @@ def _validate_edge(
     # same-named node with no manifest is spoofing; timers and unresolvable
     # sources are ungated). Never let a later check's early return hide this.
     if manifest.get("safety_class") == "motion" and port in MOTION_SINK_PORTS:
-        gated = not is_dora_source and _gated_by_guard(src_id, graph_nodes, manifests, {}, set())
+        gated = not is_dora_source and _gated_source(source, graph_nodes, manifests, {}, set())
         if not gated:
             errors.append(
                 _entry(
@@ -424,7 +455,39 @@ def validate(graph_path: Path, root: Path, embodiment: str, allow_unproven: bool
             for e in manifest_errors
         ]
         return report
-    manifests = {m["id"]: m for _, m in manifest_list if isinstance(m.get("id"), str)}
+    # structural screen: malformed registry data becomes a structured error,
+    # never an AttributeError mid-validation (CON-8)
+    malformed = []
+    for path, m in manifest_list:
+        problems = []
+        if not isinstance(m.get("id"), str) or not m.get("id"):
+            problems.append("id must be a non-empty string")
+        embodiment_field = m.get("embodiment")
+        if not isinstance(embodiment_field, dict) or not isinstance(
+            embodiment_field.get("arm"), list
+        ):
+            problems.append("embodiment must be a mapping with an arm list")
+        for direction in ("inputs", "outputs"):
+            ports = m.get(direction)
+            if ports is not None and (
+                not isinstance(ports, dict)
+                or not all(isinstance(spec, dict) for spec in ports.values())
+            ):
+                problems.append(f"{direction} must map port names to mappings")
+        if problems:
+            malformed.append((path.name, "; ".join(problems)))
+    if malformed:
+        report["errors"] = [
+            _entry(
+                "GRAPH_INVALID",
+                {"node": "(registry)"},
+                f"malformed manifest {name}: {problem}",
+                "fix the registry before validating graphs (harness/registry.py lint)",
+            )
+            for name, problem in malformed
+        ]
+        return report
+    manifests = {m["id"]: m for _, m in manifest_list}
     try:
         vocabulary = set(load_vocabulary(root))
     except (OSError, tomllib.TOMLDecodeError) as exc:

@@ -222,19 +222,28 @@ def test_oracle_leak_not_hidden_by_schema_unknown(tmp_path):
     assert {"ORACLE_LEAK", "SCHEMA_UNKNOWN"} <= codes(report, "errors")
 
 
-def test_manifest_without_id_does_not_crash(tmp_path):
-    """CON-8: a registry manifest missing its id (a lint-level defect) still
-    yields a JSON MANIFEST_MISSING report for graphs, not a traceback."""
-    root = fixture_root(tmp_path, {"detector-openvocab": {}})
-    anon = yaml.safe_load((REPO_ROOT / "registry" / "manifests" / "camera-source.yaml").read_text())
-    del anon["id"]
-    (root / "registry" / "manifests" / "camera-source.yaml").write_text(
-        yaml.safe_dump(anon, sort_keys=False)
-    )
-    graph = write_graph(root, [{"id": "camera-sorce", "outputs": ["rgb_overhead"]}])
-    code, report = run_validate(graph, "--root", str(root))
-    assert code != 0
-    assert "MANIFEST_MISSING" in codes(report, "errors")
+def test_malformed_manifests_reported_as_json(tmp_path):
+    """CON-8: structurally malformed registry manifests (missing id, scalar
+    embodiment, non-mapping ports) become GRAPH_INVALID registry errors that
+    name the file — never an AttributeError traceback."""
+    for mutate in (
+        lambda m: m.pop("id"),
+        lambda m: m.update(embodiment="franka"),
+        lambda m: m.update(inputs="rgb"),
+    ):
+        root = fixture_root(tmp_path / str(id(mutate)), {"detector-openvocab": {}})
+        manifest = yaml.safe_load(
+            (REPO_ROOT / "registry" / "manifests" / "camera-source.yaml").read_text()
+        )
+        mutate(manifest)
+        (root / "registry" / "manifests" / "camera-source.yaml").write_text(
+            yaml.safe_dump(manifest, sort_keys=False)
+        )
+        graph = write_graph(root, [{"id": "detector-openvocab", "outputs": ["boxes", "labels"]}])
+        code, report = run_validate(graph, "--root", str(root))
+        assert code != 0
+        assert "GRAPH_INVALID" in codes(report, "errors")
+        assert any("camera-source.yaml" in e["detail"] for e in report["errors"])
 
 
 GUARD_ROOT = REPO_ROOT / "tests" / "fixtures" / "roots" / "with_guard"
@@ -312,6 +321,64 @@ def test_motion_gate_is_topological(tmp_path):
         )
     )
     code, report = run_validate(bypass, "--root", str(GUARD_ROOT))
+    assert code != 0
+    assert "MOTION_UNGATED" in codes(report, "errors")
+
+
+def test_motion_gate_mixed_fanin_is_ungated(tmp_path):
+    """VAL-5 (ADR 4): one unguarded input taints the node — a smoother fed
+    by BOTH the guard and a bare timer leaves an unguarded path into the
+    driver, so the sink is MOTION_UNGATED."""
+    graph = write_graph(
+        tmp_path,
+        [
+            {
+                "id": "budget-guard",
+                "inputs": {"joint_cmd": "dora/timer/millis/10"},
+                "outputs": ["joint_cmd_safe"],
+            },
+            {
+                "id": "command-smoother",
+                "inputs": {"cmd": "budget-guard/joint_cmd_safe", "aux": "dora/timer/millis/10"},
+                "outputs": ["joint_cmd"],
+            },
+            {
+                "id": "arm-driver-sim",
+                "inputs": {"joint_cmd": "command-smoother/joint_cmd"},
+                "outputs": ["joint_state"],
+            },
+        ],
+    )
+    code, report = run_validate(graph, "--root", str(GUARD_ROOT))
+    assert code != 0
+    assert "MOTION_UNGATED" in codes(report, "errors")
+
+
+def test_motion_gate_cycle_without_guard_is_ungated(tmp_path):
+    """VAL-5 (ADR 4): a cycle with no guard on it never reaches a gated
+    root, so a driver fed from the cycle is MOTION_UNGATED (and the
+    validator terminates rather than recursing forever)."""
+    graph = write_graph(
+        tmp_path,
+        [
+            {
+                "id": "command-smoother",
+                "inputs": {"cmd": "command-mixer/joint_cmd"},
+                "outputs": ["joint_cmd"],
+            },
+            {
+                "id": "command-mixer",
+                "inputs": {"cmd": "command-smoother/joint_cmd"},
+                "outputs": ["joint_cmd"],
+            },
+            {
+                "id": "arm-driver-sim",
+                "inputs": {"joint_cmd": "command-smoother/joint_cmd"},
+                "outputs": ["joint_state"],
+            },
+        ],
+    )
+    code, report = run_validate(graph, "--root", str(GUARD_ROOT))
     assert code != 0
     assert "MOTION_UNGATED" in codes(report, "errors")
 

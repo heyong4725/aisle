@@ -1,0 +1,6 @@
+nodes:
+- id: arm-driver-sim
+  inputs:
+    joint_cmd: budget-guard/joint_cmd_safe
+  outputs:
+  - joint_state

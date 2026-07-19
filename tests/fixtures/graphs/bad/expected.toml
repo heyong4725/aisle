@@ -105,8 +105,10 @@ root = "tests/fixtures/roots/unknown_schema"
 [schema_mismatch_timer_undeclared_port]
 codes = ["SCHEMA_MISMATCH"]
 
+# the phantom output fires node-level SCHEMA_MISMATCH; consuming it also
+# fires edge-level INPUT_NO_PRODUCER
 [input_no_producer_undeclared_manifest_output]
-codes = ["INPUT_NO_PRODUCER"]
+codes = ["INPUT_NO_PRODUCER", "SCHEMA_MISMATCH"]
 
 [graph_invalid_outputs_not_list]
 codes = ["GRAPH_INVALID"]
@@ -138,3 +140,24 @@ warnings = ["RATE_INCOMPATIBLE"]
 [embodiment_mismatch_verifier_mobile]
 codes = ["EMBODIMENT_MISMATCH"]
 embodiment = "mobile"
+
+# discovered by the T03 re-review
+
+# an unconsumed graph output the manifest lacks is still a contract violation
+[schema_mismatch_phantom_output]
+codes = ["SCHEMA_MISMATCH"]
+
+[graph_invalid_malformed_manifest]
+codes = ["GRAPH_INVALID"]
+root = "tests/fixtures/roots/malformed_manifest"
+
+# a budget-guard manifest without a graph node is not a gate
+[motion_ungated_guard_not_in_graph]
+codes = ["INPUT_NO_PRODUCER", "MOTION_UNGATED"]
+root = "tests/fixtures/roots/with_guard"
+
+# a guard output missing from the guard's manifest is not a gate; the
+# phantom output also violates the guard node's own contract
+[motion_ungated_phantom_guard_output]
+codes = ["INPUT_NO_PRODUCER", "MOTION_UNGATED", "SCHEMA_MISMATCH"]
+root = "tests/fixtures/roots/with_guard"

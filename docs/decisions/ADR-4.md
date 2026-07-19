@@ -8,7 +8,10 @@ fewer inputs than a manifest declares is legal (idle ports), but an input
 port absent from the manifest is a SCHEMA_MISMATCH. (3) VAL-5 is enforced TOPOLOGICALLY per the
 spec's literal "every path": every backward path from a motion driver's
 joint_cmd/gripper_cmd input must traverse the RESOLVED budget-guard before
-terminating at a root, timer, or unresolvable source. (This supersedes the
+terminating at a root, timer, or unresolvable source. "Resolved" means all
+three hold: a budget-guard graph node exists, its manifest exists, and the
+referenced guard output is declared by both — a manifest alone, a same-named
+orphan node, or a phantom guard output is not a gate. (This supersedes the
 earlier immediate-upstream reading, which the T03 audit found stricter than
 the spec text: it rejected legal guard→intermediate→driver chains.)
 Conservative dataflow assumption: all of a node's inputs feed its outputs,
