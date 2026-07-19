@@ -1,0 +1,7 @@
+nodes:
+- id: detector-openvocab
+  inputs:
+    lidar: dora/timer/millis/33
+  outputs:
+  - boxes
+  - labels

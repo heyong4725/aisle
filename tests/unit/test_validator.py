@@ -27,7 +27,12 @@ def run_validate(graph: Path | str, *args: str) -> tuple[int, dict]:
 
 
 def corpus_args(expectation: dict) -> list[str]:
-    return ["--embodiment", expectation["embodiment"]] if "embodiment" in expectation else []
+    args = []
+    if "embodiment" in expectation:
+        args += ["--embodiment", expectation["embodiment"]]
+    if "root" in expectation:
+        args += ["--root", str(REPO_ROOT / expectation["root"])]
+    return args
 
 
 _CORPUS_CACHE: dict[str, tuple[int, dict]] = {}
@@ -92,7 +97,9 @@ def test_hints_nonempty():
         for entry in report["errors"] + report["warnings"]:
             assert entry["code"], (stem, entry)
             assert entry["hint"].strip(), (stem, entry)
+            assert entry["detail"].strip(), (stem, entry)
             assert "edge" in entry or "node" in entry, (stem, entry)
+            assert all(isinstance(v, str) for v in entry.values()), (stem, entry)
 
 
 def test_manifest_missing_hint_names_closest():

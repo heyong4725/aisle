@@ -1,0 +1,3 @@
+nodes:
+- id: camera-source
+  outputs: 7

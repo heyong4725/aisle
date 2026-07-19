@@ -77,6 +77,19 @@ def load_graph(path: Path) -> tuple[list | None, list[dict]]:
                     "write inputs as {port: producer-id/output}",
                 )
             )
+        outputs = node.get("outputs")
+        bad_outputs = not isinstance(outputs, list) or not all(
+            isinstance(o, str) and o for o in outputs
+        )
+        if outputs is not None and bad_outputs:
+            structural.append(
+                _entry(
+                    "GRAPH_INVALID",
+                    {"node": str(node_id)},
+                    f"outputs must be a list of non-empty strings, got {outputs!r}",
+                    "write outputs as a YAML list of output port names",
+                )
+            )
     if structural:
         return None, structural
     return nodes, []
@@ -117,7 +130,38 @@ def validate_nodes(
                     f"{suggestion} (harness/registry.py search lists capabilities)",
                 )
             )
+            # VAL-6 is manifest-based: a node WITHOUT a manifest is never an
+            # authorized verifier, so oracle consumption must still surface
+            # and not hide behind MANIFEST_MISSING.
+            for port, source in (node.get("inputs") or {}).items():
+                if isinstance(source, dict):
+                    source = source.get("source")
+                if isinstance(source, str) and source.endswith("/oracle_state"):
+                    errors.append(
+                        _entry(
+                            "ORACLE_LEAK",
+                            {"edge": f"{source} -> {node_id}/{port}"},
+                            f"oracle_state consumed by {node_id!r}, which has no "
+                            "manifest and so cannot be an authorized verifier (VAL-6)",
+                            "only verifier-* manifests may read ground truth",
+                        )
+                    )
             continue
+        # VAL-4: every schema name a graph node's manifest references must be
+        # in the vocabulary — including unwired ports; never silently passed
+        for direction in ("inputs", "outputs"):
+            for port, spec in (manifest.get(direction) or {}).items():
+                schema = spec.get("schema") if isinstance(spec, dict) else None
+                if schema is not None and schema not in vocabulary:
+                    errors.append(
+                        _entry(
+                            "SCHEMA_UNKNOWN",
+                            {"node": node_id},
+                            f"{direction}/{port}: schema {schema!r} is not in "
+                            "registry/schema/schemas.toml",
+                            "add it via a Class C schema-vocabulary change (CAP-2) or fix the name",
+                        )
+                    )
         arms = manifest.get("embodiment", {}).get("arm", [])
         if embodiment not in arms:
             errors.append(
@@ -174,20 +218,29 @@ def _validate_edge(
     is_dora_source = source.startswith("dora/")
     src_id = None if is_dora_source else source.partition("/")[0]
 
-    # VAL-5 first: a motion sink gated by anything but budget-guard —
-    # including a timer or an unresolvable source — is ungated. Never let a
-    # later check's early return hide this.
-    if (
-        manifest.get("safety_class") == "motion"
-        and port in MOTION_SINK_PORTS
-        and src_id != GUARD_ID
-    ):
+    # VAL-5 first: a motion sink is gated only by a source that IS the
+    # resolved budget-guard manifest — a same-named graph node with no
+    # manifest is spoofing, and timers/unresolvable sources are ungated.
+    # Never let a later check's early return hide this.
+    gated = src_id == GUARD_ID and GUARD_ID in manifests
+    if manifest.get("safety_class") == "motion" and port in MOTION_SINK_PORTS and not gated:
         errors.append(
             _entry(
                 "MOTION_UNGATED",
                 edge,
                 f"{port} reaches driver {node_id} without traversing {GUARD_ID} (VAL-5)",
                 f"route this command through the {GUARD_ID} node (SPEC 080)",
+            )
+        )
+
+    port_declared = port in declared_inputs
+    if not port_declared:
+        errors.append(
+            _entry(
+                "SCHEMA_MISMATCH",
+                edge,
+                f"{node_id} has no declared input port {port!r}",
+                f"declared inputs: {sorted(declared_inputs)}",
             )
         )
 
@@ -249,36 +302,29 @@ def _validate_edge(
             )
         )
 
-    if port not in declared_inputs:
+    producer_manifest = manifests.get(src_id)
+    manifest_outputs = (producer_manifest or {}).get("outputs") or {}
+    if producer_manifest is not None and out_port not in manifest_outputs:
         errors.append(
             _entry(
-                "SCHEMA_MISMATCH",
+                "INPUT_NO_PRODUCER",
                 edge,
-                f"{node_id} has no declared input port {port!r}",
-                f"declared inputs: {sorted(declared_inputs)}",
+                f"{src_id}'s manifest declares no output {out_port!r} — the graph "
+                "outputs list cannot invent ports the typed contract lacks",
+                f"{src_id} manifest outputs: {sorted(manifest_outputs)}",
             )
         )
         return
+    if not port_declared:
+        return
 
     consumer_schema = declared_inputs[port].get("schema")
-    producer_manifest = manifests.get(src_id)
-    producer_schema = None
-    if producer_manifest is not None:
-        producer_schema = producer_manifest.get("outputs", {}).get(out_port, {}).get("schema")
-    unknown = False
-    # ordered tuple, not a set: report every unknown name deterministically (CON-5)
-    for schema in dict.fromkeys((producer_schema, consumer_schema)):
-        if schema is not None and schema not in vocabulary:
-            unknown = True
-            errors.append(
-                _entry(
-                    "SCHEMA_UNKNOWN",
-                    edge,
-                    f"schema {schema!r} is not in registry/schema/schemas.toml",
-                    "add it via a Class C schema-vocabulary change (CAP-2) or fix the name",
-                )
-            )
-    if unknown:
+    producer_schema = (
+        manifest_outputs.get(out_port, {}).get("schema") if producer_manifest else None
+    )
+    # unknown names were already reported per node by the VAL-4 sweep;
+    # a mismatch verdict against an unknown name would be noise
+    if any(s is not None and s not in vocabulary for s in (producer_schema, consumer_schema)):
         return
     if producer_schema is not None and producer_schema != consumer_schema:
         errors.append(

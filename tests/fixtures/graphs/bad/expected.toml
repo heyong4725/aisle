@@ -3,14 +3,16 @@
 # Every agent-discovered failure class MUST gain an entry here in the same
 # PR that handles it (VAL-7).
 
+# both typo nodes consume oracle_state, and an unresolved consumer is never
+# an authorized verifier (VAL-6 strict rule), so the leak fires alongside
 [manifest_missing_typo_oracle_pos]
-codes = ["MANIFEST_MISSING"]
+codes = ["MANIFEST_MISSING", "ORACLE_LEAK"]
 
 [manifest_missing_unknown_node]
 codes = ["MANIFEST_MISSING"]
 
 [manifest_missing_typo_verifier]
-codes = ["MANIFEST_MISSING"]
+codes = ["MANIFEST_MISSING", "ORACLE_LEAK"]
 
 # duplicate ids also break edge resolution (the second camera-source wins),
 # so the detector edge loses its producer — both codes are inherent
@@ -93,3 +95,29 @@ codes = ["GRAPH_INVALID"]
 
 [graph_invalid_empty_nodes]
 codes = ["GRAPH_INVALID"]
+
+# discovered by the PR 4 Codex cross-review (CON-16)
+
+[schema_unknown_manifest]
+codes = ["SCHEMA_UNKNOWN"]
+root = "tests/fixtures/roots/unknown_schema"
+
+[schema_mismatch_timer_undeclared_port]
+codes = ["SCHEMA_MISMATCH"]
+
+[input_no_producer_undeclared_manifest_output]
+codes = ["INPUT_NO_PRODUCER"]
+
+[graph_invalid_outputs_not_list]
+codes = ["GRAPH_INVALID"]
+
+[graph_invalid_outputs_string]
+codes = ["GRAPH_INVALID"]
+
+# an id-less consumer of oracle_state cannot be an authorized verifier
+[oracle_leak_unresolved_consumer]
+codes = ["MANIFEST_MISSING", "ORACLE_LEAK"]
+
+# a graph node merely NAMED budget-guard, with no manifest, does not gate
+[motion_ungated_guard_spoof]
+codes = ["MANIFEST_MISSING", "MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
