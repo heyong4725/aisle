@@ -223,15 +223,22 @@ def test_oracle_leak_not_hidden_by_schema_unknown(tmp_path):
 
 
 def test_malformed_manifests_reported_as_json(tmp_path):
-    """CON-8: structurally malformed registry manifests (missing id, scalar
-    embodiment, non-mapping ports) become GRAPH_INVALID registry errors that
-    name the file — never an AttributeError traceback."""
-    for mutate in (
-        lambda m: m.pop("id"),
-        lambda m: m.update(embodiment="franka"),
-        lambda m: m.update(inputs="rgb"),
+    """CON-8: manifests violating the CAP-1 JSON Schema in ANY field —
+    missing id, scalar embodiment, non-mapping ports, non-numeric rate_hz,
+    non-string schema value, bad latency_class enum — become GRAPH_INVALID
+    registry errors that name the file, never a traceback (the screen is
+    the full capability schema, not a bespoke shape check)."""
+    for index, mutate in enumerate(
+        (
+            lambda m: m.pop("id"),
+            lambda m: m.update(embodiment="franka"),
+            lambda m: m.update(inputs="rgb"),
+            lambda m: m["outputs"]["rgb_overhead"].update(schema=42),
+            lambda m: m["inputs"].update(tick={"schema": "scalar_f32", "rate_hz": "fast"}),
+            lambda m: m["outputs"]["rgb_overhead"].update(latency_class="warp"),
+        )
     ):
-        root = fixture_root(tmp_path / str(id(mutate)), {"detector-openvocab": {}})
+        root = fixture_root(tmp_path / str(index), {"detector-openvocab": {}})
         manifest = yaml.safe_load(
             (REPO_ROOT / "registry" / "manifests" / "camera-source.yaml").read_text()
         )
@@ -323,6 +330,18 @@ def test_motion_gate_is_topological(tmp_path):
     code, report = run_validate(bypass, "--root", str(GUARD_ROOT))
     assert code != 0
     assert "MOTION_UNGATED" in codes(report, "errors")
+
+
+def test_fixture_root_schemas_match_real_registry():
+    """The CAP-1 schema copies inside every fixture root must be identical
+    to the real registry's — fixture validation must never drift from the
+    live contract."""
+    real = (REPO_ROOT / "registry" / "schema" / "capability.schema.json").read_bytes()
+    roots = sorted((REPO_ROOT / "tests" / "fixtures" / "roots").iterdir())
+    assert roots
+    for root in roots:
+        copy = root / "registry" / "schema" / "capability.schema.json"
+        assert copy.read_bytes() == real, copy
 
 
 def test_motion_gate_mixed_fanin_is_ungated(tmp_path):

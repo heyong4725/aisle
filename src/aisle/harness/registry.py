@@ -52,13 +52,25 @@ def load_vocabulary(root: Path) -> dict:
         return tomllib.load(f)
 
 
-def lint(root: Path) -> dict:
-    # imported lazily: jsonschema is lint-only, and the validate CLI path
-    # shares this module via load_manifests/load_vocabulary
+def load_capability_schema(root: Path) -> dict:
+    """The CAP-1 manifest JSON Schema; raises OSError/JSONDecodeError."""
+    return json.loads((root / "registry" / "schema" / "capability.schema.json").read_text())
+
+
+def manifest_schema_errors(schema: dict, manifest: dict) -> list[str]:
+    """JSON-path-prefixed CAP-1 schema violations for one manifest."""
+    # imported lazily to keep module import light for non-validating callers
     from jsonschema import Draft202012Validator
 
+    return [
+        f"{'/'.join(str(p) for p in error.absolute_path) or '(root)'}: {error.message}"
+        for error in Draft202012Validator(schema).iter_errors(manifest)
+    ]
+
+
+def lint(root: Path) -> dict:
     try:
-        schema = json.loads((root / "registry" / "schema" / "capability.schema.json").read_text())
+        schema = load_capability_schema(root)
         vocabulary_entries = load_vocabulary(root)
     except (OSError, json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:
         return {
@@ -67,7 +79,6 @@ def lint(root: Path) -> dict:
             "errors": [{"manifest": "(schema)", "message": f"cannot load schema files: {exc}"}],
             "warnings": [],
         }
-    validator = Draft202012Validator(schema)
 
     manifests, errors = load_manifests(root)
     vocabulary = set(vocabulary_entries)
@@ -87,9 +98,8 @@ def lint(root: Path) -> dict:
             )
     warnings: list[dict] = []
     for path, manifest in manifests:
-        for error in validator.iter_errors(manifest):
-            where = "/".join(str(p) for p in error.absolute_path) or "(root)"
-            errors.append({"manifest": path.name, "message": f"{where}: {error.message}"})
+        for message in manifest_schema_errors(schema, manifest):
+            errors.append({"manifest": path.name, "message": message})
         # filenames are unique per directory, so id == stem also implies
         # registry-wide id uniqueness
         if manifest.get("id") != path.stem:

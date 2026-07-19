@@ -151,6 +151,12 @@ codes = ["SCHEMA_MISMATCH"]
 codes = ["GRAPH_INVALID"]
 root = "tests/fixtures/roots/malformed_manifest"
 
+# CAP-1 schema screen: non-numeric rate_hz, non-string schema, bad
+# latency_class enum — all become structured registry errors, not TypeErrors
+[graph_invalid_malformed_rate]
+codes = ["GRAPH_INVALID"]
+root = "tests/fixtures/roots/malformed_port_specs"
+
 # a budget-guard manifest without a graph node is not a gate
 [motion_ungated_guard_not_in_graph]
 codes = ["INPUT_NO_PRODUCER", "MOTION_UNGATED"]

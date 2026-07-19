@@ -1,0 +1,18 @@
+id: node-b
+kind: node
+provides:
+- node_b
+requires: []
+inputs: {}
+outputs:
+  out:
+    schema: 42
+    latency_class: soft_rt
+embodiment:
+  arm:
+  - franka
+  gripper: any
+safety_class: perception
+eval: null
+origin: hub
+source: x.py

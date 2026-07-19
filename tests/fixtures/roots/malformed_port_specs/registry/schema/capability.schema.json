@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "aisle://registry/schema/capability.schema.json",
+  "title": "AISLE capability manifest (SPEC 050 CAP-1)",
+  "type": "object",
+  "required": [
+    "id",
+    "kind",
+    "provides",
+    "requires",
+    "inputs",
+    "outputs",
+    "embodiment",
+    "safety_class",
+    "eval",
+    "origin",
+    "source"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "kind": { "enum": ["node", "subgraph"] },
+    "provides": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "requires": { "type": "array", "items": { "type": "string" } },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["schema", "rate_hz"],
+        "additionalProperties": false,
+        "properties": {
+          "schema": { "type": "string" },
+          "rate_hz": { "type": "number", "exclusiveMinimum": 0 }
+        }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["schema", "latency_class"],
+        "additionalProperties": false,
+        "properties": {
+          "schema": { "type": "string" },
+          "latency_class": { "enum": ["hard_rt", "soft_rt", "best_effort"] }
+        }
+      }
+    },
+    "params": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type", "default"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "enum": ["float", "int", "bool", "str"] },
+          "default": {},
+          "range": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      }
+    },
+    "embodiment": {
+      "type": "object",
+      "required": ["arm", "gripper"],
+      "additionalProperties": false,
+      "properties": {
+        "arm": {
+          "type": "array",
+          "items": { "enum": ["franka", "so101"] },
+          "minItems": 1
+        },
+        "gripper": { "enum": ["parallel", "any"] }
+      }
+    },
+    "safety_class": { "enum": ["perception", "decision", "motion"] },
+    "eval": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["suite", "pass_rate", "last_run"],
+          "additionalProperties": false,
+          "properties": {
+            "suite": { "type": "string" },
+            "pass_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+            "last_run": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "origin": { "enum": ["hub", "agent-authored"] },
+    "source": { "type": "string" }
+  }
+}

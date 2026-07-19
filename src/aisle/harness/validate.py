@@ -9,13 +9,19 @@ capability or a concrete fix. No genesis or dora imports (unit territory).
 """
 
 import difflib
+import json
 import tomllib
 from collections import Counter
 from pathlib import Path
 
 import yaml
 
-from aisle.harness.registry import load_manifests, load_vocabulary
+from aisle.harness.registry import (
+    load_capability_schema,
+    load_manifests,
+    load_vocabulary,
+    manifest_schema_errors,
+)
 
 MOTION_SINK_PORTS = {"joint_cmd", "gripper_cmd"}
 GUARD_ID = "budget-guard"
@@ -455,51 +461,38 @@ def validate(graph_path: Path, root: Path, embodiment: str, allow_unproven: bool
             for e in manifest_errors
         ]
         return report
-    # structural screen: malformed registry data becomes a structured error,
-    # never an AttributeError mid-validation (CON-8)
-    malformed = []
-    for path, m in manifest_list:
-        problems = []
-        if not isinstance(m.get("id"), str) or not m.get("id"):
-            problems.append("id must be a non-empty string")
-        embodiment_field = m.get("embodiment")
-        if not isinstance(embodiment_field, dict) or not isinstance(
-            embodiment_field.get("arm"), list
-        ):
-            problems.append("embodiment must be a mapping with an arm list")
-        for direction in ("inputs", "outputs"):
-            ports = m.get(direction)
-            if ports is not None and (
-                not isinstance(ports, dict)
-                or not all(isinstance(spec, dict) for spec in ports.values())
-            ):
-                problems.append(f"{direction} must map port names to mappings")
-        if problems:
-            malformed.append((path.name, "; ".join(problems)))
-    if malformed:
+    try:
+        capability_schema = load_capability_schema(root)
+        vocabulary = set(load_vocabulary(root))
+    except (OSError, json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:
         report["errors"] = [
             _entry(
                 "GRAPH_INVALID",
                 {"node": "(registry)"},
-                f"malformed manifest {name}: {problem}",
-                "fix the registry before validating graphs (harness/registry.py lint)",
+                f"cannot load registry schema files: {exc}",
+                "restore registry/schema/ (capability.schema.json, schemas.toml)",
             )
-            for name, problem in malformed
         ]
+        return report
+
+    # full CAP-1 schema screen: malformed registry data becomes a structured
+    # error before graph validation, never a TypeError mid-check (CON-8).
+    # The vocabulary check is deliberately NOT part of this screen — unknown
+    # schema NAMES are the validator's own SCHEMA_UNKNOWN concern (VAL-4).
+    malformed = [
+        _entry(
+            "GRAPH_INVALID",
+            {"node": "(registry)"},
+            f"malformed manifest {path.name}: {message}",
+            "fix the registry before validating graphs (harness/registry.py lint)",
+        )
+        for path, m in manifest_list
+        for message in manifest_schema_errors(capability_schema, m)
+    ]
+    if malformed:
+        report["errors"] = malformed
         return report
     manifests = {m["id"]: m for _, m in manifest_list}
-    try:
-        vocabulary = set(load_vocabulary(root))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        report["errors"] = [
-            _entry(
-                "GRAPH_INVALID",
-                {"node": "(registry)"},
-                f"cannot load vocabulary: {exc}",
-                "restore registry/schema/schemas.toml",
-            )
-        ]
-        return report
 
     errors, warnings = validate_nodes(nodes, manifests, vocabulary, embodiment, allow_unproven)
     report["errors"] = errors
