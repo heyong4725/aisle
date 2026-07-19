@@ -5,7 +5,8 @@ requires: [rgb_stream]
 inputs:
   rgb: {schema: rgb8_image, rate_hz: 30}
 outputs:
-  detections: {schema: json_utf8, latency_class: best_effort}
+  boxes: {schema: detections_f32, latency_class: best_effort}
+  labels: {schema: labels_utf8, latency_class: best_effort}
 params:
   confidence_threshold: {type: float, default: 0.4, range: [0.0, 1.0]}
 embodiment:

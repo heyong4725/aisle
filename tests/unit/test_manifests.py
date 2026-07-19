@@ -131,17 +131,63 @@ def test_registry_completeness():
     assert not any("rearrang" in p for p in all_provides)
 
 
-def test_lint_rejects_missing_required_field(tmp_path):
-    """CAP-1: a manifest missing a required field fails lint with an error
+CAP1_REQUIRED = [
+    "id",
+    "kind",
+    "provides",
+    "requires",
+    "inputs",
+    "outputs",
+    "embodiment",
+    "safety_class",
+    "eval",
+    "origin",
+    "source",
+]
+
+
+def test_schema_required_set_matches_cap1():
+    """CAP-1: the JSON Schema requires exactly the CAP-1 field set, with
+    params as the sole optional top-level field."""
+    schema = json.loads((REPO_ROOT / "registry" / "schema" / "capability.schema.json").read_text())
+    assert set(schema["required"]) == set(CAP1_REQUIRED)
+    assert set(schema["properties"]) - set(schema["required"]) == {"params"}
+
+
+@pytest.mark.parametrize("field", CAP1_REQUIRED)
+def test_lint_rejects_missing_required_field(tmp_path, field):
+    """CAP-1: a manifest missing any required field fails lint with an error
     naming the manifest."""
     root = make_root(tmp_path)
     bad = valid_manifest()
-    del bad["safety_class"]
-    write_manifest(root, bad)
+    del bad[field]
+    if field == "id":
+        (root / "registry" / "manifests" / "anon.yaml").write_text(
+            yaml.safe_dump(bad, sort_keys=False)
+        )
+    else:
+        write_manifest(root, bad)
     code, report = run_registry("lint", "--root", str(root))
     assert code != 0
     assert report["ok"] is False
-    assert any("fixture-node" in e["manifest"] for e in report["errors"])
+
+
+def test_oracle_state_has_a_producer():
+    """CAP-5: the bridge's observation facet (camera-source) declares the
+    oracle_state output from the SPEC 010 topic table, so the verifier's
+    permitted input has a producer when graphs are validated."""
+    manifest = yaml.safe_load((MANIFESTS_DIR / "camera-source.yaml").read_text())
+    assert manifest["outputs"]["oracle_state"]["schema"] == "posearray7d_f32"
+
+
+def test_hot_topics_are_not_json():
+    """CON-4: no manifest port at >=10 Hz uses the json_utf8 schema — JSON
+    is allowed only on low-rate goal/result/report topics."""
+    for f in sorted(MANIFESTS_DIR.glob("*.yaml")):
+        manifest = yaml.safe_load(f.read_text())
+        for port, spec in manifest.get("inputs", {}).items():
+            if spec["schema"] == "json_utf8":
+                assert spec["rate_hz"] < 10, f"{f.stem}/{port} is a hot JSON topic"
 
 
 def test_lint_rejects_unknown_schema_name(tmp_path):
@@ -156,14 +202,39 @@ def test_lint_rejects_unknown_schema_name(tmp_path):
     assert any("made_up_schema" in e["message"] for e in report["errors"])
 
 
-def test_lint_rejects_bad_enum_value(tmp_path):
-    """CAP-1: enum fields (kind, safety_class, origin) reject values outside
-    their closed sets."""
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"kind": "daemon"},
+        {"safety_class": "dangerous"},
+        {"origin": "vendored"},
+        {"embodiment": {"arm": ["ur5"], "gripper": "parallel"}},
+        {"embodiment": {"arm": ["franka"], "gripper": "paralell"}},
+        {"outputs": {"result": {"schema": "json_utf8", "latency_class": "asap"}}},
+    ],
+)
+def test_lint_rejects_bad_enum_value(tmp_path, overrides):
+    """CAP-1: every closed enum (kind, safety_class, origin, arm, gripper,
+    latency_class) rejects values outside its set."""
     root = make_root(tmp_path)
-    write_manifest(root, valid_manifest(safety_class="dangerous"))
+    write_manifest(root, valid_manifest(**overrides))
     code, report = run_registry("lint", "--root", str(root))
     assert code != 0
     assert report["ok"] is False
+
+
+def test_lint_rejects_malformed_vocabulary(tmp_path):
+    """CAP-2: a schemas.toml entry that is not exactly an {arrow, shape}
+    string mapping is a lint error, so the vocabulary itself stays closed."""
+    root = make_root(tmp_path)
+    write_manifest(root, valid_manifest())
+    (root / "registry" / "schema" / "schemas.toml").write_text(
+        '[rgb8_image]\narrow = "UInt8"\nshape = "h*w*3"\n\n'
+        '[json_utf8]\narrow = "Utf8"\nshape = "1"\n\n[broken]\nshape = "1"\n'
+    )
+    code, report = run_registry("lint", "--root", str(root))
+    assert code != 0
+    assert any("broken" in e["message"] for e in report["errors"])
 
 
 def test_lint_enforces_eval_rule(tmp_path):
@@ -240,17 +311,32 @@ def test_search_scalar_provides_is_not_substring_matched(tmp_path):
 
 
 def test_search_survives_malformed_manifest_fields(tmp_path):
-    """CON-8: search over manifests missing id or with malformed embodiment
-    still returns a JSON report instead of crashing."""
+    """CON-8: search over manifests with malformed or missing fields
+    (scalar embodiment, arm: null, no id) still returns a JSON report
+    instead of crashing."""
     root = make_root(tmp_path)
     bad = valid_manifest(embodiment="franka")  # not a mapping
     del bad["id"]
     (root / "registry" / "manifests" / "anon.yaml").write_text(yaml.safe_dump(bad, sort_keys=False))
+    write_manifest(root, valid_manifest(id="null-arm", embodiment={"arm": None, "gripper": "any"}))
     code, report = run_registry(
         "search", "--root", str(root), "--provides", "fixture_ability", "--embodiment", "franka"
     )
     assert code == 0
     assert report["matches"] == []
+
+
+def test_search_serializes_yaml_dates(tmp_path):
+    """CON-8: an unquoted YAML date (parsed as datetime.date) in a matching
+    manifest is serialized in the JSON report, not a TypeError traceback."""
+    root = make_root(tmp_path)
+    path = root / "registry" / "manifests" / "fixture-node.yaml"
+    manifest = valid_manifest(eval={"suite": "s", "pass_rate": 0.9, "last_run": "placeholder"})
+    text = yaml.safe_dump(manifest, sort_keys=False).replace("placeholder", "2026-07-18")
+    path.write_text(text)
+    code, report = run_registry("search", "--root", str(root), "--provides", "fixture_ability")
+    assert code == 0
+    assert report["matches"][0]["eval"]["last_run"] == "2026-07-18"
 
 
 def test_lint_warnings_logged_to_stderr(repo_lint):

@@ -49,7 +49,7 @@ def lint(root: Path) -> dict:
     try:
         schema = json.loads((root / "registry" / "schema" / "capability.schema.json").read_text())
         with open(root / "registry" / "schema" / "schemas.toml", "rb") as f:
-            vocabulary = set(tomllib.load(f))
+            vocabulary_entries = tomllib.load(f)
     except (OSError, json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:
         return {
             "ok": False,
@@ -60,6 +60,21 @@ def lint(root: Path) -> dict:
     validator = Draft202012Validator(schema)
 
     manifests, errors = load_manifests(root)
+    vocabulary = set(vocabulary_entries)
+    for name, entry in vocabulary_entries.items():
+        well_formed = (
+            isinstance(entry, dict)
+            and set(entry) == {"arrow", "shape"}
+            and all(isinstance(v, str) for v in entry.values())
+        )
+        if not well_formed:
+            errors.append(
+                {
+                    "manifest": "(schema)",
+                    "message": f"schemas.toml entry {name!r} must map exactly "
+                    "{arrow, shape} to strings (CAP-2)",
+                }
+            )
     warnings: list[dict] = []
     for path, manifest in manifests:
         for error in validator.iter_errors(manifest):
@@ -118,7 +133,8 @@ def search(root: Path, provides: str, embodiment: str | None) -> dict:
         if embodiment is None:
             return True
         arms = manifest.get("embodiment")
-        return isinstance(arms, dict) and embodiment in arms.get("arm", [])
+        arm_list = arms.get("arm") if isinstance(arms, dict) else None
+        return isinstance(arm_list, list) and embodiment in arm_list
 
     # load_manifests iterates sorted filenames, and lint enforces id ==
     # filename stem, so this is already id order for any lint-clean registry
@@ -144,7 +160,9 @@ def main() -> int:
     else:
         report = search(args.root, args.provides, args.embodiment)
 
-    print(json.dumps(report))
+    # default=str: YAML scalars like unquoted dates parse to non-JSON types;
+    # serializing them must never break the CON-8 stdout contract
+    print(json.dumps(report, default=str))
     for level in ("errors", "warnings"):
         for entry in report.get(level, []):
             line = f"{args.command} {level[:-1]}: {entry['manifest']}: {entry['message']}"

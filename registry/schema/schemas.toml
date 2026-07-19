@@ -27,6 +27,18 @@ shape = "7"
 arrow = "Float32"
 shape = "n_obj*7"
 
+# per detection: x1, y1, x2, y2, confidence, class_id (CON-4: typed Arrow
+# on the hot perception path, not JSON blobs)
+[detections_f32]
+arrow = "Float32"
+shape = "n_det*6"
+
+# one label string per detection, aligned with detections_f32 rows
+[labels_utf8]
+arrow = "Utf8"
+shape = "n_det"
+
+# JSON allowed only on *_result / report / low-rate goal topics (CON-4)
 [json_utf8]
 arrow = "Utf8"
 shape = "1"

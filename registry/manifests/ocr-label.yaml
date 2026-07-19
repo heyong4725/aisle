@@ -4,9 +4,9 @@ provides: [label_text]
 requires: [rgb_stream, object_detection]
 inputs:
   rgb: {schema: rgb8_image, rate_hz: 30}
-  detections: {schema: json_utf8, rate_hz: 30}
+  boxes: {schema: detections_f32, rate_hz: 30}
 outputs:
-  labels: {schema: json_utf8, latency_class: best_effort}
+  labels: {schema: labels_utf8, latency_class: best_effort}
 embodiment:
   arm: [franka, so101]
   gripper: any
