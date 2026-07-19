@@ -1,0 +1,6 @@
+nodes:
+- id: camera-source
+  inputs: {}
+  outputs:
+  - rgb_overhead
+  - rgb_overhead

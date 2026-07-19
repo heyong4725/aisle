@@ -1,0 +1,11 @@
+nodes:
+- id: budget-guard
+  inputs:
+    joint_cmd: dora/timer/millis/10
+  outputs:
+  - warp_field
+- id: arm-driver-sim
+  inputs:
+    joint_cmd: budget-guard/warp_field
+  outputs:
+  - joint_state

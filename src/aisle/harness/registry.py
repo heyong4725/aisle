@@ -14,7 +14,8 @@ import tomllib
 from pathlib import Path
 
 import yaml
-from jsonschema import Draft202012Validator
+
+from aisle.harness.common import DEFAULT_ROOT, emit_report
 
 # CAP-6: the two sim drivers ship eval=null until their M0 evalcards are
 # generated from the SPEC 010 acceptance runs (ADR-3) — lint warns instead
@@ -45,11 +46,32 @@ def load_manifests(root: Path) -> tuple[list[tuple[Path, dict]], list[dict]]:
     return manifests, errors
 
 
+def load_vocabulary(root: Path) -> dict:
+    """The CAP-2 closed schema vocabulary; raises OSError/TOMLDecodeError."""
+    with open(root / "registry" / "schema" / "schemas.toml", "rb") as f:
+        return tomllib.load(f)
+
+
+def load_capability_schema(root: Path) -> dict:
+    """The CAP-1 manifest JSON Schema; raises OSError/JSONDecodeError."""
+    return json.loads((root / "registry" / "schema" / "capability.schema.json").read_text())
+
+
+def manifest_schema_errors(schema: dict, manifest: dict) -> list[str]:
+    """JSON-path-prefixed CAP-1 schema violations for one manifest."""
+    # imported lazily to keep module import light for non-validating callers
+    from jsonschema import Draft202012Validator
+
+    return [
+        f"{'/'.join(str(p) for p in error.absolute_path) or '(root)'}: {error.message}"
+        for error in Draft202012Validator(schema).iter_errors(manifest)
+    ]
+
+
 def lint(root: Path) -> dict:
     try:
-        schema = json.loads((root / "registry" / "schema" / "capability.schema.json").read_text())
-        with open(root / "registry" / "schema" / "schemas.toml", "rb") as f:
-            vocabulary_entries = tomllib.load(f)
+        schema = load_capability_schema(root)
+        vocabulary_entries = load_vocabulary(root)
     except (OSError, json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:
         return {
             "ok": False,
@@ -57,7 +79,6 @@ def lint(root: Path) -> dict:
             "errors": [{"manifest": "(schema)", "message": f"cannot load schema files: {exc}"}],
             "warnings": [],
         }
-    validator = Draft202012Validator(schema)
 
     manifests, errors = load_manifests(root)
     vocabulary = set(vocabulary_entries)
@@ -77,9 +98,8 @@ def lint(root: Path) -> dict:
             )
     warnings: list[dict] = []
     for path, manifest in manifests:
-        for error in validator.iter_errors(manifest):
-            where = "/".join(str(p) for p in error.absolute_path) or "(root)"
-            errors.append({"manifest": path.name, "message": f"{where}: {error.message}"})
+        for message in manifest_schema_errors(schema, manifest):
+            errors.append({"manifest": path.name, "message": message})
         # filenames are unique per directory, so id == stem also implies
         # registry-wide id uniqueness
         if manifest.get("id") != path.stem:
@@ -143,14 +163,11 @@ def search(root: Path, provides: str, embodiment: str | None) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    # dev-harness assumption: a src-layout checkout (uv editable install);
-    # non-editable installs must pass --root explicitly
-    default_root = Path(__file__).resolve().parents[3]
     subparsers = parser.add_subparsers(dest="command", required=True)
     lint_parser = subparsers.add_parser("lint", help="validate every manifest")
-    lint_parser.add_argument("--root", type=Path, default=default_root)
+    lint_parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     search_parser = subparsers.add_parser("search", help="find manifests by capability")
-    search_parser.add_argument("--root", type=Path, default=default_root)
+    search_parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     search_parser.add_argument("--provides", required=True)
     search_parser.add_argument("--embodiment")
     args = parser.parse_args()
@@ -160,14 +177,9 @@ def main() -> int:
     else:
         report = search(args.root, args.provides, args.embodiment)
 
-    # default=str: YAML scalars like unquoted dates parse to non-JSON types;
-    # serializing them must never break the CON-8 stdout contract
-    print(json.dumps(report, default=str))
-    for level in ("errors", "warnings"):
-        for entry in report.get(level, []):
-            line = f"{args.command} {level[:-1]}: {entry['manifest']}: {entry['message']}"
-            print(line, file=sys.stderr)
-    return 0 if report["ok"] else 1
+    return emit_report(
+        report, lambda level, e: f"{args.command} {level}: {e['manifest']}: {e['message']}"
+    )
 
 
 if __name__ == "__main__":

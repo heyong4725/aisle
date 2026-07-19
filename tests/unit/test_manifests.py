@@ -5,13 +5,11 @@ test_search_cli_json (CAP-4), test_registry_completeness (CAP-5).
 """
 
 import json
-import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 import yaml
-from conftest import REPO_ROOT, run_module
+from conftest import REPO_ROOT, make_registry_root, run_json, run_module, write_manifest
 
 pytestmark = pytest.mark.unit
 
@@ -39,8 +37,7 @@ def run_registry_raw(*args: str) -> subprocess.CompletedProcess:
 
 def run_registry(*args: str) -> tuple[int, dict]:
     """Run the registry CLI; return (exit code, parsed JSON stdout)."""
-    proc = run_registry_raw(*args)
-    return proc.returncode, json.loads(proc.stdout)
+    return run_json("aisle.harness.registry", *args)
 
 
 @pytest.fixture(scope="module")
@@ -50,14 +47,7 @@ def repo_lint() -> subprocess.CompletedProcess:
     return run_registry_raw("lint")
 
 
-def make_root(tmp_path: Path) -> Path:
-    """Repo-shaped root with the real schema files and an empty manifests dir."""
-    schema_dir = tmp_path / "registry" / "schema"
-    schema_dir.mkdir(parents=True)
-    shutil.copy(REPO_ROOT / "registry" / "schema" / "capability.schema.json", schema_dir)
-    shutil.copy(REPO_ROOT / "registry" / "schema" / "schemas.toml", schema_dir)
-    (tmp_path / "registry" / "manifests").mkdir()
-    return tmp_path
+make_root = make_registry_root
 
 
 def valid_manifest(**overrides) -> dict:
@@ -76,11 +66,6 @@ def valid_manifest(**overrides) -> dict:
     }
     manifest.update(overrides)
     return manifest
-
-
-def write_manifest(root: Path, manifest: dict) -> None:
-    path = root / "registry" / "manifests" / f"{manifest['id']}.yaml"
-    path.write_text(yaml.safe_dump(manifest, sort_keys=False))
 
 
 def test_all_lint(repo_lint):
@@ -278,7 +263,8 @@ def test_sim_driver_eval_exception_is_warning(repo_lint):
     report = json.loads(repo_lint.stdout)
     assert repo_lint.returncode == 0
     warned = {w["manifest"] for w in report["warnings"]}
-    assert {"arm-driver-sim.yaml", "gripper-driver-sim.yaml"} <= warned
+    # EXACTLY the two drivers: the ADR-3 carve-out must not silently widen
+    assert warned == {"arm-driver-sim.yaml", "gripper-driver-sim.yaml"}
 
 
 def test_bad_root_reported_as_json(tmp_path):

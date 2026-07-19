@@ -1,0 +1,9 @@
+nodes:
+- id: camera-source
+  outputs:
+  - oracle_state
+- id: oracle-pose
+  inputs:
+    poses: camera-source/oracle_state
+  outputs:
+  - target_pose

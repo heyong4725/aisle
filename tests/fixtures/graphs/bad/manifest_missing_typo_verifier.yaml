@@ -1,0 +1,7 @@
+nodes:
+- id: camera-source
+  outputs:
+  - oracle_state
+- id: verifer-oracle
+  inputs:
+    oracle_state: camera-source/oracle_state

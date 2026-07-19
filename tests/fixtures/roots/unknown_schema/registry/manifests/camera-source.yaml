@@ -1,0 +1,19 @@
+id: camera-source
+kind: node
+provides:
+- rgb_stream
+requires: []
+inputs: {}
+outputs:
+  rgb_overhead:
+    schema: warp_field
+    latency_class: soft_rt
+embodiment:
+  arm:
+  - franka
+  - so101
+  gripper: any
+safety_class: perception
+eval: null
+origin: hub
+source: src/aisle/nodes/dora_genesis.py

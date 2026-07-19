@@ -1,0 +1,169 @@
+# VAL-7 golden corpus expectations: file stem -> EXACT expected error-code set
+# (and optional embodiment flag / expected warning codes).
+# Every agent-discovered failure class MUST gain an entry here in the same
+# PR that handles it (VAL-7).
+
+# both typo nodes consume oracle_state, and an unresolved consumer is never
+# an authorized verifier (VAL-6 strict rule), so the leak fires alongside
+[manifest_missing_typo_oracle_pos]
+codes = ["MANIFEST_MISSING", "ORACLE_LEAK"]
+
+[manifest_missing_unknown_node]
+codes = ["MANIFEST_MISSING"]
+
+[manifest_missing_typo_verifier]
+codes = ["MANIFEST_MISSING", "ORACLE_LEAK"]
+
+# duplicate ids also break edge resolution (the second camera-source wins),
+# so the detector edge loses its producer — both codes are inherent
+[node_id_duplicate_camera]
+codes = ["NODE_ID_DUPLICATE", "INPUT_NO_PRODUCER"]
+
+[node_id_duplicate_detector]
+codes = ["NODE_ID_DUPLICATE"]
+
+[input_no_producer_missing_node]
+codes = ["INPUT_NO_PRODUCER"]
+
+[input_no_producer_typo_edge]
+codes = ["INPUT_NO_PRODUCER"]
+
+[input_no_producer_wrong_output]
+codes = ["INPUT_NO_PRODUCER"]
+
+[input_no_producer_undeclared_graph_output]
+codes = ["INPUT_NO_PRODUCER"]
+
+[schema_mismatch_depth_to_rgb]
+codes = ["SCHEMA_MISMATCH"]
+
+[schema_mismatch_labels_to_boxes]
+codes = ["SCHEMA_MISMATCH"]
+
+[schema_mismatch_boxes_to_pose]
+codes = ["SCHEMA_MISMATCH"]
+
+[schema_mismatch_undeclared_port]
+codes = ["SCHEMA_MISMATCH"]
+
+[oracle_leak_oracle_pose]
+codes = ["ORACLE_LEAK"]
+
+[oracle_leak_grasp_planner]
+codes = ["ORACLE_LEAK", "SCHEMA_MISMATCH"]
+
+[motion_ungated_arm]
+codes = ["MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+
+[motion_ungated_gripper]
+codes = ["MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+
+[eval_missing_for_motion]
+codes = ["EVAL_MISSING_FOR_MOTION", "MOTION_UNGATED"]
+
+[embodiment_mismatch_mobile]
+codes = ["EMBODIMENT_MISMATCH"]
+embodiment = "mobile"
+
+[rate_incompatible_slow_timer]
+codes = []
+warnings = ["RATE_INCOMPATIBLE"]
+
+[graph_invalid_not_dataflow]
+codes = ["GRAPH_INVALID"]
+
+[graph_invalid_yaml_syntax]
+codes = ["GRAPH_INVALID"]
+
+# discovered by the T03 review pass (VAL-7: new failure classes join the
+# corpus in the PR that handles them)
+
+[motion_ungated_timer_direct]
+codes = ["MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+
+[input_no_producer_bad_timer]
+codes = ["INPUT_NO_PRODUCER"]
+
+[input_no_producer_timer_zero]
+codes = ["INPUT_NO_PRODUCER"]
+
+[graph_invalid_list_inputs]
+codes = ["GRAPH_INVALID"]
+
+[graph_invalid_nonstring_id]
+codes = ["GRAPH_INVALID"]
+
+[graph_invalid_empty_nodes]
+codes = ["GRAPH_INVALID"]
+
+# discovered by the PR 4 Codex cross-review (CON-16)
+
+[schema_unknown_manifest]
+codes = ["SCHEMA_UNKNOWN"]
+root = "tests/fixtures/roots/unknown_schema"
+
+[schema_mismatch_timer_undeclared_port]
+codes = ["SCHEMA_MISMATCH"]
+
+# the phantom output fires node-level SCHEMA_MISMATCH; consuming it also
+# fires edge-level INPUT_NO_PRODUCER
+[input_no_producer_undeclared_manifest_output]
+codes = ["INPUT_NO_PRODUCER", "SCHEMA_MISMATCH"]
+
+[graph_invalid_outputs_not_list]
+codes = ["GRAPH_INVALID"]
+
+[graph_invalid_outputs_string]
+codes = ["GRAPH_INVALID"]
+
+# an id-less consumer of oracle_state cannot be an authorized verifier
+[oracle_leak_unresolved_consumer]
+codes = ["MANIFEST_MISSING", "ORACLE_LEAK"]
+
+# a graph node merely NAMED budget-guard, with no manifest, does not gate
+[motion_ungated_guard_spoof]
+codes = ["MANIFEST_MISSING", "MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+
+# discovered by the T03 audit pass
+
+# the design-doc §8.1.4 case: edges reference 'controller' which is no node's id
+[input_no_producer_controller_typo]
+codes = ["INPUT_NO_PRODUCER", "MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+
+[graph_invalid_duplicate_outputs]
+codes = ["GRAPH_INVALID"]
+
+[rate_incompatible_fast_timer]
+codes = []
+warnings = ["RATE_INCOMPATIBLE"]
+
+[embodiment_mismatch_verifier_mobile]
+codes = ["EMBODIMENT_MISMATCH"]
+embodiment = "mobile"
+
+# discovered by the T03 re-review
+
+# an unconsumed graph output the manifest lacks is still a contract violation
+[schema_mismatch_phantom_output]
+codes = ["SCHEMA_MISMATCH"]
+
+[graph_invalid_malformed_manifest]
+codes = ["GRAPH_INVALID"]
+root = "tests/fixtures/roots/malformed_manifest"
+
+# CAP-1 schema screen: non-numeric rate_hz, non-string schema, bad
+# latency_class enum — all become structured registry errors, not TypeErrors
+[graph_invalid_malformed_rate]
+codes = ["GRAPH_INVALID"]
+root = "tests/fixtures/roots/malformed_port_specs"
+
+# a budget-guard manifest without a graph node is not a gate
+[motion_ungated_guard_not_in_graph]
+codes = ["INPUT_NO_PRODUCER", "MOTION_UNGATED"]
+root = "tests/fixtures/roots/with_guard"
+
+# a guard output missing from the guard's manifest is not a gate; the
+# phantom output also violates the guard node's own contract
+[motion_ungated_phantom_guard_output]
+codes = ["INPUT_NO_PRODUCER", "MOTION_UNGATED", "SCHEMA_MISMATCH"]
+root = "tests/fixtures/roots/with_guard"

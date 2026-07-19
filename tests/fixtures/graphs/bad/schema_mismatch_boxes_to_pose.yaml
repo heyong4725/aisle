@@ -1,0 +1,16 @@
+nodes:
+- id: camera-source
+  outputs:
+  - rgb_overhead
+- id: detector-openvocab
+  inputs:
+    rgb: camera-source/rgb_overhead
+  outputs:
+  - boxes
+  - labels
+- id: ik-trajectory
+  inputs:
+    grasp_pose: detector-openvocab/boxes
+  outputs:
+  - joint_cmd
+  - gripper_cmd

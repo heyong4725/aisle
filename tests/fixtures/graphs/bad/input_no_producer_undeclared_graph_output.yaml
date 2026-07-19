@@ -1,0 +1,7 @@
+nodes:
+- id: camera-source
+  outputs:
+  - rgb_overhead
+- id: pose-estimator
+  inputs:
+    depth: camera-source/depth_overhead

@@ -1,0 +1,3 @@
+[rgb8_image]
+arrow = "UInt8"
+shape = "h*w*3"

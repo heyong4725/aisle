@@ -1,0 +1,15 @@
+id: camera-source
+kind: node
+provides:
+- rgb_stream
+requires: []
+inputs: {}
+outputs:
+  rgb_overhead:
+    schema: rgb8_image
+    latency_class: soft_rt
+embodiment: franka
+safety_class: perception
+eval: null
+origin: hub
+source: x.py

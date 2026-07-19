@@ -1,0 +1,10 @@
+nodes:
+- id: grasp-planner-topdown
+  inputs: {}
+  outputs:
+  - grasp_pose
+- id: arm-driver-sim
+  inputs:
+    joint_cmd: controller/joint_cmd
+  outputs:
+  - joint_state

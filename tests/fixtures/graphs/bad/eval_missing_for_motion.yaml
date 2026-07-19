@@ -1,0 +1,10 @@
+nodes:
+- id: ik-trajectory
+  inputs: {}
+  outputs:
+  - joint_cmd
+- id: arm-driver-sim
+  inputs:
+    joint_cmd: ik-trajectory/joint_cmd
+  outputs:
+  - joint_state

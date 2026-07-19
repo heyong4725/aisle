@@ -41,6 +41,27 @@ def test_selfhost_passes():
     assert report["uncovered"] == []
 
 
+def test_coverage_map_lists_citing_tests(tmp_path):
+    """HAR-9: the report carries a deterministic MUST-ID -> citing-test
+    mapping ("relpath::test_name"), both self-hosted and on fixtures."""
+    _, report = check()
+    har9_tests = report["coverage_map"]["HAR-9"]
+    assert "tests/unit/test_trace_check_selfhost.py::test_selfhost_passes" in har9_tests
+    assert har9_tests == sorted(har9_tests)
+    _, again = check()
+    assert again["coverage_map"] == report["coverage_map"]
+
+    root = make_fixture(
+        tmp_path,
+        "- ZZ-1: Producers MUST publish heartbeats.\n",
+        'def test_heartbeat():\n    """ZZ-1: heartbeats are published."""\n',
+    )
+    _, fixture_report = check("--root", str(root))
+    assert fixture_report["coverage_map"] == {
+        "ZZ-1": ["tests/unit/test_fixture.py::test_heartbeat"]
+    }
+
+
 def test_cli_json_stdout(tmp_path):
     """CON-8: trace_check emits a single JSON object on stdout; exit 0 iff ok."""
     root = make_fixture(tmp_path, "- ZZ-1: The tool MUST do the thing.\n")

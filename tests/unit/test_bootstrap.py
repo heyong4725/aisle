@@ -61,11 +61,18 @@ def test_python_version_and_layout_cfg():
 
 
 def test_no_cuda_in_default_dependencies():
-    """CON-1: CUDA-only dependencies MUST NOT enter the default dependency set."""
-    project = load_pyproject()["project"]
+    """CON-1: CUDA-only dependencies MUST NOT enter the default dependency
+    set — checked in the declared dependencies AND the resolved lock graph,
+    so a transitive CUDA pull-in also fails."""
     forbidden = ("cuda", "nvidia", "cu11", "cu12")
+    project = load_pyproject()["project"]
     for dep in project.get("dependencies", []):
         assert not any(k in dep.lower() for k in forbidden), dep
+    with open(REPO_ROOT / "uv.lock", "rb") as f:
+        lock = tomllib.load(f)
+    for package in lock.get("package", []):
+        name = package.get("name", "")
+        assert not any(k in name.lower() for k in forbidden), name
 
 
 def test_ci_script_gate_order():

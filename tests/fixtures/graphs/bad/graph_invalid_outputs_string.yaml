@@ -1,0 +1,3 @@
+nodes:
+- id: camera-source
+  outputs: rgb_overhead_extra

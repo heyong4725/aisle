@@ -1,0 +1,7 @@
+nodes:
+- id: camera-source
+  outputs:
+  - oracle_state
+- id: sink-unknown
+  inputs:
+    poses: camera-source/oracle_state

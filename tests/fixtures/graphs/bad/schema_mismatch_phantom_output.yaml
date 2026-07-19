@@ -1,0 +1,4 @@
+nodes:
+- id: camera-source
+  outputs:
+  - bogus

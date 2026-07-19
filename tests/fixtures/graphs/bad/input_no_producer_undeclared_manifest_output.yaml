@@ -1,0 +1,10 @@
+nodes:
+- id: camera-source
+  outputs:
+  - bogus
+- id: detector-openvocab
+  inputs:
+    rgb: camera-source/bogus
+  outputs:
+  - boxes
+  - labels

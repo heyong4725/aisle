@@ -1,0 +1,25 @@
+id: arm-driver-sim
+kind: node
+provides:
+- arm_driver_sim
+requires: []
+inputs:
+  joint_cmd:
+    schema: jointvec_f32
+    rate_hz: 100
+outputs:
+  joint_state:
+    schema: jointvec_f32
+    latency_class: hard_rt
+embodiment:
+  arm:
+  - franka
+  - so101
+  gripper: any
+safety_class: motion
+eval:
+  suite: tc_accept
+  pass_rate: 0.99
+  last_run: fixture
+origin: hub
+source: src/aisle/nodes/arm-driver-sim.py

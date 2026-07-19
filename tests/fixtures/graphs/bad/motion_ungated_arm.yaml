@@ -1,0 +1,32 @@
+nodes:
+- id: camera-source
+  outputs:
+  - rgb_overhead
+- id: detector-openvocab
+  inputs:
+    rgb: camera-source/rgb_overhead
+  outputs:
+  - boxes
+  - labels
+- id: ik-trajectory
+  inputs:
+    grasp_pose: grasp-planner-topdown/grasp_pose
+  outputs:
+  - joint_cmd
+  - gripper_cmd
+- id: grasp-planner-topdown
+  inputs:
+    target_pose: pose-estimator/target_pose
+  outputs:
+  - grasp_pose
+- id: pose-estimator
+  inputs:
+    rgb: camera-source/rgb_overhead
+    boxes: detector-openvocab/boxes
+  outputs:
+  - target_pose
+- id: arm-driver-sim
+  inputs:
+    joint_cmd: ik-trajectory/joint_cmd
+  outputs:
+  - joint_state

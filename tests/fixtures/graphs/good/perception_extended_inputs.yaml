@@ -1,0 +1,12 @@
+nodes:
+- id: camera-source
+  outputs:
+  - rgb_overhead
+- id: detector-openvocab
+  inputs:
+    rgb:
+      source: camera-source/rgb_overhead
+      queue_size: 1
+  outputs:
+  - boxes
+  - labels

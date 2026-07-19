@@ -1,0 +1,18 @@
+id: node-a
+kind: node
+provides:
+- node_a
+requires: []
+inputs:
+  rgb:
+    schema: rgb8_image
+    rate_hz: fast
+outputs: {}
+embodiment:
+  arm:
+  - franka
+  gripper: any
+safety_class: perception
+eval: null
+origin: hub
+source: x.py

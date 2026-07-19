@@ -33,11 +33,6 @@ BRG-7 = "deferred to T05"
 # SPEC 040 verifier/reset — deferred to T06.
 RST-1 = "deferred to T06"
 
-# SPEC 060 validator — deferred to T03.
-VAL-3 = "deferred to T03"
-VAL-5 = "deferred to T03"
-VAL-7 = "deferred to T03"
-
 # SPEC 070 harness — deferred to T09.
 HAR-2 = "deferred to T09"
 
