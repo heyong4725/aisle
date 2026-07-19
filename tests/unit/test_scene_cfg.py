@@ -141,7 +141,7 @@ def test_shelf_levels_clear_tallest_box(embodiment):
     shelf = physics["shelf"]
     tallest = max(spec["size"][2] for spec in load_meds().values())
     heights = profile["shelf_level_heights"]
-    for below, above in zip(heights, heights[1:]):
+    for below, above in zip(heights, heights[1:], strict=False):
         clearance = (above - shelf["board_thickness"] / 2) - (below + shelf["board_thickness"] / 2)
         assert clearance >= tallest + shelf["min_separation"], (embodiment, below, above)
 
