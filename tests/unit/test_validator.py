@@ -50,13 +50,19 @@ def codes(report: dict, level: str) -> set[str]:
 
 
 def test_corpus_minimums():
-    """VAL-7: the golden corpus holds >=20 deliberately broken graphs (incl.
-    the design-doc node-id typo) and >=3 valid graphs. graphs/expert_t0.yaml
-    joins the good corpus at T08 (see ADR 4; blocked on issue 2)."""
+    """VAL-7: the golden corpus holds >=20 deliberately broken graphs and
+    >=3 valid graphs, and includes the design-doc §8.1.4 typo case BY
+    CONTENT: an edge referencing controller/joint_cmd while no node has the
+    id controller. graphs/expert_t0.yaml joins the good corpus at T08
+    (see ADR 4; blocked on issue 2)."""
     bad = list(BAD_DIR.glob("*.yaml"))
     assert len(bad) >= 20
     assert len(list(GOOD_DIR.glob("*.yaml"))) >= 3
     assert {f.stem for f in bad} == set(EXPECTED)
+    typo = yaml.safe_load((BAD_DIR / "input_no_producer_controller_typo.yaml").read_text())
+    sources = [source for node in typo["nodes"] for source in (node.get("inputs") or {}).values()]
+    assert any(str(s).startswith("controller/joint_cmd") for s in sources)
+    assert "controller" not in {n["id"] for n in typo["nodes"]}
 
 
 @pytest.mark.parametrize("stem", sorted(EXPECTED))
@@ -229,6 +235,130 @@ def test_manifest_without_id_does_not_crash(tmp_path):
     code, report = run_validate(graph, "--root", str(root))
     assert code != 0
     assert "MANIFEST_MISSING" in codes(report, "errors")
+
+
+GUARD_ROOT = REPO_ROOT / "tests" / "fixtures" / "roots" / "with_guard"
+
+
+def test_motion_gate_is_topological(tmp_path):
+    """VAL-5: every backward path into a driver command input must traverse
+    the resolved budget-guard — a multi-hop path THROUGH the guard passes,
+    a direct guard edge passes, and an indirect path that bypasses the
+    guard is MOTION_UNGATED. Uses a fixture registry that includes the
+    guard manifest (real registry gains it at T07). See ADR 4."""
+    direct = write_graph(
+        tmp_path,
+        [
+            {
+                "id": "budget-guard",
+                "inputs": {"joint_cmd": "dora/timer/millis/10"},
+                "outputs": ["joint_cmd_safe"],
+            },
+            {
+                "id": "arm-driver-sim",
+                "inputs": {"joint_cmd": "budget-guard/joint_cmd_safe"},
+                "outputs": ["joint_state"],
+            },
+        ],
+    )
+    code, report = run_validate(direct, "--root", str(GUARD_ROOT))
+    assert code == 0, report
+    assert report["ok"] is True
+
+    multihop = tmp_path / "multihop.yaml"
+    multihop.write_text(
+        yaml.safe_dump(
+            {
+                "nodes": [
+                    {
+                        "id": "budget-guard",
+                        "inputs": {"joint_cmd": "dora/timer/millis/10"},
+                        "outputs": ["joint_cmd_safe"],
+                    },
+                    {
+                        "id": "command-smoother",
+                        "inputs": {"cmd": "budget-guard/joint_cmd_safe"},
+                        "outputs": ["joint_cmd"],
+                    },
+                    {
+                        "id": "arm-driver-sim",
+                        "inputs": {"joint_cmd": "command-smoother/joint_cmd"},
+                        "outputs": ["joint_state"],
+                    },
+                ]
+            }
+        )
+    )
+    code, report = run_validate(multihop, "--root", str(GUARD_ROOT))
+    assert code == 0, report
+
+    bypass = tmp_path / "bypass.yaml"
+    bypass.write_text(
+        yaml.safe_dump(
+            {
+                "nodes": [
+                    {
+                        "id": "command-smoother",
+                        "inputs": {"cmd": "dora/timer/millis/10"},
+                        "outputs": ["joint_cmd"],
+                    },
+                    {
+                        "id": "arm-driver-sim",
+                        "inputs": {"joint_cmd": "command-smoother/joint_cmd"},
+                        "outputs": ["joint_state"],
+                    },
+                ]
+            }
+        )
+    )
+    code, report = run_validate(bypass, "--root", str(GUARD_ROOT))
+    assert code != 0
+    assert "MOTION_UNGATED" in codes(report, "errors")
+
+
+def test_verifier_feedback_loop_is_legal():
+    """VAL-6 (ADR 5): verifier verdicts feeding lifecycle nodes is the
+    sanctioned pattern — episode_result consumption downstream of the
+    verifier is not an oracle leak."""
+    code, report = run_validate(GOOD_DIR / "verifier_feedback_loop.yaml")
+    assert code == 0, report
+    assert "ORACLE_LEAK" not in codes(report, "errors")
+
+
+def test_unwired_manifest_inputs_are_legal(tmp_path):
+    """ADR 5: wiring none of a manifest's declared inputs is legal (dora
+    permits subsets; source nodes have zero inputs by design)."""
+    graph = write_graph(
+        tmp_path, [{"id": "detector-openvocab", "inputs": {}, "outputs": ["boxes", "labels"]}]
+    )
+    code, report = run_validate(graph)
+    assert code == 0, report
+
+
+def test_missing_node_hint_lists_graph_nodes():
+    """VAL-3: when no similar node id exists, the INPUT_NO_PRODUCER hint
+    lists the graph's actual nodes instead of an empty did-you-mean."""
+    _, report = corpus_report("input_no_producer_missing_node")
+    hints = " ".join(e["hint"] for e in report["errors"])
+    assert "did you mean ''" not in hints
+    assert "detector-openvocab" in hints
+
+
+def test_weak_similarity_gives_search_hint():
+    """VAL-3: a node id with no close manifest match (warp-drive) gets the
+    registry-search command, not a misleading did-you-mean."""
+    _, report = corpus_report("manifest_missing_unknown_node")
+    hints = " ".join(e["hint"] for e in report["errors"])
+    assert "arm-driver-sim" not in hints
+    assert "search --provides" in hints
+
+
+def test_undeclared_port_hint_is_actionable():
+    """VAL-3: the undeclared-input hint names the corrective action and the
+    real ports, not just a bare list."""
+    _, report = corpus_report("schema_mismatch_undeclared_port")
+    mismatch = [e for e in report["errors"] if e["code"] == "SCHEMA_MISMATCH"]
+    assert any("rename the input" in e["hint"] and "'rgb'" in e["hint"] for e in mismatch)
 
 
 def test_non_utf8_graph_reported_as_json(tmp_path):

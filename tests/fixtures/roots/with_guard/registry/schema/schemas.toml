@@ -1,0 +1,7 @@
+[jointvec_f32]
+arrow = "Float32"
+shape = "n_dof"
+
+[scalar_f32]
+arrow = "Float32"
+shape = "1"

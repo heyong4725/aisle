@@ -27,8 +27,50 @@ def _entry(code: str, where: dict, detail: str, hint: str) -> dict:
 
 
 def _closest(name: str, candidates: list[str]) -> str:
-    matches = difflib.get_close_matches(name, candidates, n=1)
+    # cutoff 0.75: a weak match ("warp-drive" ~ "arm-driver-sim") is a
+    # misleading hint, worse than none
+    matches = difflib.get_close_matches(name, candidates, n=1, cutoff=0.75)
     return matches[0] if matches else ""
+
+
+def _guard_source_ids(node: dict) -> list[str | None]:
+    """Backward-edge source ids of a node; None for timers/roots/dora sources."""
+    sources: list[str | None] = []
+    for raw in (node.get("inputs") or {}).values():
+        source = raw.get("source") if isinstance(raw, dict) else raw
+        if isinstance(source, str) and source and not source.startswith("dora/"):
+            sources.append(source.partition("/")[0])
+        else:
+            sources.append(None)
+    return sources
+
+
+def _gated_by_guard(
+    src_id: str, graph_nodes: dict, manifests: dict, memo: dict, stack: set
+) -> bool:
+    """VAL-5 traversal semantics: True iff EVERY backward path from src_id
+    reaches the resolved budget-guard before terminating at a root, timer,
+    or unresolvable source. Conservative dataflow assumption: all of a
+    node's inputs feed its outputs, so one unguarded input taints the node;
+    cycles without a guard on them are ungated."""
+    if src_id == GUARD_ID and GUARD_ID in manifests:
+        return True
+    if src_id in memo:
+        return memo[src_id]
+    if src_id in stack:
+        return False
+    node = graph_nodes.get(src_id)
+    if node is None or not (node.get("inputs") or {}):
+        memo[src_id] = False  # unresolvable source or root: path ends unguarded
+        return False
+    stack.add(src_id)
+    result = all(
+        upstream is not None and _gated_by_guard(upstream, graph_nodes, manifests, memo, stack)
+        for upstream in _guard_source_ids(node)
+    )
+    stack.discard(src_id)
+    memo[src_id] = result
+    return result
 
 
 def load_graph(path: Path) -> tuple[list | None, list[dict]]:
@@ -90,6 +132,16 @@ def load_graph(path: Path) -> tuple[list | None, list[dict]]:
                     "write outputs as a YAML list of output port names",
                 )
             )
+        elif outputs is not None and len(set(outputs)) != len(outputs):
+            duplicates = sorted({o for o in outputs if outputs.count(o) > 1})
+            structural.append(
+                _entry(
+                    "GRAPH_INVALID",
+                    {"node": str(node_id)},
+                    f"duplicate output ports {duplicates} — each output may appear once",
+                    "remove the repeated entries from the outputs list",
+                )
+            )
     if structural:
         return None, structural
     return nodes, []
@@ -121,13 +173,18 @@ def validate_nodes(
         manifest = manifests.get(node_id)
         if manifest is None:
             close = _closest(node_id, list(manifests))
-            suggestion = f"did you mean {close!r}?" if close else "check registry/manifests/"
+            suggestion = (
+                f"rename the node to {close!r}"
+                if close
+                else "no similar manifest id exists; find one with: "
+                "python -m aisle.harness.registry search --provides <capability>"
+            )
             errors.append(
                 _entry(
                     "MANIFEST_MISSING",
                     {"node": node_id},
                     f"no manifest for node id {node_id!r}",
-                    f"{suggestion} (harness/registry.py search lists capabilities)",
+                    suggestion,
                 )
             )
             # VAL-6 is manifest-based: a node WITHOUT a manifest is never an
@@ -218,20 +275,21 @@ def _validate_edge(
     is_dora_source = source.startswith("dora/")
     src_id = None if is_dora_source else source.partition("/")[0]
 
-    # VAL-5 first: a motion sink is gated only by a source that IS the
-    # resolved budget-guard manifest — a same-named graph node with no
-    # manifest is spoofing, and timers/unresolvable sources are ungated.
-    # Never let a later check's early return hide this.
-    gated = src_id == GUARD_ID and GUARD_ID in manifests
-    if manifest.get("safety_class") == "motion" and port in MOTION_SINK_PORTS and not gated:
-        errors.append(
-            _entry(
-                "MOTION_UNGATED",
-                edge,
-                f"{port} reaches driver {node_id} without traversing {GUARD_ID} (VAL-5)",
-                f"route this command through the {GUARD_ID} node (SPEC 080)",
+    # VAL-5 first: every backward path into a motion sink must traverse the
+    # RESOLVED budget-guard (topological, per the spec's "every path"; a
+    # same-named node with no manifest is spoofing; timers and unresolvable
+    # sources are ungated). Never let a later check's early return hide this.
+    if manifest.get("safety_class") == "motion" and port in MOTION_SINK_PORTS:
+        gated = not is_dora_source and _gated_by_guard(src_id, graph_nodes, manifests, {}, set())
+        if not gated:
+            errors.append(
+                _entry(
+                    "MOTION_UNGATED",
+                    edge,
+                    f"a path into {node_id}/{port} does not traverse {GUARD_ID} (VAL-5)",
+                    f"route every command path through the {GUARD_ID} node (SPEC 080)",
+                )
             )
-        )
 
     port_declared = port in declared_inputs
     if not port_declared:
@@ -240,7 +298,8 @@ def _validate_edge(
                 "SCHEMA_MISMATCH",
                 edge,
                 f"{node_id} has no declared input port {port!r}",
-                f"declared inputs: {sorted(declared_inputs)}",
+                f"rename the input to one of {node_id}'s declared ports "
+                f"{sorted(declared_inputs)}, or extend its manifest (Class B change)",
             )
         )
 
@@ -273,18 +332,25 @@ def _validate_edge(
     producer = graph_nodes.get(src_id)
     declared_outputs = (producer or {}).get("outputs") or []
     if producer is None or out_port not in declared_outputs:
-        close = _closest(src_id, list(graph_nodes))
-        hint = (
-            f"node {src_id!r} is not in the graph; did you mean {close!r}?"
-            if producer is None
-            else f"{src_id} declares outputs {declared_outputs}"
-        )
+        if producer is None:
+            close = _closest(src_id, list(graph_nodes))
+            hint = (
+                f"change the edge source to {close!r} (closest graph node id)"
+                if close
+                else f"add a node producing {out_port!r} or point the edge at one of "
+                f"the graph's nodes: {sorted(graph_nodes)}"
+            )
+        else:
+            hint = (
+                f"wire from one of {src_id}'s declared outputs {declared_outputs}, "
+                f"or add {out_port!r} to that node's outputs list"
+            )
         errors.append(
             _entry(
                 "INPUT_NO_PRODUCER",
                 edge,
                 f"no producer for {source!r}",
-                f"{hint} (keep edge ids consistent)",
+                hint,
             )
         )
         return

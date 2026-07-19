@@ -121,3 +121,20 @@ codes = ["MANIFEST_MISSING", "ORACLE_LEAK"]
 # a graph node merely NAMED budget-guard, with no manifest, does not gate
 [motion_ungated_guard_spoof]
 codes = ["MANIFEST_MISSING", "MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+
+# discovered by the T03 audit pass
+
+# the design-doc §8.1.4 case: edges reference 'controller' which is no node's id
+[input_no_producer_controller_typo]
+codes = ["INPUT_NO_PRODUCER", "MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+
+[graph_invalid_duplicate_outputs]
+codes = ["GRAPH_INVALID"]
+
+[rate_incompatible_fast_timer]
+codes = []
+warnings = ["RATE_INCOMPATIBLE"]
+
+[embodiment_mismatch_verifier_mobile]
+codes = ["EMBODIMENT_MISMATCH"]
+embodiment = "mobile"

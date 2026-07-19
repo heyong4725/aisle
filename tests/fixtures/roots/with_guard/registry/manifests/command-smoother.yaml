@@ -1,0 +1,22 @@
+id: command-smoother
+kind: node
+provides:
+- command_smoother
+requires: []
+inputs:
+  cmd:
+    schema: jointvec_f32
+    rate_hz: 100
+outputs:
+  joint_cmd:
+    schema: jointvec_f32
+    latency_class: soft_rt
+embodiment:
+  arm:
+  - franka
+  - so101
+  gripper: any
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/nodes/command-smoother.py

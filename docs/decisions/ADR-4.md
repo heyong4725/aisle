@@ -5,12 +5,20 @@ Interpretations chosen (CON-15) where SPEC 060 is ambiguous or blocked:
 joins at T08 — it does not exist yet and its oracle rung is blocked on the
 issue #2 spec conflict. (2) Graph node ids ARE manifest ids (VAL-1); wiring
 fewer inputs than a manifest declares is legal (idle ports), but an input
-port absent from the manifest is a SCHEMA_MISMATCH. (3) VAL-5 is enforced as
-immediate-upstream: a motion driver's joint_cmd/gripper_cmd input must be fed
-directly by `budget-guard` (whose manifest lands at T07; until then no motion
-graph validates, which is correct — there is no guard to traverse). Any other
-source — another node, a timer, an unresolvable id — is MOTION_UNGATED, and
-the check runs before all schema/producer checks so it is never masked.
+port absent from the manifest is a SCHEMA_MISMATCH. (3) VAL-5 is enforced TOPOLOGICALLY per the
+spec's literal "every path": every backward path from a motion driver's
+joint_cmd/gripper_cmd input must traverse the RESOLVED budget-guard before
+terminating at a root, timer, or unresolvable source. (This supersedes the
+earlier immediate-upstream reading, which the T03 audit found stricter than
+the spec text: it rejected legal guard→intermediate→driver chains.)
+Conservative dataflow assumption: all of a node's inputs feed its outputs,
+so one unguarded input — including a bare timer tick — taints every path
+through that node; cycles without a guard are ungated. Recorded hazard for
+M0 review: traversal semantics permit nodes BETWEEN guard and driver that
+could mutate commands post-guard; if that is judged unacceptable, the spec
+(not this ADR) should be amended to immediate-upstream. The guard's manifest
+lands at T07; until then no motion graph validates, which is correct. The
+check runs before all schema/producer checks so it is never masked.
 Only `dora/timer/millis/<N>` (N > 0) is recognized as a dora builtin source;
 dora's extended input form `{source: ..., queue_size: N}` is unwrapped.
 (4) RATE_INCOMPATIBLE is checked where a producer rate is knowable — timer

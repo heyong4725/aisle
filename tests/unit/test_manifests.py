@@ -263,7 +263,8 @@ def test_sim_driver_eval_exception_is_warning(repo_lint):
     report = json.loads(repo_lint.stdout)
     assert repo_lint.returncode == 0
     warned = {w["manifest"] for w in report["warnings"]}
-    assert {"arm-driver-sim.yaml", "gripper-driver-sim.yaml"} <= warned
+    # EXACTLY the two drivers: the ADR-3 carve-out must not silently widen
+    assert warned == {"arm-driver-sim.yaml", "gripper-driver-sim.yaml"}
 
 
 def test_bad_root_reported_as_json(tmp_path):

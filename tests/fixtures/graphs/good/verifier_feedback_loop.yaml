@@ -1,0 +1,14 @@
+nodes:
+- id: camera-source
+  outputs:
+  - oracle_state
+- id: verifier-oracle
+  inputs:
+    oracle_state: camera-source/oracle_state
+  outputs:
+  - episode_result
+- id: task-state-machine
+  inputs:
+    episode_result: verifier-oracle/episode_result
+  outputs:
+  - target_request

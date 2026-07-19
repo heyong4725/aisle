@@ -57,12 +57,12 @@ def extract_requirements(specs_dir: Path) -> tuple[dict[str, str], dict[str, set
     return requirements, by_spec_number, duplicates
 
 
-def extract_citations(tests_dir: Path) -> tuple[set[str], list[str]]:
-    """Collect requirement IDs cited in docstrings of test callables
-    (test_* functions/methods only — module, class, and helper docstrings do
-    not count as coverage); report unparseable files instead of crashing
-    (CON-8)."""
-    cited: set[str] = set()
+def extract_citations(tests_dir: Path) -> tuple[dict[str, list[str]], list[str]]:
+    """Map requirement ID -> sorted test references ("relpath::name") from
+    docstrings of test callables (test* functions/methods only — module,
+    class, and helper docstrings do not count as coverage); report
+    unparseable files instead of crashing (CON-8)."""
+    cited: dict[str, set[str]] = {}
     parse_errors: list[str] = []
     for path in sorted(tests_dir.rglob("*.py")):
         try:
@@ -70,15 +70,16 @@ def extract_citations(tests_dir: Path) -> tuple[set[str], list[str]]:
         except SyntaxError as exc:
             parse_errors.append(f"{path}: {exc.msg} (line {exc.lineno})")
             continue
+        ref_base = path.relative_to(tests_dir.parent).as_posix()
         for node in ast.walk(tree):
             # pytest's default collection pattern is test*, not test_*
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name.startswith(
                 "test"
             ):
                 doc = ast.get_docstring(node)
-                if doc:
-                    cited.update(re.findall(ID_PATTERN, doc))
-    return cited, parse_errors
+                for rid in re.findall(ID_PATTERN, doc or ""):
+                    cited.setdefault(rid, set()).add(f"{ref_base}::{node.name}")
+    return {rid: sorted(refs) for rid, refs in cited.items()}, parse_errors
 
 
 def load_waivers(root: Path) -> dict[str, str]:
@@ -125,9 +126,10 @@ def main() -> int:
             errors.append(f"--specs {args.specs} matches no spec files")
     if args.specs is not None and (span is None or not in_range):
         must_ids = set()  # range unusable: report the error, not a misleading uncovered list
-    cited, parse_errors = extract_citations(args.root / "tests")
+    citation_map, parse_errors = extract_citations(args.root / "tests")
     known_prefixes = {rid.split("-")[0] for rid in requirements}
-    cited = {c for c in cited if c.split("-")[0] in known_prefixes}
+    citation_map = {c: t for c, t in citation_map.items() if c.split("-")[0] in known_prefixes}
+    cited = set(citation_map)
     waivers = {} if args.strict else load_waivers(args.root)
 
     unknown_citations = sorted(cited - requirements.keys())
@@ -146,6 +148,8 @@ def main() -> int:
         "requirements": len(requirements),
         "must_ids": sorted(must_ids),
         "covered": sorted(must_ids & cited),
+        # deterministic MUST-ID -> citing-test mapping (audit finding 6)
+        "coverage_map": {rid: citation_map[rid] for rid in sorted(must_ids & cited)},
         "waived": sorted(set(waivers) & must_ids),
         "uncovered": uncovered,
         "unknown_citations": unknown_citations,
