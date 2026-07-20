@@ -40,11 +40,11 @@ LIFT_H = 0.015
 # stage-completion tracking tolerance (rad) and bounded at-target dwell (s)
 TRACK_TOL = 0.10
 STAGE_BAIL_S = 4.0
-# gripper ramp per 100 Hz tick: the guard's gripper rate limit is 1.25/s
-# (env/limits.toml); commanding the full range in one tick flooded the
-# guard with ~300 velocity violations per episode and let stages advance
-# before the fingers finished closing (T08 cross-review)
-GRIP_STEP_PER_TICK = 0.0125
+# gripper ramp per 100 Hz tick: sized so a 4-tick message batch (25 Hz —
+# the gripper_cmd contract is <=30 Hz, so every-3rd-tick's 33.3 Hz was
+# illegal) steps 0.04 <= the guard's 0.0416/message bound, and the joint-
+# channel finger step (0.04 m * this) stays <= the finger qdot bound
+GRIP_STEP_PER_TICK = 0.010
 # max per-joint jump between consecutive insertion waypoints (rad)
 CONTINUITY_MAX = 1.2
 # staging TCP height: above every shelf box top (max 0.57), reached BEFORE
@@ -508,15 +508,14 @@ def main() -> None:
             if current_cmd is None:
                 current_cmd = qpos[:n_arm].copy()
             stage = plan.stages[stage_idx]
-            # ramp the gripper at the guard-legal rate; send every 3rd
-            # tick (message step 3 x 0.0125 = 0.0375 <= the guard's
-            # 0.0416/message gripper bound; 4-tick batches were 0.05 and
-            # drew a velocity clamp on every message)
+            # ramp the gripper; send every 4th tick = 25 Hz (contract
+            # <=30 Hz), message step 4 x 0.010 = 0.04 <= the guard's
+            # 0.0416/message bound
             if current_grip != stage.gripper:
                 step = min(GRIP_STEP_PER_TICK, abs(stage.gripper - current_grip))
                 current_grip += step if stage.gripper > current_grip else -step
                 grip_tick += 1
-                if grip_tick % 3 == 0 or current_grip == stage.gripper:
+                if grip_tick % 4 == 0 or current_grip == stage.gripper:
                     send(
                         "gripper_cmd",
                         pa.array(np.array([current_grip], dtype=np.float32)),

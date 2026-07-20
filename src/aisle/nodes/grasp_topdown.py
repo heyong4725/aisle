@@ -28,7 +28,6 @@ GRIP_ENGAGEMENT = 0.045
 FRONT_CLEARANCE = 0.06
 # the tray is a flat slab (no walls): release the box from a small drop
 # gap above it — pressing it down drives it THROUGH the slab (T08 replays)
-TRAY_TOP_Z = 0.04
 PLACE_DROP_GAP = 0.01
 # the wrist's radius below the flange axis: inserting at box-center height
 # scraped the wrist on the board's front edge (T08 live run 6), so the
@@ -72,7 +71,8 @@ def plan_grasp(
     grip: float = GRIP_ENGAGEMENT,
     front: bool = False,
     shelf_front_x: float = 0.0,
-) -> tuple[np.ndarray, float]:
+    tray_top_z: float = 0.04,
+) -> tuple[np.ndarray, float, float]:
     """Pure plan: (grasp_pose7, approach_m).
 
     Top-down: TCP at the box's top section, fingers across the narrower
@@ -86,7 +86,7 @@ def plan_grasp(
         z = min(max(float(pose[2]), bottom + WRIST_CLEARANCE), top - MIN_FINGER_ON_BOX)
         grasp = np.array([pose[0], pose[1], z, *FRONT_QUAT], dtype=np.float32)
         approach = float(pose[0]) - (shelf_front_x - FRONT_CLEARANCE)
-        return grasp, approach, place_tcp_z(size_xyz, top - z)
+        return grasp, approach, place_tcp_z(size_xyz, top - z, tray_top_z)
     yaw = yaw_of(pose[3:7])
     # fingers travel along the gripper y-axis, which at yaw=0 straddles the
     # box's y extent; add 90 degrees when x is the narrower side
@@ -94,14 +94,16 @@ def plan_grasp(
         yaw += math.pi / 2
     z = float(pose[2]) + float(size_xyz[2]) / 2 - grip
     grasp = np.array([pose[0], pose[1], z, *topdown_quat(yaw)], dtype=np.float32)
-    return grasp, 0.15, place_tcp_z(size_xyz, grip)
+    return grasp, 0.15, place_tcp_z(size_xyz, grip, tray_top_z)
 
 
-def place_tcp_z(size_xyz, grip_from_top: float) -> float:
+def place_tcp_z(size_xyz, grip_from_top: float, tray_top_z: float) -> float:
     """Release TCP height: box bottom hovers PLACE_DROP_GAP above the tray
     slab when the TCP is here (the box hangs (size_z - grip_from_top)
-    below the TCP)."""
-    return TRAY_TOP_Z + (float(size_xyz[2]) - float(grip_from_top)) + PLACE_DROP_GAP
+    below the TCP). The slab height comes from the embodiment's layout
+    (SCN-2: scene constants live in physics.toml, and so101's tray
+    differs)."""
+    return float(tray_top_z) + (float(size_xyz[2]) - float(grip_from_top)) + PLACE_DROP_GAP
 
 
 def main() -> None:
@@ -118,6 +120,8 @@ def main() -> None:
     layout = resolve_layout(load_physics(), os.environ.get("AISLE_EMBODIMENT", "franka"))
     shelf = layout["shelf"]
     shelf_front_x = shelf["pos"][0] - shelf["level_size"][0] / 2
+    tray = layout["tray"]
+    tray_top_z = tray["pos"][2] + tray["size"][2] / 2
     # a box is under a board iff its z sits below the TOP level's surface
     top_surface_z = shelf["pos"][2] + shelf["level_heights"][-1] + shelf["board_thickness"] / 2
     node = Node()
@@ -134,7 +138,11 @@ def main() -> None:
             pose = event["value"].to_numpy(zero_copy_only=False)
             front = float(np.asarray(pose).reshape(-1)[2]) < top_surface_z
             grasp, approach, place_z = plan_grasp(
-                pose, meds[med]["size"], front=front, shelf_front_x=shelf_front_x
+                pose,
+                meds[med]["size"],
+                front=front,
+                shelf_front_x=shelf_front_x,
+                tray_top_z=tray_top_z,
             )
             send(
                 "grasp_pose",

@@ -4,15 +4,23 @@ planner, ik-trajectory, verifier, reset service, rollout client) end in
 verifier SUCCESS (design doc §8.1.4; M0-1's 50-episode gate lands at
 T10)."""
 
+import importlib.util
 import json
 import os
+import shutil
 import signal
 import subprocess
 from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.graph
+pytestmark = [
+    pytest.mark.graph,
+    pytest.mark.skipif(
+        importlib.util.find_spec("genesis") is None or shutil.which("dora") is None,
+        reason="sim extra or dora CLI not installed",
+    ),
+]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
