@@ -50,3 +50,10 @@ shape = "2"
 [reset_done_u32]
 arrow = "UInt32"
 shape = "1"
+
+# dora builtin timer payload — opaque; consumers MUST NOT read it. Added
+# for nodes that declare a dora/timer input (BG-5 stats cadence). Class C
+# vocabulary change (CAP-2), flagged in PR #8 for owner sign-off.
+[timer_tick]
+arrow = "UInt8"
+shape = "0"

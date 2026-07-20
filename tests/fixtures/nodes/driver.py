@@ -7,6 +7,9 @@ episode     — one scripted trivial episode: goal, feedback, result carrying
               the goal's goal_id (TC-7 shapes).
 multi_env   — env-routed joint_cmds for envs 0 and 1; if
               $DRIVER_SEND_UNROUTED=1, finishes with a cmd missing env_id.
+adversarial — cycles hostile joint_cmds (position/velocity/workspace
+              violations, NaN, wrong dof count) plus out-of-range
+              gripper_cmds; the guard must clamp every one (SPEC 080).
 """
 
 import json
@@ -56,6 +59,29 @@ def main() -> None:
                 goal = {"tier": "T0", "target_med": "ibuprofen", "timeout_s": 30, "seed": 7}
                 node.send_output(
                     "episode_goal", pa.array([json.dumps(goal)]), metadata={"goal_id": "ep-0001"}
+                )
+        elif mode == "adversarial":
+            home = np.array(
+                [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04], dtype=np.float32
+            )
+            hostile = [
+                np.full(n_dof, 10.0, dtype=np.float32),  # far past position limits
+                home + np.array([5.0] + [0.0] * (n_dof - 1), dtype=np.float32),  # velocity jump
+                # DIVING pose from tests/unit/test_guard_clamping.py:
+                # wrist folded under, FK lands ~20 cm below the floor
+                np.array([0.0, 1.7628, 0.0, -1.0, 0.0, 1.0, 0.785, 0.04, 0.04], dtype=np.float32)[
+                    :n_dof
+                ],
+                np.array([np.nan] * n_dof, dtype=np.float32),
+                np.zeros(4, dtype=np.float32),  # wrong dof count
+                home + 0.001 * np.float32(tick % 3),  # occasional legal command
+            ]
+            node.send_output("joint_cmd", pa.array(hostile[tick % len(hostile)]), metadata={})
+            if tick % 5 == 0:
+                node.send_output(
+                    "gripper_cmd",
+                    pa.array(np.array([5.0 if tick % 10 else -3.0], dtype=np.float32)),
+                    metadata={},
                 )
         elif mode == "multi_env":
             targets = {
