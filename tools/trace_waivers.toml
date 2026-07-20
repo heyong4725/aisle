@@ -22,9 +22,6 @@ TC-5 = "so101 asset blocked on owner acquisition; franka half verified (TC-A1)"
 SCN-4 = "so101 asset blocked on owner acquisition (ADR-6); franka half verified"
 
 
-# SPEC 040 verifier/reset — deferred to T06.
-RST-1 = "deferred to T06"
-
 # SPEC 070 harness — deferred to T09.
 HAR-2 = "deferred to T09"
 

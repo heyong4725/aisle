@@ -14,6 +14,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_NODES = REPO_ROOT / "tests" / "fixtures" / "nodes"
 BRIDGE = REPO_ROOT / "src" / "aisle" / "nodes" / "dora_genesis.py"
+RESET_SERVICE = REPO_ROOT / "src" / "aisle" / "reset" / "service.py"
 
 BRIDGE_OUTPUTS = [
     "bridge_info",
@@ -42,8 +43,15 @@ def write_bridge_dataflow(
     driver_env: dict | None = None,
     duration_s: float = 10.0,
     with_verifier_stub: bool = False,
+    with_reset_service: bool = False,
 ) -> Path:
     recorder_inputs = {t: f"bridge/{t}" for t in BRIDGE_OUTPUTS}
+    if with_reset_service:
+        # resets route THROUGH the dispatcher (RST-1); the recorder keeps the
+        # bridge's own reset_done as a separate topic so send-side ordering
+        # checks stay valid across the extra hop
+        recorder_inputs["reset_done"] = "reset-service/reset_done"
+        recorder_inputs["bridge_reset_done"] = "bridge/reset_done"
     if with_verifier_stub:
         recorder_inputs["episode_goal"] = "driver/episode_goal"
         recorder_inputs["episode_feedback"] = "verifier/episode_feedback"
@@ -60,7 +68,12 @@ def write_bridge_dataflow(
                     # commands queued during the bridge's long startup
                     "joint_cmd": {"source": "driver/joint_cmd", "queue_size": 100},
                     "gripper_cmd": {"source": "driver/gripper_cmd", "queue_size": 100},
-                    "reset": {"source": "driver/reset", "queue_size": 100},
+                    "reset": {
+                        "source": "reset-service/bridge_reset"
+                        if with_reset_service
+                        else "driver/reset",
+                        "queue_size": 100,
+                    },
                 },
                 "outputs": BRIDGE_OUTPUTS,
                 "env": {k: str(v) for k, v in (bridge_env or {}).items()},
@@ -72,6 +85,21 @@ def write_bridge_dataflow(
                 "outputs": DRIVER_OUTPUTS,
                 "env": {k: str(v) for k, v in (driver_env or {}).items()},
             },
+            *(
+                [
+                    {
+                        "id": "reset-service",
+                        "path": str(RESET_SERVICE),
+                        "inputs": {
+                            "reset": {"source": "driver/reset", "queue_size": 100},
+                            "reset_done": {"source": "bridge/reset_done", "queue_size": 100},
+                        },
+                        "outputs": ["bridge_reset", "reset_done"],
+                    }
+                ]
+                if with_reset_service
+                else []
+            ),
             *(
                 [
                     {
@@ -108,6 +136,7 @@ _NODE_PATTERNS = (
     "fixtures/nodes/driver.py",
     "fixtures/nodes/recorder.py",
     "fixtures/nodes/verifier_stub.py",
+    "reset/service.py",
 )
 
 

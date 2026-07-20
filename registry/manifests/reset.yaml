@@ -4,7 +4,11 @@ provides: [episode_reset]
 requires: []
 inputs:
   reset: {schema: reset_request_u32, rate_hz: 1}
+  # the bridge's completion, forwarded back to the requester (RST-1)
+  reset_done: {schema: reset_done_u32, rate_hz: 1}
 outputs:
+  # teleport passthrough to the bridge, which owns state injection (BRG-4)
+  bridge_reset: {schema: reset_request_u32, latency_class: best_effort}
   reset_done: {schema: reset_done_u32, latency_class: best_effort}
 embodiment:
   arm: [franka, so101]
