@@ -29,6 +29,8 @@ EXPECTED_IDS = {
     "verifier-oracle",
     "reset",
     "budget-guard",  # SPEC 080 BG-1 (T07)
+    "dora-genesis",  # executable bridge identity (T08)
+    "rollout-client",  # episode driver for runnable graphs (T08)
 }
 
 
@@ -265,7 +267,7 @@ def test_sim_driver_eval_exception_is_warning(repo_lint):
     assert repo_lint.returncode == 0
     warned = {w["manifest"] for w in report["warnings"]}
     # EXACTLY the two drivers: the ADR-3 carve-out must not silently widen
-    assert warned == {"arm-driver-sim.yaml", "gripper-driver-sim.yaml"}
+    assert warned == {"arm-driver-sim.yaml", "gripper-driver-sim.yaml", "dora-genesis.yaml"}
 
 
 def test_bad_root_reported_as_json(tmp_path):

@@ -3,8 +3,10 @@ kind: node
 provides: [object_pose]
 requires: []
 inputs:
-  poses: {schema: posearray7d_f32, rate_hz: 30}
+  poses: {schema: posearray7d_f32, rate_hz: 15}
   target_request: {schema: json_utf8, rate_hz: 1}
+  # episode boundary: clears the active target (T08)
+  reset_done: {schema: reset_done_u32, rate_hz: 1}
 outputs:
   target_pose: {schema: pose7d_f32, latency_class: soft_rt}
 embodiment:

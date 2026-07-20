@@ -1,0 +1,11 @@
+plan ready: 11 stages
+stage done: rise
+stage done: staging
+stage done: pregrasp
+stage done: advance
+stage done: close
+stage done: lift
+stage done: retract
+stage done: transfer
+stage done: lower
+stage done: release

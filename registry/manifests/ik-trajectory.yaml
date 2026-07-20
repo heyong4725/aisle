@@ -5,6 +5,9 @@ requires: [grasp_planning]
 inputs:
   grasp_pose: {schema: pose7d_f32, rate_hz: 30}
   joint_state: {schema: jointvec_f32, rate_hz: 100}
+  # episode boundary: aborts any active plan (T08; stale plans froze the
+  # guard in the first live run)
+  reset_done: {schema: reset_done_u32, rate_hz: 1}
 outputs:
   joint_cmd: {schema: jointvec_f32, latency_class: soft_rt}
   gripper_cmd: {schema: scalar_f32, latency_class: soft_rt}

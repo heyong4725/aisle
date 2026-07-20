@@ -33,8 +33,11 @@ gripper_rate_max = 1.25
 gripper_dt_s = 0.0333
 
 [episode]
-# wall-clock budget per episode; on breach the guard holds the robot at the
-# last safe command (clamp, never drop) and publishes wall_timeout until
-# the next reset_done — the ONLY event that restarts the timer (idle
-# pauses must not stretch the budget)
-wall_timeout_s = 60.0
+# wall-clock BACKSTOP per episode against hung/runaway pipelines; on
+# breach the guard holds the robot at the last safe command (clamp, never
+# drop) and publishes wall_timeout until the next reset_done — the ONLY
+# event that restarts the timer (idle pauses must not stretch it). The
+# EPISODE timeout is the verifier's, in SIM time; sim can run slower than
+# wall (T08 live: ~0.5x with rendering), so this backstop must comfortably
+# exceed the episode budget in wall terms
+wall_timeout_s = 300.0

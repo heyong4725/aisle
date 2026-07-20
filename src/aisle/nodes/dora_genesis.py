@@ -37,6 +37,11 @@ TOPIC_RATES = {
     "joint_state": 100,
     "gripper_state": 100,
     "oracle_state": 30,
+    # non-privileged ground-truth poses for tier-T0 perception (SPEC 010,
+    # issue #2 resolution); same payload as oracle_state, separate topic so
+    # VAL-6 keeps oracle_state verifier-only. 15 Hz: a second 30 Hz stream
+    # pushed the render wall-rate below the TC-4 band (T08 A1)
+    "poses": 15,
 }
 RENDER_TOPICS = ("rgb_overhead", "rgb_wrist", "depth_overhead")
 
@@ -237,6 +242,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         return frames
 
     def publish(topic: str, frames: dict[str, np.ndarray] | None = None) -> None:
+        oracle_cache = None
         frames = frames if frames is not None else render_due([topic])
         qpos = robot.get_qpos() if topic in ("joint_state", "gripper_state") else None
         # camera topics: genesis batched scenes render ONE view; publishing
@@ -260,9 +266,10 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     np.clip(width, 0.0, 1.0),
                     dropped=dropped_counts["gripper"].pop(env_id, 0),
                 )
-            elif topic == "oracle_state":
-                state = oracle_state(handle)
-                send(topic, env_id, state[env_id] if cfg.n_envs > 1 else state)
+            elif topic in ("oracle_state", "poses"):
+                if oracle_cache is None:
+                    oracle_cache = oracle_state(handle)
+                send(topic, env_id, oracle_cache[env_id] if cfg.n_envs > 1 else oracle_cache)
             elif topic in ("rgb_overhead", "rgb_wrist"):
                 rgb = frames[topic]
                 send(topic, env_id, rgb, h=rgb.shape[0], w=rgb.shape[1], enc="rgb8")
@@ -388,6 +395,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             # is a pure function of the seed (TC-A2, CON-5); reset_done was
             # already sent, so nothing interleaves the service pair (TC-6)
             publish("oracle_state")
+            publish("poses")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,12 @@
+[38;5;226m[Genesis] [13:58:35] [WARNING] (MJCF) Approximating tendon by joint actuator for `finger_joint1`[0m
+[38;5;226m[Genesis] [13:58:35] [WARNING] (MJCF) Approximating tendon by joint actuator for `finger_joint2`[0m
+[W 07/20/26 13:58:35.594 8170872] [kernel_compilation_manager.cpp:KernelCompilationManager@59] Lock /Users/yonghe/.cache/quadrants/qdcache/kernel_compilation_manager/qdcache.lock failed. Please run 'qd cache clean -p /Users/yonghe/.cache/quadrants/qdcache/kernel_compilation_manager' and try again.
+[38;5;226m[Genesis] [13:58:36] [WARNING] Neutral robot position (qpos0) exceeds joint limits.[0m
+[38;5;226m[Genesis] [13:58:36] [WARNING] Constraint solver time constant should be greater than 2*substep_dt. timeconst is changed from `0.005` to `0.02`). Decrease simulation timestep or increase timeconst to avoid altering the original value.[0m
+/Users/yonghe/src/aisle/.venv/lib/python3.13/site-packages/quadrants/lang/ast/ast_transformers/call_transformer.py:245: DeprecationWarning: keyword.__init__ got an unexpected keyword argument 'ctx'. Support for arbitrary keyword arguments is deprecated and will be removed in Python 3.15.
+  kwarg_node = ast.keyword(
+/Users/yonghe/src/aisle/.venv/lib/python3.13/site-packages/quadrants/lang/ast/ast_transformers/function_def_transformer.py:671: DeprecationWarning: ast.Str is deprecated and will be removed in Python 3.14; use ast.Constant instead
+  return index == 0 and isinstance(stmt, ast.Expr) and isinstance(stmt.value, (ast.Constant, ast.Str))
+UNSUPPORTED (log once): POSSIBLE ISSUE: unit 4 GLD_TEXTURE_INDEX_CUBE_MAP is unloadable and bound to sampler type (Float) - using zero texture because texture unloadable
+/Users/yonghe/src/aisle/.venv/lib/python3.13/site-packages/torch/utils/_device.py:122: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /Users/runner/work/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:219.)
+  return func(*args, **kwargs)

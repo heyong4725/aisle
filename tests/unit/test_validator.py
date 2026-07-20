@@ -53,8 +53,8 @@ def test_corpus_minimums():
     """VAL-7: the golden corpus holds >=20 deliberately broken graphs and
     >=3 valid graphs, and includes the design-doc §8.1.4 typo case BY
     CONTENT: an edge referencing controller/joint_cmd while no node has the
-    id controller. graphs/expert_t0.yaml joins the good corpus at T08
-    (see ADR 4; blocked on issue 2)."""
+    id controller. graphs/expert_t0.yaml joined the good corpus at T08
+    (issue 2 resolved by the poses topic, see test_expert_t0_is_good)."""
     bad = list(BAD_DIR.glob("*.yaml"))
     assert len(bad) >= 20
     assert len(list(GOOD_DIR.glob("*.yaml"))) >= 3
@@ -91,6 +91,16 @@ def test_good_corpus_passes(path):
     assert code == 0, report
     assert report["ok"] is True
     assert report["errors"] == []
+
+
+def test_expert_t0_is_good():
+    """VAL-7: graphs/expert_t0.yaml is part of the good corpus (T08) — it
+    validates ok under --allow-unproven (ADR-3: the sim-driver evalcards
+    pend until the M0 review) with EXACTLY the pending-evalcard warning."""
+    code, report = run_validate(REPO_ROOT / "graphs" / "expert_t0.yaml", "--allow-unproven")
+    assert code == 0, report
+    assert report["ok"] is True and report["errors"] == []
+    assert [w["code"] for w in report["warnings"]] == ["EVAL_MISSING_FOR_MOTION"]
 
 
 def test_hints_nonempty():

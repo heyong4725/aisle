@@ -25,6 +25,7 @@ BRIDGE_OUTPUTS = [
     "rgb_overhead",
     "rgb_wrist",
     "depth_overhead",
+    "poses",
     "reset_done",
 ]
 DRIVER_OUTPUTS = [
@@ -176,6 +177,14 @@ _NODE_PATTERNS = (
     "fixtures/nodes/verifier_stub.py",
     "reset/service.py",
     "nodes/budget_guard.py",
+    # T08 expert pipeline nodes: leaked copies of these strangled the
+    # machine to load 200+ during the live-pass iteration
+    "nodes/ik_trajectory.py",
+    "nodes/oracle_pose.py",
+    "nodes/grasp_topdown.py",
+    "nodes/task_state_machine.py",
+    "harness/rollout_client.py",
+    "verifier/oracle.py",
 )
 
 
