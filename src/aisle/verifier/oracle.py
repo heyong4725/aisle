@@ -43,6 +43,7 @@ class JudgeCfg:
     dropped_z_m: float
     move_epsilon_m: float
     knock_epsilon_m: float
+    resting_tolerance_m: float
     robot_home_tolerance_rad: float
     # VER-2 robot-home condition: max |qpos - home| snapshot (ADR-8);
     # None means "not yet reported" and blocks success, never failure
@@ -84,8 +85,10 @@ def _aabb_inside_tray(
 ) -> bool:
     """Open-topped tray volume: the box's WORLD-frame AABB (rotation-aware —
     yaw and tilt change the footprint) must sit within the tray footprint
-    (x, y) and rest above the tray floor; medicine boxes are taller than
-    the tray walls, so a closed-top test could never pass."""
+    (x, y) and REST on the tray floor — bottom within
+    [floor - margin, floor + resting_tolerance]. Medicine boxes are taller
+    than the tray walls, so a closed-top test could never pass; the resting
+    bound keeps an airborne box passing over the tray from scoring."""
     margin = cfg.tray_margin_m
     extents = _world_half_extents(half, quat_xyzw)
     for i in range(2):  # x, y footprint
@@ -93,7 +96,8 @@ def _aabb_inside_tray(
             return False
         if pos[i] + extents[i] > cfg.tray_max[i] + margin:
             return False
-    return pos[2] - extents[2] >= cfg.tray_min[2] - margin
+    bottom = pos[2] - extents[2]
+    return cfg.tray_min[2] - margin <= bottom <= cfg.tray_min[2] + cfg.resting_tolerance_m
 
 
 def _center_inside_tray(pos: np.ndarray, cfg: JudgeCfg) -> bool:
@@ -175,6 +179,7 @@ def threshold_kwargs(thresholds: dict) -> dict:
     return dict(
         upright_max_deg=thresholds["success"]["upright_max_deg"],
         tray_margin_m=thresholds["success"]["tray_margin_m"],
+        resting_tolerance_m=thresholds["success"]["resting_tolerance_m"],
         robot_home_tolerance_rad=thresholds["success"]["robot_home_tolerance_rad"],
         dropped_z_m=thresholds["failure"]["dropped_z_m"],
         move_epsilon_m=thresholds["failure"]["move_epsilon_m"],

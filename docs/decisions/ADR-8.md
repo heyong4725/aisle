@@ -50,3 +50,20 @@ payload [0] and an error field — and keeps serving (a raise in the event
 loop would kill the service for all later teleports, violating TC-6).
 Resets in acceptance A2 route THROUGH the dispatcher so RST-1's <2 s
 budget is measured end-to-end across both hops.
+
+(14) PR #7 review round: success additionally requires the target's AABB
+bottom within resting_tolerance_m of the tray floor — "inside the tray"
+means RESTING there; an airborne box passing over the footprint must not
+score. (15) The service validates requests BEFORE forwarding: a request
+without request_id is dropped loudly on stderr (TC-6 correlates replies
+via request_id — there is nothing to reply TO, and forwarding would trip
+the bridge's own validation). Refusal replies are TC-2/TC-6-shaped: the
+service stamps sim_time_ns (0 — the sim was never touched), env_id, its
+OWN per-topic monotonic seq on every output, and echoes request_id plus
+seed/mode when parseable, t_reset_ms=0, and an error key (the spec is
+silent on error replies; payload [0] distinguishes them from the specced
+success payload [1]). (16) RST-1 is asserted end-to-end: acceptance A2's
+recorder subscribes to BOTH the request stream and the forwarded reply,
+so their single-clock wall_t delta spans driver -> dispatcher -> bridge
+teleport -> dispatcher -> reply; the bridge's t_reset_ms is kept only as
+a consistent sub-measurement.

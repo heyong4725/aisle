@@ -52,6 +52,10 @@ def write_bridge_dataflow(
         # checks stay valid across the extra hop
         recorder_inputs["reset_done"] = "reset-service/reset_done"
         recorder_inputs["bridge_reset_done"] = "bridge/reset_done"
+        # the request stream too: reset request arrival and reset_done
+        # arrival share the recorder's clock, so their wall_t delta is a
+        # true end-to-end RST-1 latency across all dispatcher hops
+        recorder_inputs["reset"] = {"source": "driver/reset", "queue_size": 100}
     if with_verifier_stub:
         recorder_inputs["episode_goal"] = "driver/episode_goal"
         recorder_inputs["episode_feedback"] = "verifier/episode_feedback"

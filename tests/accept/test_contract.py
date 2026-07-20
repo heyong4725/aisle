@@ -146,10 +146,18 @@ def test_reset_service(tmp_path, dataflow):
     # ran live and preserved TC-6 metadata across both hops
     dones = [r for r in records if r["id"] == "reset_done"]
     assert len(dones) == len(seeds), f"{len(dones)} reset_done for {len(seeds)} requests"
+    # RST-1 end-to-end: request arrival and reply arrival are stamped by the
+    # recorder's OWN clock, so their delta spans driver -> dispatcher ->
+    # bridge teleport -> dispatcher -> reply (t_reset_ms alone would only
+    # measure the bridge's internal handler)
+    request_wall_t = {
+        r["metadata"]["request_id"]: r["wall_t"] for r in records if r["id"] == "reset"
+    }
     for done in dones:
         meta = done["metadata"]
         assert meta["request_id"].startswith("req-")  # TC-6 request/reply correlation
-        # RST-1: every teleport reset completes in under 2 s
+        assert done["wall_t"] - request_wall_t[meta["request_id"]] < 2.0  # RST-1
+        # bridge-internal handler time is a consistent sub-measurement
         assert 0 <= int(meta["t_reset_ms"]) < 2000
 
     # CON-5: first oracle_state after a reset is a pure function of the seed

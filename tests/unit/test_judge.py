@@ -307,3 +307,12 @@ def test_floor_resting_box_is_dropped():
     physically attainable poses."""
     state = make_state(positions=moved(SHELF, 0, (0.6, 0.1, 0.05)))
     assert judge(state, 0, 5.0, make_cfg()) == ("fail", "dropped")
+
+
+def test_airborne_target_above_tray_is_not_success():
+    """VER-2 (PR review): success means RESTING in the tray — an upright
+    target carried or thrown over the tray footprint, robot home, must not
+    score while airborne."""
+    airborne = (0.35, -0.35, 0.30)
+    state = make_state(positions=moved(SHELF, 0, airborne))
+    assert judge(state, 0, 5.0, make_cfg()) == ("ongoing", None)

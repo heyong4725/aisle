@@ -1,9 +1,10 @@
 """Unit tests for the reset dispatcher (SPEC 040 RST-1, RST-2) — the pure
 routing function, no dora (CON-12)."""
 
+import numpy as np
 import pytest
 
-from aisle.reset.service import route_reset
+from aisle.reset.service import refusal_reply_metadata, route_reset, stamp
 
 pytestmark = pytest.mark.unit
 
@@ -27,3 +28,29 @@ def test_unknown_mode_is_rejected():
     else is an explicit error, not a default."""
     with pytest.raises(ValueError, match="reset mode"):
         route_reset(2)
+
+
+def test_stamp_adds_tc2_keys_and_service_seq():
+    """TC-2 (PR review): every service output carries sim_time_ns, env_id,
+    and the service's OWN per-topic monotonic seq; upstream values for the
+    first two are preserved when present."""
+    assert stamp({}, 3) == {"sim_time_ns": 0, "env_id": 0, "seq": 3}
+    stamped = stamp({"sim_time_ns": 42, "env_id": 1, "seq": 999, "request_id": "r"}, 4)
+    assert stamped == {"sim_time_ns": 42, "env_id": 1, "seq": 4, "request_id": "r"}
+
+
+def test_refusal_reply_metadata_is_tc6_complete():
+    """TC-6 (PR review): a refusal reply echoes request_id, carries
+    seed/mode when the payload was well-formed, t_reset_ms=0 (the sim was
+    never touched), and the error."""
+    payload = np.array([7, 1], dtype=np.uint32)
+    meta = refusal_reply_metadata({"request_id": "req-9"}, payload, "behavioral is Phase 2")
+    assert meta == {
+        "request_id": "req-9",
+        "t_reset_ms": 0,
+        "error": "behavioral is Phase 2",
+        "seed": 7,
+        "mode": 1,
+    }
+    malformed = refusal_reply_metadata({"request_id": "req-10"}, np.array([], np.uint32), "bad")
+    assert "seed" not in malformed and malformed["request_id"] == "req-10"
