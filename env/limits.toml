@@ -22,11 +22,14 @@ fallback_qpos = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04]
 # gripper_cmd scalar range (0 open .. 1 closed)
 gripper_min = 0.0
 gripper_max = 1.0
+# max normalized closing rate: Panda fingers 0.05 m/s over the 0.08 m span
+gripper_rate_max = 0.625
+# contract dt of the gripper_cmd topic (TC: 30 Hz)
+gripper_dt_s = 0.0333
 
 [episode]
 # wall-clock budget per episode; on breach the guard holds the robot at the
-# last safe command (clamp, never drop) and publishes wall_timeout
+# last safe command (clamp, never drop) and publishes wall_timeout until
+# the next reset_done — the ONLY event that restarts the timer (idle
+# pauses must not stretch the budget)
 wall_timeout_s = 60.0
-# a command gap this long marks an episode boundary (reset/idle) and
-# restarts the wall timer
-idle_reset_s = 2.0

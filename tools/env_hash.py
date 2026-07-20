@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """env_hash: fingerprint the CON-7 frozen set (CON-5, CON-8).
 
-Hashes src/aisle/{scenes,verifier,reset} and graphs/expert_*.yaml
-(sorted relative paths + file contents; __pycache__ excluded) into one
-sha256. Modes: compute (default), --write (commit tools/env_hash.json),
+Hashes src/aisle/{scenes,verifier,reset}, graphs/expert_*.yaml, and the
+SPEC 080 frozen safety artifacts (env/limits.toml + the budget-guard
+module) — sorted relative paths + file contents; __pycache__ excluded —
+into one sha256. Modes: compute (default), --write (commit tools/env_hash.json),
 --check (compare against the committed hash; rollout refuses on mismatch,
 HAR-2). JSON on stdout, logs on stderr, exit 0 iff ok.
 """
@@ -14,7 +15,10 @@ import json
 import sys
 from pathlib import Path
 
-FROZEN_DIRS = ("src/aisle/scenes", "src/aisle/verifier", "src/aisle/reset")
+FROZEN_DIRS = ("src/aisle/scenes", "src/aisle/verifier", "src/aisle/reset", "env")
+# SPEC 080: the guard and its limits are frozen safety artifacts — a run's
+# env_hash must change if either does
+FROZEN_FILES = ("src/aisle/nodes/budget_guard.py",)
 HASH_FILE = "tools/env_hash.json"
 
 
@@ -25,6 +29,7 @@ def frozen_files(root: Path) -> list[Path]:
         if base.is_dir():
             files.extend(p for p in base.rglob("*") if p.is_file() and "__pycache__" not in p.parts)
     files.extend(p for p in (root / "graphs").glob("expert_*.yaml") if p.is_file())
+    files.extend(root / f for f in FROZEN_FILES if (root / f).is_file())
     return sorted(files, key=lambda p: p.relative_to(root).as_posix())
 
 

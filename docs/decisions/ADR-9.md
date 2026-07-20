@@ -34,3 +34,26 @@ INPUT_NO_PRODUCER instead of MANIFEST_MISSING: the registry legitimately
 carries the budget-guard manifest as of T07, so a spoofed guard emitting
 raw joint_cmd is caught as a port mismatch (still rejected, VAL-7 exact
 set updated).
+
+## Amendments after PR #8 review round 1
+
+(9) The idle-gap episode heuristic was gameable — pausing commands for
+idle_reset_s every <60 s stretched the wall budget forever. The ONLY
+episode boundary is now reset_done: the guard subscribes to it (manifest
+input added), the wall timer restarts only there, and a timed-out
+episode stays held until the next reset. idle_reset_s is removed from
+env/limits.toml. reset_done also re-references the guard's velocity/hold
+state to home — after a teleport reset the robot IS at home, and judging
+post-reset velocity against the pre-reset pose would be wrong. (10) The
+gripper is under the SAME regime as joints: wall timeout holds it, NaN
+holds the last safe value, and a rate clamp (gripper_rate_max x the 30 Hz
+contract dt; from the Panda's 0.05 m/s finger speed over its 0.08 m span)
+bounds each step — it previously bypassed timeout and velocity
+enforcement entirely. (11) env_hash covers the SPEC 080 frozen safety
+artifacts (env/ and src/aisle/nodes/budget_guard.py) in addition to
+CON-7's literal list — BG-2 declares limits.toml frozen, and a run's
+env_hash must change if the guard or its limits do. This TIGHTENS the
+frozen set; CON-7's enumeration is treated as a minimum, not a ceiling.
+(12) The manifest advertises franka only: env/limits.toml has no so101
+section and load_limits refuses it, so claiming so101 support was a lie;
+restore when the so101 limits and kinematics land.

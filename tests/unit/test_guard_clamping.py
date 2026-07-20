@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 
 from aisle.nodes.budget_guard import (
+    EpisodeTimer,
     clamp_gripper_cmd,
     clamp_joint_cmd,
-    episode_elapsed,
     fk_ee_pos,
     load_limits,
     violation_payload,
@@ -140,16 +140,35 @@ def test_fuzzed_commands_never_crash_and_always_legal():
         last = safe
 
 
+GRIP_STEP = LIMITS.gripper_rate_max * LIMITS.gripper_dt_s
+
+
 @pytest.mark.parametrize(
-    "requested,expected,n_violations",
-    [(0.5, 0.5, 0), (1.5, 1.0, 1), (-0.2, 0.0, 1), (float("nan"), 0.0, 1)],
+    "requested,last,expected,reasons",
+    [
+        (0.5, 0.5, 0.5, []),  # in range, no step
+        (1.5, 1.0, 1.0, ["position"]),  # range clamp only
+        (-0.2, 0.0, 0.0, ["position"]),
+        (float("nan"), 0.3, 0.3, ["malformed"]),  # NaN holds last safe
+        (1.0, 0.0, GRIP_STEP, ["velocity"]),  # full-close jump rate-limited
+        (0.0, 1.0, 1.0 - GRIP_STEP, ["velocity"]),
+    ],
 )
-def test_gripper_clamp(requested, expected, n_violations):
-    """BG-1/BG-3: gripper_cmd is clamped to its scalar range; NaN falls to
-    the open position."""
-    safe, violations = clamp_gripper_cmd(float(requested), LIMITS)
-    assert safe == pytest.approx(expected)
-    assert len(violations) == n_violations
+def test_gripper_clamp(requested, last, expected, reasons):
+    """BG-1/BG-2/BG-3 (PR review): gripper_cmd is under the SAME regime as
+    joints — range clamp, rate clamp vs last safe + contract dt, NaN holds
+    the last safe value."""
+    safe, violations = clamp_gripper_cmd(float(requested), last, LIMITS, timed_out=False)
+    assert safe == pytest.approx(expected, abs=1e-6)
+    assert [v["reason"] for v in violations] == reasons
+
+
+def test_gripper_honors_wall_timeout():
+    """BG-2/BG-3 (PR review): after the episode wall timeout the gripper
+    holds too — actuation must not continue through a timed-out episode."""
+    safe, violations = clamp_gripper_cmd(1.0, 0.25, LIMITS, timed_out=True)
+    assert safe == pytest.approx(0.25)
+    assert [v["reason"] for v in violations] == ["wall_timeout"]
 
 
 def test_violation_payload_shape():
@@ -175,13 +194,18 @@ def test_fk_home_is_inside_workspace_and_reach():
     assert not np.allclose(ee, fk_ee_pos(step(HOME, 1, HOME[1] + 0.3)[:7]))
 
 
-def test_episode_timer_restarts_after_idle_gap():
-    """BG-2: the wall timer spans one episode — a command gap of at least
-    idle_reset_s (a reset/idle boundary) restarts it."""
-    first, elapsed = episode_elapsed(first_t=0.0, last_t=50.0, now=50.1, idle_reset_s=2.0)
-    assert first == 0.0 and elapsed == pytest.approx(50.1)
-    first, elapsed = episode_elapsed(first_t=0.0, last_t=50.0, now=55.0, idle_reset_s=2.0)
-    assert first == 55.0 and elapsed == 0.0
+def test_episode_timer_not_restarted_by_idle_pause():
+    """BG-2 (PR review): idle pauses must NOT restart the wall timer — a
+    policy that pauses commands cannot stretch the budget. Only a reset
+    (the authoritative episode boundary) restarts it."""
+    timer = EpisodeTimer()
+    assert timer.on_command(0.0) == 0.0
+    assert timer.on_command(50.0) == pytest.approx(50.0)
+    # a 10 s silence, then a command: elapsed keeps counting from the start
+    assert timer.on_command(65.0) == pytest.approx(65.0)
+    timer.on_reset()
+    assert timer.on_command(70.0) == 0.0
+    assert timer.on_command(75.0) == pytest.approx(5.0)
 
 
 def test_unsupported_embodiment_is_refused_at_startup():

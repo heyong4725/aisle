@@ -153,3 +153,23 @@ def test_check_without_committed_hash_fails(tmp_path):
     report = json.loads(check.stdout)
     assert check.returncode != 0
     assert report["ok"] is False
+
+
+def test_guard_and_limits_are_hashed(tmp_path):
+    """SPEC 080 / CON-7 (PR review): the frozen safety artifacts —
+    env/limits.toml and the budget-guard module — are part of the env
+    hash; adding or changing either changes it."""
+    root = make_root(tmp_path)
+    base = get_hash(root)
+    guard = root / "src" / "aisle" / "nodes" / "budget_guard.py"
+    guard.parent.mkdir(parents=True)
+    guard.write_text("GUARD = 1\n")
+    with_guard = get_hash(root)
+    assert with_guard != base
+    limits = root / "env" / "limits.toml"
+    limits.parent.mkdir()
+    limits.write_text("[embodiment.franka]\n")
+    with_limits = get_hash(root)
+    assert with_limits != with_guard
+    limits.write_text("[embodiment.franka]\nq = 1\n")
+    assert get_hash(root) != with_limits

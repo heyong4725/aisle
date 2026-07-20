@@ -53,8 +53,9 @@ class GuardLimits:
     fallback_qpos: tuple[float, ...]
     gripper_min: float
     gripper_max: float
+    gripper_rate_max: float
+    gripper_dt_s: float
     wall_timeout_s: float
-    idle_reset_s: float
 
     # precomputed off the per-command path (BG-4); cached_property writes
     # the instance __dict__ directly, so frozen is preserved
@@ -90,8 +91,9 @@ def load_limits(embodiment: str) -> GuardLimits:
         fallback_qpos=tuple(emb["fallback_qpos"]),
         gripper_min=emb["gripper_min"],
         gripper_max=emb["gripper_max"],
+        gripper_rate_max=emb["gripper_rate_max"],
+        gripper_dt_s=emb["gripper_dt_s"],
         wall_timeout_s=raw["episode"]["wall_timeout_s"],
-        idle_reset_s=raw["episode"]["idle_reset_s"],
     )
 
 
@@ -214,26 +216,44 @@ def clamp_joint_cmd(
     return safe, violations
 
 
-def clamp_gripper_cmd(value: float, limits: GuardLimits) -> tuple[float, list[dict]]:
-    """BG-1/BG-3: scalar gripper command clamped to its range; NaN falls to
-    the open position (gripper_min)."""
+def clamp_gripper_cmd(
+    value: float, last_safe: float, limits: GuardLimits, timed_out: bool
+) -> tuple[float, list[dict]]:
+    """BG-1/BG-3: scalar gripper command under the SAME regime as joints —
+    wall timeout holds it, NaN holds it at the last safe value, then range
+    and rate (vs last safe + contract dt) clamps (PR review: the gripper
+    must not bypass timeout or velocity enforcement)."""
+    if timed_out:
+        return last_safe, [_viol("wall_timeout", None, None, axis="gripper")]
     if not math.isfinite(value):
-        return limits.gripper_min, [_viol("malformed", None, limits.gripper_min, axis="gripper")]
+        return last_safe, [_viol("malformed", None, last_safe, axis="gripper")]
+    violations = []
     clamped = min(max(value, limits.gripper_min), limits.gripper_max)
     if clamped != value:
-        return clamped, [_viol("position", value, clamped, axis="gripper")]
-    return clamped, []
+        violations.append(_viol("position", value, clamped, axis="gripper"))
+    max_step = limits.gripper_rate_max * limits.gripper_dt_s
+    stepped = min(max(clamped, last_safe - max_step), last_safe + max_step)
+    if stepped != clamped:
+        violations.append(_viol("velocity", clamped, stepped, axis="gripper"))
+    return stepped, violations
 
 
-def episode_elapsed(
-    first_t: float, last_t: float, now: float, idle_reset_s: float
-) -> tuple[float, float]:
-    """BG-2 wall timer: a command gap of at least idle_reset_s is an episode
-    boundary (reset/idle) and restarts the timer. Returns (episode start,
-    elapsed seconds)."""
-    if now - last_t >= idle_reset_s:
-        return now, 0.0
-    return first_t, now - first_t
+class EpisodeTimer:
+    """BG-2 wall timer. It starts at the first command of an episode and
+    ONLY a reset — the system's authoritative episode boundary — restarts
+    it. Idle pauses deliberately do NOT: a policy that pauses commands
+    must not be able to stretch the wall budget (PR review)."""
+
+    def __init__(self) -> None:
+        self._start: float | None = None
+
+    def on_command(self, now: float) -> float:
+        if self._start is None:
+            self._start = now
+        return now - self._start
+
+    def on_reset(self) -> None:
+        self._start = None
 
 
 def violation_payload(violation: dict, seq: int) -> dict:
@@ -285,26 +305,41 @@ def main(clock=None) -> None:
         now = clock()
         if event["id"] == "joint_cmd":
             env_id = int(metadata.get("env_id", 0))
-            state = envs.setdefault(env_id, {"last_safe": fallback, "first_t": now, "last_t": now})
-            state["first_t"], elapsed = episode_elapsed(
-                state["first_t"], state["last_t"], now, limits.idle_reset_s
+            state = envs.setdefault(
+                env_id, {"last_safe": fallback, "last_gripper": 0.0, "timer": EpisodeTimer()}
             )
-            state["last_t"] = now
+            timed_out = state["timer"].on_command(now) > limits.wall_timeout_s
             safe, violations = clamp_joint_cmd(
                 event["value"].to_numpy(zero_copy_only=False),
                 state["last_safe"],
                 limits,
-                timed_out=elapsed > limits.wall_timeout_s,
+                timed_out=timed_out,
             )
             state["last_safe"] = safe
             send("joint_cmd_safe", pa.array(safe), metadata)
             publish_violations(violations, metadata)
         elif event["id"] == "gripper_cmd":
+            env_id = int(metadata.get("env_id", 0))
+            state = envs.setdefault(
+                env_id, {"last_safe": fallback, "last_gripper": 0.0, "timer": EpisodeTimer()}
+            )
+            timed_out = state["timer"].on_command(now) > limits.wall_timeout_s
             raw = event["value"].to_numpy(zero_copy_only=False)
             value = float(raw[0]) if len(raw) else float("nan")
-            safe_g, violations = clamp_gripper_cmd(value, limits)
+            safe_g, violations = clamp_gripper_cmd(
+                value, state["last_gripper"], limits, timed_out=timed_out
+            )
+            state["last_gripper"] = safe_g
             send("gripper_cmd_safe", pa.array(np.array([safe_g], dtype=np.float32)), metadata)
             publish_violations(violations, metadata)
+        elif event["id"] == "reset_done":
+            # the authoritative episode boundary: restart every wall timer
+            # and re-reference velocity/hold state to home — the robot IS
+            # at home after a teleport reset
+            for state in envs.values():
+                state["timer"].on_reset()
+                state["last_safe"] = fallback
+                state["last_gripper"] = 0.0
         # BG-5: cumulative violation counts every 5 s (on command cadence)
         if now - stats_t >= 5.0:
             stats_t = now

@@ -109,6 +109,7 @@ def write_bridge_dataflow(
                         "inputs": {
                             "joint_cmd": _q("driver/joint_cmd"),
                             "gripper_cmd": _q("driver/gripper_cmd"),
+                            "reset_done": _q("bridge/reset_done"),
                         },
                         "outputs": [
                             "joint_cmd_safe",
