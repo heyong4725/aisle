@@ -14,6 +14,8 @@ import sys
 
 import numpy as np
 
+from aisle.topics import stamp
+
 TELEPORT, BEHAVIORAL = 0, 1
 
 
@@ -24,14 +26,6 @@ def route_reset(mode: int) -> str:
     if mode == BEHAVIORAL:
         raise NotImplementedError("behavioral reset is Phase 2 (RST-2)")
     raise ValueError(f"reset mode must be 0 or 1, got {mode}")
-
-
-def stamp(metadata: dict, seq: int) -> dict:
-    """TC-2 mandatory output keys on every service output: defaults for
-    sim_time_ns/env_id when the upstream message carries none (the service
-    has no sim clock), upstream values preserved when it does, and the
-    service's OWN per-topic monotonic seq."""
-    return {"sim_time_ns": 0, "env_id": 0, **metadata, "seq": seq}
 
 
 def refusal_reply_metadata(request_meta: dict, payload: np.ndarray, error: str) -> dict:

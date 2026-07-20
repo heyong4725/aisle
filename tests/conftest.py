@@ -15,6 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_NODES = REPO_ROOT / "tests" / "fixtures" / "nodes"
 BRIDGE = REPO_ROOT / "src" / "aisle" / "nodes" / "dora_genesis.py"
 RESET_SERVICE = REPO_ROOT / "src" / "aisle" / "reset" / "service.py"
+GUARD = REPO_ROOT / "src" / "aisle" / "nodes" / "budget_guard.py"
 
 BRIDGE_OUTPUTS = [
     "bridge_info",
@@ -36,6 +37,12 @@ DRIVER_OUTPUTS = [
 ]
 
 
+def _q(source: str) -> dict:
+    """Extended input form: explicit queue (dora's default keeps only the
+    latest message, which hides coalescing and evicts during long builds)."""
+    return {"source": source, "queue_size": 100}
+
+
 def write_bridge_dataflow(
     tmp_path: Path,
     record_out: Path,
@@ -44,8 +51,12 @@ def write_bridge_dataflow(
     duration_s: float = 10.0,
     with_verifier_stub: bool = False,
     with_reset_service: bool = False,
+    with_guard: bool = False,
 ) -> Path:
     recorder_inputs = {t: f"bridge/{t}" for t in BRIDGE_OUTPUTS}
+    if with_guard:
+        recorder_inputs["violation"] = _q("budget-guard/violation")
+        recorder_inputs["guard_stats"] = _q("budget-guard/guard_stats")
     if with_reset_service:
         # resets route THROUGH the dispatcher (RST-1); the recorder keeps the
         # bridge's own reset_done as a separate topic so send-side ordering
@@ -55,7 +66,7 @@ def write_bridge_dataflow(
         # the request stream too: reset request arrival and reset_done
         # arrival share the recorder's clock, so their wall_t delta is a
         # true end-to-end RST-1 latency across all dispatcher hops
-        recorder_inputs["reset"] = {"source": "driver/reset", "queue_size": 100}
+        recorder_inputs["reset"] = _q("driver/reset")
     if with_verifier_stub:
         recorder_inputs["episode_goal"] = "driver/episode_goal"
         recorder_inputs["episode_feedback"] = "verifier/episode_feedback"
@@ -70,14 +81,15 @@ def write_bridge_dataflow(
                     # explicit queues: dora's default keeps only the latest
                     # message, which hides coalescing (BRG-3) and can evict
                     # commands queued during the bridge's long startup
-                    "joint_cmd": {"source": "driver/joint_cmd", "queue_size": 100},
-                    "gripper_cmd": {"source": "driver/gripper_cmd", "queue_size": 100},
-                    "reset": {
-                        "source": "reset-service/bridge_reset"
-                        if with_reset_service
-                        else "driver/reset",
-                        "queue_size": 100,
-                    },
+                    "joint_cmd": _q(
+                        "budget-guard/joint_cmd_safe" if with_guard else "driver/joint_cmd"
+                    ),
+                    "gripper_cmd": _q(
+                        "budget-guard/gripper_cmd_safe" if with_guard else "driver/gripper_cmd"
+                    ),
+                    "reset": _q(
+                        "reset-service/bridge_reset" if with_reset_service else "driver/reset"
+                    ),
                 },
                 "outputs": BRIDGE_OUTPUTS,
                 "env": {k: str(v) for k, v in (bridge_env or {}).items()},
@@ -92,11 +104,31 @@ def write_bridge_dataflow(
             *(
                 [
                     {
+                        "id": "budget-guard",
+                        "path": str(GUARD),
+                        "inputs": {
+                            "joint_cmd": _q("driver/joint_cmd"),
+                            "gripper_cmd": _q("driver/gripper_cmd"),
+                        },
+                        "outputs": [
+                            "joint_cmd_safe",
+                            "gripper_cmd_safe",
+                            "violation",
+                            "guard_stats",
+                        ],
+                    }
+                ]
+                if with_guard
+                else []
+            ),
+            *(
+                [
+                    {
                         "id": "reset-service",
                         "path": str(RESET_SERVICE),
                         "inputs": {
-                            "reset": {"source": "driver/reset", "queue_size": 100},
-                            "reset_done": {"source": "bridge/reset_done", "queue_size": 100},
+                            "reset": _q("driver/reset"),
+                            "reset_done": _q("bridge/reset_done"),
                         },
                         "outputs": ["bridge_reset", "reset_done"],
                     }
@@ -141,6 +173,7 @@ _NODE_PATTERNS = (
     "fixtures/nodes/recorder.py",
     "fixtures/nodes/verifier_stub.py",
     "reset/service.py",
+    "nodes/budget_guard.py",
 )
 
 

@@ -122,7 +122,10 @@ codes = ["MANIFEST_MISSING", "ORACLE_LEAK"]
 
 # a graph node merely NAMED budget-guard, with no manifest, does not gate
 [motion_ungated_guard_spoof]
-codes = ["MANIFEST_MISSING", "MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+# T07: the registry now carries the real budget-guard manifest, so the spoof
+# (emitting raw joint_cmd) is caught as a manifest/graph port mismatch plus
+# the ungated-motion pair instead of MANIFEST_MISSING
+codes = ["SCHEMA_MISMATCH", "INPUT_NO_PRODUCER", "MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
 
 # discovered by the T03 audit pass
 

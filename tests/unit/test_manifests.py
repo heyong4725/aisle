@@ -28,6 +28,7 @@ EXPECTED_IDS = {
     "task-state-machine",
     "verifier-oracle",
     "reset",
+    "budget-guard",  # SPEC 080 BG-1 (T07)
 }
 
 

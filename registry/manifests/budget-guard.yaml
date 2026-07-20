@@ -1,0 +1,19 @@
+id: budget-guard
+kind: node
+provides: [budget_guard]
+requires: []
+inputs:
+  joint_cmd: {schema: jointvec_f32, rate_hz: 100}
+  gripper_cmd: {schema: scalar_f32, rate_hz: 30}
+outputs:
+  joint_cmd_safe: {schema: jointvec_f32, latency_class: hard_rt}
+  gripper_cmd_safe: {schema: scalar_f32, latency_class: hard_rt}
+  violation: {schema: json_utf8, latency_class: best_effort}
+  guard_stats: {schema: json_utf8, latency_class: best_effort}
+embodiment:
+  arm: [franka, so101]
+  gripper: any
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/nodes/budget_guard.py

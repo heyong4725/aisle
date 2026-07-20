@@ -25,9 +25,6 @@ SCN-4 = "so101 asset blocked on owner acquisition (ADR-6); franka half verified"
 # SPEC 070 harness — deferred to T09.
 HAR-2 = "deferred to T09"
 
-# SPEC 080 budget guard — deferred to T07.
-BG-3 = "deferred to T07"
-
 # SPEC 090 M0 gate — deferred to T10.
 M0-4 = "deferred to T10"
 

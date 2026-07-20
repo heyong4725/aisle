@@ -1,0 +1,32 @@
+# SPEC 080 BG-2 — budget-guard limits. FROZEN after M0 (CON-7).
+# All limits the guard enforces live here, never inline in code.
+
+[embodiment.franka]
+# official Panda joint position limits (rad), arm 7 dof + 2 finger dofs (m)
+q_min = [-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973, 0.0, 0.0]
+q_max = [2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973, 0.04, 0.04]
+# official Panda joint velocity limits (rad/s); fingers 0.05 m/s
+qdot_max = [2.175, 2.175, 2.175, 2.175, 2.61, 2.61, 2.61, 0.05, 0.05]
+# velocity is judged against the last SAFE command + the contract dt of the
+# joint_cmd topic (TC-4: 100 Hz)
+cmd_dt_s = 0.01
+# EE workspace AABB (m, base frame): keeps the flange out of the floor and
+# inside the pharmacy work envelope (reach 0.855 m)
+workspace_min = [-0.20, -0.75, 0.01]
+workspace_max = [0.90, 0.75, 1.20]
+# reference pose: velocity/workspace clamping for the FIRST command is
+# judged against this (the robot starts at home); also the hold target if
+# a command cannot be made legal. MUST equal home_qpos in
+# src/aisle/scenes/physics.toml (asserted by unit test)
+fallback_qpos = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04]
+# gripper_cmd scalar range (0 open .. 1 closed)
+gripper_min = 0.0
+gripper_max = 1.0
+
+[episode]
+# wall-clock budget per episode; on breach the guard holds the robot at the
+# last safe command (clamp, never drop) and publishes wall_timeout
+wall_timeout_s = 60.0
+# a command gap this long marks an episode boundary (reset/idle) and
+# restarts the wall timer
+idle_reset_s = 2.0
