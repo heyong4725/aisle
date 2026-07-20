@@ -40,11 +40,14 @@ LIFT_H = 0.015
 # stage-completion tracking tolerance (rad) and bounded at-target dwell (s)
 TRACK_TOL = 0.10
 STAGE_BAIL_S = 4.0
-# gripper ramp per 100 Hz tick: sized so a 4-tick message batch (25 Hz —
-# the gripper_cmd contract is <=30 Hz, so every-3rd-tick's 33.3 Hz was
-# illegal) steps 0.04 <= the guard's 0.0416/message bound, and the joint-
-# channel finger step (0.04 m * this) stays <= the finger qdot bound
+# gripper ramp per 100 Hz tick and message cadence: emission is
+# 100/GRIP_SEND_EVERY = 25 Hz (the gripper_cmd contract is <=30 Hz;
+# every-3rd-tick's 33.3 Hz was illegal) and the per-message step
+# (GRIP_SEND_EVERY * GRIP_STEP_PER_TICK = 0.04) stays <= the guard's
+# gripper_rate_max * gripper_dt_s bound; both relations are pinned by
+# tests/unit/test_ik_trajectory.py
 GRIP_STEP_PER_TICK = 0.010
+GRIP_SEND_EVERY = 4
 # max per-joint jump between consecutive insertion waypoints (rad)
 CONTINUITY_MAX = 1.2
 # staging TCP height: above every shelf box top (max 0.57), reached BEFORE
@@ -508,14 +511,12 @@ def main() -> None:
             if current_cmd is None:
                 current_cmd = qpos[:n_arm].copy()
             stage = plan.stages[stage_idx]
-            # ramp the gripper; send every 4th tick = 25 Hz (contract
-            # <=30 Hz), message step 4 x 0.010 = 0.04 <= the guard's
-            # 0.0416/message bound
+            # ramp the gripper (cadence/step relations pinned by unit test)
             if current_grip != stage.gripper:
                 step = min(GRIP_STEP_PER_TICK, abs(stage.gripper - current_grip))
                 current_grip += step if stage.gripper > current_grip else -step
                 grip_tick += 1
-                if grip_tick % 4 == 0 or current_grip == stage.gripper:
+                if grip_tick % GRIP_SEND_EVERY == 0 or current_grip == stage.gripper:
                     send(
                         "gripper_cmd",
                         pa.array(np.array([current_grip], dtype=np.float32)),

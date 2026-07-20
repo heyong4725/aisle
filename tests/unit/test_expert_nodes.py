@@ -52,7 +52,7 @@ class TestGraspTopdown:
         quat = (0.0, 0.0, np.sin(yaw / 2), np.cos(yaw / 2))
         target = np.array([0.5, -0.1, 0.10, *quat], dtype=np.float32)
         size = (0.055, 0.035, 0.090)  # y narrower: yaw unchanged
-        grasp, approach, place_z = plan_grasp(target, size, grip=0.025)
+        grasp, approach, place_z = plan_grasp(target, size, grip=0.025, tray_top_z=0.04)
         assert approach == pytest.approx(0.15)
         # release TCP: tray top + hanging box length + drop gap
         assert place_z == pytest.approx(0.04 + (0.090 - 0.025) + 0.01, abs=1e-6)
@@ -63,7 +63,7 @@ class TestGraspTopdown:
         """Fingers travel the gripper y-axis: when the box's x side is the
         narrower one, the grasp yaw turns 90 degrees to straddle it."""
         target = np.array([0.5, -0.1, 0.10, 0, 0, 0, 1], dtype=np.float32)
-        grasp, _, _ = plan_grasp(target, (0.030, 0.065, 0.110))
+        grasp, _, _ = plan_grasp(target, (0.030, 0.065, 0.110), tray_top_z=0.04)
         assert yaw_of(grasp[3:]) % np.pi == pytest.approx(np.pi / 2, abs=1e-5)
 
     def test_front_mode_approaches_horizontally(self):
@@ -72,7 +72,7 @@ class TestGraspTopdown:
         the approach distance spans from the front clearance point."""
         target = np.array([0.55, -0.11, 0.11, 0, 0, 0, 1], dtype=np.float32)
         grasp, approach, _ = plan_grasp(
-            target, (0.055, 0.035, 0.090), front=True, shelf_front_x=0.40
+            target, (0.055, 0.035, 0.090), front=True, shelf_front_x=0.40, tray_top_z=0.04
         )
         # z rides up to box_bottom + wrist clearance (0.065 + 0.065 = 0.13),
         # capped at box_top - finger engagement

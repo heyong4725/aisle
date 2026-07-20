@@ -71,7 +71,8 @@ def plan_grasp(
     grip: float = GRIP_ENGAGEMENT,
     front: bool = False,
     shelf_front_x: float = 0.0,
-    tray_top_z: float = 0.04,
+    *,
+    tray_top_z: float,
 ) -> tuple[np.ndarray, float, float]:
     """Pure plan: (grasp_pose7, approach_m).
 

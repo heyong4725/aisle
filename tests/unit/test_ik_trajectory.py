@@ -117,7 +117,7 @@ def test_staged_plan_front_mode_inserts_horizontally():
     slides horizontally into the inter-board gap."""
     target = np.array([0.55, -0.11, 0.105, 0, 0, 0, 1], dtype=np.float32)
     grasp, approach, place_z = plan_grasp(
-        target, (0.055, 0.035, 0.090), front=True, shelf_front_x=0.40
+        target, (0.055, 0.035, 0.090), front=True, shelf_front_x=0.40, tray_top_z=0.04
     )
     plan = StagedPlan(grasp, (0.35, -0.35), approach_m=approach, q_seed=HOME, place_z=place_z)
     assert plan.ok, plan.error
@@ -143,3 +143,18 @@ def test_ik_front_orientation_is_not_pi_flipped():
     assert q is not None
     _, solution_rot = fk_flange(q)
     assert solution_rot[:, 2] == pytest.approx([1.0, 0.0, 0.0], abs=0.01)
+
+
+def test_gripper_ramp_cadence_is_contract_and_guard_legal():
+    """PR #10 rounds 1-3 regression: the ramped gripper stream violated
+    the guard's per-message rate bound (round 1) and then the <=30 Hz
+    topic contract (round 2). Pin BOTH relations, plus the joint-channel
+    finger step against the finger velocity bound."""
+    from aisle.nodes.ik_trajectory import GRIP_SEND_EVERY, GRIP_STEP_PER_TICK
+
+    assert 100 / GRIP_SEND_EVERY <= 30  # emission within the topic contract
+    per_message = GRIP_SEND_EVERY * GRIP_STEP_PER_TICK
+    assert per_message <= LIMITS.gripper_rate_max * LIMITS.gripper_dt_s + 1e-9
+    finger_travel = max(LIMITS.q_max[7:])  # normalized grip spans the finger range
+    finger_step = finger_travel * GRIP_STEP_PER_TICK
+    assert finger_step <= max(LIMITS.qdot_max[7:]) * LIMITS.cmd_dt_s + 1e-9
