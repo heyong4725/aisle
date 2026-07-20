@@ -25,7 +25,7 @@ MUST honor it byte-for-byte.
 | `joint_state` | out | Float32[n_dof] | 100 Hz | meta `names: list[str]` |
 | `gripper_state` | out | Float32[1] | 100 Hz | 0 open … 1 closed |
 | `oracle_state` | out | Float32[n_obj*7] | 30 Hz | pos+quat per box, order = scene manifest; VERIFIER-ONLY (VAL-6) |
-| `poses` | out | Float32[n_obj*7] | 30 Hz | ground-truth box poses for tier-T0 oracle perception; NON-privileged (VAL-6 governs oracle_state only); T1/T2 tier gating of this topic is a Phase-2 validator rule (issue #2 resolution) |
+| `poses` | out | Float32[n_obj*7] | 15 Hz | ground-truth box poses for tier-T0 oracle perception; NON-privileged (VAL-6 governs oracle_state only); T1/T2 tier gating of this topic is a Phase-2 validator rule (issue #2 resolution) |
 | `joint_cmd` | in | Float32[n_dof] | ≤100 Hz | position targets |
 | `gripper_cmd` | in | Float32[1] | ≤30 Hz | |
 | `episode_result` | out (verifier) | JSON utf8 | per episode | see §3 |
