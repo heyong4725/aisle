@@ -21,6 +21,7 @@ import platform
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -96,7 +97,10 @@ class CommandQueue:
             if self.n_envs > 1:
                 raise ValueError(f"{kind} missing env_id in multi-env mode (BRG-5)")
             env_id = 0
-        env_id = int(env_id)
+        # strictly integral: bool/float coercion would silently misroute
+        # (0.7 -> env 0, True -> env 1)
+        if isinstance(env_id, bool) or not isinstance(env_id, int):
+            raise ValueError(f"{kind} env_id must be an int, got {env_id!r} (BRG-5)")
         if not 0 <= env_id < self.n_envs:
             raise ValueError(f"{kind} env_id {env_id} outside [0, {self.n_envs}) (BRG-5)")
         self._arrival += 1
@@ -145,7 +149,9 @@ def _metadata(sim_time_ns: int, env_id: int, seq: int, **extra) -> dict:
     return {"sim_time_ns": sim_time_ns, "env_id": env_id, "seq": seq, **extra}
 
 
-def main() -> None:
+def main(clock: Callable[[], float] = time.perf_counter) -> None:
+    """The clock is injected (CON-5): reset timing must never reach for a
+    wall clock ad hoc."""
     import genesis
     import pyarrow as pa
     from dora import Node
@@ -348,7 +354,7 @@ def main() -> None:
                 )
             commands.push("gripper", metadata.get("env_id"), payload)
         elif input_id == "reset":
-            started = time.perf_counter()
+            started = clock()
             payload = np.asarray(event["value"].to_numpy(zero_copy_only=False)).reshape(-1)
             if payload.shape[0] != 2:
                 raise ValueError(f"reset payload must be UInt32[2], got {payload.shape} (TC-6)")
@@ -374,7 +380,7 @@ def main() -> None:
                     request_id=metadata.get("request_id", ""),
                     seed=reset_seed,
                     mode=mode,
-                    t_reset_ms=int((time.perf_counter() - started) * 1000),
+                    t_reset_ms=int((clock() - started) * 1000),
                 ),
             )
             # the injected state IS the post-reset observation: snapshot it

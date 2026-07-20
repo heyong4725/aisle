@@ -103,13 +103,29 @@ def write_bridge_dataflow(
     return graph
 
 
-def _reap_orphan_nodes() -> None:
+_NODE_PATTERNS = (
+    "dora_genesis.py",
+    "fixtures/nodes/driver.py",
+    "fixtures/nodes/recorder.py",
+    "fixtures/nodes/verifier_stub.py",
+)
+
+
+def _reap_orphan_nodes(graph_dir: Path) -> None:
     """dora spawns nodes via `uv run` OUTSIDE our process group, so killing
     `dora run` leaks them — each leaked genesis node burns ~50% of a core
     forever, and past leaks have silently strangled whole test sessions.
-    Reap by our unique script paths after every run."""
-    for pattern in ("dora_genesis.py", "fixtures/nodes/driver.py", "fixtures/nodes/recorder.py"):
-        subprocess.run(["pkill", "-9", "-f", pattern], capture_output=True)
+    Reap ONLY processes whose cwd is THIS run's unique dataflow directory
+    (dora spawns nodes with cwd = the yaml's dir), so unrelated runs and
+    developer dataflows are never touched."""
+    for pattern in _NODE_PATTERNS:
+        pgrep = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True)
+        for pid in pgrep.stdout.split():
+            cwd = subprocess.run(
+                ["lsof", "-a", "-p", pid, "-d", "cwd", "-Fn"], capture_output=True, text=True
+            )
+            if f"n{graph_dir}" in cwd.stdout.splitlines():
+                subprocess.run(["kill", "-9", pid], capture_output=True)
 
 
 @dataclass
@@ -134,7 +150,7 @@ def run_dataflow(graph: Path, timeout_s: float) -> DataflowRun:
     )
     try:
         stdout, stderr = proc.communicate(timeout=timeout_s)
-        _reap_orphan_nodes()
+        _reap_orphan_nodes(graph.parent)
         return DataflowRun(False, proc.returncode, stdout, stderr)
     except subprocess.TimeoutExpired:
         os.killpg(proc.pid, signal.SIGTERM)
@@ -143,7 +159,7 @@ def run_dataflow(graph: Path, timeout_s: float) -> DataflowRun:
         except subprocess.TimeoutExpired:
             os.killpg(proc.pid, signal.SIGKILL)
             stdout, stderr = proc.communicate()
-        _reap_orphan_nodes()
+        _reap_orphan_nodes(graph.parent)
         return DataflowRun(True, proc.returncode, stdout or "", stderr or "")
 
 

@@ -143,3 +143,25 @@ def test_bridge_config_from_env():
     assert (cfg.seed, cfg.embodiment, cfg.n_envs) == (0, "franka", 1)
     cfg = parse_bridge_config({"AISLE_SEED": "7", "AISLE_EMBODIMENT": "so101", "AISLE_N_ENVS": "4"})
     assert (cfg.seed, cfg.embodiment, cfg.n_envs) == (7, "so101", 4)
+
+
+def test_non_integral_env_id_is_error():
+    """BRG-5: fractional and boolean env_id values are rejected, never
+    silently coerced into a route (0.7 must not become env 0)."""
+    queue = CommandQueue(n_envs=2)
+    for bad in (0.7, 1.0, True, "1"):
+        with pytest.raises(ValueError, match="env_id"):
+            queue.push("joint", bad, [0.1])
+
+
+def test_reset_clock_is_injected():
+    """CON-5: the bridge's reset timing uses an injected clock — the main
+    entrypoint takes it as a parameter defaulting to time.perf_counter,
+    never calling a wall clock ad hoc inside the loop."""
+    import inspect
+    import time as time_module
+
+    from aisle.nodes.dora_genesis import main
+
+    parameter = inspect.signature(main).parameters["clock"]
+    assert parameter.default is time_module.perf_counter
