@@ -2,6 +2,8 @@
 # All limits the guard enforces live here, never inline in code.
 
 [embodiment.franka]
+# arm dofs before the finger dofs in the command vector
+n_arm_dof = 7
 # official Panda joint position limits (rad), arm 7 dof + 2 finger dofs (m)
 q_min = [-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973, 0.0, 0.0]
 q_max = [2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973, 0.04, 0.04]
@@ -22,8 +24,11 @@ fallback_qpos = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04]
 # gripper_cmd scalar range (0 open .. 1 closed)
 gripper_min = 0.0
 gripper_max = 1.0
-# max normalized closing rate: Panda fingers 0.05 m/s over the 0.08 m span
-gripper_rate_max = 0.625
+# max normalized rate: each Panda finger moves 0.05 m/s over ITS 0.04 m
+# travel (the 0.08 m figure is the two-finger WIDTH, not one finger's
+# travel) — matches the finger qdot_max, so the joint and gripper
+# channels enforce the same physical rate
+gripper_rate_max = 1.25
 # contract dt of the gripper_cmd topic (TC: 30 Hz)
 gripper_dt_s = 0.0333
 

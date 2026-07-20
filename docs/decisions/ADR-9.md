@@ -57,3 +57,22 @@ frozen set; CON-7's enumeration is treated as a minimum, not a ceiling.
 (12) The manifest advertises franka only: env/limits.toml has no so101
 section and load_limits refuses it, so claiming so101 support was a lie;
 restore when the so101 limits and kinematics land.
+
+## Amendments after PR #8 review round 2
+
+(13) The wall timer anchors AT THE RESET, not at the first command after
+it — delaying the first command must not delay the budget. Bare startup
+(no reset seen yet) still anchors at the first command, the only signal
+available there. (14) The fingers ARE the gripper: both command channels
+now share one finger-rate reference — after a joint_cmd the gripper
+channel's last-safe is recomputed from the clamped finger positions, and
+after a gripper_cmd the joint channel's finger slice is rewritten from
+the clamped scalar (mapping: fingers open at q_max, closed at 0;
+normalized 0 = open). Alternating channels can no longer double the
+effective finger rate. gripper_rate_max corrected to 1.25/s: each finger
+travels 0.04 m (0.08 m is the two-finger width), so 0.05 m/s over
+0.04 m — now numerically consistent with the finger qdot_max. (15) BG-5
+is timer-driven: the guard declares a `tick` input (dora/timer/millis/
+5000) and emits guard_stats on every tick even when no commands flow.
+This required a `timer_tick` schema vocabulary entry — a Class C change
+(CAP-2) explicitly flagged in PR #8 for owner sign-off.

@@ -10,7 +10,9 @@ from aisle.nodes.budget_guard import (
     EpisodeTimer,
     clamp_gripper_cmd,
     clamp_joint_cmd,
+    fingers_to_gripper,
     fk_ee_pos,
+    gripper_to_fingers,
     load_limits,
     violation_payload,
 )
@@ -194,18 +196,40 @@ def test_fk_home_is_inside_workspace_and_reach():
     assert not np.allclose(ee, fk_ee_pos(step(HOME, 1, HOME[1] + 0.3)[:7]))
 
 
-def test_episode_timer_not_restarted_by_idle_pause():
-    """BG-2 (PR review): idle pauses must NOT restart the wall timer — a
-    policy that pauses commands cannot stretch the budget. Only a reset
-    (the authoritative episode boundary) restarts it."""
+def test_episode_timer_anchors_at_reset_not_first_command():
+    """BG-2 (PR review rounds 1+2): idle pauses must NOT restart the wall
+    timer, and after a reset the timer anchors AT THE RESET — delaying the
+    first command must not delay the budget."""
     timer = EpisodeTimer()
     assert timer.on_command(0.0) == 0.0
     assert timer.on_command(50.0) == pytest.approx(50.0)
     # a 10 s silence, then a command: elapsed keeps counting from the start
     assert timer.on_command(65.0) == pytest.approx(65.0)
-    timer.on_reset()
-    assert timer.on_command(70.0) == 0.0
-    assert timer.on_command(75.0) == pytest.approx(5.0)
+    timer.on_reset(70.0)
+    # first command 20 s AFTER the reset: 20 s of budget already spent
+    assert timer.on_command(90.0) == pytest.approx(20.0)
+    assert timer.on_command(95.0) == pytest.approx(25.0)
+
+
+def test_finger_rate_state_is_shared_across_channels():
+    """BG-2 (PR review round 2): the fingers ARE the gripper — the round
+    trip between the two representations is exact, so alternating
+    joint_cmd/gripper_cmd cannot double the effective finger rate (the
+    node syncs both references from either channel's clamp result)."""
+    assert fingers_to_gripper(HOME, LIMITS) == pytest.approx(0.0)  # home = open
+    for g in (0.0, 0.25, 1.0):
+        fingers = gripper_to_fingers(g, LIMITS)
+        synced = np.concatenate([HOME[:7], fingers]).astype(np.float32)
+        assert fingers_to_gripper(synced, LIMITS) == pytest.approx(g, abs=1e-6)
+    # one rate-limited gripper step, synced into the joint vector: a
+    # joint_cmd trying to snap the fingers back open is judged against the
+    # SYNCED state, not the stale pre-gripper one
+    g1, _ = clamp_gripper_cmd(1.0, 0.0, LIMITS, timed_out=False)
+    last = np.concatenate([HOME[:7], gripper_to_fingers(g1, LIMITS)]).astype(np.float32)
+    safe, violations = clamp_joint_cmd(HOME, last, LIMITS, timed_out=False)
+    finger_step = LIMITS.qdot_max[7] * LIMITS.cmd_dt_s
+    assert safe[7] == pytest.approx(last[7] + finger_step, abs=1e-6)
+    assert "velocity" in [v["reason"] for v in violations]
 
 
 def test_unsupported_embodiment_is_refused_at_startup():

@@ -107,6 +107,7 @@ def write_bridge_dataflow(
                         "id": "budget-guard",
                         "path": str(GUARD),
                         "inputs": {
+                            "tick": "dora/timer/millis/5000",
                             "joint_cmd": _q("driver/joint_cmd"),
                             "gripper_cmd": _q("driver/gripper_cmd"),
                             "reset_done": _q("bridge/reset_done"),

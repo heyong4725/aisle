@@ -44,6 +44,7 @@ _AXES = ("x", "y", "z")
 class GuardLimits:
     """BG-2: every limit the guard enforces, loaded from env/limits.toml."""
 
+    n_arm_dof: int
     q_min: tuple[float, ...]
     q_max: tuple[float, ...]
     qdot_max: tuple[float, ...]
@@ -82,6 +83,7 @@ def load_limits(embodiment: str) -> GuardLimits:
         )
     emb = raw["embodiment"][embodiment]
     return GuardLimits(
+        n_arm_dof=emb["n_arm_dof"],
         q_min=tuple(emb["q_min"]),
         q_max=tuple(emb["q_max"]),
         qdot_max=tuple(emb["qdot_max"]),
@@ -112,6 +114,18 @@ def fk_ee_pos(q_arm: np.ndarray) -> np.ndarray:
             ]
         )
     return T[:3, 3] + T[:3, 2] * _FRANKA_FLANGE_D
+
+
+def gripper_to_fingers(g: float, limits: GuardLimits) -> np.ndarray:
+    """Normalized gripper (0 open .. 1 closed) -> finger joint positions
+    (fingers are open at q_max, closed at 0 — franka; ADR-9)."""
+    return limits.q_max_arr[limits.n_arm_dof :] * (1.0 - g)
+
+
+def fingers_to_gripper(q: np.ndarray, limits: GuardLimits) -> float:
+    """Inverse of gripper_to_fingers on the finger slice of a command."""
+    open_pos = limits.q_max_arr[limits.n_arm_dof :]
+    return float(1.0 - np.mean(np.asarray(q, np.float32)[limits.n_arm_dof :] / open_pos))
 
 
 def _inside(ee: np.ndarray, limits: GuardLimits) -> bool:
@@ -160,7 +174,7 @@ def clamp_joint_cmd(
     # before the velocity clamp shortens the step, so an out-of-workspace
     # intent is reported even when velocity limiting already contains it;
     # commanded_ee is None iff the commanded pose was inside
-    commanded_ee = fk_ee_pos(safe[:7])
+    commanded_ee = fk_ee_pos(safe[: limits.n_arm_dof])
     if _inside(commanded_ee, limits):
         commanded_ee = None
 
@@ -175,26 +189,26 @@ def clamp_joint_cmd(
     # verified and pulled back if needed. When velocity left the command
     # untouched, its FK is the commanded one already computed.
     final_ee = (
-        fk_ee_pos(safe[:7])
+        fk_ee_pos(safe[: limits.n_arm_dof])
         if velocity_clamped
         else (commanded_ee if commanded_ee is not None else None)
     )
     if final_ee is not None and not _inside(final_ee, limits):
         if commanded_ee is None:  # velocity-clamped pose strayed on its own
             commanded_ee = final_ee
-        if _inside(fk_ee_pos(last[:7]), limits):
+        if _inside(fk_ee_pos(last[: limits.n_arm_dof]), limits):
             # largest t in [0, 1] along last -> safe whose FK stays inside
             good, bad = 0.0, 1.0
             for _ in range(12):  # sub-millimeter resolution on any step
                 mid = (good + bad) / 2
-                if _inside(fk_ee_pos((last + mid * (safe - last))[:7]), limits):
+                if _inside(fk_ee_pos((last + mid * (safe - last))[: limits.n_arm_dof]), limits):
                     good = mid
                 else:
                     bad = mid
             safe = (last + good * (safe - last)).astype(np.float32)
         else:  # last safe itself is outside (should not happen): hold home
             safe = np.asarray(limits.fallback_qpos, dtype=np.float32)
-        final_ee = fk_ee_pos(safe[:7])
+        final_ee = fk_ee_pos(safe[: limits.n_arm_dof])
     if commanded_ee is not None:
         axis = next(
             (
@@ -239,10 +253,11 @@ def clamp_gripper_cmd(
 
 
 class EpisodeTimer:
-    """BG-2 wall timer. It starts at the first command of an episode and
-    ONLY a reset — the system's authoritative episode boundary — restarts
-    it. Idle pauses deliberately do NOT: a policy that pauses commands
-    must not be able to stretch the wall budget (PR review)."""
+    """BG-2 wall timer, anchored at the RESET that starts the episode —
+    not the first command, or a policy could delay its first command to
+    stretch the budget (PR review round 2). Idle pauses do not restart it
+    either. Before any reset is seen (bare startup) the first command
+    anchors, the only signal available."""
 
     def __init__(self) -> None:
         self._start: float | None = None
@@ -252,8 +267,8 @@ class EpisodeTimer:
             self._start = now
         return now - self._start
 
-    def on_reset(self) -> None:
-        self._start = None
+    def on_reset(self, now: float) -> None:
+        self._start = now
 
 
 def violation_payload(violation: dict, seq: int) -> dict:
@@ -281,7 +296,6 @@ def main(clock=None) -> None:
     envs: dict[int, dict] = {}
     seq: dict[str, int] = {}
     counts: dict[str, int] = {}
-    stats_t = clock()
 
     def next_seq(topic: str) -> int:
         seq[topic] = seq.get(topic, 0) + 1
@@ -316,6 +330,10 @@ def main(clock=None) -> None:
                 timed_out=timed_out,
             )
             state["last_safe"] = safe
+            # the fingers ARE the gripper: keep the gripper channel's rate
+            # reference in sync so alternating channels cannot double the
+            # effective finger rate (PR review round 2)
+            state["last_gripper"] = fingers_to_gripper(safe, limits)
             send("joint_cmd_safe", pa.array(safe), metadata)
             publish_violations(violations, metadata)
         elif event["id"] == "gripper_cmd":
@@ -330,19 +348,23 @@ def main(clock=None) -> None:
                 value, state["last_gripper"], limits, timed_out=timed_out
             )
             state["last_gripper"] = safe_g
+            updated = np.array(state["last_safe"], dtype=np.float32)
+            updated[limits.n_arm_dof :] = gripper_to_fingers(safe_g, limits)
+            state["last_safe"] = updated
             send("gripper_cmd_safe", pa.array(np.array([safe_g], dtype=np.float32)), metadata)
             publish_violations(violations, metadata)
         elif event["id"] == "reset_done":
-            # the authoritative episode boundary: restart every wall timer
-            # and re-reference velocity/hold state to home — the robot IS
-            # at home after a teleport reset
+            # the authoritative episode boundary: the wall timer anchors
+            # HERE (not at the first command), and velocity/hold state is
+            # re-referenced to home — the robot IS at home after a
+            # teleport reset
             for state in envs.values():
-                state["timer"].on_reset()
+                state["timer"].on_reset(now)
                 state["last_safe"] = fallback
                 state["last_gripper"] = 0.0
-        # BG-5: cumulative violation counts every 5 s (on command cadence)
-        if now - stats_t >= 5.0:
-            stats_t = now
+        elif event["id"] == "tick":
+            # BG-5: cumulative violation counts every 5 s, timer-driven —
+            # emitted even when no commands flow
             send("guard_stats", pa.array([json.dumps({"violations": counts})]), {})
 
 
