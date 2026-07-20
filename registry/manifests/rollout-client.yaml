@@ -1,0 +1,20 @@
+# Episode driver for runnable graphs: sends seeded resets and episode
+# goals, collects results (SPEC 070 rollout runner configures it via env).
+id: rollout-client
+kind: node
+provides: [episode_driving]
+requires: [episode_verification]
+inputs:
+  reset_done: {schema: reset_done_u32, rate_hz: 1}
+  episode_result: {schema: json_utf8, rate_hz: 1}
+  tick: {schema: timer_tick, rate_hz: 1}
+outputs:
+  reset: {schema: reset_request_u32, latency_class: best_effort}
+  episode_goal: {schema: json_utf8, latency_class: best_effort}
+embodiment:
+  arm: [franka, so101]
+  gripper: any
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/harness/rollout_client.py

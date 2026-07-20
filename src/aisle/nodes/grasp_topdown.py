@@ -1,0 +1,156 @@
+"""grasp-planner-topdown node (CAP-5): target_pose -> grasp_pose.
+
+Two approach modes, chosen by the shelf geometry (ADR-10):
+- TOP level (no board above): classic top-down — fingers descend onto the
+  box's top section, yaw across the narrower horizontal axis.
+- LOWER levels: a board above makes any from-above descent collide (the
+  hand column crosses the board; proven in the T08 live runs), so the
+  grasp is a FRONT approach: wrist horizontal, the hand slides into the
+  inter-board gap from the shelf front, fingers straddling the box sides.
+The approach DISTANCE rides in grasp_pose metadata (approach_m) so
+ik-trajectory can start its pregrasp clear of the shelf front. Med
+dimensions come from meds.toml via the target_med metadata that
+oracle-pose forwards.
+"""
+
+from __future__ import annotations
+
+import math
+
+import numpy as np
+
+# how far the fingertips engage below the box TOP (top-down mode): as deep
+# as the palm allows — shallow grips let the box pitch inside the grip
+# during the carry and it lands on its edge (T08 replays; fingers are
+# 0.05 long, so 0.045 leaves 5 mm palm clearance)
+GRIP_ENGAGEMENT = 0.045
+# clearance between the shelf front plane and the front-mode pregrasp TCP
+FRONT_CLEARANCE = 0.06
+# the tray is a flat slab (no walls): release the box from a small drop
+# gap above it — pressing it down drives it THROUGH the slab (T08 replays)
+PLACE_DROP_GAP = 0.01
+# the wrist's radius below the flange axis: inserting at box-center height
+# scraped the wrist on the board's front edge (T08 live run 6), so the
+# front grasp rides high enough for the wrist to clear the board top
+WRIST_CLEARANCE = 0.065
+# the fingers must keep at least this much box below the grasp line
+MIN_FINGER_ON_BOX = 0.015
+# xyzw of Ry(pi/2): flange z horizontal (+x, into the shelf), gripper y
+# horizontal — the front-approach orientation
+FRONT_QUAT = (0.0, 0.7071067811865476, 0.0, 0.7071067811865476)
+
+
+def _quat_mul(a, b) -> tuple[float, float, float, float]:
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return (
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz,
+    )
+
+
+def yaw_of(quat_xyzw) -> float:
+    """Yaw (rotation about world z) of a pose quaternion."""
+    x, y, z, w = (float(v) for v in quat_xyzw)
+    return math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+
+
+def topdown_quat(yaw: float) -> tuple[float, float, float, float]:
+    """qz(yaw) * qx(pi): flange z pointing straight down, yawed about world
+    z (TC-1 xyzw)."""
+    qz = (0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2))
+    qx = (1.0, 0.0, 0.0, 0.0)
+    return _quat_mul(qz, qx)
+
+
+def plan_grasp(
+    target_pose: np.ndarray,
+    size_xyz,
+    grip: float = GRIP_ENGAGEMENT,
+    front: bool = False,
+    shelf_front_x: float = 0.0,
+    *,
+    tray_top_z: float,
+) -> tuple[np.ndarray, float, float]:
+    """Pure plan: (grasp_pose7, approach_m).
+
+    Top-down: TCP at the box's top section, fingers across the narrower
+    horizontal axis. Front: TCP at the box center, wrist horizontal,
+    approach from shelf_front_x minus clearance."""
+    pose = np.asarray(target_pose, dtype=np.float32).reshape(7)
+    if front:
+        half_z = float(size_xyz[2]) / 2
+        bottom, top = float(pose[2]) - half_z, float(pose[2]) + half_z
+        # ride high: wrist over the board edge, fingers still on the box
+        z = min(max(float(pose[2]), bottom + WRIST_CLEARANCE), top - MIN_FINGER_ON_BOX)
+        grasp = np.array([pose[0], pose[1], z, *FRONT_QUAT], dtype=np.float32)
+        approach = float(pose[0]) - (shelf_front_x - FRONT_CLEARANCE)
+        return grasp, approach, place_tcp_z(size_xyz, top - z, tray_top_z)
+    yaw = yaw_of(pose[3:7])
+    # fingers travel along the gripper y-axis, which at yaw=0 straddles the
+    # box's y extent; add 90 degrees when x is the narrower side
+    if size_xyz[0] < size_xyz[1]:
+        yaw += math.pi / 2
+    z = float(pose[2]) + float(size_xyz[2]) / 2 - grip
+    grasp = np.array([pose[0], pose[1], z, *topdown_quat(yaw)], dtype=np.float32)
+    return grasp, 0.15, place_tcp_z(size_xyz, grip, tray_top_z)
+
+
+def place_tcp_z(size_xyz, grip_from_top: float, tray_top_z: float) -> float:
+    """Release TCP height: box bottom hovers PLACE_DROP_GAP above the tray
+    slab when the TCP is here (the box hangs (size_z - grip_from_top)
+    below the TCP). The slab height comes from the embodiment's layout
+    (SCN-2: scene constants live in physics.toml, and so101's tray
+    differs)."""
+    return float(tray_top_z) + (float(size_xyz[2]) - float(grip_from_top)) + PLACE_DROP_GAP
+
+
+def main() -> None:
+    import os
+    import sys
+
+    import pyarrow as pa
+    from dora import Node
+
+    from aisle.scenes.pharmacy import load_meds, load_physics, resolve_layout
+    from aisle.topics import make_sender
+
+    meds = load_meds()
+    layout = resolve_layout(load_physics(), os.environ.get("AISLE_EMBODIMENT", "franka"))
+    shelf = layout["shelf"]
+    shelf_front_x = shelf["pos"][0] - shelf["level_size"][0] / 2
+    tray = layout["tray"]
+    tray_top_z = tray["pos"][2] + tray["size"][2] / 2
+    # a box is under a board iff its z sits below the TOP level's surface
+    top_surface_z = shelf["pos"][2] + shelf["level_heights"][-1] + shelf["board_thickness"] / 2
+    node = Node()
+    send = make_sender(node)
+    for event in node:
+        if event["type"] != "INPUT":
+            continue
+        metadata = event.get("metadata") or {}
+        if event["id"] == "target_pose":
+            med = metadata.get("target_med")
+            if med not in meds:
+                print(f"target_pose without a known target_med ({med!r})", file=sys.stderr)
+                continue
+            pose = event["value"].to_numpy(zero_copy_only=False)
+            front = float(np.asarray(pose).reshape(-1)[2]) < top_surface_z
+            grasp, approach, place_z = plan_grasp(
+                pose,
+                meds[med]["size"],
+                front=front,
+                shelf_front_x=shelf_front_x,
+                tray_top_z=tray_top_z,
+            )
+            send(
+                "grasp_pose",
+                pa.array(grasp),
+                {**metadata, "approach_m": approach, "front": front, "place_tcp_z": place_z},
+            )
+
+
+if __name__ == "__main__":
+    main()

@@ -53,12 +53,15 @@ codes = ["ORACLE_LEAK"]
 codes = ["ORACLE_LEAK", "SCHEMA_MISMATCH"]
 
 [motion_ungated_arm]
-codes = ["MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+codes = ["MOTION_UNGATED"]
 
 [motion_ungated_gripper]
-codes = ["MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+codes = ["MOTION_UNGATED"]
 
 [eval_missing_for_motion]
+# T08: the real registry gained the M0 evalcards, so this failure mode is
+# preserved via a fixture root whose drivers still carry eval: null
+root = "tests/fixtures/roots/eval_null"
 codes = ["EVAL_MISSING_FOR_MOTION", "MOTION_UNGATED"]
 
 [embodiment_mismatch_mobile]
@@ -79,7 +82,7 @@ codes = ["GRAPH_INVALID"]
 # corpus in the PR that handles them)
 
 [motion_ungated_timer_direct]
-codes = ["MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+codes = ["MOTION_UNGATED"]
 
 [input_no_producer_bad_timer]
 codes = ["INPUT_NO_PRODUCER"]
@@ -125,13 +128,13 @@ codes = ["MANIFEST_MISSING", "ORACLE_LEAK"]
 # T07: the registry now carries the real budget-guard manifest, so the spoof
 # (emitting raw joint_cmd) is caught as a manifest/graph port mismatch plus
 # the ungated-motion pair instead of MANIFEST_MISSING
-codes = ["SCHEMA_MISMATCH", "INPUT_NO_PRODUCER", "MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+codes = ["SCHEMA_MISMATCH", "INPUT_NO_PRODUCER", "MOTION_UNGATED"]
 
 # discovered by the T03 audit pass
 
 # the design-doc §8.1.4 case: edges reference 'controller' which is no node's id
 [input_no_producer_controller_typo]
-codes = ["INPUT_NO_PRODUCER", "MOTION_UNGATED", "EVAL_MISSING_FOR_MOTION"]
+codes = ["INPUT_NO_PRODUCER", "MOTION_UNGATED"]
 
 [graph_invalid_duplicate_outputs]
 codes = ["GRAPH_INVALID"]

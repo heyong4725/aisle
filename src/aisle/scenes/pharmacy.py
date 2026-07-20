@@ -374,6 +374,18 @@ def build_scene(
     if "home_qpos" in profile:
         home = np.asarray(profile["home_qpos"], dtype=np.float32)
         robot.set_qpos(home if n_envs == 1 else np.tile(home, (n_envs, 1)))
+    # finger-dof gains: without these the tendon-approximated gripper
+    # actuator ignores position control and the fingers fall closed
+    if "gripper_dofs" in profile and "gripper_kp" in profile:
+        # gripper_dofs is a COUNT; the finger dofs are the last N
+        count = int(profile["gripper_dofs"])
+        finger_dofs = list(range(robot.n_dofs - count, robot.n_dofs))
+        robot.set_dofs_kp(
+            np.asarray(profile["gripper_kp"], dtype=np.float32), dofs_idx_local=finger_dofs
+        )
+        robot.set_dofs_kv(
+            np.asarray(profile["gripper_kv"], dtype=np.float32), dofs_idx_local=finger_dofs
+        )
 
     ee_link = robot.get_link(FRANKA_EE_LINK) if embodiment == "franka" else robot.links[-1]
     offset = np.eye(4, dtype=np.float32)

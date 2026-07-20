@@ -1,0 +1,27 @@
+id: budget-guard
+kind: node
+provides: [budget_guard]
+requires: []
+inputs:
+  joint_cmd: {schema: jointvec_f32, rate_hz: 100}
+  gripper_cmd: {schema: scalar_f32, rate_hz: 30}
+  # the authoritative episode boundary: restarts the wall timer and
+  # re-references velocity/hold state to home (ADR-9)
+  reset_done: {schema: reset_done_u32, rate_hz: 1}
+  # BG-5 stats cadence: wire from dora/timer/millis/5000 (payload opaque)
+  tick: {schema: timer_tick, rate_hz: 0.2}
+outputs:
+  joint_cmd_safe: {schema: jointvec_f32, latency_class: hard_rt}
+  gripper_cmd_safe: {schema: scalar_f32, latency_class: hard_rt}
+  violation: {schema: json_utf8, latency_class: best_effort}
+  guard_stats: {schema: json_utf8, latency_class: best_effort}
+embodiment:
+  # so101 intentionally absent: env/limits.toml has no so101 section and
+  # load_limits refuses it (asset + kinematics blocked); restore when the
+  # so101 limits land
+  arm: [franka]
+  gripper: any
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/nodes/budget_guard.py

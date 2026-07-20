@@ -53,8 +53,8 @@ def test_corpus_minimums():
     """VAL-7: the golden corpus holds >=20 deliberately broken graphs and
     >=3 valid graphs, and includes the design-doc §8.1.4 typo case BY
     CONTENT: an edge referencing controller/joint_cmd while no node has the
-    id controller. graphs/expert_t0.yaml joins the good corpus at T08
-    (see ADR 4; blocked on issue 2)."""
+    id controller. graphs/expert_t0.yaml joined the good corpus at T08
+    (issue 2 resolved by the poses topic, see test_expert_t0_is_good)."""
     bad = list(BAD_DIR.glob("*.yaml"))
     assert len(bad) >= 20
     assert len(list(GOOD_DIR.glob("*.yaml"))) >= 3
@@ -91,6 +91,19 @@ def test_good_corpus_passes(path):
     assert code == 0, report
     assert report["ok"] is True
     assert report["errors"] == []
+
+
+def test_expert_t0_is_good():
+    """VAL-7's good-corpus requirement for graphs/expert_t0.yaml is
+    satisfied HERE by validating the real file in place (it stays outside
+    tests/fixtures/graphs/good/ so no copy can drift): NORMAL validation
+    — no --allow-unproven, which HAR-2's rollout gate never sets — passes
+    with zero errors AND zero warnings (the M0 evalcards exist, ADR-3
+    retired at T08)."""
+    code, report = run_validate(REPO_ROOT / "graphs" / "expert_t0.yaml")
+    assert code == 0, report
+    assert report["ok"] is True and report["errors"] == []
+    assert report["warnings"] == []
 
 
 def test_hints_nonempty():
@@ -461,7 +474,9 @@ def test_allow_unproven_downgrades_eval_error():
     """VAL-2: --allow-unproven downgrades EVAL_MISSING_FOR_MOTION to a
     warning (design doc §8.2.1); the harness never sets it for agents."""
     graph = BAD_DIR / "eval_missing_for_motion.yaml"
-    code, report = run_validate(graph, "--allow-unproven")
+    code, report = run_validate(
+        graph, "--allow-unproven", "--root", str(REPO_ROOT / "tests/fixtures/roots/eval_null")
+    )
     assert "EVAL_MISSING_FOR_MOTION" not in codes(report, "errors")
     assert "EVAL_MISSING_FOR_MOTION" in codes(report, "warnings")
 

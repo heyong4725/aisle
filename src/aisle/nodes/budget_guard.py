@@ -99,9 +99,10 @@ def load_limits(embodiment: str) -> GuardLimits:
     )
 
 
-def fk_ee_pos(q_arm: np.ndarray) -> np.ndarray:
-    """Flange position (base frame) via modified-DH forward kinematics on
-    the commanded arm pose (BG-2)."""
+def fk_flange(q_arm: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Flange position and rotation matrix (base frame) via modified-DH
+    forward kinematics on the commanded arm pose (BG-2; also the shared
+    kinematics for ik-trajectory)."""
     T = np.eye(4)
     for (a, d, ca, sa), theta in zip(_FRANKA_DH, q_arm, strict=True):
         ct, st = math.cos(float(theta)), math.sin(float(theta))
@@ -113,7 +114,12 @@ def fk_ee_pos(q_arm: np.ndarray) -> np.ndarray:
                 [0.0, 0.0, 0.0, 1.0],
             ]
         )
-    return T[:3, 3] + T[:3, 2] * _FRANKA_FLANGE_D
+    return T[:3, 3] + T[:3, 2] * _FRANKA_FLANGE_D, T[:3, :3]
+
+
+def fk_ee_pos(q_arm: np.ndarray) -> np.ndarray:
+    """Flange position only (the guard's workspace check)."""
+    return fk_flange(q_arm)[0]
 
 
 def gripper_to_fingers(g: float, limits: GuardLimits) -> np.ndarray:

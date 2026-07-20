@@ -25,6 +25,7 @@ RATES = {
     "joint_state": 100,
     "gripper_state": 100,
     "oracle_state": 30,
+    "poses": 15,
 }
 FRANKA_N_DOF = 9
 
@@ -105,6 +106,8 @@ def test_schema_conformance(tmp_path, dataflow):
     assert 0.0 <= by_topic["gripper_state"][0]["values"][0] <= 1.0
     oracle = by_topic["oracle_state"][0]
     assert oracle["dtype"] == "float" and oracle["len"] == 35
+    poses = by_topic["poses"][0]  # SPEC 010: non-privileged twin of oracle_state
+    assert poses["dtype"] == "float" and poses["len"] == 35
     for i in range(5):  # TC-1: quaternions are (x,y,z,w) — w LAST
         block = oracle["values"][i * 7 + 3 : i * 7 + 7]
         assert abs(block[3]) > 0.9, (i, block)

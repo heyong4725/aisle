@@ -37,6 +37,15 @@ tray_pos = [0.35, -0.35, 0.02]
 tray_size = [0.20, 0.28, 0.04]
 # elbow-bent ready pose: the deterministic IK start (all-zeros is singular)
 home_qpos = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04]
+# finger-dof PD gains: the MJCF tendon-approximated finger actuator is
+# inert under genesis position control with default gains — the fingers
+# fall closed and NEVER physically grip (latent since T04, exposed by the
+# T08 grasp work; per-gripper-dof, cf. gripper_dofs)
+# high kp => firm pinch: at contact the squeeze force is kp * penetration
+# command; 500 held ~9 N and boxes PITCHED ~50 deg inside the grip during
+# the carry (T08 replays), landing on their edges
+gripper_kp = [2000.0, 2000.0]
+gripper_kv = [100.0, 100.0]
 gripper_dofs = 2
 gripper_open_m = 0.04
 gripper_close_m = 0.0
