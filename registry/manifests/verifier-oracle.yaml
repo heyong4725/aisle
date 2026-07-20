@@ -5,6 +5,8 @@ requires: []
 inputs:
   oracle_state: {schema: posearray7d_f32, rate_hz: 30}
   episode_goal: {schema: json_utf8, rate_hz: 1}
+  # VER-2's robot-home condition needs qpos (ADR-8)
+  joint_state: {schema: jointvec_f32, rate_hz: 100}
 outputs:
   episode_result: {schema: json_utf8, latency_class: best_effort}
 embodiment:

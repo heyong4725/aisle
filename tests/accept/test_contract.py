@@ -124,10 +124,11 @@ def test_schema_conformance(tmp_path, dataflow):
 
 
 def test_reset_service(tmp_path, dataflow):
-    """Acceptance A2 (TC-6, CON-5): seeded resets — every request gets a reset_done
-    echoing its request_id, no observation interleaves a reset and its
-    reply, and identical seeds reproduce an identical first oracle_state
-    after reset."""
+    """Acceptance A2 (TC-6, CON-5, RST-1): seeded resets routed THROUGH the
+    reset dispatcher node — every request gets a forwarded reset_done
+    echoing its request_id within the RST-1 budget, no observation
+    interleaves a reset and its reply, and identical seeds reproduce an
+    identical first oracle_state after reset."""
     seeds = [1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 1]
     records = capture(
         dataflow,
@@ -139,19 +140,31 @@ def test_reset_service(tmp_path, dataflow):
             "DRIVER_RESET_SPACING": 10,
         },
         duration_s=18.0,
+        with_reset_service=True,
     )
+    # the DISPATCHER's forwarded replies: proves src/aisle/reset/service.py
+    # ran live and preserved TC-6 metadata across both hops
     dones = [r for r in records if r["id"] == "reset_done"]
     assert len(dones) == len(seeds), f"{len(dones)} reset_done for {len(seeds)} requests"
+    # RST-1 end-to-end: request arrival and reply arrival are stamped by the
+    # recorder's OWN clock, so their delta spans driver -> dispatcher ->
+    # bridge teleport -> dispatcher -> reply (t_reset_ms alone would only
+    # measure the bridge's internal handler)
+    request_wall_t = {
+        r["metadata"]["request_id"]: r["wall_t"] for r in records if r["id"] == "reset"
+    }
     for done in dones:
         meta = done["metadata"]
         assert meta["request_id"].startswith("req-")  # TC-6 request/reply correlation
-        assert int(meta["t_reset_ms"]) >= 0
+        assert done["wall_t"] - request_wall_t[meta["request_id"]] < 2.0  # RST-1
+        # bridge-internal handler time is a consistent sub-measurement
+        assert 0 <= int(meta["t_reset_ms"]) < 2000
 
     # CON-5: first oracle_state after a reset is a pure function of the seed
     first_oracle_after: dict[int, str] = {}
     pending_seed = None
     for r in records:
-        if r["id"] == "reset_done":
+        if r["id"] == "bridge_reset_done":
             pending_seed = int(r["metadata"]["seed"])
         elif r["id"] == "oracle_state" and pending_seed is not None:
             first_oracle_after.setdefault(pending_seed, r["sha256"])
@@ -163,10 +176,12 @@ def test_reset_service(tmp_path, dataflow):
     # TC-6 send-side ordering: dora preserves per-producer order, so the
     # bridge message FOLLOWING each reset_done must be the post-reset
     # oracle snapshot — nothing interleaves the service completion
+    # (checked on the bridge's OWN stream: per-producer order holds there,
+    # while the dispatcher-forwarded copy crosses producers)
     for i, r in enumerate(records):
-        if r["id"] != "reset_done":
+        if r["id"] != "bridge_reset_done":
             continue
-        following = next((x for x in records[i + 1 :]), None)
+        following = next((x for x in records[i + 1 :] if x["id"] != "reset_done"), None)
         assert following is not None and following["id"] == "oracle_state", following
 
 
