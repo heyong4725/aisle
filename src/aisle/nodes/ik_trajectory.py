@@ -48,6 +48,20 @@ STAGE_BAIL_S = 4.0
 # tests/unit/test_ik_trajectory.py
 GRIP_STEP_PER_TICK = 0.010
 GRIP_SEND_EVERY = 4
+
+
+def grip_ramp_tick(current: float, target: float, tick: int) -> tuple[float, int, bool]:
+    """One 100 Hz tick of the gripper ramp: returns (grip, tick, emit).
+    Pure so the emitted SEQUENCE is testable: per-message step legality
+    and emission cadence both regressed during review rounds 1-2."""
+    if current == target:
+        return current, tick, False
+    step = min(GRIP_STEP_PER_TICK, abs(target - current))
+    current = current + step if target > current else current - step
+    tick += 1
+    return current, tick, tick % GRIP_SEND_EVERY == 0 or current == target
+
+
 # max per-joint jump between consecutive insertion waypoints (rad)
 CONTINUITY_MAX = 1.2
 # staging TCP height: above every shelf box top (max 0.57), reached BEFORE
@@ -511,17 +525,15 @@ def main() -> None:
             if current_cmd is None:
                 current_cmd = qpos[:n_arm].copy()
             stage = plan.stages[stage_idx]
-            # ramp the gripper (cadence/step relations pinned by unit test)
-            if current_grip != stage.gripper:
-                step = min(GRIP_STEP_PER_TICK, abs(stage.gripper - current_grip))
-                current_grip += step if stage.gripper > current_grip else -step
-                grip_tick += 1
-                if grip_tick % GRIP_SEND_EVERY == 0 or current_grip == stage.gripper:
-                    send(
-                        "gripper_cmd",
-                        pa.array(np.array([current_grip], dtype=np.float32)),
-                        metadata,
-                    )
+            # ramp the gripper (the emitted sequence is unit-tested via
+            # grip_ramp_tick)
+            current_grip, grip_tick, emit = grip_ramp_tick(current_grip, stage.gripper, grip_tick)
+            if emit:
+                send(
+                    "gripper_cmd",
+                    pa.array(np.array([current_grip], dtype=np.float32)),
+                    metadata,
+                )
             # march the stage's waypoint chain: track the PLANNED Cartesian
             # path, not a straight joint-space line between stage endpoints
             waypoint = stage.path[wp_idx]

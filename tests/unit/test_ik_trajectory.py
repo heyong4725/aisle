@@ -145,16 +145,49 @@ def test_ik_front_orientation_is_not_pi_flipped():
     assert solution_rot[:, 2] == pytest.approx([1.0, 0.0, 0.0], abs=0.01)
 
 
-def test_gripper_ramp_cadence_is_contract_and_guard_legal():
-    """PR #10 rounds 1-3 regression: the ramped gripper stream violated
-    the guard's per-message rate bound (round 1) and then the <=30 Hz
-    topic contract (round 2). Pin BOTH relations, plus the joint-channel
-    finger step against the finger velocity bound."""
-    from aisle.nodes.ik_trajectory import GRIP_SEND_EVERY, GRIP_STEP_PER_TICK
+def test_gripper_ramp_emitted_sequence_is_contract_and_guard_legal():
+    """PR #10 rounds 1-4 regression: drive the PRODUCTION ramp
+    (grip_ramp_tick) through a full close and check the EMITTED sequence —
+    per-message step within the guard's gripper bound (round-1 break),
+    average emission rate <= 30 Hz over the ramp (round-2 break), the
+    terminal message carrying exactly the target, and the joint-channel
+    finger step within the finger velocity bound."""
+    from aisle.nodes.ik_trajectory import GRIP_STEP_PER_TICK, grip_ramp_tick
 
-    assert 100 / GRIP_SEND_EVERY <= 30  # emission within the topic contract
-    per_message = GRIP_SEND_EVERY * GRIP_STEP_PER_TICK
-    assert per_message <= LIMITS.gripper_rate_max * LIMITS.gripper_dt_s + 1e-9
-    finger_travel = max(LIMITS.q_max[7:])  # normalized grip spans the finger range
-    finger_step = finger_travel * GRIP_STEP_PER_TICK
-    assert finger_step <= max(LIMITS.qdot_max[7:]) * LIMITS.cmd_dt_s + 1e-9
+    grip, tick = 0.0, 0
+    emitted: list[float] = []
+    ticks_elapsed = 0
+    while grip != 1.0:
+        grip, tick, emit = grip_ramp_tick(grip, 1.0, tick)
+        ticks_elapsed += 1
+        if emit:
+            emitted.append(grip)
+        assert ticks_elapsed < 1000, "ramp must terminate"
+    assert emitted, "a full close must emit messages"
+    assert emitted[-1] == pytest.approx(1.0)  # terminal message is the target
+    guard_bound = LIMITS.gripper_rate_max * LIMITS.gripper_dt_s
+    previous = 0.0
+    for value in emitted:
+        assert value - previous <= guard_bound + 1e-9  # round-1 regression
+        assert value > previous  # monotonic close
+        previous = value
+    # emission rate over the ramp: messages per 100 Hz tick <= 30 Hz
+    assert len(emitted) / ticks_elapsed * 100 <= 30 + 1e-9  # round-2 regression
+    # once at target, the ramp is silent
+    grip, tick, emit = grip_ramp_tick(grip, 1.0, tick)
+    assert not emit
+    # joint-channel finger step legality per tick
+    finger_travel = max(LIMITS.q_max[7:])
+    assert finger_travel * GRIP_STEP_PER_TICK <= max(LIMITS.qdot_max[7:]) * LIMITS.cmd_dt_s + 1e-9
+
+
+def test_place_height_tracks_the_supplied_tray_top():
+    """PR #10 round 4: a NON-Franka tray height must shift the release
+    height one-for-one — a re-hardcoded Franka slab constant inside the
+    planner would fail this case."""
+    target = np.array([0.5, -0.1, 0.10, 0, 0, 0, 1], dtype=np.float32)
+    size = (0.055, 0.035, 0.090)
+    _, _, z_franka = plan_grasp(target, size, grip=0.025, tray_top_z=0.04)
+    _, _, z_other = plan_grasp(target, size, grip=0.025, tray_top_z=0.10)
+    assert z_other - z_franka == pytest.approx(0.06, abs=1e-9)
+    assert z_other == pytest.approx(0.10 + (0.090 - 0.025) + 0.01, abs=1e-6)
