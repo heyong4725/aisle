@@ -25,6 +25,7 @@ RATES = {
     "joint_state": 100,
     "gripper_state": 100,
     "oracle_state": 30,
+    "poses": 15,
 }
 FRANKA_N_DOF = 9
 

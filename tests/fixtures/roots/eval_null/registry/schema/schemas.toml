@@ -1,0 +1,59 @@
+# CAP-2: closed schema vocabulary — name -> Arrow type + shape.
+# Every `schema` value in a capability manifest MUST be a key in this file.
+# Adding a schema name is a Class C change (CAP-2).
+# Shapes reference SPEC 010 §2 dimension symbols (h, w, n_dof, n_obj).
+
+[rgb8_image]
+arrow = "UInt8"
+shape = "h*w*3"
+
+[depth_f32]
+arrow = "Float32"
+shape = "h*w"
+
+[jointvec_f32]
+arrow = "Float32"
+shape = "n_dof"
+
+[scalar_f32]
+arrow = "Float32"
+shape = "1"
+
+[pose7d_f32]
+arrow = "Float32"
+shape = "7"
+
+[posearray7d_f32]
+arrow = "Float32"
+shape = "n_obj*7"
+
+# per detection: x1, y1, x2, y2, confidence, class_id (CON-4: typed Arrow
+# on the hot perception path, not JSON blobs)
+[detections_f32]
+arrow = "Float32"
+shape = "n_det*6"
+
+# one label string per detection, aligned with detections_f32 rows
+[labels_utf8]
+arrow = "Utf8"
+shape = "n_det"
+
+# JSON allowed only on *_result / report / low-rate goal topics (CON-4)
+[json_utf8]
+arrow = "Utf8"
+shape = "1"
+
+[reset_request_u32]
+arrow = "UInt32"
+shape = "2"
+
+[reset_done_u32]
+arrow = "UInt32"
+shape = "1"
+
+# dora builtin timer payload — opaque; consumers MUST NOT read it. Added
+# for nodes that declare a dora/timer input (BG-5 stats cadence). Class C
+# vocabulary change (CAP-2), flagged in PR #8 for owner sign-off.
+[timer_tick]
+arrow = "UInt8"
+shape = "0"

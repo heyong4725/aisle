@@ -19,12 +19,17 @@ import math
 
 import numpy as np
 
-# how far the fingertips engage below the box TOP (top-down mode): deep
-# enough that the carried box cannot peel out of the fingertips (a 0.025
-# grip slipped during retract in the T08 replays)
-GRIP_ENGAGEMENT = 0.035
+# how far the fingertips engage below the box TOP (top-down mode): as deep
+# as the palm allows — shallow grips let the box pitch inside the grip
+# during the carry and it lands on its edge (T08 replays; fingers are
+# 0.05 long, so 0.045 leaves 5 mm palm clearance)
+GRIP_ENGAGEMENT = 0.045
 # clearance between the shelf front plane and the front-mode pregrasp TCP
 FRONT_CLEARANCE = 0.06
+# the tray is a flat slab (no walls): release the box from a small drop
+# gap above it — pressing it down drives it THROUGH the slab (T08 replays)
+TRAY_TOP_Z = 0.04
+PLACE_DROP_GAP = 0.01
 # the wrist's radius below the flange axis: inserting at box-center height
 # scraped the wrist on the board's front edge (T08 live run 6), so the
 # front grasp rides high enough for the wrist to clear the board top
@@ -81,7 +86,7 @@ def plan_grasp(
         z = min(max(float(pose[2]), bottom + WRIST_CLEARANCE), top - MIN_FINGER_ON_BOX)
         grasp = np.array([pose[0], pose[1], z, *FRONT_QUAT], dtype=np.float32)
         approach = float(pose[0]) - (shelf_front_x - FRONT_CLEARANCE)
-        return grasp, approach
+        return grasp, approach, place_tcp_z(size_xyz, top - z)
     yaw = yaw_of(pose[3:7])
     # fingers travel along the gripper y-axis, which at yaw=0 straddles the
     # box's y extent; add 90 degrees when x is the narrower side
@@ -89,7 +94,14 @@ def plan_grasp(
         yaw += math.pi / 2
     z = float(pose[2]) + float(size_xyz[2]) / 2 - grip
     grasp = np.array([pose[0], pose[1], z, *topdown_quat(yaw)], dtype=np.float32)
-    return grasp, 0.15
+    return grasp, 0.15, place_tcp_z(size_xyz, grip)
+
+
+def place_tcp_z(size_xyz, grip_from_top: float) -> float:
+    """Release TCP height: box bottom hovers PLACE_DROP_GAP above the tray
+    slab when the TCP is here (the box hangs (size_z - grip_from_top)
+    below the TCP)."""
+    return TRAY_TOP_Z + (float(size_xyz[2]) - float(grip_from_top)) + PLACE_DROP_GAP
 
 
 def main() -> None:
@@ -121,13 +133,13 @@ def main() -> None:
                 continue
             pose = event["value"].to_numpy(zero_copy_only=False)
             front = float(np.asarray(pose).reshape(-1)[2]) < top_surface_z
-            grasp, approach = plan_grasp(
+            grasp, approach, place_z = plan_grasp(
                 pose, meds[med]["size"], front=front, shelf_front_x=shelf_front_x
             )
             send(
                 "grasp_pose",
                 pa.array(grasp),
-                {**metadata, "approach_m": approach, "front": front},
+                {**metadata, "approach_m": approach, "front": front, "place_tcp_z": place_z},
             )
 
 

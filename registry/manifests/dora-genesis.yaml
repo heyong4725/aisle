@@ -26,7 +26,9 @@ embodiment:
   arm: [franka, so101]
   gripper: any
 safety_class: motion
-# eval null pending M0 evalcards from TC-A1..A3 runs (CAP-6 exception, ADR-3)
-eval: null
+eval:
+  suite: tests/accept/test_contract.py (TC-A1..A3)
+  pass_rate: 1.0
+  last_run: "2026-07-20"
 origin: hub
 source: src/aisle/nodes/dora_genesis.py

@@ -10,9 +10,6 @@ embodiment:
   arm: [franka, so101]
   gripper: any
 safety_class: motion
-eval:
-  suite: tests/accept/test_contract.py (TC-A1..A3)
-  pass_rate: 1.0
-  last_run: "2026-07-20"
+eval: null
 origin: hub
 source: src/aisle/nodes/dora_genesis.py

@@ -259,15 +259,23 @@ def test_lint_accepts_populated_eval_for_motion(tmp_path):
     assert code == 0, report
 
 
-def test_sim_driver_eval_exception_is_warning(repo_lint):
-    """CAP-6: the two sim drivers ship with eval pending M0 evalcards from
-    the SPEC 010 acceptance runs; until then lint flags them as warnings,
-    not errors. See ADR 3."""
+def test_sim_driver_evalcards_shipped_and_carveout_retired(repo_lint):
+    """CAP-6 end state (ADR-3 retired at T08): the sim-driver manifests
+    carry evalcards generated from the passing acceptance suite runs
+    (tests/accept/test_contract.py),
+    lint reports ZERO warnings, and the pending carve-out is an empty
+    tombstone — the T10 gate's condition, met early."""
+    from aisle.harness.registry import PENDING_M0_EVALCARDS
+
     report = json.loads(repo_lint.stdout)
     assert repo_lint.returncode == 0
-    warned = {w["manifest"] for w in report["warnings"]}
-    # EXACTLY the two drivers: the ADR-3 carve-out must not silently widen
-    assert warned == {"arm-driver-sim.yaml", "gripper-driver-sim.yaml", "dora-genesis.yaml"}
+    assert report["warnings"] == []
+    assert PENDING_M0_EVALCARDS == set()
+    for mid in ("arm-driver-sim", "gripper-driver-sim", "dora-genesis"):
+        manifest = yaml.safe_load((MANIFESTS_DIR / f"{mid}.yaml").read_text())
+        assert manifest["eval"] is not None, mid
+        assert manifest["eval"]["pass_rate"] == 1.0
+        assert "TC-A1..A3" in manifest["eval"]["suite"]
 
 
 def test_bad_root_reported_as_json(tmp_path):
@@ -328,12 +336,17 @@ def test_search_serializes_yaml_dates(tmp_path):
     assert report["matches"][0]["eval"]["last_run"] == "2026-07-18"
 
 
-def test_lint_warnings_logged_to_stderr(repo_lint):
-    """CON-8: warnings (the ADR 3 pending-evalcard carve-out) are visible on
-    stderr, not only inside the JSON report."""
-    assert repo_lint.returncode == 0
-    assert "arm-driver-sim" in repo_lint.stderr
-    assert "pending M0 evalcard" in repo_lint.stderr
+def test_lint_findings_logged_to_stderr():
+    """CON-8: lint findings are visible on stderr, not only inside the
+    JSON report — exercised against the eval_null fixture root, whose
+    eval-null motion drivers are ERRORS now that the ADR-3 carve-out is
+    retired (no warning class remains in lint)."""
+    proc = run_registry_raw(
+        "lint", "--root", str(REPO_ROOT / "tests" / "fixtures" / "roots" / "eval_null")
+    )
+    assert proc.returncode == 1
+    assert "arm-driver-sim" in proc.stderr
+    assert "CAP-6" in proc.stderr
 
 
 def test_lint_rejects_duplicate_ids(tmp_path):

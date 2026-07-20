@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.sim
+pytestmark = pytest.mark.graph
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -23,6 +23,18 @@ def test_expert_t0_episodes_succeed(tmp_path):
     closes with status=success. (Expert v0 covers top-level placements;
     under-board levels are the documented coverage gap for M0-1 — see
     ADR-10 and the T08 PR.)"""
+    # run from a TEMP COPY with absolutized node paths: dora spawns nodes
+    # with cwd = the yaml's directory, and the orphan reaper is scoped by
+    # that cwd — running from the shared graphs/ dir would let cleanup
+    # SIGKILL unrelated developer runs (PR #10 review)
+    import yaml as yaml_module
+
+    graph_doc = yaml_module.safe_load((REPO_ROOT / "graphs" / "expert_t0.yaml").read_text())
+    for node in graph_doc["nodes"]:
+        node["path"] = str((REPO_ROOT / "graphs" / node["path"]).resolve())
+    graph_path = tmp_path / "expert_t0.yaml"
+    graph_path.write_text(yaml_module.safe_dump(graph_doc, sort_keys=False))
+
     results = tmp_path / "results.jsonl"
     env = {
         **os.environ,
@@ -32,7 +44,7 @@ def test_expert_t0_episodes_succeed(tmp_path):
         "AISLE_RESULTS": str(results),
     }
     proc = subprocess.Popen(
-        ["dora", "run", str(REPO_ROOT / "graphs" / "expert_t0.yaml"), "--uv"],
+        ["dora", "run", str(graph_path), "--uv"],
         cwd=REPO_ROOT,
         env=env,
         stdout=subprocess.PIPE,
@@ -52,7 +64,7 @@ def test_expert_t0_episodes_succeed(tmp_path):
     finally:
         from conftest import _reap_orphan_nodes
 
-        _reap_orphan_nodes(REPO_ROOT / "graphs")
+        _reap_orphan_nodes(tmp_path)
 
     assert results.exists(), f"no results written; stderr tail: {(stderr or '')[-3000:]}"
     records = [json.loads(line) for line in results.read_text().splitlines() if line.strip()]

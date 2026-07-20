@@ -17,17 +17,23 @@ class TaskStateMachine:
         self.goal: dict | None = None
         self.goal_id: str | None = None
         self.violations: dict[str, int] = {}
+        self.ticks = 0
 
     def on_goal(self, goal: dict, goal_id: str) -> list:
         if self.goal is not None:  # TC-7: actions do not overlap
             return []
         self.goal, self.goal_id, self.violations = goal, goal_id, {}
+        self.ticks = 0
         return [("target_request", {"target_med": goal["target_med"]}, goal_id)]
 
-    def on_tick(self, t: float) -> list:
+    def on_tick(self) -> list:
+        """Feedback t = 1 Hz ticks since the goal (CON-5: deterministic —
+        a wall-clock read would make same-seed runs emit different
+        payloads, and would span episodes rather than the current one)."""
         if self.goal is None:
             return []
-        feedback: dict = {"t": t, "phase": "executing"}
+        self.ticks += 1
+        feedback: dict = {"t": self.ticks, "phase": "executing"}
         if self.violations:
             feedback["violations"] = dict(self.violations)
         return [("episode_feedback", feedback, self.goal_id)]
@@ -44,7 +50,6 @@ class TaskStateMachine:
 def main() -> None:
     import json
     import sys
-    import time
 
     import pyarrow as pa
     from dora import Node
@@ -54,7 +59,6 @@ def main() -> None:
     node = Node()
     send = make_sender(node)
     machine = TaskStateMachine()
-    t0 = time.monotonic()
 
     def emit(emissions) -> None:
         for topic, payload, goal_id in emissions:
@@ -75,7 +79,7 @@ def main() -> None:
         elif event["id"] == "violation":
             machine.on_violation(json.loads(event["value"][0].as_py()))
         elif event["id"] == "tick":
-            emit(machine.on_tick(round(time.monotonic() - t0, 3)))
+            emit(machine.on_tick())
 
 
 if __name__ == "__main__":

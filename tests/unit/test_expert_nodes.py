@@ -52,8 +52,10 @@ class TestGraspTopdown:
         quat = (0.0, 0.0, np.sin(yaw / 2), np.cos(yaw / 2))
         target = np.array([0.5, -0.1, 0.10, *quat], dtype=np.float32)
         size = (0.055, 0.035, 0.090)  # y narrower: yaw unchanged
-        grasp, approach = plan_grasp(target, size, grip=0.025)
+        grasp, approach, place_z = plan_grasp(target, size, grip=0.025)
         assert approach == pytest.approx(0.15)
+        # release TCP: tray top + hanging box length + drop gap
+        assert place_z == pytest.approx(0.04 + (0.090 - 0.025) + 0.01, abs=1e-6)
         assert grasp[:3] == pytest.approx([0.5, -0.1, 0.10 + 0.045 - 0.025], abs=1e-6)
         assert yaw_of(grasp[3:]) % np.pi == pytest.approx(yaw % np.pi, abs=1e-5)
 
@@ -61,7 +63,7 @@ class TestGraspTopdown:
         """Fingers travel the gripper y-axis: when the box's x side is the
         narrower one, the grasp yaw turns 90 degrees to straddle it."""
         target = np.array([0.5, -0.1, 0.10, 0, 0, 0, 1], dtype=np.float32)
-        grasp, _ = plan_grasp(target, (0.030, 0.065, 0.110))
+        grasp, _, _ = plan_grasp(target, (0.030, 0.065, 0.110))
         assert yaw_of(grasp[3:]) % np.pi == pytest.approx(np.pi / 2, abs=1e-5)
 
     def test_front_mode_approaches_horizontally(self):
@@ -69,7 +71,9 @@ class TestGraspTopdown:
         wrist horizontal (approach axis +x), TCP at the box center, and
         the approach distance spans from the front clearance point."""
         target = np.array([0.55, -0.11, 0.11, 0, 0, 0, 1], dtype=np.float32)
-        grasp, approach = plan_grasp(target, (0.055, 0.035, 0.090), front=True, shelf_front_x=0.40)
+        grasp, approach, _ = plan_grasp(
+            target, (0.055, 0.035, 0.090), front=True, shelf_front_x=0.40
+        )
         # z rides up to box_bottom + wrist clearance (0.065 + 0.065 = 0.13),
         # capped at box_top - finger engagement
         assert grasp[:3] == pytest.approx([0.55, -0.11, 0.13], abs=1e-6)
@@ -86,18 +90,18 @@ class TestTaskStateMachine:
         machine = TaskStateMachine()
         out = machine.on_goal({"target_med": "ibuprofen", "timeout_s": 30}, "ep-1")
         assert out == [("target_request", {"target_med": "ibuprofen"}, "ep-1")]
-        out = machine.on_tick(1.0)
-        assert out == [("episode_feedback", {"t": 1.0, "phase": "executing"}, "ep-1")]
+        out = machine.on_tick()
+        assert out == [("episode_feedback", {"t": 1, "phase": "executing"}, "ep-1")]
         assert machine.on_result() == []
-        assert machine.on_tick(2.0) == []  # idle: no feedback
+        assert machine.on_tick() == []  # idle: no feedback
 
     def test_goal_while_active_is_refused(self):
         """TC-7: actions do not overlap — a second goal while one is active
         is refused (empty emission), the active episode continues."""
         machine = TaskStateMachine()
         machine.on_goal({"target_med": "ibuprofen"}, "ep-1")
-        assert machine.on_goal({"target_med": "vitamin_d3"}, "ep-2") == []
-        out = machine.on_tick(1.0)
+        assert machine.on_goal({"target_med": "cetirizine"}, "ep-2") == []
+        out = machine.on_tick()
         assert out[0][2] == "ep-1"
 
     def test_violations_are_counted_into_feedback(self):
@@ -105,5 +109,15 @@ class TestTaskStateMachine:
         machine.on_goal({"target_med": "ibuprofen"}, "ep-1")
         machine.on_violation({"reason": "velocity"})
         machine.on_violation({"reason": "velocity"})
-        out = machine.on_tick(3.0)
+        out = machine.on_tick()
         assert out[0][1]["violations"] == {"velocity": 2}
+
+    def test_feedback_t_is_deterministic_episode_ticks(self):
+        """CON-5 (T08 review): feedback t counts 1 Hz ticks since the GOAL
+        — no wall clock; a second episode restarts at 1."""
+        machine = TaskStateMachine()
+        machine.on_goal({"target_med": "ibuprofen"}, "ep-1")
+        assert [machine.on_tick()[0][1]["t"] for _ in range(3)] == [1, 2, 3]
+        machine.on_result()
+        machine.on_goal({"target_med": "metformin"}, "ep-2")
+        assert machine.on_tick()[0][1]["t"] == 1

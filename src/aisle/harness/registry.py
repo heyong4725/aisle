@@ -20,10 +20,12 @@ from aisle.harness.common import DEFAULT_ROOT, emit_report
 # CAP-6: the two sim drivers ship eval=null until their M0 evalcards are
 # generated from the SPEC 010 acceptance runs (ADR-3) — lint warns instead
 # of erroring.
-# ADR-3: the sim drivers' evalcards are generated from the TC-A1..A3 runs
-# at M0; dora-genesis is the same process under its executable identity
-# (T08) and retires with the others at T10
-PENDING_M0_EVALCARDS = {"arm-driver-sim", "gripper-driver-sim", "dora-genesis"}
+# ADR-3's pending-evalcard carve-out is RETIRED (T08): the TC-A1..A3
+# acceptance runs pass, the evalcards are generated from them, and the
+# expert graph must survive normal validation (HAR-2 runs it without
+# --allow-unproven). The set stays as an empty tombstone the T10 gate
+# asserts on.
+PENDING_M0_EVALCARDS: set[str] = set()
 
 
 def load_manifests(root: Path) -> tuple[list[tuple[Path, dict]], list[dict]]:

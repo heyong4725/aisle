@@ -54,3 +54,38 @@ ibuprofen, top level) and names this gap.
 (9) The reaper patterns in tests/conftest.py now cover every pipeline
 node: leaked copies of the new nodes strangled the machine to load 200+
 during live iteration (same failure class as T05's orphan bug).
+
+## Amendments after the T08 CON-16 cross-reviews (PR #10 round 1)
+
+(10) The M0 evalcards are GENERATED and the ADR-3 carve-out is retired
+early: HAR-2's rollout gate runs validation without --allow-unproven, so
+the expert graph must pass NORMAL validation — it now does, with zero
+warnings; the three sim-driver manifests carry evalcards from the
+passing acceptance suite, PENDING_M0_EVALCARDS is an empty tombstone,
+and the EVAL_MISSING_FOR_MOTION corpus mode is preserved via the
+eval_null fixture root (VAL-7 exact sets updated). (11) Continuation
+paths are EXECUTED, not discarded: stages carry waypoint chains and the
+executor marches them, so the TCP follows the planned Cartesian line;
+the front-mode wrist flip (whose slerp continuation does not converge
+through the intermediate tilts) executes as one joint move whose swept
+hand path is explicitly verified to stay ahead of the shelf front.
+(12) The gripper ramps at the guard-legal rate on BOTH channels (a
+full-range step drew ~300 velocity clamps per episode and let stages
+advance before the fingers closed); stage completion also gates on the
+ramp. (13) ik-trajectory's manifest advertises franka only (Panda
+kinematics; so101 has no home_qpos). (14) The expert live test runs a
+TEMP COPY of the graph with absolutized paths so its orphan reaper can
+never SIGKILL developer runs in the shared graphs/ cwd; it is marker
+graph (dora-launching), and poses joined the TC-A1 rate table at 15 Hz.
+(15) rollout-client validates env config at startup (unknown meds or a
+seeds/targets length mismatch deadlocked or crashed multi-episode runs)
+and exits its loop after the final episode. (16) episode_feedback t is
+deterministic 1 Hz ticks since the goal (CON-5; was an uninjected wall
+clock spanning episodes). (17) PLACEMENT PHYSICS: the tray is a flat
+SLAB, not a walled container — pressing the box down drove it THROUGH
+the slab (penetration), and hovering releases toppled the top-held box.
+The planner now computes a per-med release height (tray top + hanging
+box length + 1 cm drop gap, in grasp_pose metadata) and the fingers open
+while rising; firm finger gains (kp 2000) stop the box pitching inside
+the grip during the carry. Verified upright at rest, zero tilt, correct
+height, live and offline.

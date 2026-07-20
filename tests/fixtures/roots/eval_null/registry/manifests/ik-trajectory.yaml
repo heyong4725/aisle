@@ -14,10 +14,7 @@ outputs:
 params:
   max_joint_vel_rad_s: {type: float, default: 1.0, range: [0.1, 2.0]}
 embodiment:
-  # franka only: the node's kinematics (DH chain, TCP offset, canonical
-  # seeds) and limits are Panda-specific, and so101 has no home_qpos yet
-  # (PR #10 review); restore when so101 kinematics land
-  arm: [franka]
+  arm: [franka, so101]
   gripper: parallel
 safety_class: decision
 eval: null

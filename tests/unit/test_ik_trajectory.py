@@ -116,8 +116,10 @@ def test_staged_plan_front_mode_inserts_horizontally():
     pregrasp sits in front of the shelf at the box's height, the advance
     slides horizontally into the inter-board gap."""
     target = np.array([0.55, -0.11, 0.105, 0, 0, 0, 1], dtype=np.float32)
-    grasp, approach = plan_grasp(target, (0.055, 0.035, 0.090), front=True, shelf_front_x=0.40)
-    plan = StagedPlan(grasp, (0.35, -0.35), approach_m=approach, q_seed=HOME)
+    grasp, approach, place_z = plan_grasp(
+        target, (0.055, 0.035, 0.090), front=True, shelf_front_x=0.40
+    )
+    plan = StagedPlan(grasp, (0.35, -0.35), approach_m=approach, q_seed=HOME, place_z=place_z)
     assert plan.ok, plan.error
     by_name = {s.name: s for s in plan.stages}
     pre, adv = fk_tcp(by_name["pregrasp"].q), fk_tcp(by_name["advance"].q)

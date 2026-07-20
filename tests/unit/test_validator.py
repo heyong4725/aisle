@@ -94,13 +94,16 @@ def test_good_corpus_passes(path):
 
 
 def test_expert_t0_is_good():
-    """VAL-7: graphs/expert_t0.yaml is part of the good corpus (T08) — it
-    validates ok under --allow-unproven (ADR-3: the sim-driver evalcards
-    pend until the M0 review) with EXACTLY the pending-evalcard warning."""
-    code, report = run_validate(REPO_ROOT / "graphs" / "expert_t0.yaml", "--allow-unproven")
+    """VAL-7's good-corpus requirement for graphs/expert_t0.yaml is
+    satisfied HERE by validating the real file in place (it stays outside
+    tests/fixtures/graphs/good/ so no copy can drift): NORMAL validation
+    — no --allow-unproven, which HAR-2's rollout gate never sets — passes
+    with zero errors AND zero warnings (the M0 evalcards exist, ADR-3
+    retired at T08)."""
+    code, report = run_validate(REPO_ROOT / "graphs" / "expert_t0.yaml")
     assert code == 0, report
     assert report["ok"] is True and report["errors"] == []
-    assert [w["code"] for w in report["warnings"]] == ["EVAL_MISSING_FOR_MOTION"]
+    assert report["warnings"] == []
 
 
 def test_hints_nonempty():
@@ -471,7 +474,9 @@ def test_allow_unproven_downgrades_eval_error():
     """VAL-2: --allow-unproven downgrades EVAL_MISSING_FOR_MOTION to a
     warning (design doc §8.2.1); the harness never sets it for agents."""
     graph = BAD_DIR / "eval_missing_for_motion.yaml"
-    code, report = run_validate(graph, "--allow-unproven")
+    code, report = run_validate(
+        graph, "--allow-unproven", "--root", str(REPO_ROOT / "tests/fixtures/roots/eval_null")
+    )
     assert "EVAL_MISSING_FOR_MOTION" not in codes(report, "errors")
     assert "EVAL_MISSING_FOR_MOTION" in codes(report, "warnings")
 

@@ -7,8 +7,12 @@ Env-configured (the T09 rollout runner sets these):
   AISLE_RESULTS     JSONL output path                   (optional)
 
 Per episode: reset(seed) -> await reset_done -> episode_goal -> await
-episode_result -> record, next seed. Exits the loop when all episodes are
-done (results flushed per line, so a killed run keeps completed episodes).
+episode_result -> record, next seed. After the final episode the CLIENT
+exits its event loop (results flushed per line, so a killed run keeps
+completed episodes); tearing down the rest of the dataflow is the rollout
+runner's job (T09) — the bridge never exits on its own. Env config is
+validated at startup and refused loudly (a bad med name would otherwise
+deadlock the run: the verifier refuses unknown goals without a result).
 """
 
 from __future__ import annotations
@@ -34,6 +38,15 @@ def main() -> None:
         if meds_env
         else [MED_NAMES[i % len(MED_NAMES)] for i in range(len(seeds))]
     )
+    # refuse bad config LOUDLY at startup: an unknown med deadlocks the run
+    # (the verifier refuses the goal without emitting a result), and a
+    # short target list would IndexError mid-run
+    unknown = [m for m in targets if m not in MED_NAMES]
+    if unknown or len(targets) != len(seeds):
+        raise SystemExit(
+            f"rollout-client config refused: unknown meds {unknown}, "
+            f"{len(targets)} targets for {len(seeds)} seeds"
+        )
     timeout_s = float(os.environ.get("AISLE_TIMEOUT_S", "30"))
     results_path = os.environ.get("AISLE_RESULTS", "")
 
@@ -85,6 +98,7 @@ def main() -> None:
                     {"request_id": "reset-cleanup"},
                 )
                 phase = "done"
+                break  # client exits; dataflow teardown is the runner's job
 
 
 if __name__ == "__main__":

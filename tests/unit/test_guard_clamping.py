@@ -263,3 +263,13 @@ def test_fallback_qpos_matches_scene_home():
     from aisle.scenes.pharmacy import load_physics
 
     assert list(LIMITS.fallback_qpos) == list(load_physics()["embodiment"]["franka"]["home_qpos"])
+
+
+def test_wall_backstop_value_is_pinned():
+    """BG-2 (T08 review): the episode wall backstop was widened 60 -> 300 s
+    when live runs showed sim can run below realtime; this pin makes any
+    future change to the frozen limit deliberate, and documents the
+    relation it must keep: comfortably above the verifier's SIM-time
+    episode timeout divided by the worst observed sim rate (60 s / ~0.4x
+    => ~150 s wall, x2 margin)."""
+    assert LIMITS.wall_timeout_s == 300.0
