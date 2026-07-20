@@ -225,6 +225,9 @@ def _ensure_genesis():
         # fixed seed: genesis's internal RNG must never be an input to build
         # outcomes (CON-5); reachability IK is additionally made
         # deterministic via explicit init_qpos and max_samples=1
+        # performance_mode is deliberately OFF: it recompiles kernels for
+        # minutes in every fresh process (measured >5 min), wrecking test
+        # and node startup; substeps=1 alone keeps the step budget (ADR-7)
         gs.init(backend=expected, logging_level="warning", seed=0)
     elif gs.backend != expected:
         # a foreign pre-initialization would silently change build results
@@ -281,6 +284,11 @@ def build_scene(
             substeps=physics["sim"]["substeps"],
             gravity=tuple(physics["sim"]["gravity"]),
         ),
+        # keep ALL self-collision pairs: genesis filters pairs that collide
+        # at the (invalid, all-zeros) neutral pose during build, which would
+        # permanently disable those checks; we move to home_qpos before any
+        # step, so the transient neutral contacts never simulate
+        rigid_options=gs.options.RigidOptions(enable_neutral_collision=True),
         vis_options=gs.options.VisOptions(ambient_light=ambient),
         renderer=gs.renderers.Rasterizer(),  # SCN-5: Metal-safe default path
         show_viewer=not headless,

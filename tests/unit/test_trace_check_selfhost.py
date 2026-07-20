@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 import pytest
-from conftest import run_tool
+from cli_helpers import run_tool
 
 pytestmark = pytest.mark.unit
 

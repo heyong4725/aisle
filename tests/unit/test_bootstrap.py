@@ -3,7 +3,7 @@
 import tomllib
 
 import pytest
-from conftest import REPO_ROOT
+from cli_helpers import REPO_ROOT
 
 pytestmark = pytest.mark.unit
 

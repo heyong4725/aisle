@@ -31,7 +31,9 @@ torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 [project.optional-dependencies]
 sim = [
+    "dora-rs>=0.5.0",
     "genesis-world>=1.2.3",
+    "pyarrow>=25.0.0",
     "torch>=2.13.0",
 ]
 

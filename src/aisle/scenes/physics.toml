@@ -3,7 +3,9 @@
 
 [sim]
 dt = 0.01
-substeps = 2
+# one substep: rigid box pick-place is stable at dt=0.01, and the 100 Hz
+# bridge tick budget (BRG-1/BRG-2) needs the ~2x step-cost headroom
+substeps = 1
 gravity = [0.0, 0.0, -9.81]
 
 [materials.box]
@@ -35,12 +37,17 @@ tray_pos = [0.35, -0.35, 0.02]
 tray_size = [0.20, 0.28, 0.04]
 # elbow-bent ready pose: the deterministic IK start (all-zeros is singular)
 home_qpos = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04]
+gripper_dofs = 2
+gripper_open_m = 0.04
+gripper_close_m = 0.0
 
 [embodiment.so101]
 reach_m = 0.450
 shelf_pos = [0.24, 0.0, 0.0]
 # smaller arm, smaller approach clearance (overrides [ik].pregrasp_height_m)
 pregrasp_height_m = 0.06
+# TC-5: so101 is 6 arm dofs + 1 gripper dof
+gripper_dofs = 1
 # 0.135 m board-to-board clearance: tallest med (0.11) + board + margin;
 # the reach pre-filter naturally excludes candidates the 0.45 m arm cannot
 # pre-grasp top-down (upper level may go unused for so101)
