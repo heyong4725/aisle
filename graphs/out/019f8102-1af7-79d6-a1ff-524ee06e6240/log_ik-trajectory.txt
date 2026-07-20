@@ -1,4 +1,4 @@
-plan ready: 11 stages
+plan ready: 12 stages
 stage done: rise
 stage done: staging
 stage done: pregrasp
@@ -9,3 +9,4 @@ stage done: retract
 stage done: transfer
 stage done: lower
 stage done: release
+stage done: clear

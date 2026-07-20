@@ -31,6 +31,7 @@ STAGES = (
     "transfer",
     "lower",
     "release",
+    "clear",
     "home",
 )
 # small vertical lift right after closing, before retracting: front-mode
@@ -329,6 +330,10 @@ class StagedPlan:
             Stage("transfer", q_transfer, 1.0, 0.3, vel=0.5),
             Stage("lower", q_lower, 1.0, 0.3, vel=0.5),
             Stage("release", q_lower, 0.0, 0.5),
+            # rise clear of the tray walls before the home swing: the raw
+            # release->home sweep dragged the fingers through the tray and
+            # jammed the arm (T08 live run)
+            Stage("clear", q_transfer, 0.0, 0.1),
             Stage("home", home, 0.0, 0.0),
         ]
 

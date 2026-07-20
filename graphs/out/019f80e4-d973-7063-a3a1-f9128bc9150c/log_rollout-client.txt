@@ -1,2 +1,0 @@
-episode 0 result: {'episode': 0, 'seed': 3, 'status': 'fail', 'failure': 'dropped', 't_end': 10.03, 'goal_id': 'ep-0000', 'verifier': 'oracle'}
-all 1 episodes done
