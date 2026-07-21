@@ -64,6 +64,14 @@ def grip_ramp_tick(current: float, target: float, tick: int) -> tuple[float, int
 
 # max per-joint jump between consecutive insertion waypoints (rad)
 CONTINUITY_MAX = 1.2
+# max per-joint jump for the front-mode wrist flip, held to the same
+# bound as every other consecutive pair: multi-radian flips have NEVER
+# executed stably (a ~2.5 rad planned flip diverged to 3.4 rad tracking
+# error and wrapped the arm into a physics NaN that CRASHED the bridge —
+# T09 diag runs). Until the under-board grasp strategy is resolved
+# (ADR-10 section 8), an over-limit flip REFUSES the plan so the episode
+# closes honestly via the verifier timeout instead of killing the sim
+FLIP_MAX = CONTINUITY_MAX
 # staging TCP height: above every shelf box top (max 0.57), reached BEFORE
 # moving over the scene — the raw home->pregrasp joint sweep clipped shelf
 # boxes (T08)
@@ -355,6 +363,9 @@ class StagedPlan:
             drop_path = ik_continuation(staging_pos, drop_pos, approach_rot, q_staging)
             q_pre = ik_solve(pre_pos, grasp_rot, drop_path[-1]) if drop_path is not None else None
             if drop_path is not None and q_pre is not None:
+                if np.abs(q_pre - drop_path[-1]).max() > FLIP_MAX:
+                    self.error = "front flip jump exceeds FLIP_MAX (infeasible reorientation)"
+                    return
                 limit_x = float(pre_pos[0]) + 0.04  # 2 cm shy of the shelf front
                 for f in np.linspace(0.0, 1.0, 21):
                     q_sweep = drop_path[-1] + f * (q_pre - drop_path[-1])
