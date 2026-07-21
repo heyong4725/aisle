@@ -47,7 +47,7 @@ def test_physics_config():
         assert physics["materials"][material]["friction"] > 0
     for embodiment in ("franka", "so101"):
         profile = physics["embodiment"][embodiment]
-        assert len(profile["shelf_level_heights"]) == 3
+        assert len(profile["shelf_level_heights"]) == 2  # M0 env-change: two levels
         assert profile["reach_m"] > 0
         for key in ("shelf_pos", "tray_pos"):
             distance = sum(c * c for c in profile[key]) ** 0.5
@@ -78,7 +78,7 @@ def test_dr_toggles_default_off():
 def test_placement_sampler_deterministic():
     """SCN-1, SCN-3 (CON-5): the placement sampler is a pure function of its
     seed — identical placements for identical seeds, different for
-    different seeds, all on the 3-level shelf."""
+    different seeds, across the shelf levels."""
     from aisle.scenes.pharmacy import load_physics as load_p
     from aisle.scenes.pharmacy import resolve_layout, sample_placements
 
@@ -93,21 +93,35 @@ def test_placement_sampler_deterministic():
         assert 0 <= p.level < 3
 
 
-@pytest.mark.parametrize("embodiment", ["franka", "so101"])
-def test_placements_never_interpenetrate_or_exceed_reach(embodiment):
-    """SCN-3: across 200 seeds (including the seed-99 regression the review
-    found), no two same-level boxes overlap on BOTH axes, and every
-    pre-grasp target respects the reach pre-filter."""
+@pytest.fixture(scope="module")
+def placements_200(request):
+    """One generation pass of 200 seeds x both embodiments, shared by the
+    sweep tests below (each sample_placements call reparses meds.toml, so
+    regenerating per-test doubles the suite's sampler work)."""
     from aisle.scenes.pharmacy import load_physics as load_p
     from aisle.scenes.pharmacy import resolve_layout, sample_placements
 
     physics = load_p()
-    layout = resolve_layout(physics, embodiment)
+    out = {}
+    for embodiment in ("franka", "so101"):
+        layout = resolve_layout(physics, embodiment)
+        out[embodiment] = (
+            layout,
+            [sample_placements(seed, MED_NAMES, layout) for seed in range(200)],
+        )
+    return out
+
+
+@pytest.mark.parametrize("embodiment", ["franka", "so101"])
+def test_placements_never_interpenetrate_or_exceed_reach(embodiment, placements_200):
+    """SCN-3: across 200 seeds (including the seed-99 regression the review
+    found), no two same-level boxes overlap on BOTH axes, and every
+    pre-grasp target respects the reach pre-filter."""
+    layout, per_seed = placements_200[embodiment]
     meds = load_meds()
     ik = layout["ik"]
     max_target = layout["reach_m"] * ik["reach_margin_frac"]
-    for seed in range(200):
-        placements = sample_placements(seed, MED_NAMES, layout)
+    for seed, placements in enumerate(per_seed):
         for p in placements:
             target = (p.x**2 + p.y**2 + (p.z + ik["pregrasp_height_m"]) ** 2) ** 0.5
             assert target <= max_target, (seed, p)
@@ -165,3 +179,43 @@ def test_module_import_stays_sim_free():
     )
     proc = run_cli(["-c", probe])
     assert proc.returncode == 0, proc.stderr
+
+
+def test_sampled_boxes_always_have_open_sky(placements_200):
+    """SCN-3 / ADR-12: the staggered sampler's open bands and the
+    planner's needs_front safety net agree — across 200 seeds and both
+    embodiments, NO sampled placement triggers front-mode. The proven
+    top-down grasp works on every sampled box; a regression in the band
+    math (overhang, HAND_CLEARANCE_M, band-fit guard) surfaces here, not
+    in a 4-hour acceptance run."""
+    from aisle.nodes.grasp_topdown import needs_front
+
+    for embodiment, (layout, per_seed) in placements_200.items():
+        shelf = layout["shelf"]
+        for seed, placements in enumerate(per_seed):
+            for p in placements:
+                assert not needs_front(p.x, p.z, shelf), (embodiment, seed, p)
+
+
+def test_needs_front_covers_board_span_and_clearance_strip():
+    """ADR-12: out-of-band poses under a higher board — including the
+    HAND_CLEARANCE_M strip in front of its span, where the T10 physics
+    replay showed the hand landing on the board edge — trigger the
+    front-mode safety net; open-sky poses do not."""
+    from aisle.nodes.grasp_topdown import needs_front
+    from aisle.scenes.pharmacy import HAND_CLEARANCE_M, resolve_layout
+    from aisle.scenes.pharmacy import load_physics as load_p
+
+    shelf = resolve_layout(load_p(), "franka")["shelf"]
+    rear_x = shelf["pos"][0] + shelf["level_size"][0] / 2
+    upper_front = rear_x - shelf["level_depths"][1]
+    lower_box_z = shelf["pos"][2] + shelf["level_heights"][0] + shelf["board_thickness"] / 2 + 0.05
+    upper_box_z = shelf["pos"][2] + shelf["level_heights"][1] + shelf["board_thickness"] / 2 + 0.05
+    # directly under the upper board
+    assert needs_front(rear_x - 0.01, lower_box_z, shelf)
+    # in the reserved clearance strip just in front of the board span
+    assert needs_front(upper_front - HAND_CLEARANCE_M / 2, lower_box_z, shelf)
+    # in the open band, clear of the strip
+    assert not needs_front(upper_front - HAND_CLEARANCE_M - 0.02, lower_box_z, shelf)
+    # on the top level there is no board above
+    assert not needs_front(rear_x - 0.01, upper_box_z, shelf)

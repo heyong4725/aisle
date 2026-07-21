@@ -1,21 +1,13 @@
-"""SPEC 070 acceptance: the rollout runner end-to-end (HAR-1..4), and the
-spec-named M0-1 gate (SPEC 090).
-
-The 50-episode gate is authored here per the spec's acceptance list; it
-is expected to FAIL pass1 >= 0.95 until the under-board coverage gap is
-resolved (ADR-10 section 8, owner decision pending) and is therefore the
-honest T10 gate, not a T09 pass requirement. The two-episode smoke is
-T09's live proof of the runner itself.
-"""
+"""SPEC 070 acceptance: the rollout runner end-to-end (HAR-1..4). The
+two-episode smoke is T09's live proof of the runner itself; the SPEC 090
+M0 gates live in tests/accept/test_m0_gate.py."""
 
 import importlib.util
 import json
 import shutil
-import subprocess
-import sys
-from pathlib import Path
 
 import pytest
+from accept_helpers import REPO_ROOT, run_harness
 
 pytestmark = [
     pytest.mark.accept,
@@ -24,25 +16,6 @@ pytestmark = [
         reason="sim extra or dora CLI not installed",
     ),
 ]
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-def run_harness(*args: str, timeout: float) -> tuple[int, dict]:
-    proc = subprocess.run(
-        [sys.executable, "-m", "aisle.harness.cli", *args],
-        capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
-        timeout=timeout,
-    )
-    try:
-        return proc.returncode, json.loads(proc.stdout)
-    except json.JSONDecodeError as bad:
-        raise AssertionError(
-            f"non-JSON stdout from harness {args[:2]}: "
-            f"stdout={proc.stdout[:400]!r} stderr={proc.stderr[-600:]!r}"
-        ) from bad
 
 
 def test_rollout_two_episodes_end_to_end(tmp_path):
@@ -114,31 +87,3 @@ def test_rollout_two_episodes_end_to_end(tmp_path):
             timeout=60,
         )
         shutil.rmtree(run_dir, ignore_errors=True)
-
-
-@pytest.mark.skip(
-    reason="M0-1 gate (T10): known under-board coverage gap, ADR-10 section 8 — "
-    "owner decision pending; unskip for the M0 review"
-)
-def test_expert_t0_50eps():
-    """SPEC 090 M0-1 + HAR-1..4: `harness rollout --graph
-    graphs/expert_t0.yaml --tier T0 --episodes 50 --seeds 0..49 --reset
-    teleport` reports pass1 >= 0.95 on macOS-arm64."""
-    code, logged = run_harness("report", "log", "--idea", "M0-1 gate run", timeout=60)
-    assert code == 0
-    code, report = run_harness(
-        "rollout",
-        "--graph",
-        str(REPO_ROOT / "graphs" / "expert_t0.yaml"),
-        "--tier",
-        "T0",
-        "--episodes",
-        "50",
-        "--seeds",
-        "0..49",
-        "--reset",
-        "teleport",
-        timeout=4 * 3600,
-    )
-    assert code == 0, report
-    assert report["pass1"] >= 0.95, report["failures"]

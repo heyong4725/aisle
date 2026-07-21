@@ -19,6 +19,8 @@ import math
 
 import numpy as np
 
+from aisle.scenes.pharmacy import HAND_CLEARANCE_M, HAND_COLUMN_M, level_x_span
+
 # how far the fingertips engage below the box TOP (top-down mode): as deep
 # as the palm allows — shallow grips let the box pitch inside the grip
 # during the carry and it lands on its edge (T08 replays; fingers are
@@ -38,6 +40,26 @@ MIN_FINGER_ON_BOX = 0.015
 # xyzw of Ry(pi/2): flange z horizontal (+x, into the shelf), gripper y
 # horizontal — the front-approach orientation
 FRONT_QUAT = (0.0, 0.7071067811865476, 0.0, 0.7071067811865476)
+
+
+def needs_front(box_x: float, box_z: float, shelf: dict) -> bool:
+    """Safety net for out-of-band poses (ADR-12): the sampler's open bands
+    guarantee sky above every SAMPLED box, so this fires only for drifted
+    or nudged poses. Top-down is unsafe when the box sits below a higher
+    board within that board's span PLUS the HAND_CLEARANCE_M strip the
+    sampler reserves — the descending hand column clips the board's front
+    edge there (T10 physics replay) — with less than HAND_COLUMN_M of
+    vertical clearance."""
+    board_half = shelf["board_thickness"] / 2
+    for level, height in enumerate(shelf["level_heights"]):
+        board_bottom = shelf["pos"][2] + height - board_half
+        if (
+            box_z < board_bottom
+            and box_x >= level_x_span(shelf, level)[0] - HAND_CLEARANCE_M
+            and (board_bottom - box_z) < HAND_COLUMN_M
+        ):
+            return True
+    return False
 
 
 def _quat_mul(a, b) -> tuple[float, float, float, float]:
@@ -123,8 +145,6 @@ def main() -> None:
     shelf_front_x = shelf["pos"][0] - shelf["level_size"][0] / 2
     tray = layout["tray"]
     tray_top_z = tray["pos"][2] + tray["size"][2] / 2
-    # a box is under a board iff its z sits below the TOP level's surface
-    top_surface_z = shelf["pos"][2] + shelf["level_heights"][-1] + shelf["board_thickness"] / 2
     node = Node()
     send = make_sender(node)
     for event in node:
@@ -137,7 +157,8 @@ def main() -> None:
                 print(f"target_pose without a known target_med ({med!r})", file=sys.stderr)
                 continue
             pose = event["value"].to_numpy(zero_copy_only=False)
-            front = float(np.asarray(pose).reshape(-1)[2]) < top_surface_z
+            flat = np.asarray(pose).reshape(-1)
+            front = needs_front(float(flat[0]), float(flat[2]), shelf)
             grasp, approach, place_z = plan_grasp(
                 pose,
                 meds[med]["size"],

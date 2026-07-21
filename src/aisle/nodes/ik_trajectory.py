@@ -72,10 +72,11 @@ CONTINUITY_MAX = 1.2
 # (ADR-10 section 8), an over-limit flip REFUSES the plan so the episode
 # closes honestly via the verifier timeout instead of killing the sim
 FLIP_MAX = CONTINUITY_MAX
-# staging TCP height: above every shelf box top (max 0.57), reached BEFORE
-# moving over the scene — the raw home->pregrasp joint sweep clipped shelf
-# boxes (T08)
-STAGING_Z = 0.66
+# staging TCP height: above every shelf box top (max 0.44 on the
+# staggered two-level shelf), reached BEFORE moving over the scene — the
+# raw home->pregrasp joint sweep clipped shelf boxes (T08); kept low
+# because deep rear staging poses at 0.66 failed IK (T10 probe)
+STAGING_Z = 0.56
 # TCP height for the lowering stage: tray base top (0.04) + tallest med
 # half-extent (0.055) + finger clearance
 # fallback release TCP height when grasp_pose metadata carries no per-med

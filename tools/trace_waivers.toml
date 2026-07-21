@@ -5,13 +5,6 @@
 # --strict --specs 000-080).
 
 [waivers]
-# Process/conduct rules — enforced by repo governance (CODEOWNERS, branch
-# protection, human PR review), not unit-testable; revisit proxy tests at T10.
-CON-10 = "process rule: risk-class review, enforced by CODEOWNERS/human review"
-CON-11 = "process rule: commit/PR conventions, enforced by human review"
-CON-14 = "process rule: spec edits need spec-change PR, enforced by CODEOWNERS"
-CON-15 = "process rule: ADR-on-ambiguity, enforced by human review"
-
 # SPEC 010 — TC-5 requires BOTH embodiment profiles; so101 is asset-blocked
 # (same blocker as SCN-4). Franka half verified by TC-A1.
 TC-5 = "so101 asset blocked on owner acquisition; franka half verified (TC-A1)"
@@ -21,9 +14,6 @@ TC-5 = "so101 asset blocked on owner acquisition; franka half verified (TC-A1)"
 # Removing this waiver before both embodiments build would be misleading.
 SCN-4 = "so101 asset blocked on owner acquisition (ADR-6); franka half verified"
 
-
-# SPEC 090 M0 gate — deferred to T10.
-M0-4 = "deferred to T10"
 
 # SPEC 210 mobility — post-M0, deferred to T11.
 MOB-3 = "deferred to T11 (post-M0)"
