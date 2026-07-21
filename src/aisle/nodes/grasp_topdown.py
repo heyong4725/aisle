@@ -21,22 +21,36 @@ import numpy as np
 
 from aisle.scenes.pharmacy import HAND_CLEARANCE_M, HAND_COLUMN_M, level_x_span
 
-# how far the fingertips engage below the box TOP (top-down mode): as deep
-# as the palm allows — shallow grips let the box pitch inside the grip
-# during the carry and it lands on its edge (T08 replays; fingers are
-# 0.05 long, so 0.045 leaves 5 mm palm clearance)
-GRIP_ENGAGEMENT = 0.045
+# how far the fingertips engage below the box TOP (top-down mode). 0.045
+# assumed 5 mm palm clearance from 0.05-long fingers, but the REAL
+# fingertip-to-palm distance is shorter: the palm plate pressed on the
+# box top, shoving it sideways during the descent, spinning near-square
+# meds into diagonal detents at close, and ratcheting a pitch tilt
+# through the carry that toppled tall meds at release (T10 renders of
+# the cetirizine grasp; the "shallow grips pitch" note from T08 was this
+# same palm contact misattributed). 0.035 keeps a genuinely clear palm;
+# the box hangs pendulum-stable from the deeper-set centroid.
+GRIP_ENGAGEMENT = 0.035
 # clearance between the shelf front plane and the front-mode pregrasp TCP
 FRONT_CLEARANCE = 0.06
-# the tray is a flat slab (no walls): release the box from a small drop
-# gap above it — pressing it down drives it THROUGH the slab (T08 replays)
-PLACE_DROP_GAP = 0.01
+# the tray is a flat slab (no walls): release the box from a drop gap
+# above it — pressing it down drives it THROUGH the slab (T08 replays).
+# release hover: small enough that the drop cannot tip a tall med,
+# large enough that lower-stage tracking error cannot ground the box
+# while gripped (ik-trajectory lower/release track_tol 0.03 + settle
+# bound the error well under 0.02). With the palm clear
+# (GRIP_ENGAGEMENT) and the soft close (grip_close_for), the box stays
+# axis-aligned in the grip, so the rising clear stage passes the
+# still-flanking fingertips without touching it.
+PLACE_DROP_GAP = 0.02
 # the wrist's radius below the flange axis: inserting at box-center height
 # scraped the wrist on the board's front edge (T08 live run 6), so the
 # front grasp rides high enough for the wrist to clear the board top
 WRIST_CLEARANCE = 0.065
 # the fingers must keep at least this much box below the grasp line
 MIN_FINGER_ON_BOX = 0.015
+
+
 # xyzw of Ry(pi/2): flange z horizontal (+x, into the shelf), gripper y
 # horizontal — the front-approach orientation
 FRONT_QUAT = (0.0, 0.7071067811865476, 0.0, 0.7071067811865476)

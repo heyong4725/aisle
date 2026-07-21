@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from aisle.nodes.budget_guard import fk_flange, load_limits
-from aisle.nodes.grasp_topdown import FRONT_QUAT, plan_grasp, topdown_quat
+from aisle.nodes.grasp_topdown import FRONT_QUAT, PLACE_DROP_GAP, plan_grasp, topdown_quat
 from aisle.nodes.ik_trajectory import (
     STAGES,
     StagedPlan,
@@ -187,4 +187,4 @@ def test_place_height_tracks_the_supplied_tray_top():
     _, _, z_franka = plan_grasp(target, size, grip=0.025, tray_top_z=0.04)
     _, _, z_other = plan_grasp(target, size, grip=0.025, tray_top_z=0.10)
     assert z_other - z_franka == pytest.approx(0.06, abs=1e-9)
-    assert z_other == pytest.approx(0.10 + (0.090 - 0.025) + 0.01, abs=1e-6)
+    assert z_other == pytest.approx(0.10 + (0.090 - 0.025) + PLACE_DROP_GAP, abs=1e-6)

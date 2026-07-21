@@ -90,6 +90,45 @@ boxes outside the band.
      orientation — those were ruled out by reading the bridge, not
      assumed.
 
+## 5b. Grasp-physics reliability (offline 50-pair sweep, 19/50 -> 48/50)
+
+After the geometry/queue/clearance fixes closed the instant-fail and
+knock classes, the remaining M0-1 failures were release-time TOPPLES —
+the box reached the tray footprint (IN TRAY true) but landed on its side
+(oracle upright_max_deg, a lying box never verifies). An offline
+single-process sweep of the exact 50 (seed, target) M0-1 pairs, mirroring
+the executor (per-stage track_tol + settle), isolated four independent
+causes, each found by frame-level box-quat + render telemetry, not guesswork:
+
+1. PALM CONTACT: GRIP_ENGAGEMENT 0.045 assumed 5 mm palm clearance from
+   0.05-long fingers, but the palm plate actually pressed the box top and
+   shoved it sideways during descent — spinning near-square meds into
+   diagonal detents at close and ratcheting a pitch tilt through the
+   carry. Renders of the cetirizine grasp showed it directly. 0.035
+   keeps the palm genuinely clear; the T08 "shallow grips pitch" note was
+   this same contact misattributed.
+2. OPEN-WHILE-RISING RELEASE: lifting the still-gripped box during the
+   ~1 s finger-open ramp gave it pendulum energy and it slipped off
+   raised, toppling tall meds. Replaced by a STATIONARY open at a hover
+   pose (release path = the lower pose held), settle covering the full
+   ramp. The old shear concern applied to a SEATED box; the box now
+   hovers PLACE_DROP_GAP (0.02) above the slab instead of resting.
+3. JOINT-SPACE TRANSFER SWING: the transfer stage was a bare joint
+   waypoint, leaving TCP orientation unconstrained mid-swing — the wrist
+   tilted, gravity torqued the box about the pinch line, and it
+   creep-rotated flat before release (slower swings made it WORSE, more
+   time tilted). Rebuilt as a Cartesian ik_continuation that holds the
+   place orientation across the swing.
+4. DROP GAP vs GRIP: transient values of PLACE_DROP_GAP were retired once
+   the box stayed axis-aligned in the grip; 0.02 with the converged
+   stationary release lands flat-bottomed boxes upright.
+
+Result: 48/50 offline (0.96), the two residual tips are omeprazole (the
+near-cube 0.05x0.045 med) on specific placements — right at the margin.
+The live 50-episode graph run is the ground-truth gate; live has run
+slightly harder than this offline proxy, so 0.96 offline is not a
+guaranteed live pass and the run result governs.
+
 ## 6. M0 suite interpretation
 
 - M0-1/M0-2 share one module-scoped 50-episode run; M0-2 performs the

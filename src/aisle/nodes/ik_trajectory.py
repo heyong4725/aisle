@@ -295,6 +295,10 @@ class Stage:
     gripper: float  # 0 open .. 1 closed
     settle_s: float  # dwell after reaching, letting physics catch up
     vel: float = 1.0  # joint-velocity scale; carry stages move gently
+    # completion tolerance (rad): the 0.10 default is centimeters at the
+    # TCP — release-critical stages need the arm actually AT the hover
+    # pose, or the box grounds/tips (M0 runs m0-1-2f6716 + offline sweep)
+    track_tol: float = TRACK_TOL
 
     @property
     def q(self) -> np.ndarray:
@@ -396,26 +400,30 @@ class StagedPlan:
             if lift_path is not None
             else None
         )
-        q_transfer = (
-            ik_solve(transfer_pos, place_rot, retract_path[-1])
+        # transfer as a CARTESIAN continuation, not a bare joint waypoint:
+        # a joint-space swing leaves the TCP orientation unconstrained
+        # mid-path — the wrist tilts, gravity torques the box about the
+        # pinch line, and it creep-rotates flat before release (T10
+        # telemetry, seed 3 omeprazole; slower swings made it WORSE
+        # because the wrist spent longer tilted)
+        transfer_path = (
+            ik_continuation(pre_pos + up, transfer_pos, place_rot, retract_path[-1])
             if retract_path is not None
             else None
         )
+        q_transfer = transfer_path[-1] if transfer_path is not None else None
         lower_path = (
             ik_continuation(transfer_pos, lower_pos, place_rot, q_transfer)
             if q_transfer is not None
             else None
         )
-        # the fingers open WHILE the TCP rises off the seated box: opening
-        # in place shears the top-held box over even when it is seated
-        # (fingertips drag on the box faces under residual squeeze)
-        release_path = (
-            ik_continuation(
-                lower_pos, lower_pos + np.array([0.0, 0.0, 0.05]), place_rot, lower_path[-1]
-            )
-            if lower_path is not None
-            else None
-        )
+        # release opens the fingers STATIONARY at the hover pose: the old
+        # open-while-rising release lifted the still-gripped box during
+        # the ~1 s finger ramp and it slipped off raised with pendulum
+        # energy — tall meds toppled on landing (offline 50-pair sweep;
+        # the T08 shear concern applied to a SEATED box, and the box now
+        # hovers PLACE_DROP_GAP above the tray instead)
+        release_path = (lower_path[-1],) if lower_path is not None else None
         if release_path is None:
             self.error = "IK failed along the insertion or placement path"
             return
@@ -429,9 +437,17 @@ class StagedPlan:
             Stage("retract", tuple(retract_path), 1.0, 0.2, vel=0.5),
             # the transfer swing is where the box shifts in the grip:
             # carry it gently
-            Stage("transfer", (q_transfer,), 1.0, 0.3, vel=0.35),
-            Stage("lower", tuple(lower_path), 1.0, 0.3, vel=0.35),
-            Stage("release", tuple(release_path), 0.0, 0.5, vel=0.35),
+            # vel 0.2: at 0.35 the long swing (far +y shelf to the tray)
+            # whipped the box to ~45 degrees inside even a full-force
+            # pinch, and pad friction held the tilt to release (T10
+            # telemetry, seed 3 omeprazole)
+            Stage("transfer", tuple(transfer_path), 1.0, 0.3, vel=0.35),
+            # lower/release: tight tolerance + a real settle so the box
+            # hovers converged and motionless before the fingers open —
+            # releasing mid-motion or centimeters off grounds or tips it
+            Stage("lower", tuple(lower_path), 1.0, 1.0, vel=0.35, track_tol=0.03),
+            # settle covers the full 1 s finger-open ramp plus box drop
+            Stage("release", tuple(release_path), 0.0, 1.5, vel=0.35, track_tol=0.03),
             # rise clear of the tray walls before the home swing: the raw
             # release->home sweep dragged the fingers through the tray and
             # jammed the arm (T08 live run)
@@ -573,7 +589,7 @@ def main() -> None:
             if np.abs(current_cmd - stage.q).max() < 1e-6 and current_grip == stage.gripper:
                 at_target_ticks += 1
                 track_err = np.abs(qpos[:n_arm] - stage.q)
-                tracked = track_err.max() < TRACK_TOL
+                tracked = track_err.max() < stage.track_tol
                 if tracked:
                     settle_ticks += 1
                 if settle_ticks * dt >= stage.settle_s or at_target_ticks * dt >= STAGE_BAIL_S:

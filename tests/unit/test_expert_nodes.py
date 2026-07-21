@@ -5,7 +5,7 @@ oracle-pose, grasp-planner-topdown, task-state-machine) — no dora, no sim
 import numpy as np
 import pytest
 
-from aisle.nodes.grasp_topdown import plan_grasp, topdown_quat, yaw_of
+from aisle.nodes.grasp_topdown import PLACE_DROP_GAP, plan_grasp, topdown_quat, yaw_of
 from aisle.nodes.ik_trajectory import quat_to_rotation
 from aisle.nodes.oracle_pose import select_pose
 from aisle.nodes.task_state_machine import TaskStateMachine
@@ -55,7 +55,7 @@ class TestGraspTopdown:
         grasp, approach, place_z = plan_grasp(target, size, grip=0.025, tray_top_z=0.04)
         assert approach == pytest.approx(0.15)
         # release TCP: tray top + hanging box length + drop gap
-        assert place_z == pytest.approx(0.04 + (0.090 - 0.025) + 0.01, abs=1e-6)
+        assert place_z == pytest.approx(0.04 + (0.090 - 0.025) + PLACE_DROP_GAP, abs=1e-6)
         assert grasp[:3] == pytest.approx([0.5, -0.1, 0.10 + 0.045 - 0.025], abs=1e-6)
         assert yaw_of(grasp[3:]) % np.pi == pytest.approx(yaw % np.pi, abs=1e-5)
 
