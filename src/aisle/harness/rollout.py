@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import platform as platform_module
+import re
 import signal
 import subprocess
 import sys
@@ -149,6 +150,14 @@ def rollout(
         return {"ok": False, "error": "behavioral reset is Phase 2 (RST-2)"}
     if verifier != "oracle":
         return {"ok": False, "error": "realistic verifier is Phase 2"}
+    if tier != "T0":
+        # refusing beats mislabeling: T1/T2 change perception wiring and
+        # nothing here implements that yet (PR #11 review)
+        return {"ok": False, "error": f"tier {tier!r} is Phase 2; only T0 runs today"}
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", run_id):
+        return {"ok": False, "error": f"unsafe run_id {run_id!r}"}
+    if (root / "runs" / run_id).exists():
+        return {"ok": False, "error": f"run_id {run_id!r} already exists; refusing to overwrite"}
     gates = run_gates(root, graph, branch, no_idea_gate)
     if not gates["ok"]:
         return {"ok": False, "refused": gates}

@@ -52,8 +52,7 @@ def close_idea(root: Path, branch: str, idea_id: str, observed: str, verdict: st
     """HAR-7: append a close record. Verdict is one of up|down|flat."""
     if verdict not in ("up", "down", "flat"):
         raise ValueError(f"verdict must be up|down|flat, got {verdict!r}")
-    entries = _read(root, branch)
-    if not any(e.get("id") == idea_id and e.get("status") == "open" for e in entries):
+    if not any(e["id"] == idea_id for e in open_ideas(root, branch)):
         raise ValueError(f"no open idea {idea_id!r} on branch {branch!r}")
     entry = {
         "id": idea_id,

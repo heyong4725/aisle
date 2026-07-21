@@ -46,6 +46,10 @@ def test_close_requires_an_open_idea_and_valid_verdict(tmp_path):
         close_idea(tmp_path, "b", "I9", "x", "up", "t1")
     with pytest.raises(ValueError, match="verdict"):
         close_idea(tmp_path, "b", "I1", "x", "sideways", "t1")
+    close_idea(tmp_path, "b", "I1", "went flat", "flat", "t1")
+    # PR #11 review: a second, contradictory close must be refused
+    with pytest.raises(ValueError, match="no open idea"):
+        close_idea(tmp_path, "b", "I1", "actually up", "up", "t2")
 
 
 def _fake_root(tmp_path: Path, hash_ok: bool = True) -> Path:

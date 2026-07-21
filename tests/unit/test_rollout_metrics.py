@@ -65,3 +65,28 @@ def test_instrumented_graph_adds_recorder_and_absolutizes(tmp_path):
     for node in doc["nodes"]:
         assert Path(node["path"]).is_absolute()
     assert (REPO_ROOT / "graphs" / "expert_t0.yaml").read_text() == original
+
+
+def test_rollout_refuses_unsafe_or_reused_run_ids(tmp_path):
+    """PR #11 review: a traversal-shaped run_id must never touch paths
+    outside runs/, and an existing run must never be overwritten. Also:
+    non-T0 tiers refuse rather than run mislabeled."""
+    from aisle.harness.rollout import rollout
+
+    common = dict(
+        root=tmp_path,
+        graph=REPO_ROOT / "graphs" / "expert_t0.yaml",
+        episodes=1,
+        seeds=[0],
+        reset_mode="teleport",
+        verifier="oracle",
+        branch="b",
+        no_idea_gate=True,
+    )
+    bad = rollout(tier="T0", run_id="../escape", **common)
+    assert bad["ok"] is False and "unsafe run_id" in bad["error"]
+    (tmp_path / "runs" / "taken").mkdir(parents=True)
+    reused = rollout(tier="T0", run_id="taken", **common)
+    assert reused["ok"] is False and "already exists" in reused["error"]
+    tiered = rollout(tier="T1", run_id="fresh", **common)
+    assert tiered["ok"] is False and "Phase 2" in tiered["error"]

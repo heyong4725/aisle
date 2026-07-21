@@ -63,7 +63,11 @@ def main() -> int:
     trq.add_argument("--run", required=True)
     trq.add_argument("--topic", required=True)
     trq.add_argument("--t0", type=int, default=None, help="slice start, sim ns")
-    trq.add_argument("--t1", type=int, default=None, help="slice end, sim ns")
+    trq.add_argument("--t1", type=int, default=None, help="slice end, sim ns (exclusive)")
+    trq.add_argument("--episode", type=int, default=None, help="episode index (reset windows)")
+    trq.add_argument("--node", default=None, help="producing node id (verified vs the run graph)")
+    trq.add_argument("--format", default="json", choices=["json", "npz"])
+    trq.add_argument("--out", type=Path, default=None, help="npz output path")
     trq.add_argument("--summarize", action="store_true")
     trq.add_argument("--root", type=Path, default=DEFAULT_ROOT)
 
@@ -117,6 +121,9 @@ def main() -> int:
     if args.command == "traces":
         from aisle.harness.traces import query
 
+        npz_path = None
+        if args.format == "npz":
+            npz_path = args.out or (args.root / "runs" / args.run / f"{args.topic}.npz")
         try:
             report = {
                 "ok": True,
@@ -126,6 +133,9 @@ def main() -> int:
                     t0_ns=args.t0,
                     t1_ns=args.t1,
                     summarize=args.summarize,
+                    episode=args.episode,
+                    node=args.node,
+                    npz_path=npz_path,
                 ),
             }
         except FileNotFoundError as missing:
