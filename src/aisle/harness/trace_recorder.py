@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import signal
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -36,9 +37,14 @@ TRACE_SCHEMA = pa.schema(
     ]
 )
 # rows buffered per topic before a batch is written: one batch per message
-# costs ~300 bytes of IPC framing per ~40-byte row; truncation loss on a
-# hard kill stays bounded at this many rows
+# costs ~300 bytes of IPC framing per ~40-byte row
 BATCH_ROWS = 100
+# ALL buffers also flush on this wall cadence: low-rate endpoints (an
+# episode_result has ~2 rows per run) never reach BATCH_ROWS, and the
+# SIGTERM exit-flush cannot be relied on inside dora's blocking event
+# read (PR #11 round 2) — periodic flushing bounds any loss to this many
+# seconds of tail
+FLUSH_EVERY_S = 5.0
 
 
 def main() -> None:
@@ -87,29 +93,38 @@ def main() -> None:
 
     video = None
     frame_shape: tuple[int, int] | None = None
+    last_flush = time.monotonic()
 
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # run finally
     node = Node()
     try:
         for event in node:
+            now = time.monotonic()
+            if now - last_flush > FLUSH_EVERY_S:
+                last_flush = now
+                for pending in list(buffers):
+                    flush(pending)
             if event["type"] != "INPUT":
                 continue
-            topic = event["id"]
+            topic = event["id"]  # <producer>__<topic> endpoint key
             metadata = event.get("metadata") or {}
-            if topic == "rgb_overhead":
-                h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
-                if h and w:
-                    frame = np.asarray(
-                        event["value"].to_numpy(zero_copy_only=False), dtype=np.uint8
-                    ).reshape(h, w, 3)
-                    if video is None:
-                        video = imageio.get_writer(
-                            trace_dir / "overhead.mp4", fps=10, macro_block_size=1
-                        )
-                        frame_shape = (h, w)
-                    if (h, w) == frame_shape:
-                        video.append_data(frame)
-                buffer_row(topic, metadata, None, None)  # metadata-only row
+            if topic.endswith(("__rgb_overhead", "__rgb_wrist", "__depth_overhead")):
+                # image endpoints: metadata-only rows; overhead pixels go to
+                # the mp4, other pixel streams are exempt (ADR-11)
+                if topic.endswith("__rgb_overhead"):
+                    h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
+                    if h and w:
+                        frame = np.asarray(
+                            event["value"].to_numpy(zero_copy_only=False), dtype=np.uint8
+                        ).reshape(h, w, 3)
+                        if video is None:
+                            video = imageio.get_writer(
+                                trace_dir / "overhead.mp4", fps=10, macro_block_size=1
+                            )
+                            frame_shape = (h, w)
+                        if (h, w) == frame_shape:
+                            video.append_data(frame)
+                buffer_row(topic, metadata, None, None)
                 continue
             value = event["value"]
             if pa.types.is_string(value.type) or pa.types.is_large_string(value.type):

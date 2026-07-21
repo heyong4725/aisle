@@ -12,10 +12,31 @@ import pyarrow as pa
 import yaml
 
 
-def _load(run_dir: Path, topic: str) -> pa.Table:
-    path = run_dir / "traces" / f"{topic}.arrow"
-    if not path.exists():
+def resolve_endpoint(run_dir: Path, topic: str, node: str | None = None) -> Path:
+    """Trace files are per-ENDPOINT (<producer>__<topic>.arrow) because two
+    nodes may produce the same topic name (e.g. reset_done). A bare topic
+    resolves when unique; ambiguity requires --node."""
+    traces = run_dir / "traces"
+    if node is not None:
+        path = traces / f"{node}__{topic}.arrow"
+        if not path.exists():
+            raise FileNotFoundError(f"no trace for endpoint {node}/{topic} under {run_dir}")
+        return path
+    matches = sorted(traces.glob(f"*__{topic}.arrow")) + (
+        [traces / f"{topic}.arrow"] if (traces / f"{topic}.arrow").exists() else []
+    )
+    if not matches:
         raise FileNotFoundError(f"no trace for topic {topic!r} under {run_dir}")
+    if len(matches) > 1:
+        producers = [p.name.split("__")[0] for p in matches]
+        raise FileNotFoundError(
+            f"topic {topic!r} has multiple producers {producers}; select one with --node"
+        )
+    return matches[0]
+
+
+def _load(run_dir: Path, topic: str, node: str | None = None) -> pa.Table:
+    path = resolve_endpoint(run_dir, topic, node)
     # STREAM format, read defensively: a recorder killed mid-write leaves a
     # truncated tail batch — keep every complete batch
     batches = []
@@ -30,12 +51,30 @@ def _load(run_dir: Path, topic: str) -> pa.Table:
     return pa.Table.from_batches(batches)
 
 
+def _completed_episodes(run_dir: Path) -> int | None:
+    path = run_dir / "episodes.jsonl"
+    if not path.exists():
+        return None
+    return sum(1 for line in path.read_text().splitlines() if line.strip())
+
+
 def episode_window(run_dir: Path, episode: int) -> tuple[int, int | None]:
-    """Episode i spans reset_done i (inclusive) to reset_done i+1: sim-ns
-    bounds derived from the recorded reset stream."""
-    resets = sorted(_load(run_dir, "reset_done")["sim_time_ns"].to_pylist())
-    if episode >= len(resets):
-        raise FileNotFoundError(f"run has no episode {episode} ({len(resets)} resets recorded)")
+    """Episode i spans reset_done i (inclusive) to reset_done i+1. The
+    index is validated against COMPLETED episodes (episodes.jsonl): an
+    N-episode run records N resets plus the cleanup reset, so the raw
+    reset count would admit a phantom cleanup-only 'episode' (PR #11
+    review); negative indices are rejected outright. The bridge's own
+    reset_done endpoint is authoritative when several exist."""
+    completed = _completed_episodes(run_dir)
+    try:
+        resets = sorted(
+            _load(run_dir, "reset_done", node="dora-genesis")["sim_time_ns"].to_pylist()
+        )
+    except FileNotFoundError:
+        resets = sorted(_load(run_dir, "reset_done")["sim_time_ns"].to_pylist())
+    limit = completed if completed is not None else max(0, len(resets) - 1)
+    if not 0 <= episode < limit:
+        raise FileNotFoundError(f"run has episodes 0..{limit - 1}, not {episode}")
     start = resets[episode]
     end = resets[episode + 1] if episode + 1 < len(resets) else None
     return start, end
@@ -64,16 +103,12 @@ def query(
     """HAR-6: a time/episode-sliced view of one topic — JSON-ready data, an
     npz file, or a per-topic summary (rate achieved, min/max, gaps) over
     the SLICED rows."""
-    if node is not None:
-        actual = producer_of(run_dir, topic)
-        if actual is not None and actual != node:
-            raise FileNotFoundError(f"topic {topic!r} is produced by {actual!r}, not {node!r}")
     if episode is not None:
         ep_start, ep_end = episode_window(run_dir, episode)
         t0_ns = max(t0_ns, ep_start) if t0_ns is not None else ep_start
         if ep_end is not None:
             t1_ns = min(t1_ns, ep_end) if t1_ns is not None else ep_end
-    table = _load(run_dir, topic)
+    table = _load(run_dir, topic, node)
     times = np.asarray(table["sim_time_ns"], dtype=np.int64)
     mask = np.ones(len(times), dtype=bool)
     if t0_ns is not None:
@@ -87,37 +122,35 @@ def query(
         if len(times) < 2:
             return {"topic": topic, "n": len(idx), "rate_hz": 0.0, "gaps": 0}
         spans = np.diff(np.sort(times)) / 1e9
-        # extrema over the SLICED rows only (a filtered summary previously
-        # reported whole-trace extrema — PR #11 review)
-        rows = [v for v in sliced["data"].to_pylist() if v is not None]
-        flat = (
-            np.concatenate([np.asarray(v, dtype=np.float64) for v in rows])
-            if rows
-            else np.array([np.nan])
-        )
         median_dt = float(np.median(spans))
-        return {
+        summary = {
             "topic": topic,
             "n": len(idx),
             "rate_hz": round(1.0 / median_dt, 2) if median_dt > 0 else 0.0,
-            "min": float(np.nanmin(flat)),
-            "max": float(np.nanmax(flat)),
             # a gap is a step over 3x the median spacing
             "gaps": int(np.sum(spans > 3 * median_dt)) if median_dt > 0 else 0,
         }
+        # extrema over the SLICED numeric rows; text-only endpoints (e.g.
+        # episode_result) OMIT min/max rather than emitting NaN (PR #11)
+        rows = [v for v in sliced["data"].to_pylist() if v is not None]
+        if rows:
+            flat = np.concatenate([np.asarray(v, dtype=np.float64) for v in rows])
+            summary["min"] = float(flat.min())
+            summary["max"] = float(flat.max())
+        return summary
     if npz_path is not None:
-        rows = sliced["data"].to_pylist()
-        data = (
-            np.asarray([r for r in rows if r is not None], dtype=np.float64)
-            if rows and rows[0] is not None
-            else np.empty((0,))
-        )
-        np.savez(
-            npz_path,
-            sim_time_ns=times,
-            seq=np.asarray(sliced["seq"], dtype=np.int64),
-            data=data,
-        )
+        arrays = {
+            "sim_time_ns": times,
+            "seq": np.asarray(sliced["seq"], dtype=np.int64),
+        }
+        rows = [v for v in sliced["data"].to_pylist() if v is not None]
+        if rows:
+            arrays["data"] = np.asarray(rows, dtype=np.float64)
+        texts = [v for v in sliced["text"].to_pylist() if v is not None]
+        if texts:
+            # text payloads (episode_result etc.) are preserved, not dropped
+            arrays["text"] = np.asarray(texts, dtype=np.str_)
+        np.savez(npz_path, **arrays)
         return {"topic": topic, "n": len(idx), "npz": str(npz_path)}
     result = {
         "topic": topic,

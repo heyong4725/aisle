@@ -12,11 +12,14 @@ from aisle.harness.traces import query
 pytestmark = pytest.mark.unit
 
 
-def write_trace(run_dir: Path, topic: str, rows):
+def write_trace(run_dir: Path, endpoint: str, rows):
+    """rows: (sim_time_ns, seq, data) or (sim_time_ns, seq, data, text)."""
     schema = TRACE_SCHEMA
     (run_dir / "traces").mkdir(parents=True, exist_ok=True)
-    with pa.ipc.new_stream(run_dir / "traces" / f"{topic}.arrow", schema) as writer:
-        for t, seq, data in rows:
+    with pa.ipc.new_stream(run_dir / "traces" / f"{endpoint}.arrow", schema) as writer:
+        for row in rows:
+            t, seq, data = row[0], row[1], row[2]
+            text = row[3] if len(row) > 3 else None
             writer.write_batch(
                 pa.record_batch(
                     [
@@ -24,7 +27,7 @@ def write_trace(run_dir: Path, topic: str, rows):
                         pa.array([0], pa.int32()),
                         pa.array([seq], pa.int64()),
                         pa.array([data], pa.list_(pa.float64())),
-                        pa.array([None], pa.string()),
+                        pa.array([text], pa.string()),
                     ],
                     schema=schema,
                 )
@@ -69,14 +72,59 @@ def test_summary_extrema_respect_the_slice(tmp_path):
     assert stats["max"] == 9.0  # 999 excluded
 
 
+def _episodes_file(run_dir: Path, n: int) -> None:
+    lines = "".join('{"status": "fail"}' + "\n" for _ in range(n))
+    (run_dir / "episodes.jsonl").write_text(lines)
+
+
 def test_episode_selector_uses_reset_windows(tmp_path):
-    """HAR-6 --episode: episode i spans reset_done i to reset_done i+1."""
-    write_trace(tmp_path, "reset_done", [(0, 1, [1.0]), (int(5e8), 2, [1.0])])
+    """HAR-6 --episode: episode i spans reset_done i to reset_done i+1,
+    using the REAL reset sequence (N episode resets + the cleanup reset)
+    with the index validated against COMPLETED episodes — the phantom
+    cleanup-only window and negative indices are rejected (PR #11)."""
+    write_trace(
+        tmp_path,
+        "dora-genesis__reset_done",
+        [(0, 1, [1.0]), (int(5e8), 2, [1.0]), (int(10e8), 3, [1.0])],
+    )
+    _episodes_file(tmp_path, 2)
     write_trace(tmp_path, "gripper_state", [(int(i * 1e8), i, [float(i)]) for i in range(10)])
     ep0 = query(tmp_path, "gripper_state", episode=0)
     ep1 = query(tmp_path, "gripper_state", episode=1)
     assert ep0["n"] == 5 and ep1["n"] == 5
     assert max(ep0["sim_time_ns"]) < int(5e8) <= min(ep1["sim_time_ns"])
+    with pytest.raises(FileNotFoundError, match=r"episodes 0\.\.1"):
+        query(tmp_path, "gripper_state", episode=2)  # phantom cleanup window
+    with pytest.raises(FileNotFoundError, match=r"episodes 0\.\.1"):
+        query(tmp_path, "gripper_state", episode=-1)
+
+
+def test_ambiguous_topic_requires_node_selector(tmp_path):
+    """PR #11: two producers of one topic name stay distinct endpoints; a
+    bare-topic query on an ambiguous name lists the producers, and --node
+    selects one."""
+    write_trace(tmp_path, "dora-genesis__reset_done", [(0, 1, [1.0])])
+    write_trace(tmp_path, "reset__reset_done", [(0, 1, [1.0]), (int(1e8), 2, [1.0])])
+    with pytest.raises(FileNotFoundError, match="multiple producers"):
+        query(tmp_path, "reset_done")
+    assert query(tmp_path, "reset_done", node="reset")["n"] == 2
+
+
+def test_text_endpoint_summary_and_npz(tmp_path):
+    """PR #11: text-only endpoints (episode_result) summarize without NaN
+    extrema and keep their payloads in NPZ exports."""
+    import numpy as np
+
+    rows = [(int(i * 1e9), i, None, '{"status": "fail"}') for i in range(3)]
+    write_trace(tmp_path, "verifier-oracle__episode_result", rows)
+    stats = query(tmp_path, "episode_result", summarize=True)
+    assert stats["n"] == 3 and "min" not in stats and "max" not in stats
+    out = tmp_path / "results.npz"
+    report = query(tmp_path, "episode_result", npz_path=out)
+    assert report["npz"] == str(out)
+    loaded = np.load(out)
+    assert list(loaded["text"]) == ['{"status": "fail"}'] * 3
+    assert "data" not in loaded
 
 
 def test_npz_format_writes_arrays(tmp_path):
@@ -93,15 +141,10 @@ def test_npz_format_writes_arrays(tmp_path):
     assert loaded["sim_time_ns"].tolist() == [int(i * 1e7) for i in range(4)]
 
 
-def test_node_selector_checks_producer(tmp_path):
-    """HAR-6 --node: querying a topic under the wrong producing node is an
-    error (checked against the run's instrumented graph)."""
-    import yaml as yaml_module
-
-    write_trace(tmp_path, "joint_state", [(0, 1, [1.0])])
-    (tmp_path / "graph.yaml").write_text(
-        yaml_module.safe_dump({"nodes": [{"id": "dora-genesis", "outputs": ["joint_state"]}]})
-    )
+def test_node_selector_resolves_endpoint_files(tmp_path):
+    """HAR-6 --node: selects the producer-qualified endpoint file; a wrong
+    node is an error."""
+    write_trace(tmp_path, "dora-genesis__joint_state", [(0, 1, [1.0])])
     assert query(tmp_path, "joint_state", node="dora-genesis")["n"] == 1
-    with pytest.raises(FileNotFoundError, match="produced by"):
+    with pytest.raises(FileNotFoundError, match="no trace for endpoint"):
         query(tmp_path, "joint_state", node="oracle-pose")

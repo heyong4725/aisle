@@ -82,7 +82,12 @@ def test_rollout_two_episodes_end_to_end(tmp_path):
             assert manifest[key], key
         assert manifest["no_idea_gate"] is False  # the REAL gate was exercised
         traces = {p.name for p in (run_dir / "traces").iterdir()}
-        assert "joint_state.arrow" in traces and "oracle_state.arrow" in traces
+        # endpoint-qualified names: <producer>__<topic>.arrow (PR #11)
+        assert "dora-genesis__joint_state.arrow" in traces
+        assert "dora-genesis__oracle_state.arrow" in traces
+        assert "verifier-oracle__episode_result.arrow" in traces  # text payloads
+        assert "dora-genesis__reset_done.arrow" in traces
+        assert "reset__reset_done.arrow" in traces  # BOTH producers kept
         assert "overhead.mp4" in traces  # HAR-4 video
         # the traces query CLI reads what the run recorded (HAR-6)
         code, stats = run_harness(

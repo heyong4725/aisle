@@ -69,7 +69,7 @@ def main() -> None:
                 phase = "awaiting_reset"
         elif event["id"] == "reset_done" and phase == "awaiting_reset":
             goal = {
-                "tier": "T0",
+                "tier": os.environ.get("AISLE_TIER", "T0"),
                 "target_med": targets[episode],
                 "timeout_s": timeout_s,
                 "seed": seeds[episode],

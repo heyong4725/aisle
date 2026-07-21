@@ -59,9 +59,16 @@ def test_instrumented_graph_adds_recorder_and_absolutizes(tmp_path):
     doc = yaml.safe_load(out.read_text())
     recorder = next(n for n in doc["nodes"] if n["id"] == "trace-recorder")
     sources = {port: spec["source"] for port, spec in recorder["inputs"].items()}
-    assert sources["joint_state"] == "dora-genesis/joint_state"
-    assert sources["oracle_state"] == "dora-genesis/oracle_state"
-    assert "rgb_overhead" in sources
+    assert sources["dora-genesis__joint_state"] == "dora-genesis/joint_state"
+    assert sources["dora-genesis__oracle_state"] == "dora-genesis/oracle_state"
+    # EVERY declared node/output endpoint is wired (HAR-4), including both
+    # reset_done producers and the image topics (PR #11 review)
+    declared = {
+        f"{n['id']}__{topic}" for n in doc["nodes"][:-1] for topic in (n.get("outputs") or [])
+    }
+    assert set(sources) == declared
+    assert "dora-genesis__reset_done" in sources and "reset__reset_done" in sources
+    assert "dora-genesis__rgb_wrist" in sources
     for node in doc["nodes"]:
         assert Path(node["path"]).is_absolute()
     assert (REPO_ROOT / "graphs" / "expert_t0.yaml").read_text() == original
@@ -88,5 +95,8 @@ def test_rollout_refuses_unsafe_or_reused_run_ids(tmp_path):
     (tmp_path / "runs" / "taken").mkdir(parents=True)
     reused = rollout(tier="T0", run_id="taken", **common)
     assert reused["ok"] is False and "already exists" in reused["error"]
+    # tiers propagate to the graph env rather than refusing (HAR-1): the
+    # gate stack still refuses this call earlier (no committed env hash in
+    # the fake root), proving tier is no longer a refusal cause
     tiered = rollout(tier="T1", run_id="fresh", **common)
-    assert tiered["ok"] is False and "Phase 2" in tiered["error"]
+    assert "Phase 2" not in str(tiered.get("error", ""))

@@ -29,9 +29,8 @@ from aisle.harness.ideas import open_ideas
 from aisle.harness.reaper import reap_orphans
 from aisle.harness.validate import validate
 
-# topics NOT traced: heavy image streams the video does not need (the
-# overhead camera IS traced, as the mp4) and the startup banner
-TRACE_EXCLUDE = {"rgb_wrist", "depth_overhead", "bridge_info"}
+# every declared node/output endpoint is traced (HAR-4); image topics
+# record metadata-only rows — pixels live in the mp4 (ADR-11)
 # hard-won budgets (see ADR-11): the per-episode verifier budget in SIM
 # seconds; the one-off genesis build and per-episode WALL budgets; and
 # the stall detector's thresholds (pre-data = the build produces no
@@ -104,16 +103,13 @@ def instrumented_graph(graph: Path, root: Path, run_dir: Path) -> Path:
     doc = yaml.safe_load(graph.read_text())
     for node in doc["nodes"]:
         node["path"] = str((graph.parent / node["path"]).resolve())
-    producers: dict[str, str] = {}
-    for node in doc["nodes"]:
-        for out in node.get("outputs", []):
-            producers.setdefault(out, node["id"])
-    # HAR-4 "traces of all topics": every produced topic except the heavy
-    # image streams; JSON-payload topics land in <topic>.jsonl sidecars
+    # HAR-4: EVERY declared endpoint, keyed <producer>__<topic> so two
+    # producers of the same topic name (e.g. reset_done from both the
+    # bridge and the reset service) stay distinct endpoints
     inputs = {
-        topic: {"source": f"{producer}/{topic}", "queue_size": 100}
-        for topic, producer in sorted(producers.items())
-        if topic not in TRACE_EXCLUDE
+        f"{node['id']}__{topic}": {"source": f"{node['id']}/{topic}", "queue_size": 100}
+        for node in doc["nodes"]
+        for topic in (node.get("outputs") or [])
     }
     doc["nodes"].append(
         {
@@ -150,10 +146,6 @@ def rollout(
         return {"ok": False, "error": "behavioral reset is Phase 2 (RST-2)"}
     if verifier != "oracle":
         return {"ok": False, "error": "realistic verifier is Phase 2"}
-    if tier != "T0":
-        # refusing beats mislabeling: T1/T2 change perception wiring and
-        # nothing here implements that yet (PR #11 review)
-        return {"ok": False, "error": f"tier {tier!r} is Phase 2; only T0 runs today"}
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", run_id):
         return {"ok": False, "error": f"unsafe run_id {run_id!r}"}
     if (root / "runs" / run_id).exists():
@@ -177,6 +169,10 @@ def rollout(
     env = {
         **os.environ,
         "AISLE_SEEDS": ",".join(str(s) for s in seeds),
+        # the caller-selected tier propagates to the graph (HAR-1): the
+        # rollout client stamps it into every goal, and the SELECTED graph
+        # determines its tier-specific wiring
+        "AISLE_TIER": tier,
         "AISLE_TIMEOUT_S": str(EPISODE_TIMEOUT_S),
         "AISLE_RESULTS": str(results_path),
     }
