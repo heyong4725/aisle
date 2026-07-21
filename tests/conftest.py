@@ -170,39 +170,12 @@ def write_bridge_dataflow(
     return graph
 
 
-_NODE_PATTERNS = (
-    "dora_genesis.py",
-    "fixtures/nodes/driver.py",
-    "fixtures/nodes/recorder.py",
-    "fixtures/nodes/verifier_stub.py",
-    "reset/service.py",
-    "nodes/budget_guard.py",
-    # T08 expert pipeline nodes: leaked copies of these strangled the
-    # machine to load 200+ during the live-pass iteration
-    "nodes/ik_trajectory.py",
-    "nodes/oracle_pose.py",
-    "nodes/grasp_topdown.py",
-    "nodes/task_state_machine.py",
-    "harness/rollout_client.py",
-    "verifier/oracle.py",
-)
-
-
 def _reap_orphan_nodes(graph_dir: Path) -> None:
-    """dora spawns nodes via `uv run` OUTSIDE our process group, so killing
-    `dora run` leaks them — each leaked genesis node burns ~50% of a core
-    forever, and past leaks have silently strangled whole test sessions.
-    Reap ONLY processes whose cwd is THIS run's unique dataflow directory
-    (dora spawns nodes with cwd = the yaml's dir), so unrelated runs and
-    developer dataflows are never touched."""
-    for pattern in _NODE_PATTERNS:
-        pgrep = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True)
-        for pid in pgrep.stdout.split():
-            cwd = subprocess.run(
-                ["lsof", "-a", "-p", pid, "-d", "cwd", "-Fn"], capture_output=True, text=True
-            )
-            if f"n{graph_dir}" in cwd.stdout.splitlines():
-                subprocess.run(["kill", "-9", pid], capture_output=True)
+    """Shared reaper (src/aisle/harness/reaper.py) scoped to THIS run's
+    unique dataflow directory."""
+    from aisle.harness.reaper import reap_orphans
+
+    reap_orphans(graph_dir)
 
 
 @dataclass

@@ -111,24 +111,21 @@ def test_staged_plan_topdown_walks_the_pick_place_sequence():
     assert by_name["home"].q == pytest.approx(HOME, abs=1e-6)
 
 
-def test_staged_plan_front_mode_inserts_horizontally():
-    """Lower shelf levels are grasped from the FRONT (ADR-10): the
-    pregrasp sits in front of the shelf at the box's height, the advance
-    slides horizontally into the inter-board gap."""
+def test_staged_plan_front_mode_refuses_unstable_flips():
+    """ADR-10 section 8 / ADR-11: front-mode grasping is the DOCUMENTED
+    coverage gap — every current front placement needs a multi-radian
+    wrist flip, and no such flip has executed stably (a ~2.5 rad planned
+    flip diverged into a physics NaN and crashed the bridge). Until the
+    under-board strategy is resolved, front plans REFUSE (bounded by
+    FLIP_MAX) so episodes close via the verifier timeout instead of
+    killing the sim."""
     target = np.array([0.55, -0.11, 0.105, 0, 0, 0, 1], dtype=np.float32)
     grasp, approach, place_z = plan_grasp(
         target, (0.055, 0.035, 0.090), front=True, shelf_front_x=0.40, tray_top_z=0.04
     )
     plan = StagedPlan(grasp, (0.35, -0.35), approach_m=approach, q_seed=HOME, place_z=place_z)
-    assert plan.ok, plan.error
-    by_name = {s.name: s for s in plan.stages}
-    pre, adv = fk_tcp(by_name["pregrasp"].q), fk_tcp(by_name["advance"].q)
-    assert pre[2] == pytest.approx(adv[2], abs=0.01)  # same height: horizontal
-    assert adv[0] - pre[0] == pytest.approx(approach, abs=0.02)  # slides in +x
-    # retract carries the lifted box back OUT of the shelf
-    retract = fk_tcp(by_name["retract"].q)
-    assert retract[0] == pytest.approx(pre[0], abs=0.02)
-    assert retract[2] == pytest.approx(adv[2] + 0.015, abs=0.02)
+    assert plan.ok is False
+    assert "flip" in plan.error or "IK failed" in plan.error
 
 
 def test_ik_front_orientation_is_not_pi_flipped():
