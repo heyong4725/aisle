@@ -22,7 +22,11 @@ friction = 0.70
 # (M0-5: an embodiment is a scene+driver PROFILE swap)
 [shelf]
 board_thickness = 0.02
-min_separation = 0.02
+# neighbor clearance must exceed the open-finger sweep: fingertips
+# protrude (0.04 half-travel + tip) beyond the target's half-width, and a
+# 0.022 m gap let the descending finger knock the neighbor box (M0 run
+# m0-1-e2e07b episode 11)
+min_separation = 0.04
 edge_margin = 0.03
 
 [tray]
@@ -43,7 +47,9 @@ shelf_level_heights = [0.05, 0.32]
 # board's front plane (the hand landed on the board edge in the T10
 # physics replay); 0.36 - 0.12 - 0.10 leaves a 0.14 m band
 shelf_level_depths = [0.36, 0.12]
-shelf_level_size = [0.36, 0.60]
+# width 0.66: the 0.04 franka min_separation needs the extra y span to
+# stay satisfiable on every placement seed (seed 183 failed at 0.60)
+shelf_level_size = [0.36, 0.66]
 # tray fully OUTSIDE the shelf footprint in y: the widened staggered
 # shelf (front x 0.32) overlapped the old tray corner, so shelf boxes
 # could START inside the wrong_object entry region — instant VER-3 fail
@@ -72,6 +78,10 @@ shelf_pos = [0.22, 0.0, 0.0]
 pregrasp_height_m = 0.06
 # TC-5: so101 is 6 arm dofs + 1 gripper dof
 gripper_dofs = 1
+# so101's small 1-dof gripper does not need franka's 0.04 finger-sweep
+# clearance, and its 0.45 m reach cannot afford a wider shelf or a
+# farther tray — keep the pre-T10 separation
+min_separation = 0.02
 # staggered two-level shelf scaled to the 0.45 m arm: the upper level is
 # geometry-only (the reach pre-filter excludes it, hand clearance leaves
 # no usable band); all five meds place on L0's 0.14 m open band across

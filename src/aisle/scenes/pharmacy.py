@@ -58,6 +58,11 @@ def resolve_layout(physics: dict, embodiment: str) -> dict:
             "level_heights": profile["shelf_level_heights"],
             "level_depths": profile["shelf_level_depths"],
             "level_size": profile["shelf_level_size"],
+            # per-embodiment override (finger-sweep clearance scales with
+            # the gripper): same pattern as pregrasp_height_m
+            **(
+                {"min_separation": profile["min_separation"]} if "min_separation" in profile else {}
+            ),
         },
         "tray": {
             **physics["tray"],

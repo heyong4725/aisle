@@ -39,11 +39,11 @@ scene-sampler constant, deliberately conservative for both embodiments.
 
 ## 4. Final geometry (physics.toml)
 
-- franka: pos x 0.50, level_size [0.36, 0.60], heights [0.05, 0.32],
-  depths [0.36, 0.12]. L0 open band 0.14 m; L1 fully usable. Verified:
-  200/200 placement seeds, 0/250 kinematic plan failures (seeds 0..49),
-  physics replays L0 (seed 3 ibuprofen) and L1 (seed 0 amoxicillin,
-  omeprazole) all land IN TRAY.
+- franka: pos x 0.50, level_size [0.36, 0.66], heights [0.05, 0.32],
+  depths [0.36, 0.12], tray y -0.45 (clear of the shelf span, §5a),
+  min_separation 0.04 (§5a). L0 open band 0.14 m; L1 fully usable.
+  Verified: 200/200 placement seeds, 0/250 kinematic plan failures
+  (seeds 0..49), physics replays L0 and L1 land IN TRAY.
 - so101: pos x 0.22, level_size [0.30, 0.50], heights [0.02, 0.24],
   depths [0.30, 0.06]. The upper level is geometry-only: the reach
   pre-filter excludes it (0.45 m arm), and all five meds place on L0's
@@ -58,6 +58,37 @@ A level whose open band cannot fit a med (band minus margins narrower
 than the box) is skipped for that med rather than sampled with inverted
 bounds — random.uniform silently accepts reversed bounds and would place
 boxes outside the band.
+
+## 5a. What the first two M0-1 attempts taught (both aborted early)
+
+- Run m0-1-e634e4 (aborted at ep 8): the widened shelf overlapped the
+  tray's wrong_object entry footprint — boxes could START inside it and
+  the verifier correctly failed those episodes at t=0. Trays moved fully
+  outside the shelf span in y; a regression test pins the
+  disjoint-footprint invariant.
+- Run m0-1-e2e07b (aborted at ep 16, 6 fails): three mechanisms, all
+  found from the run's own Arrow traces (HAR-4/HAR-6 doing their job):
+  1. STALE-STATE DIVE (the big one): the reset fires on the verifier's
+     verdict, not on plan completion, so the executor can be mid-plan
+     when the scene teleports. With joint_state queue_size 100 the
+     executor later seeded its interpolation start from a queued
+     PRE-reset frame and drove the arm from home THROUGH the fresh scene
+     (TCP dipped to z=0.025 sweeping the shelf front — episodes 12/13
+     cascade, and the same nudge class explains the off-center
+     drag/timeout/drop failures of eps 3/8/15). Fix: joint_state is
+     state, not a command stream — queue_size 1 (latest-wins) in the
+     expert graph.
+  2. FINGER-SWEEP KNOCK: a 0.022 m neighbor gap sits inside the open
+     fingers' sweep envelope (±0.04 half-travel + tip) and the descent
+     knocked the neighbor (ep 11, collision). Fix: franka
+     min_separation 0.04 (shelf width 0.60 -> 0.66 to keep all 200
+     placement seeds satisfiable); min_separation became a
+     per-embodiment override (pregrasp_height_m pattern) because
+     so101's small gripper needs no such clearance and its 0.45 m reach
+     cannot afford a wider shelf.
+  3. The teleport already zeroes box velocities and restores
+     orientation — those were ruled out by reading the bridge, not
+     assumed.
 
 ## 6. M0 suite interpretation
 
