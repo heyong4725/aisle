@@ -219,3 +219,21 @@ def test_needs_front_covers_board_span_and_clearance_strip():
     assert not needs_front(upper_front - HAND_CLEARANCE_M - 0.02, lower_box_z, shelf)
     # on the top level there is no board above
     assert not needs_front(rear_x - 0.01, upper_box_z, shelf)
+
+
+def test_placements_never_start_inside_tray_footprint(placements_200):
+    """SCN-3 / VER-3: no sampled box may START inside the tray's
+    wrong_object entry footprint — the verifier fails an episode at t=0
+    the moment ANY non-target box is in the tray region (M0-1 run
+    m0-1-e634e4: the widened shelf overlapped the old tray corner and
+    seeds 1/5/7/9 were instant wrong_object)."""
+    for embodiment, (layout, per_seed) in placements_200.items():
+        tray = layout["tray"]
+        x_min = tray["pos"][0] - tray["size"][0] / 2
+        x_max = tray["pos"][0] + tray["size"][0] / 2
+        y_min = tray["pos"][1] - tray["size"][1] / 2
+        y_max = tray["pos"][1] + tray["size"][1] / 2
+        for seed, placements in enumerate(per_seed):
+            for p in placements:
+                inside = x_min <= p.x <= x_max and y_min <= p.y <= y_max
+                assert not inside, (embodiment, seed, p)

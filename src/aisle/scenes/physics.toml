@@ -44,7 +44,11 @@ shelf_level_heights = [0.05, 0.32]
 # physics replay); 0.36 - 0.12 - 0.10 leaves a 0.14 m band
 shelf_level_depths = [0.36, 0.12]
 shelf_level_size = [0.36, 0.60]
-tray_pos = [0.35, -0.35, 0.02]
+# tray fully OUTSIDE the shelf footprint in y: the widened staggered
+# shelf (front x 0.32) overlapped the old tray corner, so shelf boxes
+# could START inside the wrong_object entry region — instant VER-3 fail
+# at reset (M0-1 run m0-1-e634e4, seeds 1/5/7/9)
+tray_pos = [0.35, -0.45, 0.02]
 tray_size = [0.20, 0.28, 0.04]
 # elbow-bent ready pose: the deterministic IK start (all-zeros is singular)
 home_qpos = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04]
@@ -75,7 +79,8 @@ gripper_dofs = 1
 shelf_level_heights = [0.02, 0.24]
 shelf_level_depths = [0.30, 0.06]
 shelf_level_size = [0.30, 0.50]
-tray_pos = [0.16, -0.16, 0.01]
+# same clearance rule as franka: footprint disjoint from the shelf span
+tray_pos = [0.16, -0.35, 0.01]
 tray_size = [0.14, 0.18, 0.03]
 
 [ik]
