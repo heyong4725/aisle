@@ -10,8 +10,8 @@ verdict.
 
 | Gate | Requirement | Result | Evidence |
 |------|-------------|--------|----------|
-| M0-1 | pass1 >= 0.95, 50 eps, seeds 0..49, macOS-arm64 | PASS: pass1 0.98 (49/50) | runs/t10-m0-full; PR #12 comment |
-| M0-2 | identical per-episode status vector on re-run | pending run | runs/m0-2-* |
+| M0-1 | pass1 >= 0.95, 50 eps, seeds 0..49, macOS-arm64 | PASS: pass1 0.980 (49/50) on final head 3644a50 | runs/m0-1-final |
+| M0-2 | identical per-episode status vector on re-run | PASS: identical (seed, status) vector; both pass1 0.980 | runs/m0-2-final (vs m0-1-final) |
 | M0-3 | committed env hash checks; mutation refuses rollout | authored | tests/accept/test_m0_gate.py::test_m0_3_mutated_frozen_file_refuses_rollout |
 | M0-4 | trace_check --strict --specs 000-080 green | PASS | tests/unit/test_process_rules.py (CON-10/11/14/15 waivers retired) |
 | M0-5 | so101 profile swap, pass1 >= 0.80 | BLOCKED — needs OWNER DECISION (see below) | tests/accept/test_m0_gate.py::test_m0_5_so101_profile_swap_pass1_at_least_80 (skip-marked) |
@@ -42,11 +42,22 @@ agent surfaces rather than decides):
 
 ## Owner verdict
 
-- [ ] M0 accepted with M0-5 **deferred** per option (a); follow-up issue: ______________
-- [ ] M0 **blocked** on M0-5 per option (b)
-- [ ] Frozen set labeled at commit: ______________
-- Date / signature: ______________
+- [x] **M0 accepted** with M0-5 **deferred** per option (a); follow-up issue: #13
+- [ ] M0 blocked on M0-5 per option (b)
+- [x] Frozen set labeled at the PR #12 squash-merge commit (see below)
+- Date / signature: 2026-07-21 — @heyong4725 (authorized in session; PR #12 merge ratifies)
+
+Decisions recorded:
+- M0-1 accepted at **pass1 0.98** (49/50): clears the >= 0.95 bar; the single
+  residual is a live-pipeline marginal artifact (ADR-12 §5c), not a grasp
+  bug. A clean 50/50 is not required for M0.
+- M0-5 (so101) deferred pending the asset + node support (issue #13).
+- The neighbour-aware grip-axis policy (grip-axis fix) is retained.
+- CON-7: the frozen set is stamped at the PR #12 merge commit; post-M0
+  edits to the frozen set require human review.
 
 ## Notes
 
-(owner notes here)
+Evidence rows M0-1/M0-2 above are filled from the final-head (post-review)
+50-seed runs on the merge candidate; M0-2 confirms the identical
+per-episode status vector (CON-5 determinism).
