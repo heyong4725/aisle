@@ -44,6 +44,16 @@ TOPIC_RATES = {
     "poses": 15,
 }
 RENDER_TOPICS = ("rgb_overhead", "rgb_wrist", "depth_overhead")
+# ticks after a reset during which the bridge HOLDS the arm at home and
+# drops incoming joint commands. A collision/timeout ends an episode
+# mid-plan; the executor keeps streaming that plan's joint_cmds for the
+# few ticks until it receives reset_done and clears, and those stale
+# commands would drive the just-homed arm back off home — the next
+# episode then starts from a bad pose and sweeps the shelf (M0 run
+# t10-clearcheck, ep9 cascade). 20 ticks (0.2 s) covers the executor's
+# reset_done round-trip and is far shorter than the goal->grasp latency,
+# so no real command for the NEW episode is dropped.
+RESET_SETTLE_TICKS = 20
 
 
 @dataclass(frozen=True)
@@ -202,6 +212,10 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     seq: dict[tuple[str, int], int] = {}
     dropped_counts: dict[str, dict[int, int]] = {"joint": {}, "gripper": {}}
     sim_time_ns = 0
+    reset_settle = 0  # ticks remaining to hold the arm at home post-reset
+    home_hold = (
+        np.asarray(profile["home_qpos"], dtype=np.float32) if "home_qpos" in profile else None
+    )
     # one name per DOF in payload order (TC-5): multi-dof joints repeat,
     # zero-dof (fixed) joints vanish; a mismatch is a loud startup failure
     joint_names = []
@@ -304,6 +318,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     def teleport_reset(seed: int) -> None:
         """BRG-4: state injection from a fresh placement sample — no process
         restart, no scene rebuild."""
+        nonlocal reset_settle
         layout = resolve_layout(physics, cfg.embodiment)
         for placement in sample_placements(seed, list(handle.boxes), layout):
             entity = handle.boxes[placement.name]
@@ -328,6 +343,10 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         commands.drain()
         for counts in dropped_counts.values():
             counts.clear()
+        # hold the arm at home for the next few ticks: the executor keeps
+        # streaming the ended episode's plan until it sees reset_done, and
+        # those in-flight joint_cmds would otherwise drive the arm off home
+        reset_settle = RESET_SETTLE_TICKS
 
     for event in node:
         if event["type"] != "INPUT":
@@ -335,7 +354,16 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         input_id = event["id"]
         metadata = event.get("metadata") or {}
         if input_id == "tick":
-            apply_commands()
+            if reset_settle > 0 and home_hold is not None:
+                # post-reset settle: hold the arm at home and DROP any stale
+                # joint_cmds still in flight from the ended episode's plan,
+                # so they cannot drive the just-homed arm off home
+                commands.drain()
+                batched = home_hold if cfg.n_envs == 1 else np.tile(home_hold, (cfg.n_envs, 1))
+                robot.control_dofs_position(batched)
+                reset_settle -= 1
+            else:
+                apply_commands()
             handle.scene.step()  # BRG-7: exceptions crash the node loudly
             sim_time_ns += int(dt * 1e9)
             due = scheduler.due()

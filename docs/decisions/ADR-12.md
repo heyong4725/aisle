@@ -129,6 +129,44 @@ The live 50-episode graph run is the ground-truth gate; live has run
 slightly harder than this offline proxy, so 0.96 offline is not a
 guaranteed live pass and the run result governs.
 
+## 5c. Reset-boundary bugs found by the live gate (pass1 0.84 -> 0.98)
+
+The first full 50-episode run held ~0.85, failing on `collision` verdicts
+that OFFLINE physics never reproduced (single-episode and cross-episode
+replays were clean). Instrumenting the live arm isolated two independent
+reset-boundary bugs — neither a grasp-geometry issue, so the min_separation
+"clearance" lever did nothing:
+
+1. VERIFIER RESET-RACE (determinism): the verifier seeded each episode's
+   initial box poses from the first oracle sample past
+   `latest_oracle_ns`-at-goal-arrival, a barrier that only guaranteed
+   "after the goal", not "after the teleport". A pre-teleport frame could
+   become the baseline, so the teleport read as a mass collision —
+   intermittent, and it would have broken M0-2 determinism. Fix: the
+   bridge stamps `reset_done` with the teleport sim_time, the client
+   carries it into the goal, and the verifier captures only from an oracle
+   frame at/after it (`initial_capture_barrier`, pure + unit-tested).
+
+2. EXECUTOR STALE-COMMAND CASCADE (the dominant failure): a collision or
+   timeout ends an episode mid-plan, but the executor keeps streaming that
+   plan's joint_cmds for the few ticks until it receives `reset_done` and
+   clears. Those in-flight commands drove the just-teleported-home arm
+   back off home, so the NEXT episode began from the previous grasp pose
+   and swept the shelf, knocking a neighbor (~t=1 s). Every failure thus
+   dragged its successor down — a 2x multiplier. Fix (owner-approved
+   "reset-home" option): the bridge holds the arm at home and DROPS
+   incoming joint_cmds for `RESET_SETTLE_TICKS` (20 ticks / 0.2 s) after
+   each reset — long enough to cover the executor's reset_done round-trip,
+   far shorter than the goal->grasp latency, so no real command is lost.
+
+Result: pass1 0.980 (49/50, seeds 0..49). The single residual failure is
+seed 8, an ep8-type open-finger graze: the omeprazole grasp's open
+fingers straddle the target's y-axis and reach ~4 cm past its edge, where
+the live pipeline's path deviation clips a same-level neighbor. This is
+above the M0-1 0.95 bar; the finger-graze is a documented robustness
+follow-up (grip-axis-aware separation or a narrower descent), not an M0
+blocker.
+
 ## 6. M0 suite interpretation
 
 - M0-1/M0-2 share one module-scoped 50-episode run; M0-2 performs the

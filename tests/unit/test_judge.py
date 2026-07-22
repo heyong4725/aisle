@@ -7,6 +7,7 @@ import pytest
 from aisle.verifier.oracle import (
     FAILURE_CLASSES,
     JudgeCfg,
+    initial_capture_barrier,
     judge,
     load_thresholds,
     threshold_kwargs,
@@ -316,3 +317,30 @@ def test_airborne_target_above_tray_is_not_success():
     airborne = (0.35, -0.35, 0.30)
     state = make_state(positions=moved(SHELF, 0, airborne))
     assert judge(state, 0, 5.0, make_cfg()) == ("ongoing", None)
+
+
+def test_initial_capture_barrier_waits_for_the_teleport():
+    """VER-1/BRG-4/CON-5: initial poses must be seeded from an oracle
+    sample AT OR AFTER the reset's teleport, never a pre-reset frame.
+
+    Race that this fixes (M0 run m0-1-632916): the verifier set its
+    barrier to latest_oracle_ns when the goal arrived, but pre-teleport
+    oracle samples between that barrier and the teleport still passed and
+    became the baseline; the teleport then read as every box colliding.
+    """
+    teleport_ns = 1_000_000
+    # verifier is BEHIND the teleport when the goal lands: the barrier must
+    # jump forward to the teleport so pre-teleport frames are rejected
+    barrier = initial_capture_barrier(latest_oracle_ns=999_000, reset_sim_ns=teleport_ns)
+    assert 999_000 <= barrier  # a pre-teleport frame at 999_500 is rejected
+    assert barrier < teleport_ns  # the teleport frame itself is eligible
+    # the first post-teleport sample is captured; the last pre-teleport is not
+    assert teleport_ns > barrier
+    assert teleport_ns - 1 <= barrier
+
+    # verifier already AHEAD of the teleport (queued post-reset frames):
+    # keep the later arrival barrier, never rewind
+    assert initial_capture_barrier(2_000_000, teleport_ns) == 2_000_000
+
+    # no reset stamp (reset_sim_ns == 0): fall back to arrival order
+    assert initial_capture_barrier(500, 0) == 500
