@@ -90,6 +90,28 @@ class TestBaseArmExclusion:
         assert safe == pytest.approx([lim.v_max, -lim.omega_max])
         assert any(v["reason"] == "base_velocity" for v in viols)
 
+    def test_nan_command_holds_instead_of_maxing_out(self):
+        """MOB-3/BG-3: a NaN base_cmd MUST fail safe to a hold — NOT slip
+        through the clip as max velocity. A base_malformed violation is
+        emitted and the requested value is JSON-safe (None, not NaN)."""
+        from aisle.mobility.guard import clamp_base_cmd
+
+        lim = self._limits()
+        safe, viols = clamp_base_cmd([float("nan"), 0.0], arm_in_motion=False, limits=lim)
+        assert safe == [0.0, 0.0]
+        assert any(v["reason"] == "base_malformed" for v in viols)
+        assert viols[0]["requested"][0] is None  # JSON-safe, not NaN
+
+    def test_short_command_holds_without_crashing(self):
+        """MOB-3/BG-3: a too-short base_cmd MUST NOT IndexError-crash the
+        safety node; it holds and reports base_malformed."""
+        from aisle.mobility.guard import clamp_base_cmd
+
+        lim = self._limits()
+        safe, viols = clamp_base_cmd([0.5], arm_in_motion=False, limits=lim)
+        assert safe == [0.0, 0.0]
+        assert any(v["reason"] == "base_malformed" for v in viols)
+
 
 class TestMobileValidation:
     """MOB-4: the mobile profile's arm subtree is franka-identical, and

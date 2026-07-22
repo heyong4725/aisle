@@ -18,20 +18,23 @@ embodiment (SPEC 210); fixed-base graphs never wire them.
 | `joint_cmd`   | `jointvec_f32`     | n_dof   | ≤100 Hz   | joint position targets (rad)            | base  |
 | `gripper_cmd` | `scalar_f32`       | 1       | ≤30 Hz    | 0.0 = open … 1.0 = closed               | —     |
 | `base_cmd`    | `base_cmd2d_f32`   | 2       | ≤50 Hz    | diff-drive `(v m/s, omega rad/s)` (mobile) | base  |
-| `reset`       | `reset_request_u32`| 2       | ≤1 Hz     | `(seed, env_id)`                        | —     |
+| `reset`       | `reset_request_u32`| 2       | service   | `(seed, mode)`, mode 0=teleport 1=behavioral (TC-6). A dora SERVICE (request/reply via `request_id`), not a rated stream; the bridge MUST NOT publish observations between `reset` and `reset_done` | — |
 
 ## Outputs (state out of the bridge)
 
+Rates are the exact SPEC 010 §2 contract rates (TC-4: producers within ±20%),
+NOT the tick rate — a conformant hardware driver must honor these.
+
 | Topic           | Schema             | Shape     | Rate    | Units / meaning                          | Frame |
 |-----------------|--------------------|-----------|---------|------------------------------------------|-------|
-| `joint_state`   | `jointvec_f32`     | n_dof     | tick    | measured joint positions (rad)           | base  |
-| `gripper_state` | `scalar_f32`       | 1         | tick    | 0.0 = open … 1.0 = closed                | —     |
-| `oracle_state`  | `posearray7d_f32`  | n_obj*7   | tick    | privileged ground-truth pose (xyz+quat) per box, fixed order. Consumable only by verifier-* nodes (VAL-6) | store |
-| `poses`         | `posearray7d_f32`  | n_obj*7   | tick    | non-privileged tier-T0 perception poses (xyz+quat) | store |
-| `rgb_overhead`  | `rgb8_image`       | h*w*3     | soft_rt | overhead camera; meta `{h, w, enc:"rgb8"}` | store |
-| `rgb_wrist`     | `rgb8_image`       | h*w*3     | soft_rt | wrist camera; meta `{h, w, enc:"rgb8"}`  | flange |
-| `depth_overhead`| `depth_f32`        | h*w       | soft_rt | overhead depth (m)                       | store |
-| `reset_done`    | `reset_done_u32`   | 1         | on reset| acknowledges a `reset` completed         | —     |
+| `joint_state`   | `jointvec_f32`     | n_dof     | 100 Hz  | measured joint positions (rad); meta `names` | base  |
+| `gripper_state` | `scalar_f32`       | 1         | 100 Hz  | 0.0 = open … 1.0 = closed                | —     |
+| `oracle_state`  | `posearray7d_f32`  | n_obj*7   | 30 Hz   | privileged ground-truth pose (xyz+quat) per box, fixed order. Consumable only by verifier-* nodes (VAL-6) | store |
+| `poses`         | `posearray7d_f32`  | n_obj*7   | 15 Hz   | non-privileged tier-T0 perception poses (xyz+quat) | store |
+| `rgb_overhead`  | `rgb8_image`       | h*w*3     | 30 Hz   | overhead camera; meta `{h, w, enc:"rgb8"}` | store |
+| `rgb_wrist`     | `rgb8_image`       | h*w*3     | 30 Hz   | wrist camera (attached to EE link); meta `{h, w, enc:"rgb8"}` | flange |
+| `depth_overhead`| `depth_f32`        | h*w       | 15 Hz   | overhead depth (m; 0 = invalid)          | store |
+| `reset_done`    | `reset_done_u32`   | 1         | on reset| acknowledges a `reset`; meta `seed, mode, t_reset_ms` (TC-6) | —     |
 | `bridge_info`   | `json_utf8`        | 1         | best_effort | startup announce (dof count, genesis version, env_hash) | — |
 | `base_pose`     | `base_pose3d_f32`  | 3         | 50 Hz   | base origin `(x, y, yaw)` (m, m, rad) (mobile) | store |
 | `base_scan`     | `base_scan_f32`    | n_scan    | 10 Hz   | planar range ranges (m); meta `{angle_min, angle_max, n}` (mobile) | base |

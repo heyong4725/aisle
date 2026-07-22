@@ -4,6 +4,7 @@ clamp cores — no dora, no sim. Wired into the budget-guard node for the
 
 from __future__ import annotations
 
+import math
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +42,13 @@ def _clip(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
 
 
+def _json_safe(x) -> float | None:
+    """Map a possibly-non-finite command element to a JSON-safe value: a
+    finite float stays, NaN/Inf become None (json.dumps(nan) is invalid)."""
+    f = float(x)
+    return f if math.isfinite(f) else None
+
+
 def clamp_base_cmd(cmd, arm_in_motion: bool, limits: BaseLimits) -> tuple[list[float], list[dict]]:
     """MOB-3: clamp a base_cmd [v, omega] to legal, never drop (BG-3).
 
@@ -48,8 +56,24 @@ def clamp_base_cmd(cmd, arm_in_motion: bool, limits: BaseLimits) -> tuple[list[f
     while the arm is in motion the base is clamped to creep speed. Returns
     (safe_cmd, violations); each violation is {reason, axis, requested,
     clamped}."""
-    v, omega = float(cmd[0]), float(cmd[1])
     violations: list[dict] = []
+
+    # BG-3 fail-safe FIRST: a short vector must not IndexError and a
+    # non-finite value must not slip through _clip (clip(nan) returns the
+    # upper bound = MAX velocity). Malformed -> hold [0, 0] + violation.
+    if len(cmd) < 2 or not all(math.isfinite(float(cmd[i])) for i in range(2)):
+        requested = [_json_safe(cmd[i]) for i in range(min(len(cmd), 2))]
+        violations.append(
+            {
+                "reason": "base_malformed",
+                "axis": "cmd",
+                "requested": requested,
+                "clamped": [0.0, 0.0],
+            }
+        )
+        return [0.0, 0.0], violations
+
+    v, omega = float(cmd[0]), float(cmd[1])
 
     cv = _clip(v, -limits.v_max, limits.v_max)
     if cv != v:
