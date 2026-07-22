@@ -492,7 +492,9 @@ def test_missing_graph_file_reported_as_json(tmp_path):
 
 def test_good_graph_rejected_for_other_embodiment():
     """VAL-2: EMBODIMENT_MISMATCH fires when a node's manifest does not
-    support the requested arm profile."""
-    code, report = run_validate(GOOD_DIR / "perception_min.yaml", "--embodiment", "mobile")
+    support the requested arm profile — the franka-only expert graph
+    rejected for so101. (mobile is NOT such a case any more: MOB-4 resolves
+    it to the franka arm; see test_mobility.)"""
+    code, report = run_validate(REPO_ROOT / "graphs" / "expert_t0.yaml", "--embodiment", "so101")
     assert code != 0
     assert "EMBODIMENT_MISMATCH" in codes(report, "errors")

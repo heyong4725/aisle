@@ -89,3 +89,35 @@ class TestBaseArmExclusion:
         )
         assert safe == pytest.approx([lim.v_max, -lim.omega_max])
         assert any(v["reason"] == "base_velocity" for v in viols)
+
+
+class TestMobileValidation:
+    """MOB-4: the mobile profile's arm subtree is franka-identical, and
+    base-requiring nodes need a base profile."""
+
+    def _agnostic(self):
+        return {"embodiment": {"arm": ["franka", "so101"], "gripper": "any"}}
+
+    def test_franka_arm_node_validates_under_mobile(self):
+        """A franka-arm capability validates unchanged under `mobile` —
+        mobile resolves to the franka arm (MOB-4)."""
+        from aisle.harness.validate import validate_nodes
+
+        manifests = {"ik-trajectory": {"embodiment": {"arm": ["franka"], "gripper": "parallel"}}}
+        nodes = [{"id": "ik-trajectory"}]
+        errors, _ = validate_nodes(nodes, manifests, set(), "mobile", allow_unproven=True)
+        assert not [e for e in errors if e["code"] == "EMBODIMENT_MISMATCH"]
+
+    def test_base_node_requires_a_base_profile(self):
+        """A base-requiring node validates under `mobile` but is an
+        EMBODIMENT_MISMATCH on a fixed-base graph (franka) — MOB-4."""
+        from aisle.harness.validate import validate_nodes
+
+        manifests = {
+            "nav-planner": {"embodiment": {"arm": ["franka", "so101"], "base": ["mobile"]}}
+        }
+        nodes = [{"id": "nav-planner"}]
+        ok, _ = validate_nodes(nodes, manifests, set(), "mobile", allow_unproven=True)
+        assert not [e for e in ok if e["code"] == "EMBODIMENT_MISMATCH"]
+        bad, _ = validate_nodes(nodes, manifests, set(), "franka", allow_unproven=True)
+        assert [e for e in bad if e["code"] == "EMBODIMENT_MISMATCH"]

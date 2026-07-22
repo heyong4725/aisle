@@ -26,6 +26,10 @@ from aisle.harness.registry import (
 MOTION_SINK_PORTS = {"joint_cmd", "gripper_cmd"}
 GUARD_ID = "budget-guard"
 RATE_BAND = 0.2  # TC-4: rates are contracts within ±20%
+# MOB-4: each embodiment profile resolves to an ARM kind. `mobile` is the
+# franka arm on a differential-drive base, so franka-arm capabilities work
+# unchanged under `mobile`; only base-requiring nodes distinguish them.
+EMBODIMENT_ARM = {"franka": "franka", "so101": "so101", "mobile": "franka"}
 
 
 def _entry(code: str, where: dict, detail: str, hint: str) -> dict:
@@ -256,14 +260,32 @@ def validate_nodes(
                         "or extend the manifest (Class B change)",
                     )
                 )
+        # MOB-4: an embodiment resolves to an ARM kind; `mobile` runs the
+        # franka arm on a base, so a franka-arm graph validates unchanged
+        # under `mobile`. Arm nodes are checked against the resolved arm.
+        arm_kind = EMBODIMENT_ARM.get(embodiment, embodiment)
         arms = manifest.get("embodiment", {}).get("arm", [])
-        if embodiment not in arms:
+        if arms and arm_kind not in arms:
             errors.append(
                 _entry(
                     "EMBODIMENT_MISMATCH",
                     {"node": node_id},
-                    f"{node_id} supports arms {arms}, graph targets {embodiment!r}",
-                    f"swap in a capability supporting {embodiment!r} or change --embodiment",
+                    f"{node_id} supports arms {arms}, graph targets "
+                    f"{embodiment!r} (arm {arm_kind!r})",
+                    f"swap in a capability supporting {arm_kind!r} or change --embodiment",
+                )
+            )
+        # MOB-4: a base-requiring node lists the base-providing embodiments
+        # it needs; on a fixed-base graph (no base) that is a mismatch.
+        base = manifest.get("embodiment", {}).get("base", [])
+        if base and embodiment not in base:
+            errors.append(
+                _entry(
+                    "EMBODIMENT_MISMATCH",
+                    {"node": node_id},
+                    f"{node_id} requires a base profile {base}, graph targets {embodiment!r}",
+                    f"target one of {base} (a mobile base profile), "
+                    "or drop the base-requiring node",
                 )
             )
         if manifest.get("safety_class") == "motion" and manifest.get("eval") is None:
