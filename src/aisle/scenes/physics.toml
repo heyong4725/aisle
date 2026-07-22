@@ -78,6 +78,11 @@ gripper_kv = [100.0, 100.0]
 gripper_dofs = 2
 gripper_open_m = 0.04
 gripper_close_m = 0.0
+# grip-axis selection (grasp-planner-topdown): the open fingers must clear
+# the gripped face by at least gripper_finger_clear_m to descend around the
+# box, so a face half-wider than (gripper_open_m - this) cannot be gripped
+# on that axis (SCN-2: gripper geometry lives here, not inline)
+gripper_finger_clear_m = 0.008
 
 [embodiment.so101]
 reach_m = 0.450
@@ -86,6 +91,10 @@ shelf_pos = [0.22, 0.0, 0.0]
 pregrasp_height_m = 0.06
 # TC-5: so101 is 6 arm dofs + 1 gripper dof
 gripper_dofs = 1
+# so101 gripper geometry — PROVISIONAL pending the asset (ADR-6); the
+# smaller hobby gripper opens narrower and needs less finger clearance
+gripper_open_m = 0.03
+gripper_finger_clear_m = 0.006
 # so101's small 1-dof gripper does not need franka's 0.04 finger-sweep
 # clearance, and its 0.45 m reach cannot afford a wider shelf or a
 # farther tray — keep the pre-T10 separation

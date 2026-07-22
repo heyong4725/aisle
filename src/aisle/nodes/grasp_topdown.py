@@ -31,15 +31,10 @@ from aisle.scenes.pharmacy import level_x_span
 # same palm contact misattributed). 0.035 keeps a genuinely clear palm;
 # the box hangs pendulum-stable from the deeper-set centroid.
 GRIP_ENGAGEMENT = 0.035
-# each finger sits this far from the gripper centre when open; the open
-# fingers protrude this far past the target centre along the grip axis, so
-# a same-level neighbour within it gets swept. Sourced per-embodiment from
-# physics.toml gripper_open_m in main(); this is the pure-function default.
-FINGER_OPEN_M = 0.04
-# the open fingers must clear the gripped face by at least this much to
-# descend around the box; a face half-wider than (FINGER_OPEN_M - this)
-# cannot be gripped on that axis
-MIN_FINGER_CLEAR = 0.008
+# gripper geometry (finger half-open along the grip axis, and the clearance
+# the open fingers need around the gripped face) is per-embodiment config
+# in physics.toml (gripper_open_m / gripper_finger_clear_m), passed into
+# plan_grasp from main() — never an inline planner constant (SCN-2).
 # clearance between the shelf front plane and the front-mode pregrasp TCP
 FRONT_CLEARANCE = 0.06
 # the tray is a flat slab (no walls): release the box from a drop gap
@@ -138,7 +133,8 @@ def plan_grasp(
     *,
     tray_top_z: float,
     neighbours: list | None = None,
-    finger_open: float = FINGER_OPEN_M,
+    finger_open: float | None = None,
+    finger_clear: float | None = None,
 ) -> tuple[np.ndarray, float, float]:
     """Pure plan: (grasp_pose7, approach_m).
 
@@ -146,8 +142,10 @@ def plan_grasp(
     horizontal axis by default, but rotated 90 degrees when that keeps the
     open fingers clear of a same-level neighbour (the default sweep grazed
     a box ~3 cm away and the live pipeline clipped it; t10-m0-full seed 8).
-    Front: TCP at the box center, wrist horizontal, approach from
-    shelf_front_x minus clearance."""
+    Neighbour-aware selection runs only when the caller supplies the
+    gripper geometry (finger_open, finger_clear from physics.toml);
+    otherwise the legacy narrow-axis grip stands. Front: TCP at the box
+    center, wrist horizontal, approach from shelf_front_x minus clearance."""
     pose = np.asarray(target_pose, dtype=np.float32).reshape(7)
     if front:
         half_z = float(size_xyz[2]) / 2
@@ -157,25 +155,25 @@ def plan_grasp(
         grasp = np.array([pose[0], pose[1], z, *FRONT_QUAT], dtype=np.float32)
         approach = float(pose[0]) - (shelf_front_x - FRONT_CLEARANCE)
         return grasp, approach, place_tcp_z(size_xyz, top - z, tray_top_z)
-    base = yaw_of(pose[3:7])
-    box_xy = (float(pose[0]), float(pose[1]))
-    # candidate grip yaws: straddle box-y (fingers protrude along box-y) or
-    # box-x. A candidate is feasible only if the open fingers clear the
-    # gripped face (elongated meds can only grip their narrow axis).
-    candidates = []
-    for straddle_axis, yaw in ((1, base), (0, base + math.pi / 2)):
-        if float(size_xyz[straddle_axis]) / 2 > finger_open - MIN_FINGER_CLEAR:
-            continue
-        u = (-math.sin(yaw), math.cos(yaw))  # world dir the fingers protrude along
-        clearance = _fingertip_clearance(box_xy, u, size_xyz, neighbours, finger_open)
-        narrow = size_xyz[straddle_axis] <= size_xyz[1 - straddle_axis]
-        candidates.append((clearance, narrow, yaw))
-    if candidates:
+    legacy_yaw = yaw_of(pose[3:7]) + (math.pi / 2 if size_xyz[0] < size_xyz[1] else 0.0)
+    if neighbours and finger_open is not None and finger_clear is not None:
+        base = yaw_of(pose[3:7])
+        box_xy = (float(pose[0]), float(pose[1]))
+        # candidate grip yaws: straddle box-y (fingers protrude along box-y)
+        # or box-x. A candidate is feasible only if the open fingers clear
+        # the gripped face (elongated meds can only grip their narrow axis).
+        candidates = []
+        for straddle_axis, yaw in ((1, base), (0, base + math.pi / 2)):
+            if float(size_xyz[straddle_axis]) / 2 > finger_open - finger_clear:
+                continue
+            u = (-math.sin(yaw), math.cos(yaw))  # world dir the fingers protrude along
+            clearance = _fingertip_clearance(box_xy, u, size_xyz, neighbours, finger_open)
+            narrow = size_xyz[straddle_axis] <= size_xyz[1 - straddle_axis]
+            candidates.append((clearance, narrow, yaw))
         # prefer clearance; on a tie prefer the narrower (more stable) grip
-        best = max(candidates, key=lambda c: (round(c[0], 3), c[1]))
-        yaw = best[2]
-    else:  # no feasible neighbour-aware choice: keep the legacy default
-        yaw = base + (math.pi / 2 if size_xyz[0] < size_xyz[1] else 0.0)
+        yaw = max(candidates, key=lambda c: (round(c[0], 3), c[1]))[2] if candidates else legacy_yaw
+    else:
+        yaw = legacy_yaw
     z = float(pose[2]) + float(size_xyz[2]) / 2 - grip
     grasp = np.array([pose[0], pose[1], z, *topdown_quat(yaw)], dtype=np.float32)
     return grasp, 0.15, place_tcp_z(size_xyz, grip, tray_top_z)
@@ -209,9 +207,12 @@ def main() -> None:
     shelf_front_x = shelf["pos"][0] - shelf["level_size"][0] / 2
     tray = layout["tray"]
     tray_top_z = tray["pos"][2] + tray["size"][2] / 2
-    # SCN-2: the finger half-open (grip-axis sweep) is the gripper geometry
-    # from physics.toml, not a planner constant
-    finger_open = float(physics["embodiment"][embodiment].get("gripper_open_m", FINGER_OPEN_M))
+    # SCN-2: the gripper geometry (finger half-open along the grip axis and
+    # the clearance the open fingers need) is physics.toml config, not a
+    # planner constant
+    profile = physics["embodiment"][embodiment]
+    finger_open = float(profile["gripper_open_m"])
+    finger_clear = float(profile["gripper_finger_clear_m"])
     node = Node()
     send = make_sender(node)
     for event in node:
@@ -244,6 +245,7 @@ def main() -> None:
                 tray_top_z=tray_top_z,
                 neighbours=neighbours,
                 finger_open=finger_open,
+                finger_clear=finger_clear,
             )
             send(
                 "grasp_pose",

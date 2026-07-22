@@ -19,7 +19,9 @@ verdict.
 
 ## M0-5 — owner decision required (does not have an agent-side resolution)
 
-SPEC 090 makes M0-5 mandatory, but it is blocked by TWO owner-side gates
+SPEC 090's M0-5 clause is now ASSET-GATED and explicitly deferrable (the
+spec-change in this PR): M0 may be signed off with M0-5 deferred if the
+owner records the choice here. M0-5 is blocked by TWO owner-side gates
 that an agent cannot clear:
 
 1. **Asset:** `assets/so101/so101.urdf` is absent; acquisition needs
