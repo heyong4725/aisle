@@ -68,11 +68,17 @@ def main() -> None:
                 )
                 phase = "awaiting_reset"
         elif event["id"] == "reset_done" and phase == "awaiting_reset":
+            reset_meta = event.get("metadata") or {}
             goal = {
                 "tier": os.environ.get("AISLE_TIER", "T0"),
                 "target_med": targets[episode],
                 "timeout_s": timeout_s,
                 "seed": seeds[episode],
+                # the teleport's sim time (BRG-4): the verifier captures the
+                # episode's initial poses only from an oracle sample at or
+                # after this, so a pre-reset frame can never become the
+                # baseline (else the teleport reads as a mass collision)
+                "reset_sim_ns": int(reset_meta.get("sim_time_ns", 0)),
             }
             send(
                 "episode_goal",

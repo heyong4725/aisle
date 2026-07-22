@@ -93,7 +93,13 @@ nodes:
         queue_size: 100
       joint_state:
         source: dora-genesis/joint_state
-        queue_size: 100
+        # latest-wins: joint_state is STATE, not a command stream. With a
+        # deep queue the executor seeds its interpolation start from a
+        # stale pre-reset frame after an episode ends mid-plan (the reset
+        # fires on the verdict, not on plan completion) and the arm dives
+        # from home toward the stale pose through the fresh scene —
+        # confirmed in M0 run m0-1-e2e07b (episodes 12/13 cascade).
+        queue_size: 1
       reset_done:
         source: dora-genesis/reset_done
         queue_size: 100

@@ -56,7 +56,13 @@ def resolve_layout(physics: dict, embodiment: str) -> dict:
             **physics["shelf"],
             "pos": profile["shelf_pos"],
             "level_heights": profile["shelf_level_heights"],
+            "level_depths": profile["shelf_level_depths"],
             "level_size": profile["shelf_level_size"],
+            # per-embodiment override (finger-sweep clearance scales with
+            # the gripper): same pattern as pregrasp_height_m
+            **(
+                {"min_separation": profile["min_separation"]} if "min_separation" in profile else {}
+            ),
         },
         "tray": {
             **physics["tray"],
@@ -120,8 +126,27 @@ class SceneHandle:
     reachability_errors: list[str] = field(default_factory=list)
 
 
+def level_x_span(shelf: dict, level: int) -> tuple[float, float]:
+    """A level board's x-span. Boards are REAR-ALIGNED within the shelf
+    footprint (staggered shelving, ADR-12) — the single source of truth
+    for that convention, shared by the sampler, the scene builder, and
+    the grasp planner's needs_front safety net."""
+    rear_x = shelf["pos"][0] + shelf["level_size"][0] / 2
+    return rear_x - shelf["level_depths"][level], rear_x
+
+
+def open_band(shelf: dict, level: int) -> tuple[float, float]:
+    """The level's x-band with OPEN SKY: its board span, ending
+    hand_clearance_m before any higher (shallower, rear-aligned) board's
+    front plane — top-down grasps need the hand column clear (ADR-12)."""
+    x_min, x_max = level_x_span(shelf, level)
+    for higher in range(level + 1, len(shelf["level_depths"])):
+        x_max = min(x_max, level_x_span(shelf, higher)[0] - shelf["hand_clearance_m"])
+    return x_min, x_max
+
+
 def sample_placements(seed: int, med_names: list[str], layout: dict) -> list[Placement]:
-    """Rejection-sample per-seed box placements on the 3-level shelf
+    """Rejection-sample per-seed box placements on the shelf levels
     (SCN-3): inside the level bounds minus edge margins, per-axis AABB
     separation of min_separation, and a geometric reach pre-filter so the
     IK backstop cannot abort the build on corner placements. Pure function
@@ -131,7 +156,8 @@ def sample_placements(seed: int, med_names: list[str], layout: dict) -> list[Pla
     ik = layout["ik"]
     max_target = layout["reach_m"] * ik["reach_margin_frac"]
     meds = load_meds()
-    depth, width = shelf["level_size"]
+    width = shelf["level_size"][1]
+
     # levels whose nearest-point candidates can never pass the reach filter
     # (e.g. so101's top level) are excluded up front, not burned as tries
     tallest = max(spec["size"][2] for spec in meds.values())
@@ -139,7 +165,7 @@ def sample_placements(seed: int, med_names: list[str], layout: dict) -> list[Pla
         lvl
         for lvl, height in enumerate(shelf["level_heights"])
         if math.hypot(
-            abs(shelf["pos"][0]) - depth / 2 + shelf["edge_margin"],
+            abs(open_band(shelf, lvl)[0]) + shelf["edge_margin"],
             0.0,
             shelf["pos"][2]
             + height
@@ -157,10 +183,12 @@ def sample_placements(seed: int, med_names: list[str], layout: dict) -> list[Pla
         half_x, half_y = size[0] / 2, size[1] / 2
         for _ in range(_MAX_PLACEMENT_TRIES):
             level = usable_levels[rng.randrange(len(usable_levels))]
-            local_x = rng.uniform(
-                -depth / 2 + shelf["edge_margin"] + half_x,
-                depth / 2 - shelf["edge_margin"] - half_x,
-            )
+            band_min, band_max = open_band(shelf, level)
+            x_lo = band_min - shelf["pos"][0] + shelf["edge_margin"] + half_x
+            x_hi = band_max - shelf["pos"][0] - shelf["edge_margin"] - half_x
+            if x_hi < x_lo:
+                continue  # this med cannot fit the level's open band
+            local_x = rng.uniform(x_lo, x_hi)
             local_y = rng.uniform(
                 -width / 2 + shelf["edge_margin"] + half_y,
                 width / 2 - shelf["edge_margin"] - half_y,
@@ -180,13 +208,6 @@ def sample_placements(seed: int, med_names: list[str], layout: dict) -> list[Pla
             )
             if pregrasp_distance > max_target:
                 continue
-            # the box (and its pre-grasp approach) must clear the board above
-            heights = shelf["level_heights"]
-            if level + 1 < len(heights):
-                board_bottom = heights[level + 1] - shelf["board_thickness"] / 2
-                box_top = heights[level] + shelf["board_thickness"] / 2 + size[2]
-                if box_top + shelf["min_separation"] > board_bottom:
-                    continue
             if _separated(candidate, half_x, half_y, placed, meds, shelf["min_separation"]):
                 placed.append(candidate)
                 break
@@ -296,12 +317,17 @@ def build_scene(
     scene.add_entity(gs.morphs.Plane())
 
     shelf_material = gs.materials.Rigid(friction=physics["materials"]["shelf"]["friction"])
-    depth, width = shelf["level_size"]
-    for level_height in shelf["level_heights"]:
+    width = shelf["level_size"][1]
+    for level, (level_height, level_depth) in enumerate(
+        zip(shelf["level_heights"], shelf["level_depths"], strict=True)
+    ):
+        # boards are REAR-ALIGNED (level_x_span): upper (shallower) boards
+        # leave the lower level's front band open to the sky
+        x_min, x_max = level_x_span(shelf, level)
         scene.add_entity(
             gs.morphs.Box(
-                size=(depth, width, shelf["board_thickness"]),
-                pos=(shelf["pos"][0], shelf["pos"][1], shelf["pos"][2] + level_height),
+                size=(level_depth, width, shelf["board_thickness"]),
+                pos=((x_min + x_max) / 2, shelf["pos"][1], shelf["pos"][2] + level_height),
                 fixed=True,
             ),
             material=shelf_material,

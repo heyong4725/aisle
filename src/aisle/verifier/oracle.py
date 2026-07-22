@@ -52,6 +52,24 @@ class JudgeCfg:
     extra: dict = field(default_factory=dict, compare=False)
 
 
+def initial_capture_barrier(latest_oracle_ns: int, reset_sim_ns: int) -> int:
+    """VER-1/BRG-4/CON-5: the sim-time barrier below which oracle samples
+    are too stale to seed an episode's initial poses. An oracle_state is
+    eligible iff sim_time_ns > barrier. Tied to the RESET's teleport time
+    (reset_sim_ns) so capture is always post-teleport and deterministic.
+
+    The teleport does NOT advance sim time — the bridge injects state and
+    stamps reset_done at the CURRENT sim_time_ns — so a pre-reset frame can
+    share the reset's timestamp (the last pre-reset tick's oracle_state and
+    the reset handler's post-teleport oracle_state are both stamped
+    reset_sim_ns). Equality therefore does not prove post-reset ordering,
+    so the barrier is reset_sim_ns itself and eligibility is STRICT: only a
+    frame from a later tick (sim_time_ns > reset_sim_ns), guaranteed
+    post-teleport, seeds the baseline. reset_sim_ns == 0 (absent) falls
+    back to the arrival-order barrier."""
+    return max(latest_oracle_ns, reset_sim_ns)
+
+
 def _box_pose(oracle_state: np.ndarray, idx: int) -> tuple[np.ndarray, np.ndarray]:
     block = np.asarray(oracle_state, dtype=np.float32).reshape(-1)[idx * 7 : idx * 7 + 7]
     return block[:3], block[3:7]  # pos, quat (x, y, z, w) per TC-1
@@ -277,9 +295,14 @@ def main() -> None:
             target_idx = MED_NAMES.index(goal["target_med"])
             goal_id = metadata.get("goal_id", "")
             goal_t0_ns = None
-            # freshness barrier: in-flight pre-goal oracle samples must not
-            # seed the new episode's initial poses or clock
-            goal_barrier_ns = latest_oracle_ns
+            # freshness barrier: seed the episode's initial poses only from
+            # an oracle sample at or after the RESET that opened it (its
+            # teleport sim_time rides in the goal). latest_oracle_ns alone
+            # raced the teleport (m0-1-632916 false collisions; also broke
+            # M0-2 determinism)
+            goal_barrier_ns = initial_capture_barrier(
+                latest_oracle_ns, int(goal.get("reset_sim_ns", 0))
+            )
             cfg = None
         elif event["id"] == "joint_state" and home is not None:
             qpos = np.asarray(

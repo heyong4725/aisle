@@ -9,6 +9,7 @@ import pytest
 from aisle.nodes.dora_genesis import (
     CommandQueue,
     RateScheduler,
+    ResetQuarantine,
     make_bridge_info,
     parse_bridge_config,
 )
@@ -165,3 +166,26 @@ def test_reset_clock_is_injected():
 
     parameter = inspect.signature(main).parameters["clock"]
     assert parameter.default is time_module.perf_counter
+
+
+def test_reset_quarantine_holds_then_releases():
+    """BRG-4: after arm() the quarantine reports active for exactly ticks
+    holds (one consumed per tick), then releases so normal command
+    application resumes — the window that drops the ended episode's stale
+    joint_cmds so they cannot drive the just-homed arm off home."""
+    q = ResetQuarantine(3)
+    assert q.hold() is False  # not armed: commands apply normally
+    q.arm()
+    assert [q.hold() for _ in range(4)] == [True, True, True, False]
+    # re-arming restarts the full window (a second reset mid-window)
+    q.arm()
+    assert q.hold() is True
+    q.arm()
+    assert sum(q.hold() for _ in range(5)) == 3  # exactly `ticks` holds
+
+
+def test_reset_quarantine_zero_ticks_never_holds():
+    """A zero-tick quarantine (settle disabled) never quarantines."""
+    q = ResetQuarantine(0)
+    q.arm()
+    assert q.hold() is False

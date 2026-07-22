@@ -7,6 +7,7 @@ import pytest
 from aisle.verifier.oracle import (
     FAILURE_CLASSES,
     JudgeCfg,
+    initial_capture_barrier,
     judge,
     load_thresholds,
     threshold_kwargs,
@@ -316,3 +317,29 @@ def test_airborne_target_above_tray_is_not_success():
     airborne = (0.35, -0.35, 0.30)
     state = make_state(positions=moved(SHELF, 0, airborne))
     assert judge(state, 0, 5.0, make_cfg()) == ("ongoing", None)
+
+
+def test_initial_capture_barrier_waits_for_the_teleport():
+    """VER-1/BRG-4/CON-5: initial poses must be seeded STRICTLY after the
+    reset's teleport, never a frame sharing the reset timestamp.
+
+    The teleport does not advance sim time, so the last pre-reset tick's
+    oracle_state and the reset handler's post-teleport oracle_state are
+    BOTH stamped reset_sim_ns — equality cannot prove post-reset ordering
+    (PR #12 re-review). The barrier is the teleport time itself and
+    eligibility (sim_time_ns > barrier) is strict, so only a later tick
+    seeds the baseline.
+    """
+    teleport_ns = 1_000_000
+    barrier = initial_capture_barrier(latest_oracle_ns=999_000, reset_sim_ns=teleport_ns)
+    # a pre-reset frame AT the teleport timestamp is NOT eligible: strict >
+    assert not (teleport_ns > barrier), "equal-timestamp stale frame must be rejected"
+    # a frame from the next tick (strictly later) IS eligible
+    assert teleport_ns + 1 > barrier
+
+    # verifier already AHEAD of the teleport (queued post-reset frames):
+    # keep the later arrival barrier, never rewind
+    assert initial_capture_barrier(2_000_000, teleport_ns) == 2_000_000
+
+    # no reset stamp (reset_sim_ns == 0): fall back to arrival order
+    assert initial_capture_barrier(500, 0) == 500

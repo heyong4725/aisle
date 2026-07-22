@@ -69,7 +69,9 @@ def compute_metrics(episodes: list[dict]) -> dict:
     }
 
 
-def run_gates(root: Path, graph: Path, branch: str, no_idea_gate: bool) -> dict:
+def run_gates(
+    root: Path, graph: Path, branch: str, no_idea_gate: bool, embodiment: str = "franka"
+) -> dict:
     """HAR-2: refuse on env-hash mismatch, on validation failure, and on a
     missing OPEN idea (unless --no-idea-gate — humans only; logged)."""
     hash_proc = subprocess.run(
@@ -80,7 +82,10 @@ def run_gates(root: Path, graph: Path, branch: str, no_idea_gate: bool) -> dict:
     if hash_proc.returncode != 0:
         return {"ok": False, "gate": "env_hash", "detail": hash_proc.stdout.strip()}
     env_hash = json.loads(hash_proc.stdout)["env_hash"]
-    validation = validate(graph, root, "franka", allow_unproven=False)
+    # validate against the embodiment that will actually run (M0-5): a
+    # graph whose nodes do not support it must refuse HERE, not crash
+    # hours into the rollout
+    validation = validate(graph, root, embodiment, allow_unproven=False)
     if not validation["ok"]:
         return {"ok": False, "gate": "validate", "detail": validation["errors"]}
     if no_idea_gate:
@@ -140,6 +145,7 @@ def rollout(
     branch: str,
     no_idea_gate: bool,
     timeout_s: float | None = None,
+    embodiment: str = "franka",
 ) -> dict:
     """HAR-1: the full run. Returns the report dict (CON-8: caller emits)."""
     if reset_mode != "teleport":
@@ -150,7 +156,7 @@ def rollout(
         return {"ok": False, "error": f"unsafe run_id {run_id!r}"}
     if (root / "runs" / run_id).exists():
         return {"ok": False, "error": f"run_id {run_id!r} already exists; refusing to overwrite"}
-    gates = run_gates(root, graph, branch, no_idea_gate)
+    gates = run_gates(root, graph, branch, no_idea_gate, embodiment)
     if not gates["ok"]:
         return {"ok": False, "refused": gates}
 
@@ -173,6 +179,8 @@ def rollout(
         # rollout client stamps it into every goal, and the SELECTED graph
         # determines its tier-specific wiring
         "AISLE_TIER": tier,
+        # M0-5: the embodiment profile swap rides on env, zero YAML edits
+        "AISLE_EMBODIMENT": embodiment,
         "AISLE_TIMEOUT_S": str(EPISODE_TIMEOUT_S),
         "AISLE_RESULTS": str(results_path),
     }
@@ -240,6 +248,7 @@ def rollout(
         "graph": str(graph),
         "graph_hash": _graph_hash(graph),
         "tier": tier,
+        "embodiment": embodiment,
         "seeds": seeds,
         "reset": reset_mode,
         "verifier": verifier,

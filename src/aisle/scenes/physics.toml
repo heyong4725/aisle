@@ -22,18 +22,47 @@ friction = 0.70
 # (M0-5: an embodiment is a scene+driver PROFILE swap)
 [shelf]
 board_thickness = 0.02
-min_separation = 0.02
+# neighbor clearance must exceed the open-finger sweep: fingertips
+# protrude (0.04 half-travel + tip) beyond the target's half-width, and a
+# 0.022 m gap let the descending finger knock the neighbor box (M0 run
+# m0-1-e2e07b episode 11)
+min_separation = 0.04
 edge_margin = 0.03
+# hand-geometry clearances the sampler/planner reserve (SCN-2: no physics
+# constants inline). hand_clearance_m: how far the open band ends before a
+# higher board's front plane — hand half-extent (~0.045, incl. wrist-cam
+# mount) plus tracking transient (T10 physics replay). hand_column_m:
+# vertical room the hand column needs above the grasp line for a top-down
+# descent (T08 live runs). Both franka-measured, conservative for so101.
+hand_clearance_m = 0.10
+hand_column_m = 0.35
 
 [tray]
 wall_thickness = 0.01
 
 [embodiment.franka]
 reach_m = 0.855
-shelf_pos = [0.55, 0.0, 0.0]
-shelf_level_heights = [0.05, 0.25, 0.45]
-shelf_level_size = [0.30, 0.60]
-tray_pos = [0.35, -0.35, 0.02]
+shelf_pos = [0.50, 0.0, 0.0]
+# STAGGERED two-level shelf (M0 env-change, owner-approved): the old
+# three-level stack physically blocked top-down grasps on lower levels
+# (any vertical descent crosses the full-depth board above; ADR-10
+# section 8). The upper board is SET BACK (display-shelf style) so the
+# lower level's front band has open sky — the PROVEN top-down strategy
+# works on every level. level_depths are rear-aligned within the shelf
+# footprint.
+shelf_level_heights = [0.05, 0.32]
+# L0's open band additionally reserves hand_clearance_m from the upper
+# board's front plane (the hand landed on the board edge in the T10
+# physics replay); 0.36 - 0.12 - 0.10 leaves a 0.14 m band
+shelf_level_depths = [0.36, 0.12]
+# width 0.66: the 0.04 franka min_separation needs the extra y span to
+# stay satisfiable on every placement seed (seed 183 failed at 0.60)
+shelf_level_size = [0.36, 0.66]
+# tray fully OUTSIDE the shelf footprint in y: the widened staggered
+# shelf (front x 0.32) overlapped the old tray corner, so shelf boxes
+# could START inside the wrong_object entry region — instant VER-3 fail
+# at reset (M0-1 run m0-1-e634e4, seeds 1/5/7/9)
+tray_pos = [0.35, -0.45, 0.02]
 tray_size = [0.20, 0.28, 0.04]
 # elbow-bent ready pose: the deterministic IK start (all-zeros is singular)
 home_qpos = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04]
@@ -49,20 +78,36 @@ gripper_kv = [100.0, 100.0]
 gripper_dofs = 2
 gripper_open_m = 0.04
 gripper_close_m = 0.0
+# grip-axis selection (grasp-planner-topdown): the open fingers must clear
+# the gripped face by at least gripper_finger_clear_m to descend around the
+# box, so a face half-wider than (gripper_open_m - this) cannot be gripped
+# on that axis (SCN-2: gripper geometry lives here, not inline)
+gripper_finger_clear_m = 0.008
 
 [embodiment.so101]
 reach_m = 0.450
-shelf_pos = [0.24, 0.0, 0.0]
+shelf_pos = [0.22, 0.0, 0.0]
 # smaller arm, smaller approach clearance (overrides [ik].pregrasp_height_m)
 pregrasp_height_m = 0.06
 # TC-5: so101 is 6 arm dofs + 1 gripper dof
 gripper_dofs = 1
-# 0.135 m board-to-board clearance: tallest med (0.11) + board + margin;
-# the reach pre-filter naturally excludes candidates the 0.45 m arm cannot
-# pre-grasp top-down (upper level may go unused for so101)
-shelf_level_heights = [0.02, 0.175, 0.33]
-shelf_level_size = [0.16, 0.40]
-tray_pos = [0.16, -0.16, 0.01]
+# so101 gripper geometry — PROVISIONAL pending the asset (ADR-6); the
+# smaller hobby gripper opens narrower and needs less finger clearance
+gripper_open_m = 0.03
+gripper_finger_clear_m = 0.006
+# so101's small 1-dof gripper does not need franka's 0.04 finger-sweep
+# clearance, and its 0.45 m reach cannot afford a wider shelf or a
+# farther tray — keep the pre-T10 separation
+min_separation = 0.02
+# staggered two-level shelf scaled to the 0.45 m arm: the upper level is
+# geometry-only (the reach pre-filter excludes it, hand clearance leaves
+# no usable band); all five meds place on L0's 0.14 m open band across
+# the widened 0.50 m span — verified over 200 placement seeds
+shelf_level_heights = [0.02, 0.24]
+shelf_level_depths = [0.30, 0.06]
+shelf_level_size = [0.30, 0.50]
+# same clearance rule as franka: footprint disjoint from the shelf span
+tray_pos = [0.16, -0.35, 0.01]
 tray_size = [0.14, 0.18, 0.03]
 
 [ik]

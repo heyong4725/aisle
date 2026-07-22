@@ -44,6 +44,7 @@ def main() -> int:
     roll = subparsers.add_parser("rollout", help="run seeded episodes through a graph (HAR-1)")
     roll.add_argument("--graph", type=Path, required=True)
     roll.add_argument("--tier", default="T0")
+    roll.add_argument("--embodiment", default="franka", choices=["franka", "so101"])
     roll.add_argument("--episodes", type=int, required=True)
     roll.add_argument("--seeds", required=True, help="a..b or comma list")
     roll.add_argument("--reset", default="teleport", choices=["teleport", "behavioral"])
@@ -115,6 +116,7 @@ def main() -> int:
             branch=_branch(args.root),
             no_idea_gate=args.no_idea_gate,
             timeout_s=args.timeout_s,
+            embodiment=args.embodiment,
         )
         return emit_report(report, lambda level, e: f"rollout {level}: {e}")
 

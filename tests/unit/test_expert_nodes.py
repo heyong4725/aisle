@@ -5,7 +5,7 @@ oracle-pose, grasp-planner-topdown, task-state-machine) — no dora, no sim
 import numpy as np
 import pytest
 
-from aisle.nodes.grasp_topdown import plan_grasp, topdown_quat, yaw_of
+from aisle.nodes.grasp_topdown import PLACE_DROP_GAP, plan_grasp, topdown_quat, yaw_of
 from aisle.nodes.ik_trajectory import quat_to_rotation
 from aisle.nodes.oracle_pose import select_pose
 from aisle.nodes.task_state_machine import TaskStateMachine
@@ -55,7 +55,7 @@ class TestGraspTopdown:
         grasp, approach, place_z = plan_grasp(target, size, grip=0.025, tray_top_z=0.04)
         assert approach == pytest.approx(0.15)
         # release TCP: tray top + hanging box length + drop gap
-        assert place_z == pytest.approx(0.04 + (0.090 - 0.025) + 0.01, abs=1e-6)
+        assert place_z == pytest.approx(0.04 + (0.090 - 0.025) + PLACE_DROP_GAP, abs=1e-6)
         assert grasp[:3] == pytest.approx([0.5, -0.1, 0.10 + 0.045 - 0.025], abs=1e-6)
         assert yaw_of(grasp[3:]) % np.pi == pytest.approx(yaw % np.pi, abs=1e-5)
 
@@ -65,6 +65,43 @@ class TestGraspTopdown:
         target = np.array([0.5, -0.1, 0.10, 0, 0, 0, 1], dtype=np.float32)
         grasp, _, _ = plan_grasp(target, (0.030, 0.065, 0.110), tray_top_z=0.04)
         assert yaw_of(grasp[3:]) % np.pi == pytest.approx(np.pi / 2, abs=1e-5)
+
+    def test_grip_axis_avoids_a_close_neighbour(self):
+        """A same-level neighbour within the default finger sweep flips the
+        grip 90 degrees onto the clearer axis (t10-m0-full seed 8): a box
+        offset mostly in y is grasped across x so the open fingers stay
+        clear, and with no neighbour the legacy narrow-axis grip stands."""
+        # near-square target; neighbour ~0.085 m away in y, ~0 in x
+        target = np.array([0.379, 0.20, 0.10, 0, 0, 0, 1], dtype=np.float32)
+        size = (0.050, 0.045, 0.085)  # y is the narrower default straddle
+        legacy, _, _ = plan_grasp(target, size, tray_top_z=0.04)
+        assert yaw_of(legacy[3:]) % np.pi == pytest.approx(0.0, abs=1e-5)  # straddles y
+        neighbours = [[0.394, 0.115, 0.0325, 0.015]]  # cetirizine, y-offset
+        aware, _, _ = plan_grasp(
+            target,
+            size,
+            tray_top_z=0.04,
+            neighbours=neighbours,
+            finger_open=0.04,
+            finger_clear=0.008,
+        )
+        assert yaw_of(aware[3:]) % np.pi == pytest.approx(np.pi / 2, abs=1e-5)  # flips to x
+
+    def test_elongated_box_keeps_narrow_grip_despite_neighbour(self):
+        """An elongated med can only be gripped across its narrow face; a
+        neighbour on that axis must NOT force an infeasible wide-axis grip."""
+        target = np.array([0.5, 0.0, 0.10, 0, 0, 0, 1], dtype=np.float32)
+        size = (0.070, 0.035, 0.095)  # x half 0.035 > finger_open - finger_clear
+        neighbours = [[0.5, 0.09, 0.0175, 0.0175]]  # tempts a flip to x
+        grasp, _, _ = plan_grasp(
+            target,
+            size,
+            tray_top_z=0.04,
+            neighbours=neighbours,
+            finger_open=0.04,
+            finger_clear=0.008,
+        )
+        assert yaw_of(grasp[3:]) % np.pi == pytest.approx(0.0, abs=1e-5)  # stays narrow (y)
 
     def test_front_mode_approaches_horizontally(self):
         """ADR-10: a box under a board is grasped from the shelf FRONT —
