@@ -25,6 +25,15 @@ embodiment (SPEC 210); fixed-base graphs never wire them.
 Rates are the exact SPEC 010 §2 contract rates (TC-4: producers within ±20%),
 NOT the tick rate — a conformant hardware driver must honor these.
 
+**Sim vs. hardware rate note.** These declared rates are the contract a real
+driver honors. Genesis headless runs sub-realtime (~0.75x here, and the
+mobile guard↔bridge keep-out feedback cycle adds latency), so the live
+conformance test holds the deterministic *sim-time* scheduler rate to ±20%
+but relaxes the *wall-clock* floor to 0.5× (enough to catch a grossly
+throttled sim). This relaxation is a simulation accommodation only; on real
+hardware the wall-clock rates are expected to meet the ±20% band and these
+test thresholds get tightened back.
+
 | Topic           | Schema             | Shape     | Rate    | Units / meaning                          | Frame |
 |-----------------|--------------------|-----------|---------|------------------------------------------|-------|
 | `joint_state`   | `jointvec_f32`     | n_dof     | 100 Hz  | measured joint positions (rad); meta `names` | base  |
