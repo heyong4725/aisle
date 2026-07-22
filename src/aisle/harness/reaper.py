@@ -18,6 +18,7 @@ NODE_PATTERNS = (
     "fixtures/nodes/recorder.py",
     "fixtures/nodes/base_driver.py",
     "fixtures/nodes/base_recorder.py",
+    "fixtures/nodes/guard_mutex_driver.py",
     "fixtures/nodes/verifier_stub.py",
     "reset/service.py",
     "nodes/budget_guard.py",
