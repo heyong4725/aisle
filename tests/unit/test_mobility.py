@@ -121,3 +121,16 @@ class TestMobileValidation:
         assert not [e for e in ok if e["code"] == "EMBODIMENT_MISMATCH"]
         bad, _ = validate_nodes(nodes, manifests, set(), "franka", allow_unproven=True)
         assert [e for e in bad if e["code"] == "EMBODIMENT_MISMATCH"]
+
+
+def test_base_topic_schemas_in_vocabulary():
+    """MOB-1: the mobile base topics carry typed Arrow schemas in the CAP-2
+    vocabulary — base_pose Float32[3], base_cmd Float32[2], base_scan
+    Float32[n] (planar ranges)."""
+    from aisle.harness.registry import load_vocabulary
+    from aisle.scenes.pharmacy import _REPO_ROOT
+
+    vocab = load_vocabulary(_REPO_ROOT)
+    assert vocab["base_pose3d_f32"] == {"arrow": "Float32", "shape": "3"}
+    assert vocab["base_cmd2d_f32"] == {"arrow": "Float32", "shape": "2"}
+    assert vocab["base_scan_f32"] == {"arrow": "Float32", "shape": "n_scan"}
