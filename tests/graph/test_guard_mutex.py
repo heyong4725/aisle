@@ -158,7 +158,7 @@ def _write_watchdog_graph(tmp: Path, rec_out: Path) -> Path:
                 "path": str(GUARD),
                 "inputs": {
                     "base_cmd": {"source": "driver/base_cmd", "queue_size": 100},
-                    "tick": "dora/timer/millis/20",
+                    "base_watchdog": "dora/timer/millis/20",
                 },
                 "outputs": ["base_cmd_safe", "violation"],
                 "env": {"AISLE_EMBODIMENT": "mobile"},

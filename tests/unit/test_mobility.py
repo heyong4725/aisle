@@ -210,6 +210,17 @@ class TestKeepOut:
         assert safe[0] == 0.0
         assert any(v["reason"] == "base_keepout" for v in viols)
 
+    def test_base_pose_validation(self):
+        """Re-review #3: a base_pose is only usable if it is exactly three
+        finite values; a short vector or a non-finite coordinate is rejected
+        (the guard then caches None and keep-out fails closed)."""
+        from aisle.mobility.guard import valid_base_pose
+
+        assert valid_base_pose([0.0, 0.0, 0.0])
+        assert not valid_base_pose([0.0, 0.0])  # short -> would IndexError
+        assert not valid_base_pose([float("inf"), 0.0, 0.0])  # inf -> would bypass
+        assert not valid_base_pose([0.0, 0.0, float("nan")])  # nan yaw
+
 
 class TestArmMotionMutexWindow:
     """MOB-3 (PR #14 review): the mutex must represent ONGOING motion, not
@@ -357,8 +368,8 @@ class TestNavLifecycle:
         m.on_goal([0.0, 0.0, 1.5708], "y1")
         m.on_base_pose([0.0, 0.0, 0.0])  # in position, wrong orientation
         out = m.on_tick()
-        assert out[0][0] == "nav_feedback"  # NOT success
-        assert out[0][1]["yaw_remaining"] == pytest.approx(1.5708, abs=1e-3)
+        assert out[0][0] == "nav_feedback"  # NOT success — yaw not converged
+        assert set(out[0][1]) == {"t", "dist_remaining"}  # MOB-2 contract shape
         m.on_base_pose([0.0, 0.0, 1.55])  # rotated close to target yaw
         out = m.on_tick()
         assert out[0][0] == "nav_result" and out[0][1]["status"] == "success"

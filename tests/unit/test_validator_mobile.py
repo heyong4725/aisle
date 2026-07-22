@@ -85,3 +85,54 @@ def test_guarded_base_cmd_passes_the_motion_gate(tmp_path):
     )
     _, report = _validate(graph)
     assert "MOTION_UNGATED" not in _codes(report)
+
+
+def test_mobile_guard_must_wire_pose_and_watchdog(tmp_path):
+    """MOB-3 (PR #14 re-review): on a mobile graph the guard (it outputs
+    base_cmd_safe) MUST wire base_pose + base_watchdog, or keep-out and the
+    stale-command watchdog are silently disabled."""
+    graph = _write(
+        tmp_path,
+        [
+            {"id": "nav-action", "outputs": ["base_cmd"]},
+            {
+                "id": "budget-guard",
+                "inputs": {"base_cmd": "nav-action/base_cmd"},
+                "outputs": ["base_cmd_safe"],
+            },
+            {
+                "id": "dora-genesis",
+                "inputs": {"base_cmd": "budget-guard/base_cmd_safe"},
+                "outputs": ["base_pose"],
+            },
+        ],
+    )
+    rc, report = _validate(graph)
+    assert "MOBILE_GUARD_INCOMPLETE" in _codes(report)
+    assert rc != 0
+
+
+def test_complete_mobile_guard_passes_the_wiring_rule(tmp_path):
+    """MOB-3: a guard wiring base_pose + base_watchdog is complete."""
+    graph = _write(
+        tmp_path,
+        [
+            {"id": "nav-action", "outputs": ["base_cmd"]},
+            {
+                "id": "budget-guard",
+                "inputs": {
+                    "base_cmd": "nav-action/base_cmd",
+                    "base_pose": "dora-genesis/base_pose",
+                    "base_watchdog": "dora/timer/millis/50",
+                },
+                "outputs": ["base_cmd_safe"],
+            },
+            {
+                "id": "dora-genesis",
+                "inputs": {"base_cmd": "budget-guard/base_cmd_safe"},
+                "outputs": ["base_pose"],
+            },
+        ],
+    )
+    _, report = _validate(graph)
+    assert "MOBILE_GUARD_INCOMPLETE" not in _codes(report)

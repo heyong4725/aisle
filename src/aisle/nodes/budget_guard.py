@@ -300,7 +300,12 @@ def main(clock=None) -> None:
     import pyarrow as pa
     from dora import Node
 
-    from aisle.mobility.guard import base_creep_deadline, clamp_base_cmd, load_base_limits
+    from aisle.mobility.guard import (
+        base_creep_deadline,
+        clamp_base_cmd,
+        load_base_limits,
+        valid_base_pose,
+    )
 
     clock = clock or time.monotonic
     embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
@@ -387,11 +392,27 @@ def main(clock=None) -> None:
             send("joint_cmd_safe", pa.array(safe), metadata)
             publish_violations(violations, metadata)
         elif event["id"] == "base_pose" and is_mobile:
-            # MOB-3 keep-out feedback: remember where the base is so a base_cmd
-            # can be checked against the shelf keep-out radius
+            # MOB-3 keep-out feedback: cache the base pose. VALIDATE it first
+            # (BG-3): a malformed pose must not crash clamp_base_cmd or bypass
+            # keep-out — a bad pose caches None so keep-out fails closed.
             env_id = int(metadata.get("env_id", 0))
             state = envs.setdefault(env_id, new_state())
-            state["base_pose"] = event["value"].to_numpy(zero_copy_only=False).tolist()
+            pose = event["value"].to_numpy(zero_copy_only=False).tolist()
+            if valid_base_pose(pose):
+                state["base_pose"] = [float(p) for p in pose]
+            else:
+                state["base_pose"] = None
+                publish_violations(
+                    [
+                        {
+                            "reason": "base_pose_malformed",
+                            "axis": "pose",
+                            "requested": None,
+                            "clamped": None,
+                        }
+                    ],
+                    metadata,
+                )
         elif event["id"] == "base_cmd" and is_mobile:
             # MOB-3: base velocity limits, arm/base mutual exclusion (base
             # clamped to creep while the arm moves), the shelf keep-out (no
@@ -457,34 +478,35 @@ def main(clock=None) -> None:
                 state["base_pose"] = None
                 state["last_base_cmd_t"] = None
                 state["last_base_safe"] = [0.0, 0.0]
-        elif event["id"] == "tick":
-            # MOB-3 watchdog: the bridge latches the last base_cmd_safe and
-            # integrates it every tick, so a stale command (producer died) or
-            # a wall-timed-out episode would drive forever. Stop any latched
+        elif event["id"] == "base_watchdog" and is_mobile:
+            # MOB-3 watchdog on a DEDICATED fast input (separate from the 0.2 Hz
+            # BG-5 stats `tick`): the bridge latches the last base_cmd_safe and
+            # integrates it every tick, so a stale command (producer died) or a
+            # wall-timed-out episode would drive forever. Stop any latched
             # moving base by emitting [0, 0] once.
-            if is_mobile:
-                for env_id, state in envs.items():
-                    last_t = state["last_base_cmd_t"]
-                    if last_t is None or state["last_base_safe"] == [0.0, 0.0]:
-                        continue
-                    stale = now - last_t > base_limits.base_staleness_s
-                    timed_out = state["timer"].on_command(now) > limits.wall_timeout_s
-                    if stale or timed_out:
-                        reason = "base_timeout" if timed_out else "base_stale"
-                        meta = {"env_id": env_id}
-                        send("base_cmd_safe", pa.array(np.zeros(2, dtype=np.float32)), meta)
-                        publish_violations(
-                            [
-                                {
-                                    "reason": reason,
-                                    "axis": "cmd",
-                                    "requested": state["last_base_safe"],
-                                    "clamped": [0.0, 0.0],
-                                }
-                            ],
-                            meta,
-                        )
-                        state["last_base_safe"] = [0.0, 0.0]
+            for env_id, state in envs.items():
+                last_t = state["last_base_cmd_t"]
+                if last_t is None or state["last_base_safe"] == [0.0, 0.0]:
+                    continue
+                stale = now - last_t > base_limits.base_staleness_s
+                timed_out = state["timer"].on_command(now) > limits.wall_timeout_s
+                if stale or timed_out:
+                    reason = "base_timeout" if timed_out else "base_stale"
+                    meta = {"env_id": env_id}
+                    send("base_cmd_safe", pa.array(np.zeros(2, dtype=np.float32)), meta)
+                    publish_violations(
+                        [
+                            {
+                                "reason": reason,
+                                "axis": "cmd",
+                                "requested": state["last_base_safe"],
+                                "clamped": [0.0, 0.0],
+                            }
+                        ],
+                        meta,
+                    )
+                    state["last_base_safe"] = [0.0, 0.0]
+        elif event["id"] == "tick":
             # BG-5: cumulative violation counts every 5 s, timer-driven —
             # emitted even when no commands flow
             send("guard_stats", pa.array([json.dumps({"violations": counts})]), {})

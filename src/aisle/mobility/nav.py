@@ -122,8 +122,10 @@ class NavStateMachine:
                 return self._finish("fail", "blocked")
         if self.ticks >= self.timeout_ticks:
             return self._finish("fail", "timeout")
-        feedback = {"t": self.ticks, "dist_remaining": dist, "yaw_remaining": yaw_err}
-        return [("nav_feedback", feedback, self.goal_id)]
+        # MOB-2 contract feedback is {t, dist_remaining}; orientation progress
+        # is tracked internally (above) and verified via base_pose, not
+        # exposed as an unapproved contract field
+        return [("nav_feedback", {"t": self.ticks, "dist_remaining": dist}, self.goal_id)]
 
 
 # proportional gains for the diff-drive controller (MOB-2); dimensionless

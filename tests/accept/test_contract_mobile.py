@@ -39,7 +39,11 @@ def _write_bridge_graph(tmp: Path, rec_out: Path) -> Path:
             {
                 "id": "guard",
                 "path": str(GUARD),
-                "inputs": {"base_cmd": {"source": "base-driver/base_cmd", "queue_size": 100}},
+                "inputs": {
+                    "base_cmd": {"source": "base-driver/base_cmd", "queue_size": 100},
+                    "base_pose": {"source": "bridge/base_pose", "queue_size": 100},
+                    "base_watchdog": "dora/timer/millis/50",
+                },
                 "outputs": ["base_cmd_safe", "violation"],
                 "env": {"AISLE_EMBODIMENT": "mobile"},
             },
@@ -61,7 +65,9 @@ def _write_bridge_graph(tmp: Path, rec_out: Path) -> Path:
                     "base_scan": {"source": "bridge/base_scan", "queue_size": 4000},
                     "frame_info": {"source": "bridge/frame_info", "queue_size": 4},
                 },
-                "env": {"REC_OUT": str(rec_out)},
+                # bound the live capture to 10 s of data, opened at the first
+                # event so the genesis build stays outside the window
+                "env": {"REC_OUT": str(rec_out), "RECORDER_DURATION_S": "10"},
             },
         ]
     }
@@ -96,7 +102,9 @@ def test_mobile_schema_conformance(tmp_path, dataflow):
     producer rates measured from sim time."""
     rec_out = tmp_path / "bridge.jsonl"
     graph = _write_bridge_graph(tmp_path, rec_out)
-    dataflow.run(graph, timeout_s=180)
+    # stop as soon as the 10 s recorder window settles (build + 10 s), not the
+    # whole outer cap; 300 s only guards a very slow genesis build
+    dataflow.run_until_settled(graph, rec_out, deadline_s=300)
     rows = dataflow.read(rec_out)
 
     expected = {"base_pose": (3, 50), "base_scan": (36, 10)}
@@ -109,10 +117,20 @@ def test_mobile_schema_conformance(tmp_path, dataflow):
             assert {"env_id", "sim_time_ns", "seq"} <= set(m["meta"]), (topic, m["meta"])  # TC-2
         seqs = [int(m["meta"]["seq"]) for m in msgs]
         assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs), f"{topic} seq not monotonic"
-        # producer rate within +/-20% of the contract, measured from sim time
+        # WALL-CLOCK rate the consumer experiences (TC-4 in spirit). Genesis
+        # headless runs sub-realtime (~0.75x here) and the guard<->bridge
+        # keep-out feedback cycle adds per-tick latency, so a 50 Hz topic
+        # cannot hold +/-20% of wall rate on this hardware. The wall LOWER
+        # bound is relaxed to half the contract rate — enough to catch a
+        # grossly throttled sim (e.g. 0.1x realtime, the failure mode a
+        # sim-time-only check would miss) — while the sim-time scheduler rate
+        # below is held to the exact +/-20% (BRG-2 scheduler correctness).
+        wall_span = msgs[-1]["wall_t"] - msgs[0]["wall_t"]
+        wall_rate = (len(msgs) - 1) / wall_span
+        assert wall_rate >= 0.5 * rate, (topic, "wall", wall_rate)
         span_ns = int(msgs[-1]["meta"]["sim_time_ns"]) - int(msgs[0]["meta"]["sim_time_ns"])
-        measured = (len(msgs) - 1) / (span_ns / 1e9)
-        assert 0.8 * rate <= measured <= 1.2 * rate, (topic, measured)
+        sim_rate = (len(msgs) - 1) / (span_ns / 1e9)
+        assert 0.8 * rate <= sim_rate <= 1.2 * rate, (topic, "sim", sim_rate)
 
     scan0 = next(r for r in rows if r["id"] == "base_scan")
     assert {"angle_min", "angle_max", "n"} <= set(scan0["meta"]), scan0["meta"]  # MOB-1
@@ -163,7 +181,7 @@ def _write_nav_graph(tmp: Path, rec_out: Path) -> Path:
                     "base_cmd": {"source": "nav/base_cmd", "queue_size": 4000},
                     "base_pose": {"source": "mock-base/base_pose", "queue_size": 4000},
                 },
-                "env": {"REC_OUT": str(rec_out)},
+                "env": {"REC_OUT": str(rec_out), "RECORDER_DURATION_S": "15"},
             },
         ]
     }
@@ -183,20 +201,27 @@ def test_nav_action_lifecycle(tmp_path, dataflow):
     dataflow.run(graph, timeout_s=45)
     rows = dataflow.read(rec_out)
 
-    feedbacks = [(json.loads(r["value"][0]), r["meta"]) for r in rows if r["id"] == "nav_feedback"]
+    feedbacks = [r for r in rows if r["id"] == "nav_feedback"]
+    payloads = [json.loads(r["value"][0]) for r in feedbacks]
     results = [json.loads(r["value"][0]) for r in rows if r["id"] == "nav_result"]
     base_cmds = [r["value"] for r in rows if r["id"] == "base_cmd"]
     poses = [r["value"] for r in rows if r["id"] == "base_pose"]
 
     assert len(feedbacks) >= 2, f"nav emitted no ongoing feedback: {len(feedbacks)}"
-    # progress: both translation AND orientation shrink over the run (MOB-2)
-    assert feedbacks[-1][0]["dist_remaining"] < feedbacks[0][0]["dist_remaining"]
-    assert feedbacks[-1][0]["yaw_remaining"] < feedbacks[0][0]["yaw_remaining"]
+    # MOB-2 feedback shape is exactly {t, dist_remaining} (no contract drift)
+    assert set(payloads[0]) == {"t", "dist_remaining"}, payloads[0]
+    # MOB-2 requires >= 2 Hz feedback DURING the active action — measure the
+    # cadence from the recorded wall times, not just the count
+    span = feedbacks[-1]["wall_t"] - feedbacks[0]["wall_t"]
+    cadence = (len(feedbacks) - 1) / span
+    assert cadence >= 2.0, f"feedback cadence {cadence:.1f} Hz < 2 Hz (MOB-2)"
+    # progress: distance to the goal shrinks over the run (MOB-2)
+    assert payloads[-1]["dist_remaining"] < payloads[0]["dist_remaining"]
     # goal_id lifecycle (TC-7): feedback carries the goal's id
-    assert feedbacks[0][1].get("goal_id") == "g1"
-    # the action terminates in success ONLY once BOTH x/y and yaw converge
+    assert feedbacks[0]["meta"].get("goal_id") == "g1"
+    # the action terminates in success ONLY once BOTH x/y and yaw converge;
+    # orientation is verified via base_pose (not a contract feedback field)
     assert any(r["status"] == "success" for r in results), results
-    # the base actually rotated to the target yaw (~pi/2), not just translated
     assert poses[-1][2] == pytest.approx(1.5708, abs=0.1), poses[-1]
     # the controller commanded forward motion AND rotation
     assert any(bc[0] > 0.0 for bc in base_cmds), "nav never commanded forward v"

@@ -300,6 +300,24 @@ def validate_nodes(
             )
             (warnings if allow_unproven else errors).append(entry)
 
+        # SPEC 210 MOB-3: on a mobile graph the guard (it outputs
+        # base_cmd_safe) MUST also wire base_pose + base_watchdog, or the
+        # keep-out and stale-command watchdog are silently disabled — the
+        # validator otherwise does not require every manifest input.
+        if embodiment == "mobile" and "base_cmd_safe" in (manifest.get("outputs") or {}):
+            missing = {"base_pose", "base_watchdog"} - set(node.get("inputs") or {})
+            if missing:
+                errors.append(
+                    _entry(
+                        "MOBILE_GUARD_INCOMPLETE",
+                        {"node": node_id},
+                        f"{node_id} guards the base on a mobile graph but does not "
+                        f"wire {sorted(missing)}",
+                        "wire base_pose and base_watchdog into the guard so MOB-3 "
+                        "keep-out and the stale-command watchdog stay active",
+                    )
+                )
+
         for port, source in (node.get("inputs") or {}).items():
             _validate_edge(
                 node, manifest, port, source, graph_nodes, manifests, vocabulary, errors, warnings

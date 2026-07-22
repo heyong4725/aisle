@@ -38,9 +38,9 @@ def _write_graph(tmp: Path, rec_out: Path) -> Path:
                 "path": str(GUARD),
                 "inputs": {
                     "base_cmd": {"source": "base-driver/base_cmd", "queue_size": 100},
-                    # keep-out pose feedback + watchdog tick (MOB-3)
+                    # keep-out pose feedback + dedicated watchdog tick (MOB-3)
                     "base_pose": {"source": "bridge/base_pose", "queue_size": 100},
-                    "tick": "dora/timer/millis/50",
+                    "base_watchdog": "dora/timer/millis/50",
                 },
                 "outputs": ["base_cmd_safe", "violation"],
                 "env": {"AISLE_EMBODIMENT": "mobile"},

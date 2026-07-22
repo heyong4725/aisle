@@ -5,6 +5,7 @@ import json
 import os
 import signal
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -213,6 +214,46 @@ def run_dataflow(graph: Path, timeout_s: float) -> DataflowRun:
         return DataflowRun(True, proc.returncode, stdout or "", stderr or "")
 
 
+def run_dataflow_until_settled(graph: Path, record_out: Path, deadline_s: float) -> None:
+    """Launch the dataflow and stop as soon as the recorder has SETTLED — its
+    JSONL line count stops growing (a duration-aware recorder exiting its
+    window) — then kill the group and reap. Unlike run_dataflow's fixed
+    window, the wall time is (genesis build + capture window), NOT the whole
+    deadline: the bridge never self-exits, so a fixed timeout would always
+    elapse. `deadline_s` is only the generous outer cap for a slow build."""
+    proc = subprocess.Popen(
+        ["dora", "run", str(graph), "--uv"],
+        cwd=REPO_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        deadline = time.monotonic() + deadline_s
+        last_count, stable_polls = -1, 0
+        while time.monotonic() < deadline:
+            time.sleep(2.0)
+            count = sum(1 for _ in record_out.open()) if record_out.exists() else 0
+            # settled = data has arrived (build done) AND stopped growing for
+            # two consecutive polls (the recorder finished its window)
+            if count > 0 and count == last_count:
+                stable_polls += 1
+                if stable_polls >= 2:
+                    break
+            else:
+                stable_polls = 0
+            last_count = count
+    finally:
+        os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            proc.communicate(timeout=15)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.communicate()
+        _reap_orphan_nodes(graph.parent)
+
+
 def read_records(record_out: Path) -> list[dict]:
     if not record_out.exists():  # recorder saw zero events
         return []
@@ -230,4 +271,9 @@ def dataflow():
     to whichever conftest hit sys.path first)."""
     from types import SimpleNamespace
 
-    return SimpleNamespace(write=write_bridge_dataflow, run=run_dataflow, read=read_records)
+    return SimpleNamespace(
+        write=write_bridge_dataflow,
+        run=run_dataflow,
+        run_until_settled=run_dataflow_until_settled,
+        read=read_records,
+    )
