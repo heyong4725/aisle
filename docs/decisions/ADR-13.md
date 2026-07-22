@@ -41,3 +41,15 @@ wheels, tyre friction, or motor dynamics.
   behind the same MOB-1 topic contract (the CONTRACT.md discipline).
 - `base_scan` fidelity is a flat 2-D raycast; no multi-echo/noise model
   until DR is extended (out of scope for MOB-1).
+
+## Implementation note (genesis mechanism, verified)
+
+The kinematic base needs no base joint or new asset: genesis'
+`robot.set_pos([x, y, 0])` + `robot.set_quat(yaw_quat)` reposition the
+whole articulated franka's root (probed — the flange follows), while
+`control_dofs_position` still drives the arm joints relative to the moved
+base. So the mobile bridge, each tick: integrate `base_pose` from the
+latest `base_cmd` (integrate_base_pose), `set_pos`/`set_quat` the robot to
+that pose, then apply the arm joint_cmd as usual. The mobile scene reuses
+the fixed-base build (the franka is already added without `fixed=True`);
+only the per-tick re-basing is added for the `mobile` embodiment.
