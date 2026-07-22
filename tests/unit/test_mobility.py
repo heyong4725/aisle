@@ -227,3 +227,46 @@ class TestBaseController:
 
         v, omega = base_cmd_toward([1.0, 1.0, 0.0], [1.0, 1.0, 0.0], self._lim())
         assert v == pytest.approx(0.0) and omega == pytest.approx(0.0)
+
+
+class TestKinematicBase:
+    """MOB-1/MOB-5 (ADR-13): the kinematic unicycle base integrates
+    base_cmd (v, omega) into a store-frame pose deterministically."""
+
+    def test_straight_line_advances_along_heading(self):
+        from aisle.mobility.base import integrate_base_pose
+
+        pose = integrate_base_pose([0.0, 0.0, 0.0], [1.0, 0.0], dt=0.1)
+        assert pose == pytest.approx([0.1, 0.0, 0.0])
+
+    def test_advances_along_current_yaw(self):
+        import math
+
+        from aisle.mobility.base import integrate_base_pose
+
+        pose = integrate_base_pose([0.0, 0.0, math.pi / 2], [1.0, 0.0], dt=0.1)
+        assert pose[0] == pytest.approx(0.0, abs=1e-9)
+        assert pose[1] == pytest.approx(0.1)
+
+    def test_pure_rotation_holds_position(self):
+        from aisle.mobility.base import integrate_base_pose
+
+        pose = integrate_base_pose([1.0, 2.0, 0.0], [0.0, 1.0], dt=0.5)
+        assert pose[0] == pytest.approx(1.0) and pose[1] == pytest.approx(2.0)
+        assert pose[2] == pytest.approx(0.5)
+
+    def test_yaw_wraps_to_pi_range(self):
+        import math
+
+        from aisle.mobility.base import integrate_base_pose
+
+        pose = integrate_base_pose([0.0, 0.0, 3.0], [0.0, 1.0], dt=1.0)  # 3.0 + 1.0 = 4.0 -> wrap
+        assert -math.pi <= pose[2] <= math.pi
+        assert pose[2] == pytest.approx(4.0 - 2 * math.pi)
+
+    def test_deterministic(self):
+        from aisle.mobility.base import integrate_base_pose
+
+        a = integrate_base_pose([0.0, 0.0, 0.3], [0.7, -0.4], dt=0.02)
+        b = integrate_base_pose([0.0, 0.0, 0.3], [0.7, -0.4], dt=0.02)
+        assert a == b
