@@ -96,3 +96,10 @@ def test_mobile_bridge_emits_and_integrates_base_topics(tmp_path, dataflow):
     assert scans[0]["meta"]["n"] == 36
     # frame_info published exactly once at startup (MOB-5)
     assert len(frames) == 1
+    # TC-2: base topics carry the standard metadata (env_id, sim_time_ns,
+    # monotonic seq) end to end
+    pose_rows = [r for r in rows if r["id"] == "base_pose"]
+    for key in ("env_id", "sim_time_ns", "seq"):
+        assert key in pose_rows[0]["meta"], (key, pose_rows[0]["meta"])
+    seqs = [r["meta"]["seq"] for r in pose_rows]
+    assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs)  # monotonic, unique

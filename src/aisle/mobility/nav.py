@@ -9,12 +9,25 @@ import tomllib
 from pathlib import Path
 
 _LOCATIONS = Path(__file__).resolve().parents[1] / "scenes" / "locations.toml"
+_LIMITS = Path(__file__).resolve().parents[3] / "env" / "limits.toml"
 
 
 def load_locations() -> dict[str, list[float]]:
     """Named store-frame targets (MOB-2/MOB-5): name -> [x, y, yaw]."""
     with open(_LOCATIONS, "rb") as f:
         return {k: list(v) for k, v in tomllib.load(f)["locations"].items()}
+
+
+def load_nav_params(embodiment: str) -> dict:
+    """Nav-action lifecycle parameters (MOB-2) from env/limits.toml:
+    arrival tolerance and the timeout/stall tick budgets."""
+    with open(_LIMITS, "rb") as f:
+        p = tomllib.load(f)["embodiment"][embodiment]
+    return {
+        "arrival_tol_m": float(p["nav_arrival_tol_m"]),
+        "timeout_ticks": int(p["nav_timeout_ticks"]),
+        "stall_ticks": int(p["nav_stall_ticks"]),
+    }
 
 
 def resolve_nav_goal(goal: dict, locations: dict[str, list[float]]) -> list[float]:

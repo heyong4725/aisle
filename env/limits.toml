@@ -61,3 +61,8 @@ min_shelf_dist_m = 0.35
 # settled arm releases the base and a still-travelling arm keeps it held
 # (MOB-3; must exceed a single arm move's travel time)
 arm_motion_hold_s = 1.0
+# nav action lifecycle (MOB-2): arrival tolerance (m) and the timeout / stall
+# tick budgets before a nav fails timeout / blocked
+nav_arrival_tol_m = 0.1
+nav_timeout_ticks = 3000
+nav_stall_ticks = 200
