@@ -134,3 +134,61 @@ def test_base_topic_schemas_in_vocabulary():
     assert vocab["base_pose3d_f32"] == {"arrow": "Float32", "shape": "3"}
     assert vocab["base_cmd2d_f32"] == {"arrow": "Float32", "shape": "2"}
     assert vocab["base_scan_f32"] == {"arrow": "Float32", "shape": "n_scan"}
+
+
+class TestNavLifecycle:
+    """MOB-2: the nav action's pure lifecycle — goal opens it, per-tick
+    feedback {t, dist_remaining} >= 2 Hz, and a result {status, failure,
+    t_end}. Deterministic ticks (CON-5), no wall clock."""
+
+    def _machine(self):
+        from aisle.mobility.nav import NavStateMachine
+
+        return NavStateMachine(arrival_tol_m=0.1, timeout_ticks=20, stall_ticks=5)
+
+    def test_goal_then_feedback_until_arrival(self):
+        from aisle.mobility.nav import NavStateMachine
+
+        m = NavStateMachine(arrival_tol_m=0.1, timeout_ticks=20, stall_ticks=5)
+        assert m.on_goal([1.0, 0.0, 0.0], "nav-1") == []
+        m.on_base_pose([0.0, 0.0, 0.0])
+        out = m.on_tick()
+        assert out[0][0] == "nav_feedback"
+        assert out[0][1]["t"] == 1 and out[0][1]["dist_remaining"] == pytest.approx(1.0)
+        # drive closer, then arrive
+        m.on_base_pose([0.95, 0.0, 0.0])
+        out = m.on_tick()
+        assert out[0][0] == "nav_result"
+        assert out[0][1] == {"status": "success", "failure": None, "t_end": 2}
+
+    def test_second_goal_while_active_is_refused(self):
+        """TC-7: nav actions do not overlap."""
+        m = self._machine()
+        m.on_goal([1.0, 0.0, 0.0], "nav-1")
+        assert m.on_goal([2.0, 0.0, 0.0], "nav-2") == []
+
+    def test_timeout(self):
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-1")
+        m.on_base_pose([0.0, 0.0, 0.0])
+        # never arrives, but keeps making tiny progress so it is not blocked
+        result = None
+        for i in range(1, 30):
+            m.on_base_pose([i * 0.01, 0.0, 0.0])
+            out = m.on_tick()
+            if out and out[0][0] == "nav_result":
+                result = out[0][1]
+                break
+        assert result == {"status": "fail", "failure": "timeout", "t_end": 20}
+
+    def test_blocked_when_no_progress(self):
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-1")
+        m.on_base_pose([1.0, 0.0, 0.0])  # stuck here
+        result = None
+        for _ in range(10):
+            out = m.on_tick()  # pose never changes
+            if out and out[0][0] == "nav_result":
+                result = out[0][1]
+                break
+        assert result is not None and result["failure"] == "blocked"
