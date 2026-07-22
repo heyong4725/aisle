@@ -333,6 +333,8 @@ def main(clock=None) -> None:
             # commanded arm-target change pushes it out, silence lets it pass
             "arm_motion_deadline": float("-inf"),
             "base_pose": None,  # latest base_pose feedback (MOB-3 keep-out)
+            "last_base_cmd_t": None,  # wall time of the last base_cmd (watchdog)
+            "last_base_safe": [0.0, 0.0],  # last emitted safe base cmd
             "timer": EpisodeTimer(),
         }
 
@@ -392,15 +394,17 @@ def main(clock=None) -> None:
             state["base_pose"] = event["value"].to_numpy(zero_copy_only=False).tolist()
         elif event["id"] == "base_cmd" and is_mobile:
             # MOB-3: base velocity limits, arm/base mutual exclusion (base
-            # clamped to creep while the arm moves), and the shelf keep-out
-            # (no forward motion into a shelf with the arm extended). Never
-            # dropped (BG-3); violations published like the arm's.
+            # clamped to creep while the arm moves), the shelf keep-out (no
+            # entry into a shelf zone with the arm reaching), and the BG-2
+            # episode wall timeout. Never dropped (BG-3).
             env_id = int(metadata.get("env_id", 0))
             state = envs.setdefault(env_id, new_state())
+            state["last_base_cmd_t"] = now
+            timed_out = state["timer"].on_command(now) > limits.wall_timeout_s
             arm_in_motion = now < state["arm_motion_deadline"]
             arm = np.asarray(state["last_safe"], dtype=np.float32)[: limits.n_arm_dof]
             ee = fk_ee_pos(arm)
-            arm_extended = float(np.hypot(ee[0], ee[1])) > footprint_r
+            arm_extended = float(np.hypot(ee[0], ee[1])) > base_limits.arm_extended_reach_m
             safe_b, violations = clamp_base_cmd(
                 event["value"].to_numpy(zero_copy_only=False),
                 arm_in_motion,
@@ -408,7 +412,19 @@ def main(clock=None) -> None:
                 base_pose=state["base_pose"],
                 shelves=shelves,
                 arm_extended=arm_extended,
+                footprint_radius=footprint_r,
             )
+            if timed_out and safe_b != [0.0, 0.0]:
+                violations.append(
+                    {
+                        "reason": "base_timeout",
+                        "axis": "cmd",
+                        "requested": safe_b,
+                        "clamped": [0.0, 0.0],
+                    }
+                )
+                safe_b = [0.0, 0.0]
+            state["last_base_safe"] = safe_b
             send("base_cmd_safe", pa.array(np.asarray(safe_b, dtype=np.float32)), metadata)
             publish_violations(violations, metadata)
         elif event["id"] == "gripper_cmd":
@@ -436,7 +452,39 @@ def main(clock=None) -> None:
                 state["last_safe"] = fallback
                 state["last_gripper"] = 0.0
                 state["arm_motion_deadline"] = float("-inf")
+                # MOB-3: clear the cached pose (keep-out fails closed until a
+                # fresh pose arrives) and the watchdog/latched-base state
+                state["base_pose"] = None
+                state["last_base_cmd_t"] = None
+                state["last_base_safe"] = [0.0, 0.0]
         elif event["id"] == "tick":
+            # MOB-3 watchdog: the bridge latches the last base_cmd_safe and
+            # integrates it every tick, so a stale command (producer died) or
+            # a wall-timed-out episode would drive forever. Stop any latched
+            # moving base by emitting [0, 0] once.
+            if is_mobile:
+                for env_id, state in envs.items():
+                    last_t = state["last_base_cmd_t"]
+                    if last_t is None or state["last_base_safe"] == [0.0, 0.0]:
+                        continue
+                    stale = now - last_t > base_limits.base_staleness_s
+                    timed_out = state["timer"].on_command(now) > limits.wall_timeout_s
+                    if stale or timed_out:
+                        reason = "base_timeout" if timed_out else "base_stale"
+                        meta = {"env_id": env_id}
+                        send("base_cmd_safe", pa.array(np.zeros(2, dtype=np.float32)), meta)
+                        publish_violations(
+                            [
+                                {
+                                    "reason": reason,
+                                    "axis": "cmd",
+                                    "requested": state["last_base_safe"],
+                                    "clamped": [0.0, 0.0],
+                                }
+                            ],
+                            meta,
+                        )
+                        state["last_base_safe"] = [0.0, 0.0]
             # BG-5: cumulative violation counts every 5 s, timer-driven —
             # emitted even when no commands flow
             send("guard_stats", pa.array([json.dumps({"violations": counts})]), {})

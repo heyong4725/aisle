@@ -1,12 +1,13 @@
 """SPEC 210 acceptance (MOB-1, MOB-2), the modules named by the spec.
 
-- test_mobile_schema_conformance (MOB-1, mirrors TC-A1): the mobile topics
-  declare in-vocabulary CAP-2 schemas with the MOB-1 shapes and rates.
+- test_mobile_schema_conformance (MOB-1): a live run of the mobile bridge,
+  mirroring the contract conformance checks in test_contract.py.
 - test_nav_action_lifecycle (MOB-2): the RUNNING nav action, driven in a
   dataflow, emits the goal_id feedback -> success result lifecycle and the
   base_cmd that closes the loop. No genesis (a kinematic mock base).
 """
 
+import importlib.util
 import json
 import shutil
 import tomllib
@@ -19,30 +20,104 @@ pytestmark = pytest.mark.accept
 
 REPO = Path(__file__).resolve().parents[2]
 REGISTRY = REPO / "registry"
+BRIDGE = REPO / "src" / "aisle" / "nodes" / "dora_genesis.py"
+GUARD = REPO / "src" / "aisle" / "nodes" / "budget_guard.py"
 NAV = REPO / "src" / "aisle" / "nodes" / "nav_action.py"
 FIXTURES = REPO / "tests" / "fixtures" / "nodes"
 
 
-def test_mobile_schema_conformance():
-    """MOB-1: base_pose/base_cmd/base_scan are closed-vocabulary CAP-2
-    schemas with the declared shapes, and the bridge + nav manifests wire
-    them at the MOB-1 rates (base_cmd <= 50 Hz)."""
+def _write_bridge_graph(tmp: Path, rec_out: Path) -> Path:
+    graph = {
+        "nodes": [
+            {
+                "id": "base-driver",
+                "path": str(FIXTURES / "base_driver.py"),
+                "inputs": {"tick": "dora/timer/millis/20"},
+                "outputs": ["base_cmd"],
+                "env": {"BASE_V": "0.2", "BASE_OMEGA": "0.0"},
+            },
+            {
+                "id": "guard",
+                "path": str(GUARD),
+                "inputs": {"base_cmd": {"source": "base-driver/base_cmd", "queue_size": 100}},
+                "outputs": ["base_cmd_safe", "violation"],
+                "env": {"AISLE_EMBODIMENT": "mobile"},
+            },
+            {
+                "id": "bridge",
+                "path": str(BRIDGE),
+                "inputs": {
+                    "tick": "dora/timer/millis/10",
+                    "base_cmd": {"source": "guard/base_cmd_safe", "queue_size": 100},
+                },
+                "outputs": ["base_pose", "base_scan", "frame_info", "bridge_info"],
+                "env": {"AISLE_EMBODIMENT": "mobile", "AISLE_SEED": "0"},
+            },
+            {
+                "id": "rec",
+                "path": str(FIXTURES / "base_recorder.py"),
+                "inputs": {
+                    "base_pose": {"source": "bridge/base_pose", "queue_size": 4000},
+                    "base_scan": {"source": "bridge/base_scan", "queue_size": 4000},
+                    "frame_info": {"source": "bridge/frame_info", "queue_size": 4},
+                },
+                "env": {"REC_OUT": str(rec_out)},
+            },
+        ]
+    }
+    path = tmp / "bridge.yaml"
+    path.write_text(yaml.safe_dump(graph))
+    return path
+
+
+def test_mobile_schema_declares_vocabulary():
+    """MOB-1 (static): base_pose/base_cmd/base_scan are closed-vocabulary
+    CAP-2 schemas with the declared shapes, wired at the MOB-1 rates."""
     schemas = tomllib.loads((REGISTRY / "schema" / "schemas.toml").read_text())
     assert schemas["base_pose3d_f32"] == {"arrow": "Float32", "shape": "3"}
     assert schemas["base_cmd2d_f32"] == {"arrow": "Float32", "shape": "2"}
     assert schemas["base_scan_f32"]["arrow"] == "Float32"
-
     bridge = yaml.safe_load((REGISTRY / "manifests" / "dora-genesis.yaml").read_text())
     assert bridge["outputs"]["base_pose"]["schema"] == "base_pose3d_f32"
     assert bridge["outputs"]["base_scan"]["schema"] == "base_scan_f32"
-    assert bridge["inputs"]["base_cmd"]["schema"] == "base_cmd2d_f32"
-    assert bridge["inputs"]["base_cmd"]["rate_hz"] <= 50  # MOB-1
+    assert bridge["inputs"]["base_cmd"]["rate_hz"] <= 50
 
-    nav = yaml.safe_load((REGISTRY / "manifests" / "nav-action.yaml").read_text())
-    assert nav["outputs"]["nav_feedback"]["schema"] == "json_utf8"
-    assert nav["outputs"]["nav_result"]["schema"] == "json_utf8"
-    assert nav["outputs"]["base_cmd"]["schema"] == "base_cmd2d_f32"
-    assert nav["inputs"]["base_pose"]["schema"] == "base_pose3d_f32"
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("genesis") is None or shutil.which("dora") is None,
+    reason="sim extra or dora CLI not installed",
+)
+def test_mobile_schema_conformance(tmp_path, dataflow):
+    """MOB-1 (LIVE, mirrors test_contract.py conformance): run the mobile
+    bridge and check the base topics AS OBSERVED — Arrow dtype (Float32),
+    shape (3 / n_scan), TC-2
+    metadata (env_id/sim_time_ns/monotonic seq) on EVERY base_pose and
+    base_scan, base_scan's {angle_min,angle_max,n} meta, and the 50/10 Hz
+    producer rates measured from sim time."""
+    rec_out = tmp_path / "bridge.jsonl"
+    graph = _write_bridge_graph(tmp_path, rec_out)
+    dataflow.run(graph, timeout_s=180)
+    rows = dataflow.read(rec_out)
+
+    expected = {"base_pose": (3, 50), "base_scan": (36, 10)}
+    for topic, (shape, rate) in expected.items():
+        msgs = [r for r in rows if r["id"] == topic]
+        assert len(msgs) > 10, f"{topic}: only {len(msgs)} samples"
+        for m in msgs:
+            assert m["dtype"] == "float", (topic, m["dtype"])  # arrow Float32
+            assert len(m["value"]) == shape, (topic, len(m["value"]))
+            assert {"env_id", "sim_time_ns", "seq"} <= set(m["meta"]), (topic, m["meta"])  # TC-2
+        seqs = [int(m["meta"]["seq"]) for m in msgs]
+        assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs), f"{topic} seq not monotonic"
+        # producer rate within +/-20% of the contract, measured from sim time
+        span_ns = int(msgs[-1]["meta"]["sim_time_ns"]) - int(msgs[0]["meta"]["sim_time_ns"])
+        measured = (len(msgs) - 1) / (span_ns / 1e9)
+        assert 0.8 * rate <= measured <= 1.2 * rate, (topic, measured)
+
+    scan0 = next(r for r in rows if r["id"] == "base_scan")
+    assert {"angle_min", "angle_max", "n"} <= set(scan0["meta"]), scan0["meta"]  # MOB-1
+    assert int(scan0["meta"]["n"]) == 36
+    assert len([r for r in rows if r["id"] == "frame_info"]) == 1  # MOB-5
 
 
 def _write_nav_graph(tmp: Path, rec_out: Path) -> Path:
@@ -54,7 +129,9 @@ def _write_nav_graph(tmp: Path, rec_out: Path) -> Path:
                 "path": str(FIXTURES / "nav_goal_injector.py"),
                 "inputs": {"tick": tick},
                 "outputs": ["nav_goal"],
-                "env": {"NAV_GOAL": '{"pose": [1.0, 0.0, 0.0]}'},
+                # target carries a nonzero yaw: the nav must ROTATE to it, not
+                # report instant arrival on x/y alone
+                "env": {"NAV_GOAL": '{"pose": [1.0, 0.0, 1.5708]}'},
             },
             {
                 "id": "nav",
@@ -84,6 +161,7 @@ def _write_nav_graph(tmp: Path, rec_out: Path) -> Path:
                     "nav_feedback": {"source": "nav/nav_feedback", "queue_size": 4000},
                     "nav_result": {"source": "nav/nav_result", "queue_size": 8},
                     "base_cmd": {"source": "nav/base_cmd", "queue_size": 4000},
+                    "base_pose": {"source": "mock-base/base_pose", "queue_size": 4000},
                 },
                 "env": {"REC_OUT": str(rec_out)},
             },
@@ -108,13 +186,18 @@ def test_nav_action_lifecycle(tmp_path, dataflow):
     feedbacks = [(json.loads(r["value"][0]), r["meta"]) for r in rows if r["id"] == "nav_feedback"]
     results = [json.loads(r["value"][0]) for r in rows if r["id"] == "nav_result"]
     base_cmds = [r["value"] for r in rows if r["id"] == "base_cmd"]
+    poses = [r["value"] for r in rows if r["id"] == "base_pose"]
 
     assert len(feedbacks) >= 2, f"nav emitted no ongoing feedback: {len(feedbacks)}"
-    # progress: distance to the goal shrinks over the run (MOB-2)
+    # progress: both translation AND orientation shrink over the run (MOB-2)
     assert feedbacks[-1][0]["dist_remaining"] < feedbacks[0][0]["dist_remaining"]
+    assert feedbacks[-1][0]["yaw_remaining"] < feedbacks[0][0]["yaw_remaining"]
     # goal_id lifecycle (TC-7): feedback carries the goal's id
     assert feedbacks[0][1].get("goal_id") == "g1"
-    # the action terminates in success once the base arrives
+    # the action terminates in success ONLY once BOTH x/y and yaw converge
     assert any(r["status"] == "success" for r in results), results
-    # the controller actually commanded forward motion
+    # the base actually rotated to the target yaw (~pi/2), not just translated
+    assert poses[-1][2] == pytest.approx(1.5708, abs=0.1), poses[-1]
+    # the controller commanded forward motion AND rotation
     assert any(bc[0] > 0.0 for bc in base_cmds), "nav never commanded forward v"
+    assert any(abs(bc[1]) > 0.0 for bc in base_cmds), "nav never commanded rotation"

@@ -172,6 +172,44 @@ class TestKeepOut:
         assert safe[0] == pytest.approx(0.5)
         assert not any(v["reason"] == "base_keepout" for v in viols)
 
+    def test_velocity_capped_to_avoid_crossing_boundary(self):
+        """Re-review #3: keep-out must prevent ENTRY, not just motion once
+        inside. From just outside the zone, v is capped to the remaining
+        clearance / dt so one step cannot cross the boundary."""
+        from aisle.mobility.guard import clamp_base_cmd
+
+        lim = self._limits()  # min_shelf_dist 0.35, base_cmd_dt_s 0.02
+        # base at origin facing +x; shelf face 0.36 m ahead -> 0.01 m of legal
+        # travel -> max_v = 0.01 / 0.02 = 0.5 m/s
+        shelf = [(0.86, 0.0, 0.5, 0.5)]  # AABB face at 0.36
+        safe, viols = clamp_base_cmd(
+            [0.8, 0.0],
+            arm_in_motion=False,
+            limits=lim,
+            base_pose=[0.0, 0.0, 0.0],
+            shelves=shelf,
+            arm_extended=True,
+        )
+        assert safe[0] == pytest.approx(0.5, abs=1e-6)  # capped, not 0, not 0.8
+        assert any(v["reason"] == "base_keepout" for v in viols)
+
+    def test_fails_closed_without_pose(self):
+        """Re-review #2: with the arm reaching but no base_pose feedback the
+        keep-out cannot be verified, so the base is held at 0 (fail closed)."""
+        from aisle.mobility.guard import clamp_base_cmd
+
+        lim = self._limits()
+        safe, viols = clamp_base_cmd(
+            [0.5, 0.0],
+            arm_in_motion=False,
+            limits=lim,
+            base_pose=None,
+            shelves=[(1.0, 0.0, 0.2, 0.5)],
+            arm_extended=True,
+        )
+        assert safe[0] == 0.0
+        assert any(v["reason"] == "base_keepout" for v in viols)
+
 
 class TestArmMotionMutexWindow:
     """MOB-3 (PR #14 review): the mutex must represent ONGOING motion, not
@@ -307,6 +345,24 @@ class TestNavLifecycle:
                 break
         assert result is not None and result["failure"] == "blocked"
 
+    def test_yaw_must_converge_before_success(self):
+        """MOB-2 (PR #14 re-review): a pose goal is NOT complete on x/y alone
+        — orientation must converge too. At the target position with the
+        wrong yaw the action keeps running until the yaw is within tolerance."""
+        from aisle.mobility.nav import NavStateMachine
+
+        m = NavStateMachine(
+            arrival_tol_m=0.1, timeout_ticks=50, stall_ticks=50, arrival_yaw_rad=0.1
+        )
+        m.on_goal([0.0, 0.0, 1.5708], "y1")
+        m.on_base_pose([0.0, 0.0, 0.0])  # in position, wrong orientation
+        out = m.on_tick()
+        assert out[0][0] == "nav_feedback"  # NOT success
+        assert out[0][1]["yaw_remaining"] == pytest.approx(1.5708, abs=1e-3)
+        m.on_base_pose([0.0, 0.0, 1.55])  # rotated close to target yaw
+        out = m.on_tick()
+        assert out[0][0] == "nav_result" and out[0][1]["status"] == "success"
+
 
 class TestBaseController:
     """MOB-2: the pure diff-drive controller that drives base_cmd toward
@@ -341,6 +397,14 @@ class TestBaseController:
 
         v, omega = base_cmd_toward([1.0, 1.0, 0.0], [1.0, 1.0, 0.0], self._lim())
         assert v == pytest.approx(0.0) and omega == pytest.approx(0.0)
+
+    def test_rotates_in_place_to_target_yaw(self):
+        """MOB-2 (PR #14 re-review): at the target position but wrong yaw, the
+        controller holds v=0 and rotates toward the target orientation."""
+        from aisle.mobility.nav import base_cmd_toward
+
+        v, omega = base_cmd_toward([1.0, 0.0, 0.0], [1.0, 0.0, 1.5708], self._lim())
+        assert v == pytest.approx(0.0) and omega > 0
 
 
 class TestKinematicBase:

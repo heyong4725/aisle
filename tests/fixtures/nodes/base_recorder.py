@@ -13,10 +13,16 @@ def main() -> None:
     for event in node:
         if event["type"] != "INPUT":
             continue
-        value = event["value"].to_numpy(zero_copy_only=False).tolist()
+        arrow = event["value"]
+        value = arrow.to_numpy(zero_copy_only=False).tolist()
         out.write(
             json.dumps(
-                {"id": event["id"], "value": value, "meta": dict(event.get("metadata") or {})},
+                {
+                    "id": event["id"],
+                    "value": value,
+                    "dtype": str(arrow.type),  # observed Arrow dtype (schema conformance)
+                    "meta": dict(event.get("metadata") or {}),
+                },
                 default=str,  # dora stamps a datetime in metadata (see recorder.py)
             )
             + "\n"

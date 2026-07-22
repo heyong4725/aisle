@@ -34,7 +34,9 @@ def main() -> None:
     embodiment = os.environ.get("AISLE_EMBODIMENT", "mobile")
     limits = load_base_limits(embodiment)
     locations = load_locations()
-    machine = NavStateMachine(**load_nav_params(embodiment))
+    params = load_nav_params(embodiment)
+    arrival_tol_m = params["arrival_tol_m"]
+    machine = NavStateMachine(**params)
 
     node = Node()
     send = make_sender(node)
@@ -53,15 +55,19 @@ def main() -> None:
             except ValueError as exc:  # MOB-2: never drive to a silent default
                 print(f"nav_goal rejected: {exc}", file=sys.stderr)
                 continue
-            if not machine.on_goal(target, metadata.get("goal_id", "")):
+            # TC-7: check the active state to tell accept from refuse (on_goal
+            # returns [] for both), so a valid first goal is not mislogged
+            if machine.target is not None:
                 print(f"nav goal {metadata.get('goal_id')} refused: nav active", file=sys.stderr)
+            else:
+                machine.on_goal(target, metadata.get("goal_id", ""))
         elif event["id"] == "base_pose":
             machine.on_base_pose(event["value"].to_numpy(zero_copy_only=False).tolist())
         elif event["id"] == "tick":
             # drive toward the target THIS tick (if navigating), then advance
             # the lifecycle; on a terminal result, stop the base
             if machine.target is not None and machine.pose is not None:
-                v, omega = base_cmd_toward(machine.pose, machine.target, limits)
+                v, omega = base_cmd_toward(machine.pose, machine.target, limits, arrival_tol_m)
                 send_base_cmd(v, omega, machine.goal_id or "")
             emissions = machine.on_tick()
             for topic, payload, goal_id in emissions:

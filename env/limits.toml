@@ -61,8 +61,18 @@ min_shelf_dist_m = 0.35
 # settled arm releases the base and a still-travelling arm keeps it held
 # (MOB-3; must exceed a single arm move's travel time)
 arm_motion_hold_s = 1.0
-# nav action lifecycle (MOB-2): arrival tolerance (m) and the timeout / stall
-# tick budgets before a nav fails timeout / blocked
+# the arm is "reaching" (keep-out active) when the flange extends past this
+# horizontal reach from the base origin; the home/ready pose (~0.31 m) is NOT
+# reaching, so the base may still approach a shelf to set up before the arm
+# extends to manipulate (MOB-3, CON-15 ADR-14)
+arm_extended_reach_m = 0.40
+# base watchdog: a base_cmd whose accepting tick is older than this is stale;
+# the guard emits a stop [0,0] so a latched command cannot integrate forever
+# after the producer dies or the episode times out (MOB-3/BG-2)
+base_staleness_s = 0.1
+# nav action lifecycle (MOB-2): arrival tolerances (position m, yaw rad) and
+# the timeout / stall tick budgets before a nav fails timeout / blocked
 nav_arrival_tol_m = 0.1
+nav_arrival_yaw_rad = 0.1
 nav_timeout_ticks = 3000
 nav_stall_ticks = 200

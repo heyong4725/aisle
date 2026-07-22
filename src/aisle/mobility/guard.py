@@ -23,6 +23,11 @@ class BaseLimits:
     # how long a commanded arm-target change keeps the base clamped to creep
     # (the mutex hold); refreshed by each change, expires on silence (MOB-3)
     arm_motion_hold_s: float
+    # flange horizontal reach past which the arm counts as "reaching" and the
+    # shelf keep-out engages (home ~0.31 m is not reaching)
+    arm_extended_reach_m: float
+    # a base_cmd older than this is stale -> the guard stops the base (MOB-3)
+    base_staleness_s: float
 
 
 def load_base_limits(embodiment: str) -> BaseLimits:
@@ -39,6 +44,8 @@ def load_base_limits(embodiment: str) -> BaseLimits:
         base_cmd_dt_s=float(p["base_cmd_dt_s"]),
         min_shelf_dist_m=float(p["min_shelf_dist_m"]),
         arm_motion_hold_s=float(p["arm_motion_hold_s"]),
+        arm_extended_reach_m=float(p["arm_extended_reach_m"]),
+        base_staleness_s=float(p["base_staleness_s"]),
     )
 
 
@@ -79,17 +86,20 @@ def clamp_base_cmd(
     base_pose=None,
     shelves=None,
     arm_extended: bool = False,
+    footprint_radius: float = 0.0,
 ) -> tuple[list[float], list[dict]]:
     """MOB-3: clamp a base_cmd [v, omega] to legal, never drop (BG-3).
 
     Enforces the base velocity limits, then the arm/base mutual exclusion
     (arm in motion -> base clamped to creep), then the shelf keep-out: with
-    the arm extended past the base footprint, forward motion TOWARD a shelf
-    inside `min_shelf_dist_m` is clamped to 0 (rotation and backing away stay
-    legal, so the base can still recover). `base_pose` is (x, y, yaw) and
-    `shelves` is a list of (cx, cy, hx, hy) AABBs in the store frame. Returns
-    (safe_cmd, violations); each violation is {reason, axis, requested,
-    clamped}."""
+    the arm reaching, forward velocity is capped so the base (its footprint
+    included) cannot enter a shelf's `min_shelf_dist_m` zone within one
+    base_cmd step -- preventing ENTRY, not just motion once already inside.
+    It FAILS CLOSED: with the arm reaching but no `base_pose` feedback the
+    base is held at 0 (the keep-out cannot be verified). Rotation and backing
+    away stay legal. `base_pose` is (x, y, yaw), `shelves` a list of
+    (cx, cy, hx, hy) AABBs in the store frame. Returns (safe_cmd, violations);
+    each violation is {reason, axis, requested, clamped}."""
     violations: list[dict] = []
 
     # BG-3 fail-safe FIRST: a short vector must not IndexError and a
@@ -132,20 +142,28 @@ def clamp_base_cmd(
             )
             co = new
 
-    # MOB-3 keep-out: with the arm extended past the footprint, do not let the
-    # base translate INTO a shelf's keep-out radius. Only forward motion whose
-    # heading points at the shelf is stopped; turning and backing away remain
-    # legal so the base is never trapped.
-    if arm_extended and base_pose is not None and shelves and cv > 0:
-        px, py, yaw = float(base_pose[0]), float(base_pose[1]), float(base_pose[2])
-        hx_dir, hy_dir = math.cos(yaw), math.sin(yaw)
-        for cx, cy, hx, hy in shelves:
-            if _dist_to_aabb(px, py, cx, cy, hx, hy) < limits.min_shelf_dist_m:
-                if (cx - px) * hx_dir + (cy - py) * hy_dir > 0:  # heading toward shelf
+    # MOB-3 keep-out (only forward motion; turning / backing away stay legal).
+    if arm_extended and shelves and cv > 0:
+        if base_pose is None:
+            # FAIL CLOSED: the keep-out cannot be checked without a pose
+            violations.append(
+                {"reason": "base_keepout", "axis": "v", "requested": cv, "clamped": 0.0}
+            )
+            cv = 0.0
+        else:
+            px, py, yaw = float(base_pose[0]), float(base_pose[1]), float(base_pose[2])
+            hx_dir, hy_dir = math.cos(yaw), math.sin(yaw)
+            for cx, cy, hx, hy in shelves:
+                if (cx - px) * hx_dir + (cy - py) * hy_dir <= 0:
+                    continue  # not heading toward this shelf
+                # remaining clearance before the footprint enters the zone;
+                # cap v so ONE base_cmd step cannot cross the boundary
+                clearance = _dist_to_aabb(px, py, cx, cy, hx, hy) - footprint_radius
+                max_v = max(0.0, clearance - limits.min_shelf_dist_m) / limits.base_cmd_dt_s
+                if cv > max_v:
                     violations.append(
-                        {"reason": "base_keepout", "axis": "v", "requested": cv, "clamped": 0.0}
+                        {"reason": "base_keepout", "axis": "v", "requested": cv, "clamped": max_v}
                     )
-                    cv = 0.0
-                    break
+                    cv = max_v
 
     return [cv, co], violations

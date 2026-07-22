@@ -19,6 +19,8 @@ NODE_PATTERNS = (
     "fixtures/nodes/base_driver.py",
     "fixtures/nodes/base_recorder.py",
     "fixtures/nodes/guard_mutex_driver.py",
+    "fixtures/nodes/keepout_driver.py",
+    "fixtures/nodes/latch_driver.py",
     "fixtures/nodes/mock_base.py",
     "fixtures/nodes/nav_goal_injector.py",
     "nodes/nav_action.py",

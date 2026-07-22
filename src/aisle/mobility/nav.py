@@ -25,6 +25,7 @@ def load_nav_params(embodiment: str) -> dict:
         p = tomllib.load(f)["embodiment"][embodiment]
     return {
         "arrival_tol_m": float(p["nav_arrival_tol_m"]),
+        "arrival_yaw_rad": float(p["nav_arrival_yaw_rad"]),
         "timeout_ticks": int(p["nav_timeout_ticks"]),
         "stall_ticks": int(p["nav_stall_ticks"]),
     }
@@ -57,8 +58,15 @@ class NavStateMachine:
     would make same-seed runs diverge. Handlers return
     [(topic, payload, goal_id), ...]."""
 
-    def __init__(self, arrival_tol_m: float, timeout_ticks: int, stall_ticks: int) -> None:
+    def __init__(
+        self,
+        arrival_tol_m: float,
+        timeout_ticks: int,
+        stall_ticks: int,
+        arrival_yaw_rad: float = math.pi,
+    ) -> None:
         self.arrival_tol_m = arrival_tol_m
+        self.arrival_yaw_rad = arrival_yaw_rad
         self.timeout_ticks = timeout_ticks
         self.stall_ticks = stall_ticks
         self.target: list[float] | None = None
@@ -97,11 +105,16 @@ class NavStateMachine:
             return []
         self.ticks += 1
         dist = math.hypot(self.target[0] - self.pose[0], self.target[1] - self.pose[1])
-        if dist <= self.arrival_tol_m:
+        yaw_err = abs(_wrap(self.target[2] - self.pose[2]))
+        # arrival requires BOTH translation AND orientation to converge (MOB-2)
+        if dist <= self.arrival_tol_m and yaw_err <= self.arrival_yaw_rad:
             return self._finish("success", None)
-        # progress tracking (MOB-2 blocked): distance must keep shrinking
-        if dist < self._best_dist - 1e-6:
-            self._best_dist = dist
+        # progress tracking (MOB-2 blocked): the combined remaining (position +
+        # orientation) must keep shrinking, so the rotation phase counts as
+        # progress and does not read as blocked
+        remaining = dist + yaw_err
+        if remaining < self._best_dist - 1e-6:
+            self._best_dist = remaining
             self._since_progress = 0
         else:
             self._since_progress += 1
@@ -109,7 +122,8 @@ class NavStateMachine:
                 return self._finish("fail", "blocked")
         if self.ticks >= self.timeout_ticks:
             return self._finish("fail", "timeout")
-        return [("nav_feedback", {"t": self.ticks, "dist_remaining": dist}, self.goal_id)]
+        feedback = {"t": self.ticks, "dist_remaining": dist, "yaw_remaining": yaw_err}
+        return [("nav_feedback", feedback, self.goal_id)]
 
 
 # proportional gains for the diff-drive controller (MOB-2); dimensionless
@@ -124,17 +138,25 @@ def _wrap(a: float) -> float:
     return (a + math.pi) % (2 * math.pi) - math.pi
 
 
-def base_cmd_toward(pose, target, limits) -> tuple[float, float]:
+def base_cmd_toward(pose, target, limits, arrival_tol_m: float = 0.05) -> tuple[float, float]:
     """Diff-drive base_cmd [v, omega] driving `pose` toward `target`
-    (store frame), clamped to the base velocity limits (MOB-2/MOB-3)."""
+    (store frame), clamped to the base velocity limits (MOB-2/MOB-3).
+
+    Two phases: while farther than `arrival_tol_m`, steer toward the target
+    POSITION and drive forward; once in position, hold v=0 and rotate in
+    place to the target YAW. So a goal that only changes orientation still
+    rotates rather than reporting instant arrival."""
     dx = float(target[0]) - float(pose[0])
     dy = float(target[1]) - float(pose[1])
     dist = math.hypot(dx, dy)
-    if dist == 0.0:
-        return 0.0, 0.0
-    heading_err = _wrap(math.atan2(dy, dx) - float(pose[2]))
-    omega = max(-limits.omega_max, min(limits.omega_max, _K_OMEGA * heading_err))
-    # only drive forward while roughly aligned; turn in place otherwise
-    align = max(0.0, math.cos(heading_err))
-    v = max(0.0, min(limits.v_max, _K_V * dist * align))
-    return v, omega
+    if dist > arrival_tol_m:
+        heading_err = _wrap(math.atan2(dy, dx) - float(pose[2]))
+        omega = max(-limits.omega_max, min(limits.omega_max, _K_OMEGA * heading_err))
+        # only drive forward while roughly aligned; turn in place otherwise
+        align = max(0.0, math.cos(heading_err))
+        v = max(0.0, min(limits.v_max, _K_V * dist * align))
+        return v, omega
+    # in position: rotate to the target orientation
+    yaw_err = _wrap(float(target[2]) - float(pose[2]))
+    omega = max(-limits.omega_max, min(limits.omega_max, _K_OMEGA * yaw_err))
+    return 0.0, omega
