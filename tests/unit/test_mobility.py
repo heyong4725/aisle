@@ -270,3 +270,52 @@ class TestKinematicBase:
         a = integrate_base_pose([0.0, 0.0, 0.3], [0.7, -0.4], dt=0.02)
         b = integrate_base_pose([0.0, 0.0, 0.3], [0.7, -0.4], dt=0.02)
         assert a == b
+
+
+class TestBaseScan:
+    """MOB-1: base_scan is a flat 2-D raycast (ADR-13) from the base origin
+    against the scene's AABB obstacles, returning n ranges capped at
+    range_max."""
+
+    def test_ray_hits_obstacle_ahead(self):
+        from aisle.mobility.base import base_scan_ranges
+
+        # single obstacle 2 m ahead (+x); a forward-only 1-ray scan
+        obstacles = [(2.0, 0.0, 0.5, 0.5)]  # cx, cy, hx, hy
+        ranges = base_scan_ranges(
+            [0.0, 0.0, 0.0], obstacles, n=1, angle_min=0.0, angle_max=0.0, range_max=5.0
+        )
+        assert len(ranges) == 1
+        assert ranges[0] == pytest.approx(1.5, abs=1e-6)  # 2.0 - half 0.5
+
+    def test_clear_ray_returns_range_max(self):
+        from aisle.mobility.base import base_scan_ranges
+
+        ranges = base_scan_ranges(
+            [0.0, 0.0, 0.0], [], n=1, angle_min=0.0, angle_max=0.0, range_max=5.0
+        )
+        assert ranges[0] == pytest.approx(5.0)
+
+    def test_scan_count_and_range_cap(self):
+        import math
+
+        from aisle.mobility.base import base_scan_ranges
+
+        obstacles = [(1.0, 0.0, 0.1, 0.1)]
+        ranges = base_scan_ranges(
+            [0.0, 0.0, 0.0], obstacles, n=8, angle_min=-math.pi, angle_max=math.pi, range_max=3.0
+        )
+        assert len(ranges) == 8
+        assert all(0 <= r <= 3.0 for r in ranges)
+
+    def test_base_yaw_rotates_the_scan(self):
+        import math
+
+        from aisle.mobility.base import base_scan_ranges
+
+        # obstacle to the +y side; facing +y (yaw=pi/2) the forward ray hits it
+        obstacles = [(0.0, 2.0, 0.5, 0.5)]
+        ranges = base_scan_ranges(
+            [0.0, 0.0, math.pi / 2], obstacles, n=1, angle_min=0.0, angle_max=0.0, range_max=5.0
+        )
+        assert ranges[0] == pytest.approx(1.5, abs=1e-6)
