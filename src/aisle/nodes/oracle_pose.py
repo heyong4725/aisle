@@ -60,10 +60,23 @@ def main() -> None:
             # per episode, and a completed plan can never be re-triggered
             # by the still-flowing pose stream (simplify review)
             pending = False
-            pose = select_pose(event["value"].to_numpy(zero_copy_only=False), target)
+            all_poses = np.asarray(
+                event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
+            ).reshape(-1)
+            pose = select_pose(all_poses, target)
             # the med's identity rides with the pose so the grasp planner
-            # can size the grip from meds.toml
-            send("target_pose", pa.array(pose), {**metadata, "target_med": target})
+            # can size the grip from meds.toml; the neighbours' (x, y)
+            # centres ride too (scene-manifest order) so the planner can
+            # pick a grip axis whose open fingers clear same-level boxes
+            neighbours = [
+                [float(all_poses[i * 7]), float(all_poses[i * 7 + 1])]
+                for i in range(len(MED_NAMES))
+            ]
+            send(
+                "target_pose",
+                pa.array(pose),
+                {**metadata, "target_med": target, "neighbours": json.dumps(neighbours)},
+            )
 
 
 if __name__ == "__main__":

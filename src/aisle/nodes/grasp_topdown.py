@@ -19,7 +19,7 @@ import math
 
 import numpy as np
 
-from aisle.scenes.pharmacy import HAND_CLEARANCE_M, HAND_COLUMN_M, level_x_span
+from aisle.scenes.pharmacy import level_x_span
 
 # how far the fingertips engage below the box TOP (top-down mode). 0.045
 # assumed 5 mm palm clearance from 0.05-long fingers, but the REAL
@@ -31,6 +31,15 @@ from aisle.scenes.pharmacy import HAND_CLEARANCE_M, HAND_COLUMN_M, level_x_span
 # same palm contact misattributed). 0.035 keeps a genuinely clear palm;
 # the box hangs pendulum-stable from the deeper-set centroid.
 GRIP_ENGAGEMENT = 0.035
+# each finger sits this far from the gripper centre when open; the open
+# fingers protrude this far past the target centre along the grip axis, so
+# a same-level neighbour within it gets swept. Sourced per-embodiment from
+# physics.toml gripper_open_m in main(); this is the pure-function default.
+FINGER_OPEN_M = 0.04
+# the open fingers must clear the gripped face by at least this much to
+# descend around the box; a face half-wider than (FINGER_OPEN_M - this)
+# cannot be gripped on that axis
+MIN_FINGER_CLEAR = 0.008
 # clearance between the shelf front plane and the front-mode pregrasp TCP
 FRONT_CLEARANCE = 0.06
 # the tray is a flat slab (no walls): release the box from a drop gap
@@ -60,17 +69,17 @@ def needs_front(box_x: float, box_z: float, shelf: dict) -> bool:
     """Safety net for out-of-band poses (ADR-12): the sampler's open bands
     guarantee sky above every SAMPLED box, so this fires only for drifted
     or nudged poses. Top-down is unsafe when the box sits below a higher
-    board within that board's span PLUS the HAND_CLEARANCE_M strip the
+    board within that board's span PLUS the hand_clearance_m strip the
     sampler reserves — the descending hand column clips the board's front
-    edge there (T10 physics replay) — with less than HAND_COLUMN_M of
+    edge there (T10 physics replay) — with less than hand_column_m of
     vertical clearance."""
     board_half = shelf["board_thickness"] / 2
     for level, height in enumerate(shelf["level_heights"]):
         board_bottom = shelf["pos"][2] + height - board_half
         if (
             box_z < board_bottom
-            and box_x >= level_x_span(shelf, level)[0] - HAND_CLEARANCE_M
-            and (board_bottom - box_z) < HAND_COLUMN_M
+            and box_x >= level_x_span(shelf, level)[0] - shelf["hand_clearance_m"]
+            and (board_bottom - box_z) < shelf["hand_column_m"]
         ):
             return True
     return False
@@ -101,6 +110,25 @@ def topdown_quat(yaw: float) -> tuple[float, float, float, float]:
     return _quat_mul(qz, qx)
 
 
+def _fingertip_clearance(box_xy, u, size_xyz, neighbours, finger_open) -> float:
+    """Min horizontal clearance from the OPEN fingertips (box centre +/-
+    finger_open along grip-axis unit vector u) to any neighbour's AABB.
+    Large => the fingers sweep clear of same-level boxes."""
+    if not neighbours:
+        return math.inf
+    tips = (
+        (box_xy[0] + finger_open * u[0], box_xy[1] + finger_open * u[1]),
+        (box_xy[0] - finger_open * u[0], box_xy[1] - finger_open * u[1]),
+    )
+    best = math.inf
+    for nx, ny, nhx, nhy in neighbours:
+        for tx, ty in tips:
+            dx = max(abs(tx - nx) - nhx, 0.0)
+            dy = max(abs(ty - ny) - nhy, 0.0)
+            best = min(best, math.hypot(dx, dy))
+    return best
+
+
 def plan_grasp(
     target_pose: np.ndarray,
     size_xyz,
@@ -109,12 +137,17 @@ def plan_grasp(
     shelf_front_x: float = 0.0,
     *,
     tray_top_z: float,
+    neighbours: list | None = None,
+    finger_open: float = FINGER_OPEN_M,
 ) -> tuple[np.ndarray, float, float]:
     """Pure plan: (grasp_pose7, approach_m).
 
     Top-down: TCP at the box's top section, fingers across the narrower
-    horizontal axis. Front: TCP at the box center, wrist horizontal,
-    approach from shelf_front_x minus clearance."""
+    horizontal axis by default, but rotated 90 degrees when that keeps the
+    open fingers clear of a same-level neighbour (the default sweep grazed
+    a box ~3 cm away and the live pipeline clipped it; t10-m0-full seed 8).
+    Front: TCP at the box center, wrist horizontal, approach from
+    shelf_front_x minus clearance."""
     pose = np.asarray(target_pose, dtype=np.float32).reshape(7)
     if front:
         half_z = float(size_xyz[2]) / 2
@@ -124,11 +157,25 @@ def plan_grasp(
         grasp = np.array([pose[0], pose[1], z, *FRONT_QUAT], dtype=np.float32)
         approach = float(pose[0]) - (shelf_front_x - FRONT_CLEARANCE)
         return grasp, approach, place_tcp_z(size_xyz, top - z, tray_top_z)
-    yaw = yaw_of(pose[3:7])
-    # fingers travel along the gripper y-axis, which at yaw=0 straddles the
-    # box's y extent; add 90 degrees when x is the narrower side
-    if size_xyz[0] < size_xyz[1]:
-        yaw += math.pi / 2
+    base = yaw_of(pose[3:7])
+    box_xy = (float(pose[0]), float(pose[1]))
+    # candidate grip yaws: straddle box-y (fingers protrude along box-y) or
+    # box-x. A candidate is feasible only if the open fingers clear the
+    # gripped face (elongated meds can only grip their narrow axis).
+    candidates = []
+    for straddle_axis, yaw in ((1, base), (0, base + math.pi / 2)):
+        if float(size_xyz[straddle_axis]) / 2 > finger_open - MIN_FINGER_CLEAR:
+            continue
+        u = (-math.sin(yaw), math.cos(yaw))  # world dir the fingers protrude along
+        clearance = _fingertip_clearance(box_xy, u, size_xyz, neighbours, finger_open)
+        narrow = size_xyz[straddle_axis] <= size_xyz[1 - straddle_axis]
+        candidates.append((clearance, narrow, yaw))
+    if candidates:
+        # prefer clearance; on a tie prefer the narrower (more stable) grip
+        best = max(candidates, key=lambda c: (round(c[0], 3), c[1]))
+        yaw = best[2]
+    else:  # no feasible neighbour-aware choice: keep the legacy default
+        yaw = base + (math.pi / 2 if size_xyz[0] < size_xyz[1] else 0.0)
     z = float(pose[2]) + float(size_xyz[2]) / 2 - grip
     grasp = np.array([pose[0], pose[1], z, *topdown_quat(yaw)], dtype=np.float32)
     return grasp, 0.15, place_tcp_z(size_xyz, grip, tray_top_z)
@@ -144,21 +191,27 @@ def place_tcp_z(size_xyz, grip_from_top: float, tray_top_z: float) -> float:
 
 
 def main() -> None:
+    import json
     import os
     import sys
 
     import pyarrow as pa
     from dora import Node
 
-    from aisle.scenes.pharmacy import load_meds, load_physics, resolve_layout
+    from aisle.scenes.pharmacy import MED_NAMES, load_meds, load_physics, resolve_layout
     from aisle.topics import make_sender
 
     meds = load_meds()
-    layout = resolve_layout(load_physics(), os.environ.get("AISLE_EMBODIMENT", "franka"))
+    embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
+    physics = load_physics()
+    layout = resolve_layout(physics, embodiment)
     shelf = layout["shelf"]
     shelf_front_x = shelf["pos"][0] - shelf["level_size"][0] / 2
     tray = layout["tray"]
     tray_top_z = tray["pos"][2] + tray["size"][2] / 2
+    # SCN-2: the finger half-open (grip-axis sweep) is the gripper geometry
+    # from physics.toml, not a planner constant
+    finger_open = float(physics["embodiment"][embodiment].get("gripper_open_m", FINGER_OPEN_M))
     node = Node()
     send = make_sender(node)
     for event in node:
@@ -173,12 +226,24 @@ def main() -> None:
             pose = event["value"].to_numpy(zero_copy_only=False)
             flat = np.asarray(pose).reshape(-1)
             front = needs_front(float(flat[0]), float(flat[2]), shelf)
+            # same-level neighbours (x, y, half_x, half_y) for grip-axis
+            # selection — every box except the target
+            neighbours = None
+            if "neighbours" in metadata:
+                centres = json.loads(metadata["neighbours"])
+                neighbours = [
+                    [cx, cy, meds[name]["size"][0] / 2, meds[name]["size"][1] / 2]
+                    for name, (cx, cy) in zip(MED_NAMES, centres, strict=True)
+                    if name != med
+                ]
             grasp, approach, place_z = plan_grasp(
                 pose,
                 meds[med]["size"],
                 front=front,
                 shelf_front_x=shelf_front_x,
                 tray_top_z=tray_top_z,
+                neighbours=neighbours,
+                finger_open=finger_open,
             )
             send(
                 "grasp_pose",

@@ -66,6 +66,29 @@ class TestGraspTopdown:
         grasp, _, _ = plan_grasp(target, (0.030, 0.065, 0.110), tray_top_z=0.04)
         assert yaw_of(grasp[3:]) % np.pi == pytest.approx(np.pi / 2, abs=1e-5)
 
+    def test_grip_axis_avoids_a_close_neighbour(self):
+        """A same-level neighbour within the default finger sweep flips the
+        grip 90 degrees onto the clearer axis (t10-m0-full seed 8): a box
+        offset mostly in y is grasped across x so the open fingers stay
+        clear, and with no neighbour the legacy narrow-axis grip stands."""
+        # near-square target; neighbour ~0.085 m away in y, ~0 in x
+        target = np.array([0.379, 0.20, 0.10, 0, 0, 0, 1], dtype=np.float32)
+        size = (0.050, 0.045, 0.085)  # y is the narrower default straddle
+        legacy, _, _ = plan_grasp(target, size, tray_top_z=0.04)
+        assert yaw_of(legacy[3:]) % np.pi == pytest.approx(0.0, abs=1e-5)  # straddles y
+        neighbours = [[0.394, 0.115, 0.0325, 0.015]]  # cetirizine, y-offset
+        aware, _, _ = plan_grasp(target, size, tray_top_z=0.04, neighbours=neighbours)
+        assert yaw_of(aware[3:]) % np.pi == pytest.approx(np.pi / 2, abs=1e-5)  # flips to x
+
+    def test_elongated_box_keeps_narrow_grip_despite_neighbour(self):
+        """An elongated med can only be gripped across its narrow face; a
+        neighbour on that axis must NOT force an infeasible wide-axis grip."""
+        target = np.array([0.5, 0.0, 0.10, 0, 0, 0, 1], dtype=np.float32)
+        size = (0.070, 0.035, 0.095)  # x=0.070 half 0.035 > FINGER_OPEN-clear
+        neighbours = [[0.5, 0.09, 0.0175, 0.0175]]  # tempts a flip to x
+        grasp, _, _ = plan_grasp(target, size, tray_top_z=0.04, neighbours=neighbours)
+        assert yaw_of(grasp[3:]) % np.pi == pytest.approx(0.0, abs=1e-5)  # stays narrow (y)
+
     def test_front_mode_approaches_horizontally(self):
         """ADR-10: a box under a board is grasped from the shelf FRONT —
         wrist horizontal (approach axis +x), TCP at the box center, and

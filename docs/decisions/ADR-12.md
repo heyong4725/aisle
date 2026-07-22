@@ -167,6 +167,19 @@ above the M0-1 0.95 bar; the finger-graze is a documented robustness
 follow-up (grip-axis-aware separation or a narrower descent), not an M0
 blocker.
 
+**Follow-up landed (owner-requested clean 50/50):** the graze was NOT a
+path deviation — the live TCP tracked the plan exactly, and offline
+physics (even with the integral correction applied faithfully) never
+reproduced it, isolating it to a marginal-clearance case amplified by
+live pipeline jitter (cetirizine sits ~3 cm from the default grip's
+open-finger sweep). Fix = neighbour-aware grip-axis selection: oracle-pose
+forwards the neighbour box centres in target_pose metadata, and the
+planner picks the grip axis whose open fingers stay clearest of same-level
+boxes (the tuned narrow-axis grip is the default; it flips 90 degrees only
+when feasible and clearly safer). Seed 8's omeprazole grip flips onto x,
+taking the cetirizine clearance 3.0 -> 7.0 cm; 12/12 on the seed 0..11
+live check.
+
 ## 6. M0 suite interpretation
 
 - M0-1/M0-2 share one module-scoped 50-episode run; M0-2 performs the
