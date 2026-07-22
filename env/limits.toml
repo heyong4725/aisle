@@ -56,3 +56,8 @@ base_cmd_dt_s = 0.02
 # keep-out: min base-to-shelf distance (m) required while the arm is
 # extended beyond the base footprint (MOB-3 keep-out zones)
 min_shelf_dist_m = 0.35
+# mutex hold: a commanded arm-target change keeps the base clamped to creep
+# for this long; refreshed by each change, expires on command silence so a
+# settled arm releases the base and a still-travelling arm keeps it held
+# (MOB-3; must exceed a single arm move's travel time)
+arm_motion_hold_s = 1.0

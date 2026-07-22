@@ -20,6 +20,9 @@ class BaseLimits:
     omega_creep: float
     base_cmd_dt_s: float
     min_shelf_dist_m: float
+    # how long a commanded arm-target change keeps the base clamped to creep
+    # (the mutex hold); refreshed by each change, expires on silence (MOB-3)
+    arm_motion_hold_s: float
 
 
 def load_base_limits(embodiment: str) -> BaseLimits:
@@ -35,6 +38,7 @@ def load_base_limits(embodiment: str) -> BaseLimits:
         omega_creep=float(p["omega_creep"]),
         base_cmd_dt_s=float(p["base_cmd_dt_s"]),
         min_shelf_dist_m=float(p["min_shelf_dist_m"]),
+        arm_motion_hold_s=float(p["arm_motion_hold_s"]),
     )
 
 
@@ -49,11 +53,41 @@ def _json_safe(x) -> float | None:
     return f if math.isfinite(f) else None
 
 
-def clamp_base_cmd(cmd, arm_in_motion: bool, limits: BaseLimits) -> tuple[list[float], list[dict]]:
+def _dist_to_aabb(px: float, py: float, cx: float, cy: float, hx: float, hy: float) -> float:
+    """Planar distance from point (px,py) to the AABB centered (cx,cy) with
+    half-extents (hx,hy); 0 inside."""
+    return math.hypot(max(abs(px - cx) - hx, 0.0), max(abs(py - cy) - hy, 0.0))
+
+
+def base_creep_deadline(
+    prev_deadline: float, target_changed: bool, now: float, hold_s: float
+) -> float:
+    """MOB-3 mutex window. A commanded arm-target CHANGE refreshes the creep
+    hold to now + hold_s; otherwise the prior deadline stands. So a repeated
+    target keeps the window opened by the last real move (the arm is still
+    travelling), while command silence lets the window expire and release the
+    base. `arm_in_motion` is then simply `now < deadline`. Pure/deterministic
+    (CON-5): the caller injects `now`."""
+    return now + hold_s if target_changed else prev_deadline
+
+
+def clamp_base_cmd(
+    cmd,
+    arm_in_motion: bool,
+    limits: BaseLimits,
+    *,
+    base_pose=None,
+    shelves=None,
+    arm_extended: bool = False,
+) -> tuple[list[float], list[dict]]:
     """MOB-3: clamp a base_cmd [v, omega] to legal, never drop (BG-3).
 
-    Enforces the base velocity limits, then the arm/base mutual exclusion:
-    while the arm is in motion the base is clamped to creep speed. Returns
+    Enforces the base velocity limits, then the arm/base mutual exclusion
+    (arm in motion -> base clamped to creep), then the shelf keep-out: with
+    the arm extended past the base footprint, forward motion TOWARD a shelf
+    inside `min_shelf_dist_m` is clamped to 0 (rotation and backing away stay
+    legal, so the base can still recover). `base_pose` is (x, y, yaw) and
+    `shelves` is a list of (cx, cy, hx, hy) AABBs in the store frame. Returns
     (safe_cmd, violations); each violation is {reason, axis, requested,
     clamped}."""
     violations: list[dict] = []
@@ -97,5 +131,21 @@ def clamp_base_cmd(cmd, arm_in_motion: bool, limits: BaseLimits) -> tuple[list[f
                 {"reason": "base_arm_exclusion", "axis": "omega", "requested": co, "clamped": new}
             )
             co = new
+
+    # MOB-3 keep-out: with the arm extended past the footprint, do not let the
+    # base translate INTO a shelf's keep-out radius. Only forward motion whose
+    # heading points at the shelf is stopped; turning and backing away remain
+    # legal so the base is never trapped.
+    if arm_extended and base_pose is not None and shelves and cv > 0:
+        px, py, yaw = float(base_pose[0]), float(base_pose[1]), float(base_pose[2])
+        hx_dir, hy_dir = math.cos(yaw), math.sin(yaw)
+        for cx, cy, hx, hy in shelves:
+            if _dist_to_aabb(px, py, cx, cy, hx, hy) < limits.min_shelf_dist_m:
+                if (cx - px) * hx_dir + (cy - py) * hy_dir > 0:  # heading toward shelf
+                    violations.append(
+                        {"reason": "base_keepout", "axis": "v", "requested": cv, "clamped": 0.0}
+                    )
+                    cv = 0.0
+                    break
 
     return [cv, co], violations

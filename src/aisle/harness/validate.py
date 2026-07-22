@@ -23,7 +23,10 @@ from aisle.harness.registry import (
     manifest_schema_errors,
 )
 
-MOTION_SINK_PORTS = {"joint_cmd", "gripper_cmd"}
+# base_cmd is a motion sink too (SPEC 210 MOB-3): a mobile base command
+# reaching the bridge MUST traverse the budget guard, or a producer could
+# drive the base unguarded.
+MOTION_SINK_PORTS = {"joint_cmd", "gripper_cmd", "base_cmd"}
 GUARD_ID = "budget-guard"
 RATE_BAND = 0.2  # TC-4: rates are contracts within ±20%
 # MOB-4: each embodiment profile resolves to an ARM kind. `mobile` is the

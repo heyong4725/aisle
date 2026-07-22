@@ -17,6 +17,7 @@ pytestmark = [
 
 REPO = Path(__file__).resolve().parents[2]
 BRIDGE = REPO / "src" / "aisle" / "nodes" / "dora_genesis.py"
+GUARD = REPO / "src" / "aisle" / "nodes" / "budget_guard.py"
 FIXTURES = REPO / "tests" / "fixtures" / "nodes"
 
 
@@ -31,11 +32,20 @@ def _write_graph(tmp: Path, rec_out: Path) -> Path:
                 "env": {"BASE_V": "0.3", "BASE_OMEGA": "0.0"},
             },
             {
+                # base_cmd is a motion sink (MOB-3): it MUST reach the bridge
+                # through the guard, so the e2e path mirrors a valid graph.
+                "id": "guard",
+                "path": str(GUARD),
+                "inputs": {"base_cmd": {"source": "base-driver/base_cmd", "queue_size": 100}},
+                "outputs": ["base_cmd_safe", "violation"],
+                "env": {"AISLE_EMBODIMENT": "mobile"},
+            },
+            {
                 "id": "bridge",
                 "path": str(BRIDGE),
                 "inputs": {
                     "tick": "dora/timer/millis/10",
-                    "base_cmd": {"source": "base-driver/base_cmd", "queue_size": 100},
+                    "base_cmd": {"source": "guard/base_cmd_safe", "queue_size": 100},
                 },
                 "outputs": ["base_pose", "base_scan", "frame_info", "bridge_info"],
                 "env": {"AISLE_EMBODIMENT": "mobile", "AISLE_SEED": "0"},

@@ -7,6 +7,8 @@ inputs:
   gripper_cmd: {schema: scalar_f32, rate_hz: 30}
   # SPEC 210 MOB-3 (mobile only): diff-drive command [v, omega] to guard
   base_cmd: {schema: base_cmd2d_f32, rate_hz: 50}
+  # SPEC 210 MOB-3 (mobile only): base_pose feedback for the shelf keep-out
+  base_pose: {schema: base_pose3d_f32, rate_hz: 50}
   # the authoritative episode boundary: restarts the wall timer and
   # re-references velocity/hold state to home (ADR-9)
   reset_done: {schema: reset_done_u32, rate_hz: 1}

@@ -300,7 +300,7 @@ def main(clock=None) -> None:
     import pyarrow as pa
     from dora import Node
 
-    from aisle.mobility.guard import clamp_base_cmd, load_base_limits
+    from aisle.mobility.guard import base_creep_deadline, clamp_base_cmd, load_base_limits
 
     clock = clock or time.monotonic
     embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
@@ -308,6 +308,17 @@ def main(clock=None) -> None:
     fallback = np.asarray(limits.fallback_qpos, dtype=np.float32)
     is_mobile = embodiment == "mobile"
     base_limits = load_base_limits(embodiment) if is_mobile else None
+    # MOB-3 keep-out geometry: the shelf AABBs and the base footprint radius
+    # the base must not drive into with the arm extended
+    shelves: list = []
+    footprint_r = 0.0
+    if is_mobile:
+        from aisle.nodes.dora_genesis import _scan_obstacles
+        from aisle.scenes.pharmacy import load_physics
+
+        physics = load_physics()
+        shelves = _scan_obstacles(physics, embodiment)
+        footprint_r = float(physics["embodiment"][embodiment]["base_footprint_radius_m"])
 
     node = Node()
     envs: dict[int, dict] = {}
@@ -318,7 +329,10 @@ def main(clock=None) -> None:
         return {
             "last_safe": fallback,
             "last_gripper": 0.0,
-            "arm_in_motion": False,
+            # MOB-3 mutex: the base is held at creep until this deadline; a
+            # commanded arm-target change pushes it out, silence lets it pass
+            "arm_motion_deadline": float("-inf"),
+            "base_pose": None,  # latest base_pose feedback (MOB-3 keep-out)
             "timer": EpisodeTimer(),
         }
 
@@ -353,10 +367,16 @@ def main(clock=None) -> None:
                 limits,
                 timed_out=timed_out,
             )
-            # MOB-3 mutex reference: the arm is "in motion" when the commanded
-            # safe arm pose CHANGES (a hold repeats the exact target). Exact
-            # inequality — no magic threshold, deterministic (CON-5).
-            state["arm_in_motion"] = bool(np.any(safe[: limits.n_arm_dof] != prev_arm))
+            # MOB-3 mutex: a commanded arm-target CHANGE (re)opens a hold
+            # window of base_limits.arm_motion_hold_s. The window PERSISTS
+            # while the arm travels even if the same target repeats, and
+            # EXPIRES on command silence — so a settled arm releases the base
+            # and a still-moving arm keeps it clamped. Deterministic (CON-5).
+            if is_mobile:
+                changed = bool(np.any(safe[: limits.n_arm_dof] != prev_arm))
+                state["arm_motion_deadline"] = base_creep_deadline(
+                    state["arm_motion_deadline"], changed, now, base_limits.arm_motion_hold_s
+                )
             state["last_safe"] = safe
             # the fingers ARE the gripper: keep the gripper channel's rate
             # reference in sync so alternating channels cannot double the
@@ -364,16 +384,30 @@ def main(clock=None) -> None:
             state["last_gripper"] = fingers_to_gripper(safe, limits)
             send("joint_cmd_safe", pa.array(safe), metadata)
             publish_violations(violations, metadata)
-        elif event["id"] == "base_cmd" and is_mobile:
-            # MOB-3: base velocity limits + arm/base mutual exclusion. The
-            # base is clamped to creep while the arm is in motion (never
-            # dropped, BG-3); violations are published like the arm's.
+        elif event["id"] == "base_pose" and is_mobile:
+            # MOB-3 keep-out feedback: remember where the base is so a base_cmd
+            # can be checked against the shelf keep-out radius
             env_id = int(metadata.get("env_id", 0))
             state = envs.setdefault(env_id, new_state())
+            state["base_pose"] = event["value"].to_numpy(zero_copy_only=False).tolist()
+        elif event["id"] == "base_cmd" and is_mobile:
+            # MOB-3: base velocity limits, arm/base mutual exclusion (base
+            # clamped to creep while the arm moves), and the shelf keep-out
+            # (no forward motion into a shelf with the arm extended). Never
+            # dropped (BG-3); violations published like the arm's.
+            env_id = int(metadata.get("env_id", 0))
+            state = envs.setdefault(env_id, new_state())
+            arm_in_motion = now < state["arm_motion_deadline"]
+            arm = np.asarray(state["last_safe"], dtype=np.float32)[: limits.n_arm_dof]
+            ee = fk_ee_pos(arm)
+            arm_extended = float(np.hypot(ee[0], ee[1])) > footprint_r
             safe_b, violations = clamp_base_cmd(
                 event["value"].to_numpy(zero_copy_only=False),
-                state["arm_in_motion"],
+                arm_in_motion,
                 base_limits,
+                base_pose=state["base_pose"],
+                shelves=shelves,
+                arm_extended=arm_extended,
             )
             send("base_cmd_safe", pa.array(np.asarray(safe_b, dtype=np.float32)), metadata)
             publish_violations(violations, metadata)
@@ -401,7 +435,7 @@ def main(clock=None) -> None:
                 state["timer"].on_reset(now)
                 state["last_safe"] = fallback
                 state["last_gripper"] = 0.0
-                state["arm_in_motion"] = False
+                state["arm_motion_deadline"] = float("-inf")
         elif event["id"] == "tick":
             # BG-5: cumulative violation counts every 5 s, timer-driven —
             # emitted even when no commands flow

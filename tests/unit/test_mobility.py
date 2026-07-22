@@ -113,6 +113,98 @@ class TestBaseArmExclusion:
         assert any(v["reason"] == "base_malformed" for v in viols)
 
 
+class TestKeepOut:
+    """MOB-3 keep-out: with the arm extended, the base must not translate
+    into a shelf's keep-out radius (min_shelf_dist_m)."""
+
+    def _limits(self):
+        from aisle.mobility.guard import load_base_limits
+
+        return load_base_limits("mobile")
+
+    def test_extended_arm_blocked_toward_near_shelf(self):
+        from aisle.mobility.guard import clamp_base_cmd
+
+        lim = self._limits()
+        shelf = [(1.0, 0.0, 0.2, 0.5)]  # AABB just ahead
+        # base at origin facing +x, 0.3 m from the shelf face (< 0.35 keep-out)
+        safe, viols = clamp_base_cmd(
+            [0.5, 0.0],
+            arm_in_motion=False,
+            limits=lim,
+            base_pose=[0.5, 0.0, 0.0],
+            shelves=shelf,
+            arm_extended=True,
+        )
+        assert safe[0] == 0.0
+        assert any(v["reason"] == "base_keepout" for v in viols)
+
+    def test_backing_away_from_shelf_is_allowed(self):
+        from aisle.mobility.guard import clamp_base_cmd
+
+        lim = self._limits()
+        shelf = [(1.0, 0.0, 0.2, 0.5)]
+        # facing AWAY from the shelf (yaw=pi): forward motion recedes -> legal
+        safe, viols = clamp_base_cmd(
+            [0.5, 0.0],
+            arm_in_motion=False,
+            limits=lim,
+            base_pose=[0.5, 0.0, 3.14159],
+            shelves=shelf,
+            arm_extended=True,
+        )
+        assert safe[0] == pytest.approx(0.5)
+        assert not any(v["reason"] == "base_keepout" for v in viols)
+
+    def test_retracted_arm_ignores_keepout(self):
+        from aisle.mobility.guard import clamp_base_cmd
+
+        lim = self._limits()
+        shelf = [(1.0, 0.0, 0.2, 0.5)]
+        safe, viols = clamp_base_cmd(
+            [0.5, 0.0],
+            arm_in_motion=False,
+            limits=lim,
+            base_pose=[0.5, 0.0, 0.0],
+            shelves=shelf,
+            arm_extended=False,
+        )
+        assert safe[0] == pytest.approx(0.5)
+        assert not any(v["reason"] == "base_keepout" for v in viols)
+
+
+class TestArmMotionMutexWindow:
+    """MOB-3 (PR #14 review): the mutex must represent ONGOING motion, not
+    just whether the latest target differed. A repeated target while the arm
+    still travels keeps the base clamped; command silence releases it."""
+
+    _HOLD = 1.0
+
+    def test_target_change_opens_the_window(self):
+        from aisle.mobility.guard import base_creep_deadline
+
+        deadline = base_creep_deadline(float("-inf"), True, now=10.0, hold_s=self._HOLD)
+        assert 10.0 < deadline  # arm_in_motion True right after a move
+
+    def test_repeated_target_keeps_the_window_open(self):
+        """A repeated (unchanged) target does NOT reset the flag false while
+        the arm is still inside the hold window opened by the last move."""
+        from aisle.mobility.guard import base_creep_deadline
+
+        deadline = base_creep_deadline(float("-inf"), True, now=0.0, hold_s=self._HOLD)
+        # 0.5 s later the SAME target arrives (no change) — still in motion
+        deadline = base_creep_deadline(deadline, target_changed=False, now=0.5, hold_s=self._HOLD)
+        assert 0.5 < deadline  # 0.5 < 1.0: base stays clamped mid-travel
+
+    def test_command_silence_expires_the_window(self):
+        """After the hold elapses with no new arm command, the base is
+        released — the flag is not stuck true forever."""
+        from aisle.mobility.guard import base_creep_deadline
+
+        deadline = base_creep_deadline(float("-inf"), True, now=0.0, hold_s=self._HOLD)
+        assert not (1.5 > 0 and 1.5 < deadline)  # 1.5 s later: released
+
+
 class TestMobileValidation:
     """MOB-4: the mobile profile's arm subtree is franka-identical, and
     base-requiring nodes need a base profile."""

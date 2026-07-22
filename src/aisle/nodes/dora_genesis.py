@@ -72,6 +72,19 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
     )
 
 
+def require_single_env_for_mobile(embodiment: str, n_envs: int) -> None:
+    """SPEC 210 MOB-1 (ADR-13): the kinematic base carries ONE base_cmd /
+    base_pose per bridge and batched genesis re-basing is not implemented,
+    so the mobile profile refuses n_envs > 1 rather than integrate one
+    global pose and mislabel it under every env_id. Single-env per bridge
+    until batched re-basing lands."""
+    if embodiment == "mobile" and n_envs > 1:
+        raise ValueError(
+            f"mobile embodiment does not support batched envs (n_envs={n_envs}); "
+            "run one env per bridge (SPEC 210 MOB-1, ADR-13)"
+        )
+
+
 class ResetQuarantine:
     """BRG-4: after a reset the executor keeps streaming the ended episode's
     plan for a few ticks until it receives reset_done and clears. Those
@@ -221,6 +234,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     )
 
     cfg = parse_bridge_config(os.environ)
+    require_single_env_for_mobile(cfg.embodiment, cfg.n_envs)
     root = Path(os.environ.get("AISLE_ROOT", _REPO_ROOT))
     physics = load_physics()
     profile = physics["embodiment"][cfg.embodiment]
