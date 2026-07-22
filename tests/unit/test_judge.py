@@ -320,23 +320,22 @@ def test_airborne_target_above_tray_is_not_success():
 
 
 def test_initial_capture_barrier_waits_for_the_teleport():
-    """VER-1/BRG-4/CON-5: initial poses must be seeded from an oracle
-    sample AT OR AFTER the reset's teleport, never a pre-reset frame.
+    """VER-1/BRG-4/CON-5: initial poses must be seeded STRICTLY after the
+    reset's teleport, never a frame sharing the reset timestamp.
 
-    Race that this fixes (M0 run m0-1-632916): the verifier set its
-    barrier to latest_oracle_ns when the goal arrived, but pre-teleport
-    oracle samples between that barrier and the teleport still passed and
-    became the baseline; the teleport then read as every box colliding.
+    The teleport does not advance sim time, so the last pre-reset tick's
+    oracle_state and the reset handler's post-teleport oracle_state are
+    BOTH stamped reset_sim_ns — equality cannot prove post-reset ordering
+    (PR #12 re-review). The barrier is the teleport time itself and
+    eligibility (sim_time_ns > barrier) is strict, so only a later tick
+    seeds the baseline.
     """
     teleport_ns = 1_000_000
-    # verifier is BEHIND the teleport when the goal lands: the barrier must
-    # jump forward to the teleport so pre-teleport frames are rejected
     barrier = initial_capture_barrier(latest_oracle_ns=999_000, reset_sim_ns=teleport_ns)
-    assert 999_000 <= barrier  # a pre-teleport frame at 999_500 is rejected
-    assert barrier < teleport_ns  # the teleport frame itself is eligible
-    # the first post-teleport sample is captured; the last pre-teleport is not
-    assert teleport_ns > barrier
-    assert teleport_ns - 1 <= barrier
+    # a pre-reset frame AT the teleport timestamp is NOT eligible: strict >
+    assert not (teleport_ns > barrier), "equal-timestamp stale frame must be rejected"
+    # a frame from the next tick (strictly later) IS eligible
+    assert teleport_ns + 1 > barrier
 
     # verifier already AHEAD of the teleport (queued post-reset frames):
     # keep the later arrival barrier, never rewind

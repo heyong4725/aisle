@@ -199,14 +199,15 @@ def test_sampled_boxes_always_have_open_sky(placements_200):
 
 def test_needs_front_covers_board_span_and_clearance_strip():
     """ADR-12: out-of-band poses under a higher board — including the
-    HAND_CLEARANCE_M strip in front of its span, where the T10 physics
+    hand_clearance_m strip in front of its span, where the T10 physics
     replay showed the hand landing on the board edge — trigger the
     front-mode safety net; open-sky poses do not."""
     from aisle.nodes.grasp_topdown import needs_front
-    from aisle.scenes.pharmacy import HAND_CLEARANCE_M, resolve_layout
     from aisle.scenes.pharmacy import load_physics as load_p
+    from aisle.scenes.pharmacy import resolve_layout
 
     shelf = resolve_layout(load_p(), "franka")["shelf"]
+    hand_clearance = shelf["hand_clearance_m"]  # SCN-2: sourced from physics.toml
     rear_x = shelf["pos"][0] + shelf["level_size"][0] / 2
     upper_front = rear_x - shelf["level_depths"][1]
     lower_box_z = shelf["pos"][2] + shelf["level_heights"][0] + shelf["board_thickness"] / 2 + 0.05
@@ -214,9 +215,9 @@ def test_needs_front_covers_board_span_and_clearance_strip():
     # directly under the upper board
     assert needs_front(rear_x - 0.01, lower_box_z, shelf)
     # in the reserved clearance strip just in front of the board span
-    assert needs_front(upper_front - HAND_CLEARANCE_M / 2, lower_box_z, shelf)
+    assert needs_front(upper_front - hand_clearance / 2, lower_box_z, shelf)
     # in the open band, clear of the strip
-    assert not needs_front(upper_front - HAND_CLEARANCE_M - 0.02, lower_box_z, shelf)
+    assert not needs_front(upper_front - hand_clearance - 0.02, lower_box_z, shelf)
     # on the top level there is no board above
     assert not needs_front(rear_x - 0.01, upper_box_z, shelf)
 

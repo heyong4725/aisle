@@ -126,19 +126,6 @@ class SceneHandle:
     reachability_errors: list[str] = field(default_factory=list)
 
 
-# how much of the open band the hand column must keep clear of a higher
-# board's FRONT plane: hand half-extent (~0.045 incl. the wrist-cam mount)
-# plus tracking transient (~0.05 measured in the T10 physics replay — the
-# hand landed ON the board's front edge at the band's rear limit)
-HAND_CLEARANCE_M = 0.10
-# vertical room the hand column needs above the grasp line for a top-down
-# descent (fingers + hand + wrist; measured in the T08 live runs) — kept
-# beside HAND_CLEARANCE_M so the hand-geometry constants share one home
-# (both franka-measured, conservative for so101; revisit per-embodiment
-# when so101 support lands)
-HAND_COLUMN_M = 0.35
-
-
 def level_x_span(shelf: dict, level: int) -> tuple[float, float]:
     """A level board's x-span. Boards are REAR-ALIGNED within the shelf
     footprint (staggered shelving, ADR-12) — the single source of truth
@@ -150,11 +137,11 @@ def level_x_span(shelf: dict, level: int) -> tuple[float, float]:
 
 def open_band(shelf: dict, level: int) -> tuple[float, float]:
     """The level's x-band with OPEN SKY: its board span, ending
-    HAND_CLEARANCE_M before any higher (shallower, rear-aligned) board's
+    hand_clearance_m before any higher (shallower, rear-aligned) board's
     front plane — top-down grasps need the hand column clear (ADR-12)."""
     x_min, x_max = level_x_span(shelf, level)
     for higher in range(level + 1, len(shelf["level_depths"])):
-        x_max = min(x_max, level_x_span(shelf, higher)[0] - HAND_CLEARANCE_M)
+        x_max = min(x_max, level_x_span(shelf, higher)[0] - shelf["hand_clearance_m"])
     return x_min, x_max
 
 

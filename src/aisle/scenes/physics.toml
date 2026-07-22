@@ -28,6 +28,14 @@ board_thickness = 0.02
 # m0-1-e2e07b episode 11)
 min_separation = 0.04
 edge_margin = 0.03
+# hand-geometry clearances the sampler/planner reserve (SCN-2: no physics
+# constants inline). hand_clearance_m: how far the open band ends before a
+# higher board's front plane — hand half-extent (~0.045, incl. wrist-cam
+# mount) plus tracking transient (T10 physics replay). hand_column_m:
+# vertical room the hand column needs above the grasp line for a top-down
+# descent (T08 live runs). Both franka-measured, conservative for so101.
+hand_clearance_m = 0.10
+hand_column_m = 0.35
 
 [tray]
 wall_thickness = 0.01
@@ -43,7 +51,7 @@ shelf_pos = [0.50, 0.0, 0.0]
 # works on every level. level_depths are rear-aligned within the shelf
 # footprint.
 shelf_level_heights = [0.05, 0.32]
-# L0's open band additionally reserves HAND_CLEARANCE_M from the upper
+# L0's open band additionally reserves hand_clearance_m from the upper
 # board's front plane (the hand landed on the board edge in the T10
 # physics replay); 0.36 - 0.12 - 0.10 leaves a 0.14 m band
 shelf_level_depths = [0.36, 0.12]

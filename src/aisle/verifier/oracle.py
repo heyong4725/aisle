@@ -56,12 +56,18 @@ def initial_capture_barrier(latest_oracle_ns: int, reset_sim_ns: int) -> int:
     """VER-1/BRG-4/CON-5: the sim-time barrier below which oracle samples
     are too stale to seed an episode's initial poses. An oracle_state is
     eligible iff sim_time_ns > barrier. Tied to the RESET's teleport time
-    (reset_sim_ns) so capture is always post-teleport and deterministic;
-    without it, latest_oracle_ns alone raced the teleport and a pre-reset
-    frame became the baseline, reading the teleport as a mass collision
-    (M0 run m0-1-632916). reset_sim_ns == 0 (absent) falls back to the
-    old arrival-order barrier."""
-    return max(latest_oracle_ns, reset_sim_ns - 1)
+    (reset_sim_ns) so capture is always post-teleport and deterministic.
+
+    The teleport does NOT advance sim time — the bridge injects state and
+    stamps reset_done at the CURRENT sim_time_ns — so a pre-reset frame can
+    share the reset's timestamp (the last pre-reset tick's oracle_state and
+    the reset handler's post-teleport oracle_state are both stamped
+    reset_sim_ns). Equality therefore does not prove post-reset ordering,
+    so the barrier is reset_sim_ns itself and eligibility is STRICT: only a
+    frame from a later tick (sim_time_ns > reset_sim_ns), guaranteed
+    post-teleport, seeds the baseline. reset_sim_ns == 0 (absent) falls
+    back to the arrival-order barrier."""
+    return max(latest_oracle_ns, reset_sim_ns)
 
 
 def _box_pose(oracle_state: np.ndarray, idx: int) -> tuple[np.ndarray, np.ndarray]:
