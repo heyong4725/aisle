@@ -192,3 +192,38 @@ class TestNavLifecycle:
                 result = out[0][1]
                 break
         assert result is not None and result["failure"] == "blocked"
+
+
+class TestBaseController:
+    """MOB-2: the pure diff-drive controller that drives base_cmd toward
+    the nav target, clamped to the base velocity limits (MOB-3)."""
+
+    def _lim(self):
+        from aisle.mobility.guard import load_base_limits
+
+        return load_base_limits("mobile")
+
+    def test_drives_forward_toward_aligned_target(self):
+        from aisle.mobility.nav import base_cmd_toward
+
+        v, omega = base_cmd_toward([0.0, 0.0, 0.0], [2.0, 0.0, 0.0], self._lim())
+        assert v > 0 and abs(omega) < 1e-6  # straight ahead
+
+    def test_turns_toward_offset_target(self):
+        from aisle.mobility.nav import base_cmd_toward
+
+        v, omega = base_cmd_toward([0.0, 0.0, 0.0], [0.0, 2.0, 0.0], self._lim())
+        assert omega > 0  # target is to the left (+y) -> turn left
+
+    def test_clamped_to_limits(self):
+        from aisle.mobility.nav import base_cmd_toward
+
+        lim = self._lim()
+        v, omega = base_cmd_toward([0.0, 0.0, 0.0], [100.0, 0.0, 0.0], lim)
+        assert 0 <= v <= lim.v_max and abs(omega) <= lim.omega_max
+
+    def test_stops_at_target(self):
+        from aisle.mobility.nav import base_cmd_toward
+
+        v, omega = base_cmd_toward([1.0, 1.0, 0.0], [1.0, 1.0, 0.0], self._lim())
+        assert v == pytest.approx(0.0) and omega == pytest.approx(0.0)

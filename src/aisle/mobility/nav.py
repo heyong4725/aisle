@@ -97,3 +97,31 @@ class NavStateMachine:
         if self.ticks >= self.timeout_ticks:
             return self._finish("fail", "timeout")
         return [("nav_feedback", {"t": self.ticks, "dist_remaining": dist}, self.goal_id)]
+
+
+# proportional gains for the diff-drive controller (MOB-2); dimensionless
+# scaling of distance->v and heading-error->omega, clamped to the base
+# limits (MOB-3). Turn-in-place when badly misaligned: v is scaled down by
+# the heading alignment so the base does not arc wide through keep-out.
+_K_V = 1.0
+_K_OMEGA = 2.0
+
+
+def _wrap(a: float) -> float:
+    return (a + math.pi) % (2 * math.pi) - math.pi
+
+
+def base_cmd_toward(pose, target, limits) -> tuple[float, float]:
+    """Diff-drive base_cmd [v, omega] driving `pose` toward `target`
+    (store frame), clamped to the base velocity limits (MOB-2/MOB-3)."""
+    dx = float(target[0]) - float(pose[0])
+    dy = float(target[1]) - float(pose[1])
+    dist = math.hypot(dx, dy)
+    if dist == 0.0:
+        return 0.0, 0.0
+    heading_err = _wrap(math.atan2(dy, dx) - float(pose[2]))
+    omega = max(-limits.omega_max, min(limits.omega_max, _K_OMEGA * heading_err))
+    # only drive forward while roughly aligned; turn in place otherwise
+    align = max(0.0, math.cos(heading_err))
+    v = max(0.0, min(limits.v_max, _K_V * dist * align))
+    return v, omega
