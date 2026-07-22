@@ -16,6 +16,8 @@ NODE_PATTERNS = (
     "dora_genesis.py",
     "fixtures/nodes/driver.py",
     "fixtures/nodes/recorder.py",
+    "fixtures/nodes/base_driver.py",
+    "fixtures/nodes/base_recorder.py",
     "fixtures/nodes/verifier_stub.py",
     "reset/service.py",
     "nodes/budget_guard.py",

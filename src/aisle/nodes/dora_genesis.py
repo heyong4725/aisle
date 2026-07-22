@@ -186,6 +186,23 @@ def _metadata(sim_time_ns: int, env_id: int, seq: int, **extra) -> dict:
     return {"sim_time_ns": sim_time_ns, "env_id": env_id, "seq": seq, **extra}
 
 
+def _scan_obstacles(physics: dict, embodiment: str) -> list[tuple[float, float, float, float]]:
+    """AABBs (cx, cy, hx, hy) the base_scan raycast sees: the shelf boards
+    and the tray, in the store frame (SPEC 210 MOB-1, ADR-13)."""
+    from aisle.scenes.pharmacy import level_x_span, resolve_layout
+
+    layout = resolve_layout(physics, embodiment)
+    shelf, tray = layout["shelf"], layout["tray"]
+    width = shelf["level_size"][1]
+    obstacles = [
+        ((x0 + x1) / 2, shelf["pos"][1], (x1 - x0) / 2, width / 2)
+        for level in range(len(shelf["level_heights"]))
+        for x0, x1 in [level_x_span(shelf, level)]
+    ]
+    obstacles.append((tray["pos"][0], tray["pos"][1], tray["size"][0] / 2, tray["size"][1] / 2))
+    return obstacles
+
+
 def main(clock: Callable[[], float] = time.perf_counter) -> None:
     """The clock is injected (CON-5): reset timing must never reach for a
     wall clock ad hoc."""
@@ -193,6 +210,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     import pyarrow as pa
     from dora import Node
 
+    from aisle.mobility.base import base_scan_ranges, integrate_base_pose
     from aisle.scenes.pharmacy import (
         build_scene,
         load_physics,
@@ -229,7 +247,37 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         metadata=_metadata(0, 0, 0),
     )
 
-    scheduler = RateScheduler(TOPIC_RATES, dt)
+    # SPEC 210 MOB-5: the store frame is published ONCE at startup. base
+    # topics are (x, y, yaw) of the base origin in the store frame; the arm
+    # mounts at the base origin (base frame == store frame at pose 0).
+    if cfg.embodiment == "mobile":
+        node.send_output(
+            "frame_info",
+            pa.array(
+                [
+                    json.dumps(
+                        {
+                            "store_frame": "store",
+                            "base_frame": "base",
+                            "base_pose": "(x, y, yaw) of the base origin in the store frame",
+                            "arm_mount": "the arm root rides the base origin (ADR-13)",
+                        }
+                    )
+                ]
+            ),
+            metadata=_metadata(0, 0, 0),
+        )
+
+    # SPEC 210 (T11, ADR-13): the mobile embodiment adds the kinematic base
+    # topics. base_pose is integrated from base_cmd each tick and the arm's
+    # root is re-based; base_scan is a planar raycast against the scene.
+    is_mobile = cfg.embodiment == "mobile"
+    topic_rates = {**TOPIC_RATES, **({"base_pose": 50, "base_scan": 10} if is_mobile else {})}
+    base_pose = [float(v) for v in profile.get("base_start", [0.0, 0.0, 0.0])]
+    base_cmd = [0.0, 0.0]
+    scan_obstacles = _scan_obstacles(physics, cfg.embodiment) if is_mobile else []
+
+    scheduler = RateScheduler(topic_rates, dt)
     commands = CommandQueue(cfg.n_envs)
     seq: dict[tuple[str, int], int] = {}
     dropped_counts: dict[str, dict[int, int]] = {"joint": {}, "gripper": {}}
@@ -312,6 +360,25 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             elif topic == "depth_overhead":
                 depth = frames[topic]
                 send(topic, env_id, depth, h=depth.shape[0], w=depth.shape[1], enc="depth32f")
+            elif topic == "base_pose":
+                send(topic, env_id, np.asarray(base_pose, dtype=np.float32))
+            elif topic == "base_scan":
+                ranges = base_scan_ranges(
+                    base_pose,
+                    scan_obstacles,
+                    n=int(profile["base_scan_n"]),
+                    angle_min=float(profile["base_scan_angle_min"]),
+                    angle_max=float(profile["base_scan_angle_max"]),
+                    range_max=float(profile["base_scan_range_max_m"]),
+                )
+                send(
+                    topic,
+                    env_id,
+                    np.asarray(ranges, dtype=np.float32),
+                    angle_min=float(profile["base_scan_angle_min"]),
+                    angle_max=float(profile["base_scan_angle_max"]),
+                    n=int(profile["base_scan_n"]),
+                )
 
     def apply_commands() -> None:
         # BRG-1: apply in arrival order across kinds — the last-arrived
@@ -376,7 +443,8 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         input_id = event["id"]
         metadata = event.get("metadata") or {}
         if input_id == "tick":
-            if home_hold is not None and quarantine.hold():
+            settling = home_hold is not None and quarantine.hold()
+            if settling:
                 # post-reset settle: hold the arm at home and DROP any stale
                 # joint_cmds still in flight from the ended episode's plan,
                 # so they cannot drive the just-homed arm off home
@@ -385,6 +453,15 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                 robot.control_dofs_position(batched)
             else:
                 apply_commands()
+            if is_mobile:
+                # MOB-1/ADR-13: integrate the base from the latest base_cmd
+                # (held at rest during the post-reset settle) and re-base the
+                # arm's root before stepping
+                cmd = [0.0, 0.0] if settling else base_cmd
+                base_pose = integrate_base_pose(base_pose, cmd, dt)
+                half = base_pose[2] / 2
+                robot.set_pos(np.array([base_pose[0], base_pose[1], 0.0], dtype=np.float32))
+                robot.set_quat(np.array([np.cos(half), 0.0, 0.0, np.sin(half)], dtype=np.float32))
             handle.scene.step()  # BRG-7: exceptions crash the node loudly
             sim_time_ns += int(dt * 1e9)
             due = scheduler.due()
@@ -409,6 +486,15 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     f"gripper_cmd must be Float32[1] in [0, 1], got {payload!r} (TC table)"
                 )
             commands.push("gripper", metadata.get("env_id"), payload)
+        elif input_id == "base_cmd":
+            # MOB-1: latest diff-drive command [v, omega]; integrated each
+            # tick (the guard has already clamped it, MOB-3)
+            payload = np.asarray(
+                event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
+            ).reshape(-1)
+            if payload.shape[0] != 2:
+                raise ValueError(f"base_cmd must be Float32[2] (v, omega), got {payload!r} (MOB-1)")
+            base_cmd = [float(payload[0]), float(payload[1])]
         elif input_id == "reset":
             started = clock()
             payload = np.asarray(event["value"].to_numpy(zero_copy_only=False)).reshape(-1)
@@ -425,6 +511,11 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             if mode == 1:
                 raise NotImplementedError("behavioral reset lands with SPEC 040 (T06)")
             teleport_reset(reset_seed)
+            if is_mobile:
+                # MOB-1/ADR-13: re-home the base to the store-frame start and
+                # drop the in-flight base command (mirrors the arm re-home)
+                base_pose = [float(v) for v in profile.get("base_start", [0.0, 0.0, 0.0])]
+                base_cmd = [0.0, 0.0]
             node.send_output(
                 "reset_done",
                 pa.array(np.array([1], dtype=np.uint32)),
