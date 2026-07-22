@@ -162,12 +162,13 @@ def test_shelf_levels_clear_tallest_box(embodiment):
 
 def test_unknown_embodiment_rejected():
     """SCN-4: an embodiment without a layout profile is an explicit error,
-    not a KeyError."""
+    not a KeyError. (`mobile` is a real profile since T11; use a name with
+    no [embodiment.*] table.)"""
     from aisle.scenes.pharmacy import load_physics as load_p
     from aisle.scenes.pharmacy import resolve_layout
 
-    with pytest.raises(ValueError, match="mobile"):
-        resolve_layout(load_p(), "mobile")
+    with pytest.raises(ValueError, match="humanoid"):
+        resolve_layout(load_p(), "humanoid")
 
 
 def test_module_import_stays_sim_free():

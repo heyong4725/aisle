@@ -84,6 +84,35 @@ gripper_close_m = 0.0
 # on that axis (SCN-2: gripper geometry lives here, not inline)
 gripper_finger_clear_m = 0.008
 
+[embodiment.mobile]
+# SPEC 210 (T11, ADR-13): the franka arm on a kinematic differential-drive
+# base, reusing the pharmacy scene for the mobility CONTRACT tests (the
+# full store scene is T12). Arm/scene values mirror [embodiment.franka]
+# (MOB-4: the arm subtree is franka-identical); only the base params are
+# new. The bridge re-bases the arm each tick (integrate_base_pose).
+reach_m = 0.855
+shelf_pos = [0.50, 0.0, 0.0]
+shelf_level_heights = [0.05, 0.32]
+shelf_level_depths = [0.36, 0.12]
+shelf_level_size = [0.36, 0.66]
+tray_pos = [0.35, -0.45, 0.02]
+tray_size = [0.20, 0.28, 0.04]
+home_qpos = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04]
+gripper_kp = [2000.0, 2000.0]
+gripper_kv = [100.0, 100.0]
+gripper_dofs = 2
+gripper_open_m = 0.04
+gripper_close_m = 0.0
+gripper_finger_clear_m = 0.008
+# base params (MOB-1/MOB-5): the arm mounts at store-frame origin; the
+# base starts there. base_scan is a flat planar raycast (ADR-13).
+base_start = [0.0, 0.0, 0.0]
+base_footprint_radius_m = 0.25
+base_scan_n = 36
+base_scan_angle_min = -3.14159
+base_scan_angle_max = 3.14159
+base_scan_range_max_m = 5.0
+
 [embodiment.so101]
 reach_m = 0.450
 shelf_pos = [0.22, 0.0, 0.0]
