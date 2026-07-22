@@ -41,3 +41,18 @@ gripper_dt_s = 0.0333
 # wall (T08 live: ~0.5x with rendering), so this backstop must comfortably
 # exceed the episode budget in wall terms
 wall_timeout_s = 300.0
+
+# SPEC 210 MOB-3 — mobile base limits (extends SPEC 080). Class C.
+[embodiment.mobile]
+# differential-drive base command limits
+v_max = 0.8
+omega_max = 1.5
+# creep speed the base is clamped to whenever the arm is in motion — arm
+# motion and base motion above creep MUST NOT be commanded together (MOB-3)
+v_creep = 0.05
+omega_creep = 0.1
+# contract dt of the base_cmd topic (MOB-1: <=50 Hz)
+base_cmd_dt_s = 0.02
+# keep-out: min base-to-shelf distance (m) required while the arm is
+# extended beyond the base footprint (MOB-3 keep-out zones)
+min_shelf_dist_m = 0.35
