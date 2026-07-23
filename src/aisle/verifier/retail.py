@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from aisle.scenes.pharmacy import load_meds
-from aisle.scenes.store import slot_world_pose, spawn_pose, stocked_items
+from aisle.scenes.store import slot_world_pose, spawn_pose, spec_for, stocked_items
 
 _VERIFIER_DIR = Path(__file__).parent
 
@@ -55,6 +55,7 @@ class RetailCfg:
 
     item_ids: tuple[str, ...]
     item_categories: tuple[str, ...]
+    item_specs: tuple[str, ...]  # true disambiguator per item (RS-7 matching)
     half_extents: tuple[tuple[float, float, float], ...]
     home_poses: tuple[tuple[float, float, float, float], ...]  # spawn (x,y,z,yaw)
     pos_tol_m: float
@@ -78,6 +79,7 @@ def build_retail_cfg(plano: dict, episode_goal: dict, placement: dict | None = N
     return RetailCfg(
         item_ids=tuple(item.item_id for item in stock),
         item_categories=tuple(item.category for item in stock),
+        item_specs=tuple(spec_for(item.category, meds) for item in stock),
         half_extents=tuple(tuple(s / 2 for s in meds[item.category]["size"]) for item in stock),
         home_poses=tuple(spawn_pose(plano, item, meds) for item in stock),
         pos_tol_m=p["pos_tol_m"],
@@ -128,10 +130,13 @@ def placement_check(
     facing_extent = half[0] * abs(math.cos(err)) + half[1] * abs(math.sin(err))
     front_edge = ux + facing_extent
     template_front = tx + half[0]
+    # PR #19 review: pos is a 3D error — vertical offset from the resting
+    # template height (board surface + half height) counts too
+    dz = float(pos[2]) - (world[2] + half[2])
 
     return {
         "slot": slot_id,
-        "pos": math.hypot(ux - tx, uy - ty) <= cfg.pos_tol_m,
+        "pos": math.hypot(math.hypot(ux - tx, uy - ty), dz) <= cfg.pos_tol_m,
         "yaw": abs(math.degrees(axis_err)) <= cfg.yaw_tol_deg,
         "front_face": math.cos(err) > 0.0,
         "overhang": front_edge <= depth / 2 + cfg.overhang_tol_m,
@@ -195,20 +200,32 @@ def judge_retail(
     # --- counter rules (active iff the goal carries an order, RS-7) ---
     satisfied = True
     if "order" in episode_goal:
-        ordered = {line["product"]: line["qty"] for line in episode_goal["order"]}
-        on_counter: dict[str, int] = {}
-        for idx, (pos, _) in enumerate(poses):
-            if _on_counter(pos, cfg.half_extents[idx], plano, cfg):
-                category = cfg.item_categories[idx]
-                if category not in ordered:
-                    # immediate failure, at ANY time (RS-7 safety asymmetry)
-                    return {
-                        "status": "fail",
-                        "penalties": ["extra_item"],
-                        "placement_scores": [],
-                    }
-                on_counter[category] = on_counter.get(category, 0) + 1
-        satisfied = all(on_counter.get(cat, 0) == qty for cat, qty in ordered.items())
+        order = episode_goal["order"]
+        named_products = {line["product"] for line in order}
+        counter_idx = [
+            idx
+            for idx, (pos, _) in enumerate(poses)
+            if _on_counter(pos, cfg.half_extents[idx], plano, cfg)
+        ]
+        for idx in counter_idx:
+            if cfg.item_categories[idx] not in named_products:
+                # immediate failure, at ANY time (RS-7 safety asymmetry).
+                # Keys on the PRODUCT name: an ordered product under an
+                # invalid line spec is unfulfillable, not an ambush.
+                return {"status": "fail", "penalties": ["extra_item"], "placement_scores": []}
+        # PR #19 review: a line is satisfied only by items matching BOTH its
+        # product AND its spec disambiguator — an invalid spec can never be
+        # satisfied, so the order stays incomplete (RS-7's full triple)
+        satisfied = all(
+            sum(
+                1
+                for idx in counter_idx
+                if cfg.item_categories[idx] == line["product"]
+                and cfg.item_specs[idx] == line["spec"]
+            )
+            == line["qty"]
+            for line in order
+        )
 
     # --- slot rules (restock / misplaced goals; RS-8, RS-9) ---
     for slot_id, req in _required_slots(plano, episode_goal).items():

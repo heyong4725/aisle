@@ -84,15 +84,15 @@ def _on_counter(plano, category, k=0):
 def _s1_goal(plano):
     """A fixed S1 goal: 1 amoxicillin + 2 cetirizine."""
     from aisle.scenes.pharmacy import load_meds
-    from aisle.scenes.store import _spec_for
+    from aisle.scenes.store import spec_for
 
     meds = load_meds()
     return {
         "scenario": "S1",
         "seed": 0,
         "order": [
-            {"product": "amoxicillin", "spec": _spec_for("amoxicillin", meds), "qty": 1},
-            {"product": "cetirizine", "spec": _spec_for("cetirizine", meds), "qty": 2},
+            {"product": "amoxicillin", "spec": spec_for("amoxicillin", meds), "qty": 1},
+            {"product": "cetirizine", "spec": spec_for("cetirizine", meds), "qty": 2},
         ],
     }
 
@@ -453,3 +453,55 @@ def test_score_episode_shape():
     verdict = {"status": "fail", "penalties": ["extra_item"], "placement_scores": []}
     record = score_episode(verdict, t=10.0)
     assert record["success"] is False and record["penalties"] == ["extra_item"]
+
+
+class TestReviewRound1:
+    """PR #19 review: vertical position error and spec matching."""
+
+    def test_pos_includes_vertical_error(self):
+        """RS-4 (P1): an item 2.5 cm ABOVE its template (xy exact, still
+        within the occupancy resting band) fails the pos criterion — pos
+        is a 3D distance, not xy-only."""
+        plano = _plano()
+        goal = S2_GOAL
+        from aisle.verifier.retail import judge_retail
+
+        cfg = _cfg(plano, goal)
+        x, y, z, yaw = _slot_pose(plano, "A1-L0-S0", "amoxicillin")
+        overrides = {
+            "bin#amoxicillin": (x, y, z + 0.025, yaw),  # floating 2.5 cm high
+            "bin#metformin": _slot_pose(plano, "B1-L0-S1", "metformin"),
+        }
+        v = judge_retail(_state(cfg, overrides), plano, goal, 1.0, cfg)
+        score = next(s for s in v["placement_scores"] if s["slot"] == "A1-L0-S0")
+        assert not score["pos"]
+        assert score["yaw"] and score["front_face"] and score["alignment"]
+        assert v["status"] == "ongoing" and "misplaced" in v["penalties"]
+
+    def test_invalid_spec_line_is_never_satisfied(self):
+        """RS-7 (P1): an order line whose spec disambiguator does not match
+        the product's true spec cannot be satisfied — a perfect delivery
+        of the named product does NOT succeed."""
+        plano = _plano()
+        goal = _s1_goal(plano)
+        goal["order"][0]["spec"] = "not a real spec"
+        overrides = {
+            "A1-L0-S0#0": _on_counter(plano, "amoxicillin", 0),
+            "A2-L0-S0#0": _on_counter(plano, "cetirizine", 1),
+            "A2-L0-S1#0": _on_counter(plano, "cetirizine", 2),
+        }
+        assert _judge(plano, goal, overrides)["status"] == "ongoing"
+        cfg = _cfg(plano, goal)
+        v = _judge(plano, goal, overrides, t=cfg.timeout_s + 1)
+        assert v["status"] == "fail" and "timeout" in v["penalties"]
+
+    def test_named_product_with_invalid_spec_is_not_extra(self):
+        """The RS-7 immediate rule keys on the PRODUCT: delivering a
+        product the order names (even under an invalid line spec) is not
+        an extra_item ambush."""
+        plano = _plano()
+        goal = _s1_goal(plano)
+        goal["order"][0]["spec"] = "not a real spec"
+        overrides = {"A1-L0-S0#0": _on_counter(plano, "amoxicillin", 0)}
+        v = _judge(plano, goal, overrides)
+        assert v["status"] == "ongoing" and "extra_item" not in v["penalties"]

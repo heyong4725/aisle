@@ -78,7 +78,7 @@ def slot_world_pose(plano: dict, slot_id: str) -> tuple[list[float], float]:
     )
 
 
-def _spec_for(category: str, meds: dict) -> str:
+def spec_for(category: str, meds: dict) -> str:
     """S1's spec disambiguator, DERIVED from meds.toml (ADR-15): the box
     dimensions in mm — deterministic and distinct per product."""
     size_mm = "x".join(str(round(s * 1000)) for s in meds[category]["size"])
@@ -103,7 +103,7 @@ def generate_episode(seed: int, scenario: str) -> dict:
         goal["order"] = [
             {
                 "product": product,
-                "spec": _spec_for(product, meds),
+                "spec": spec_for(product, meds),
                 "qty": rng.randint(1, min(3, stock[product])),
             }
             for product in products
