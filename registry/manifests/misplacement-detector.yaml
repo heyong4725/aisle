@@ -5,7 +5,9 @@ kind: node
 provides: [misplacement_detection]
 requires: []
 inputs:
-  oracle_state: {schema: posearray7d_f32, rate_hz: 30}
+  # NON-privileged tier-T0 perception poses (SPEC 010): identical
+  # layout/ordering contract to oracle_state, VAL-6-clean
+  poses: {schema: posearray7d_f32, rate_hz: 15}
   episode_goal: {schema: json_utf8, rate_hz: 1}
 outputs:
   misplacement_report: {schema: json_utf8, latency_class: best_effort}

@@ -24,7 +24,9 @@ Task: T14. Specs: 050 (CAP-1..6), 200 (RS-10 ladder). Relates to
    guard, VAL-5/MOB-3).
 4. **Oracle rungs consume ground truth explicitly (RS-10):**
    `order-reader` reads the order from `episode_goal`; `stock-detector`
-   and `misplacement-detector` diff `oracle_state` against the planogram
+   and `misplacement-detector` diff the NON-privileged `poses` topic
+   (identical layout/ordering contract to oracle_state; VAL-6 keeps
+   `oracle_state` verifier-only, PR #20 review) against the planogram
    using the SAME occupancy geometry as the verifier
    (`aisle.verifier.retail` helpers — detector and referee cannot drift).
    Realistic rungs (OCR/VLM, shelf-label vision) swap behind the same

@@ -195,3 +195,59 @@ def test_stub_imports_stay_sim_and_dora_free(module):
     )
     proc = run_cli(["-c", probe])
     assert proc.returncode == 0, proc.stderr
+
+
+def test_detector_graphs_actually_validate(tmp_path):
+    """PR #20 review (VAL-6): a graph wiring BOTH detectors off the
+    bridge's non-privileged `poses` topic validates cleanly — the
+    registered implementations are composable. Wiring oracle_state into a
+    detector instead is an ORACLE_LEAK."""
+    from cli_helpers import run_json
+
+    good = {
+        "nodes": [
+            {
+                "id": "dora-genesis",
+                "inputs": {"tick": "dora/timer/millis/10"},
+                "outputs": ["poses", "oracle_state"],
+            },
+            {
+                "id": "stock-detector",
+                "inputs": {"poses": "dora-genesis/poses"},
+                "outputs": ["stock_report"],
+            },
+            {
+                "id": "misplacement-detector",
+                "inputs": {"poses": "dora-genesis/poses"},
+                "outputs": ["misplacement_report"],
+            },
+        ]
+    }
+    path = tmp_path / "detectors.yaml"
+    path.write_text(yaml.safe_dump(good))
+    code, report = run_json("aisle.harness.cli", "validate", str(path), "--embodiment", "mobile")
+    codes = {e["code"] for e in report.get("errors", [])}
+    assert "ORACLE_LEAK" not in codes, report["errors"]
+    assert "SCHEMA_MISMATCH" not in codes, report["errors"]
+
+    bad = {
+        "nodes": [
+            {
+                "id": "dora-genesis",
+                "inputs": {"tick": "dora/timer/millis/10"},
+                "outputs": ["oracle_state"],
+            },
+            {
+                "id": "stock-detector",
+                "inputs": {"poses": "dora-genesis/oracle_state"},
+                "outputs": ["stock_report"],
+            },
+        ]
+    }
+    path_bad = tmp_path / "leak.yaml"
+    path_bad.write_text(yaml.safe_dump(bad))
+    code, report = run_json(
+        "aisle.harness.cli", "validate", str(path_bad), "--embodiment", "mobile"
+    )
+    assert code != 0
+    assert "ORACLE_LEAK" in {e["code"] for e in report.get("errors", [])}
