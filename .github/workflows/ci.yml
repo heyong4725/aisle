@@ -6,8 +6,19 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # full history: the CON-11 mainline-subject gate scans origin/main;
+          # a depth-1 checkout silently skips it (PR #17 review)
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
       - run: uv sync
+      # gate the PR TITLE before squash-merge can mint a non-conventional
+      # mainline subject (CON-11). Env-var indirection: a title with shell
+      # metacharacters must not inject into the run script.
+      - if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: uv run python tools/check_pr_title.py "$PR_TITLE"
       - run: uv run ruff format --check . && uv run ruff check .
       - run: uv run pytest -m unit
       - run: uv run python tools/trace_check.py

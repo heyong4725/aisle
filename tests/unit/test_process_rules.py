@@ -30,7 +30,11 @@ CLASS_C_PATHS = [
     "/.github/",
 ]
 
-CONVENTIONAL = re.compile(r"^(feat|fix|test|spec|chore|docs|refactor|perf|ci)(\([^)]+\))?!?: .+")
+# the conventional-subject pattern is single-sourced in the PR-title gate
+# tool (tools/check_pr_title.py) so the pre-merge CI gate and this mainline
+# history check can never drift
+sys.path.insert(0, str(REPO_ROOT / "tools"))
+from check_pr_title import CONVENTIONAL  # noqa: E402
 
 
 def test_class_c_paths_have_human_codeowner():
@@ -66,15 +70,23 @@ def test_commit_history_is_conventional():
             break
     if mainline is None:
         pytest.skip("no main ref visible (shallow or detached checkout)")
-    subjects = subprocess.run(
-        ["git", "log", "--no-merges", "--format=%s", mainline],
+    # grandfathered: the T11 squash-merge inherited a non-conventional PR
+    # title ("T11: ..."); main history is immutable, so this ONE commit is
+    # pinned by SHA. Everything after it stays gated.
+    grandfathered = {"c75def73d265ddc588a500ee5ab85b6120230e5d"}
+    lines = subprocess.run(
+        ["git", "log", "--no-merges", "--format=%H %s", mainline],
         capture_output=True,
         text=True,
         cwd=REPO_ROOT,
         check=True,
     ).stdout.splitlines()
-    assert subjects, "no git history visible"
-    bad = [s for s in subjects if not CONVENTIONAL.match(s)]
+    assert lines, "no git history visible"
+    bad = []
+    for line in lines:
+        sha, _, subject = line.partition(" ")
+        if sha not in grandfathered and not CONVENTIONAL.match(subject):
+            bad.append(subject)
     assert not bad, f"non-conventional commit subjects: {bad}"
 
 
@@ -123,3 +135,33 @@ def test_m0_4_strict_trace_gate_is_green():
     report = json.loads(proc.stdout)
     uncovered = [m for m in report["must_ids"] if m not in report["covered"]]
     assert proc.returncode == 0 and report["ok"] is True, f"uncovered MUSTs: {uncovered}"
+
+
+def test_pr_title_gate_tool():
+    """CON-11 (PR #17 review): the pre-merge PR-title gate is a CON-8 CLI —
+    a conventional title exits 0 with ok=true; a bad title (like the T11
+    'T11: ...' that reddened main) exits nonzero with ok=false."""
+    good = subprocess.run(
+        [sys.executable, "tools/check_pr_title.py", "feat: T12 store scene"],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    assert good.returncode == 0 and json.loads(good.stdout)["ok"] is True
+    bad = subprocess.run(
+        [sys.executable, "tools/check_pr_title.py", "T11: mobility contract"],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    assert bad.returncode != 0 and json.loads(bad.stdout)["ok"] is False
+
+
+def test_ci_actually_exercises_the_history_and_title_gates():
+    """CON-11 (PR #17 review): CI must fetch FULL history (a depth-1
+    checkout silently skips/under-runs the mainline subject test) and must
+    run the PR-title gate on pull_request jobs, so a bad squash title is
+    blocked BEFORE it becomes a mainline commit."""
+    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    assert "fetch-depth: 0" in ci, "CI checkout is shallow; the CON-11 history gate cannot run"
+    assert "check_pr_title" in ci, "CI does not gate PR titles before squash-merge"
