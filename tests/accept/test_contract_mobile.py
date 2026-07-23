@@ -129,11 +129,13 @@ def test_mobile_schema_conformance(tmp_path, dataflow):
         # the capture must actually span >= 80% of the requested 10 s window —
         # a truncated (stalled) run is caught here, not passed on a short slice
         assert wall_span >= 0.8 * 10.0, (topic, "window", wall_span)
-        # sim-time scheduler rate is exact by construction (BRG-2), enforced to
-        # +/-20%. The WALL-clock rate (TC-4/TC-A1) is NOT asserted here: genesis
-        # headless runs sub-realtime so a 50 Hz topic cannot hold +/-20% of wall
-        # rate, a spec/test conflict tracked in issue #15 (CON-13) pending a
-        # human spec decision — this test does not weaken the wall band.
+        # TC-4 (amended): under simulation conformance is the exact sim-time
+        # scheduler rate (+/-20%), and the wall-clock rate need only stay above
+        # a 0.5x liveness floor (genesis headless runs sub-realtime, slower
+        # with the guard<->bridge cycle) — enough to catch a grossly throttled
+        # sim. Both are asserted here.
+        wall_rate = (len(msgs) - 1) / wall_span
+        assert wall_rate >= 0.5 * rate, (topic, "wall", wall_rate)  # TC-4 sim liveness floor
         span_ns = int(msgs[-1]["meta"]["sim_time_ns"]) - int(msgs[0]["meta"]["sim_time_ns"])
         sim_rate = (len(msgs) - 1) / (span_ns / 1e9)
         assert 0.8 * rate <= sim_rate <= 1.2 * rate, (topic, "sim", sim_rate)
