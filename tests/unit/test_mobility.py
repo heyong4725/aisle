@@ -220,6 +220,10 @@ class TestKeepOut:
         assert not valid_base_pose([0.0, 0.0])  # short -> would IndexError
         assert not valid_base_pose([float("inf"), 0.0, 0.0])  # inf -> would bypass
         assert not valid_base_pose([0.0, 0.0, float("nan")])  # nan yaw
+        # TOTAL over non-numeric payloads (BG-3 no-crash): must not raise
+        assert not valid_base_pose([None, 0.0, 0.0])
+        assert not valid_base_pose([["bad"], 0.0, 0.0])
+        assert not valid_base_pose(["x", "y", "z"])
 
 
 class TestArmMotionMutexWindow:
@@ -307,12 +311,14 @@ class TestNavLifecycle:
     def _machine(self):
         from aisle.mobility.nav import NavStateMachine
 
-        return NavStateMachine(arrival_tol_m=0.1, timeout_ticks=20, stall_ticks=5)
+        return NavStateMachine(
+            arrival_tol_m=0.1, timeout_ticks=20, stall_ticks=5, arrival_yaw_rad=0.1
+        )
 
     def test_goal_then_feedback_until_arrival(self):
         from aisle.mobility.nav import NavStateMachine
 
-        m = NavStateMachine(arrival_tol_m=0.1, timeout_ticks=20, stall_ticks=5)
+        m = NavStateMachine(arrival_tol_m=0.1, timeout_ticks=20, stall_ticks=5, arrival_yaw_rad=0.1)
         assert m.on_goal([1.0, 0.0, 0.0], "nav-1") == []
         m.on_base_pose([0.0, 0.0, 0.0])
         out = m.on_tick()

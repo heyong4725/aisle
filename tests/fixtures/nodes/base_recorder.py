@@ -27,6 +27,10 @@ def main() -> None:
             if deadline is None:
                 deadline = now + duration
             elif now > deadline:
+                # explicit completion sentinel: the runner waits for THIS, so
+                # a mid-capture output stall is never mistaken for a finished
+                # window (a stall leaves no sentinel and hits the outer cap)
+                out.write(json.dumps({"id": "__recorder_done__", "wall_t": now}) + "\n")
                 break
         arrow = event["value"]
         value = arrow.to_numpy(zero_copy_only=False).tolist()

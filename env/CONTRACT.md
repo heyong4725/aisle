@@ -27,12 +27,13 @@ NOT the tick rate — a conformant hardware driver must honor these.
 
 **Sim vs. hardware rate note.** These declared rates are the contract a real
 driver honors. Genesis headless runs sub-realtime (~0.75x here, and the
-mobile guard↔bridge keep-out feedback cycle adds latency), so the live
-conformance test holds the deterministic *sim-time* scheduler rate to ±20%
-but relaxes the *wall-clock* floor to 0.5× (enough to catch a grossly
-throttled sim). This relaxation is a simulation accommodation only; on real
-hardware the wall-clock rates are expected to meet the ±20% band and these
-test thresholds get tightened back.
+mobile guard↔bridge keep-out feedback cycle adds latency), so a 50 Hz topic
+cannot meet TC-4's ±20% *wall-clock* band under simulation. This is a
+spec/test conflict tracked in **issue #15** (CON-13): the live conformance
+test enforces the exact *sim-time* scheduler rate (±20%) and defers the
+wall-clock acceptance to that issue's human spec decision — it does NOT
+weaken the wall band. On real hardware the wall-clock rates are expected to
+meet ±20%.
 
 | Topic           | Schema             | Shape     | Rate    | Units / meaning                          | Frame |
 |-----------------|--------------------|-----------|---------|------------------------------------------|-------|

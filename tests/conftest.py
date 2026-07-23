@@ -215,12 +215,14 @@ def run_dataflow(graph: Path, timeout_s: float) -> DataflowRun:
 
 
 def run_dataflow_until_settled(graph: Path, record_out: Path, deadline_s: float) -> None:
-    """Launch the dataflow and stop as soon as the recorder has SETTLED — its
-    JSONL line count stops growing (a duration-aware recorder exiting its
-    window) — then kill the group and reap. Unlike run_dataflow's fixed
-    window, the wall time is (genesis build + capture window), NOT the whole
-    deadline: the bridge never self-exits, so a fixed timeout would always
-    elapse. `deadline_s` is only the generous outer cap for a slow build."""
+    """Launch the dataflow and stop as soon as the duration-aware recorder
+    writes its explicit `__recorder_done__` sentinel (its window elapsed),
+    then kill the group and reap. Unlike run_dataflow's fixed window the wall
+    time is (genesis build + capture window), NOT the whole deadline: the
+    bridge never self-exits, so a fixed timeout would always elapse. A
+    mid-capture output STALL leaves no sentinel, so a truncated run cannot be
+    mistaken for a finished window — it hits `deadline_s` (the generous outer
+    cap for a slow build) and the test's coverage assertions then fail."""
     proc = subprocess.Popen(
         ["dora", "run", str(graph), "--uv"],
         cwd=REPO_ROOT,
@@ -229,21 +231,20 @@ def run_dataflow_until_settled(graph: Path, record_out: Path, deadline_s: float)
         text=True,
         start_new_session=True,
     )
+
+    def _sentinel_written() -> bool:
+        if not record_out.exists():
+            return False
+        return any(
+            '"__recorder_done__"' in line for line in record_out.read_text().splitlines()[-3:]
+        )
+
     try:
         deadline = time.monotonic() + deadline_s
-        last_count, stable_polls = -1, 0
         while time.monotonic() < deadline:
             time.sleep(2.0)
-            count = sum(1 for _ in record_out.open()) if record_out.exists() else 0
-            # settled = data has arrived (build done) AND stopped growing for
-            # two consecutive polls (the recorder finished its window)
-            if count > 0 and count == last_count:
-                stable_polls += 1
-                if stable_polls >= 2:
-                    break
-            else:
-                stable_polls = 0
-            last_count = count
+            if _sentinel_written():
+                break
     finally:
         os.killpg(proc.pid, signal.SIGTERM)
         try:

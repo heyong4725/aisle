@@ -63,7 +63,7 @@ class NavStateMachine:
         arrival_tol_m: float,
         timeout_ticks: int,
         stall_ticks: int,
-        arrival_yaw_rad: float = math.pi,
+        arrival_yaw_rad: float,
     ) -> None:
         self.arrival_tol_m = arrival_tol_m
         self.arrival_yaw_rad = arrival_yaw_rad

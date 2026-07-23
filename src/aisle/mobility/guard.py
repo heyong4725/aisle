@@ -63,8 +63,14 @@ def _json_safe(x) -> float | None:
 def valid_base_pose(pose) -> bool:
     """A base_pose is usable only if it is exactly (x, y, yaw), all finite
     (BG-3): a malformed pose must fail closed (cache None -> keep-out holds),
-    never crash clamp_base_cmd (IndexError) or bypass it (an inf coordinate)."""
-    return len(pose) == 3 and all(math.isfinite(float(p)) for p in pose)
+    never crash clamp_base_cmd (IndexError) or bypass it (an inf coordinate).
+
+    TOTAL over any payload — a non-numeric element (None, a nested list, a
+    string) returns False rather than raising out of the guard event loop."""
+    try:
+        return len(pose) == 3 and all(math.isfinite(float(p)) for p in pose)
+    except (TypeError, ValueError, OverflowError):
+        return False
 
 
 def _dist_to_aabb(px: float, py: float, cx: float, cy: float, hx: float, hy: float) -> float:
