@@ -1,0 +1,19 @@
+# T15 (RS-5/RS-6): the retail referee — the verifier- prefix authorizes
+# its oracle_state input (VAL-6). One parameterized judge for S1-S3.
+id: verifier-retail
+kind: node
+provides: [retail_verification]
+requires: []
+inputs:
+  oracle_state: {schema: posearray7d_f32, rate_hz: 30}
+  episode_goal: {schema: json_utf8, rate_hz: 1}
+outputs:
+  episode_result: {schema: json_utf8, latency_class: best_effort}
+embodiment:
+  arm: [franka]
+  gripper: any
+  base: [mobile]
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/verifier/retail.py

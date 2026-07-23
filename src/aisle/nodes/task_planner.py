@@ -19,11 +19,17 @@ def plan_subtasks(episode_goal: dict, plano: dict) -> list[dict]:
     assigned slots; S3 misplaced -> fetch each item and return it home."""
     subtasks: list[dict] = []
     for line in episode_goal.get("order", []):
-        sources = [
-            slot_id
-            for slot_id, slot in plano["slots"].items()
-            if slot["category"] == line["product"]
-        ]
+        # source from the HIGHEST level first (ADR-18): upper slots have
+        # open sky for the proven top-down grasp; v0 store units are
+        # uniform-depth, so lower levels sit under a board (the T10 lesson)
+        sources = sorted(
+            (
+                slot_id
+                for slot_id, slot in plano["slots"].items()
+                if slot["category"] == line["product"]
+            ),
+            key=lambda s: (-int(s.split("-L")[1].split("-")[0]), s),
+        )
         if len(sources) < line["qty"]:
             raise ValueError(f"order line {line} exceeds planogram stock {len(sources)}")
         for k in range(line["qty"]):

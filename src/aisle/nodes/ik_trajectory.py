@@ -473,6 +473,93 @@ class StagedPlan:
         return not self.error
 
 
+class StageStreamer:
+    """The proven per-joint_state streaming step over a Stage list —
+    waypoint marching, gravity-sag integral correction, grip ramp, settle/
+    bail advancement. Extracted from main() unchanged so the S1 expert
+    (T15) executes its split pick/place stage lists with the SAME battle-
+    tested execution semantics. Pure (no dora): the caller sends.
+
+    step(qpos) -> (full_joint_cmd | None, gripper_value | None, logs):
+    joint_cmd is None once the list is finished; gripper_value is emitted
+    only on ramp ticks; logs are stderr-worthy stage transitions."""
+
+    def __init__(self, stages: list, home: np.ndarray, dt: float, max_vel: float) -> None:
+        self.stages = list(stages)
+        self.home = np.asarray(home, dtype=np.float32)
+        self.n_arm = 7
+        self.dt = dt
+        self.max_vel = max_vel
+        self.stage_idx = 0
+        self.wp_idx = 0
+        self.settle_ticks = 0
+        self.at_target_ticks = 0
+        self.current_cmd: np.ndarray | None = None
+        self.integ = np.zeros(self.n_arm, dtype=np.float32)
+        self.current_grip = 0.0
+        self.grip_tick = 0
+
+    @property
+    def done(self) -> bool:
+        return self.stage_idx >= len(self.stages)
+
+    def step(self, qpos: np.ndarray) -> tuple[np.ndarray | None, float | None, list[str]]:
+        if self.done:
+            return None, None, []
+        qpos = np.asarray(qpos, dtype=np.float32).reshape(-1)
+        if self.current_cmd is None:
+            self.current_cmd = qpos[: self.n_arm].copy()
+        logs: list[str] = []
+        stage = self.stages[self.stage_idx]
+        # ramp the gripper (unit-tested via grip_ramp_tick)
+        self.current_grip, self.grip_tick, emit = grip_ramp_tick(
+            self.current_grip, stage.gripper, self.grip_tick
+        )
+        grip_out = self.current_grip if emit else None
+        # march the stage's waypoint chain: track the PLANNED Cartesian
+        # path, not a straight joint-space line between stage endpoints
+        waypoint = stage.path[self.wp_idx]
+        self.current_cmd = interpolate_step(
+            self.current_cmd, waypoint, self.max_vel * stage.vel, self.dt
+        )
+        if self.wp_idx < len(stage.path) - 1 and np.abs(self.current_cmd - waypoint).max() < 1e-6:
+            self.wp_idx += 1
+        # integral correction: the MJCF actuators sag ~0.08 rad under
+        # gravity (their gains are baked into the asset) — integrate the
+        # tracking error into the COMMAND so the sim settles on target
+        self.integ = np.clip(
+            self.integ + 0.004 * (self.current_cmd - qpos[: self.n_arm]), -0.15, 0.15
+        )
+        corrected = np.clip(self.current_cmd + self.integ, _Q_MIN, _Q_MAX).astype(np.float32)
+        # finger targets FOLLOW the stage's gripper intent (BRG-1 last-wins)
+        fingers = (self.home[self.n_arm :] * (1.0 - self.current_grip)).astype(np.float32)
+        full_cmd = np.concatenate([corrected, fingers]).astype(np.float32)
+        # stage completion: command at target AND sim tracked within
+        # tolerance; a bounded at-target dwell advances anyway so a
+        # contact-blocked joint cannot stall the plan forever
+        if np.abs(self.current_cmd - stage.q).max() < 1e-6 and self.current_grip == stage.gripper:
+            self.at_target_ticks += 1
+            track_err = np.abs(qpos[: self.n_arm] - stage.q)
+            tracked = track_err.max() < stage.track_tol
+            if tracked:
+                self.settle_ticks += 1
+            if (
+                self.settle_ticks * self.dt >= stage.settle_s
+                or self.at_target_ticks * self.dt >= STAGE_BAIL_S
+            ):
+                if not tracked:
+                    logs.append(
+                        f"stage {stage.name} bailed at joint {int(track_err.argmax())} "
+                        f"err {float(track_err.max()):.3f}"
+                    )
+                logs.append(f"stage done: {stage.name}")
+                self.stage_idx += 1
+                self.wp_idx = 0
+                self.settle_ticks = 0
+                self.at_target_ticks = 0
+        return full_cmd, grip_out, logs
+
+
 def main() -> None:
     import os
     import sys
@@ -489,34 +576,12 @@ def main() -> None:
     tray_pos = layout["tray"]["pos"]
     tray_xy = (float(tray_pos[0]), float(tray_pos[1]))
     home = np.asarray(physics["embodiment"][embodiment]["home_qpos"], dtype=np.float32)
-    n_arm = 7
     max_vel = float(os.environ.get("AISLE_MAX_JOINT_VEL", "1.0"))
     dt = 0.01  # joint_state contract cadence (TC-4)
 
     node = Node()
     send = make_sender(node)
-    plan: StagedPlan | None = None
-    stage_idx = 0
-    wp_idx = 0
-    settle_ticks = 0
-    at_target_ticks = 0
-    current_cmd: np.ndarray | None = None
-    integ = np.zeros(n_arm, dtype=np.float32)
-    current_grip = 0.0
-    grip_tick = 0
-
-    def clear_plan() -> None:
-        nonlocal plan, stage_idx, wp_idx, settle_ticks, at_target_ticks, current_cmd
-        nonlocal current_grip, grip_tick
-        plan = None
-        stage_idx = 0
-        wp_idx = 0
-        settle_ticks = 0
-        at_target_ticks = 0
-        current_cmd = None
-        current_grip = 0.0
-        grip_tick = 0
-        integ[:] = 0.0
+    streamer: StageStreamer | None = None
 
     for event in node:
         if event["type"] != "INPUT":
@@ -526,9 +591,9 @@ def main() -> None:
             # episode boundary: NEVER keep executing a stale plan — in the
             # first live run a stale stream fought the post-reset guard
             # reference until the wall timeout froze everything
-            clear_plan()
+            streamer = None
         elif event["id"] == "grasp_pose":
-            if plan is not None and stage_idx < len(plan.stages):
+            if streamer is not None and not streamer.done:
                 continue  # one plan at a time; re-plan only after home
             candidate = StagedPlan(
                 event["value"].to_numpy(zero_copy_only=False),
@@ -540,72 +605,21 @@ def main() -> None:
             if not candidate.ok:
                 print(f"grasp plan failed: {candidate.error}", file=sys.stderr)
                 continue
-            plan = candidate
-            stage_idx = 0
-            wp_idx = 0
-            settle_ticks = 0
-            at_target_ticks = 0
-            print(f"plan ready: {len(plan.stages)} stages", file=sys.stderr)
-        elif event["id"] == "joint_state" and plan is not None and stage_idx < len(plan.stages):
+            streamer = StageStreamer(candidate.stages, home, dt, max_vel)
+            print(f"plan ready: {len(candidate.stages)} stages", file=sys.stderr)
+        elif event["id"] == "joint_state" and streamer is not None and not streamer.done:
             qpos = np.asarray(
                 event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
             ).reshape(-1)
-            if current_cmd is None:
-                current_cmd = qpos[:n_arm].copy()
-            stage = plan.stages[stage_idx]
-            # ramp the gripper (the emitted sequence is unit-tested via
-            # grip_ramp_tick)
-            current_grip, grip_tick, emit = grip_ramp_tick(current_grip, stage.gripper, grip_tick)
-            if emit:
-                send(
-                    "gripper_cmd",
-                    pa.array(np.array([current_grip], dtype=np.float32)),
-                    metadata,
-                )
-            # march the stage's waypoint chain: track the PLANNED Cartesian
-            # path, not a straight joint-space line between stage endpoints
-            waypoint = stage.path[wp_idx]
-            current_cmd = interpolate_step(current_cmd, waypoint, max_vel * stage.vel, dt)
-            if wp_idx < len(stage.path) - 1 and np.abs(current_cmd - waypoint).max() < 1e-6:
-                wp_idx += 1
-            # integral correction: the MJCF actuators sag ~0.08 rad under
-            # gravity (their gains are baked into the asset), which is
-            # centimeters at the TCP — integrate the tracking error into
-            # the COMMAND so the sim settles on the true target
-            integ = np.clip(integ + 0.004 * (current_cmd - qpos[:n_arm]), -0.15, 0.15)
-            corrected = np.clip(current_cmd + integ, _Q_MIN, _Q_MAX).astype(np.float32)
-            # finger targets FOLLOW the stage's gripper intent: the bridge
-            # applies commands last-wins across all dofs (BRG-1), so a
-            # joint_cmd carrying live qpos fingers would overwrite the
-            # close-gripper target every 10 ms and the grip would never
-            # close
-            fingers = (home[n_arm:] * (1.0 - current_grip)).astype(np.float32)
-            full_cmd = np.concatenate([corrected, fingers]).astype(np.float32)
-            send("joint_cmd", pa.array(full_cmd), metadata)
-            # stage completion: command reached target AND the sim tracked
-            # it within tolerance (PD steady-state at horizontal reach sits
-            # near 0.1 rad); a bounded at-target dwell advances anyway so a
-            # contact-blocked or draggy joint cannot stall the plan forever
-            if np.abs(current_cmd - stage.q).max() < 1e-6 and current_grip == stage.gripper:
-                at_target_ticks += 1
-                track_err = np.abs(qpos[:n_arm] - stage.q)
-                tracked = track_err.max() < stage.track_tol
-                if tracked:
-                    settle_ticks += 1
-                if settle_ticks * dt >= stage.settle_s or at_target_ticks * dt >= STAGE_BAIL_S:
-                    if not tracked:
-                        print(
-                            f"stage {stage.name} bailed at joint {int(track_err.argmax())} "
-                            f"err {float(track_err.max()):.3f}",
-                            file=sys.stderr,
-                        )
-                    print(f"stage done: {stage.name}", file=sys.stderr)
-                    stage_idx += 1
-                    wp_idx = 0
-                    settle_ticks = 0
-                    at_target_ticks = 0
-                    if stage_idx >= len(plan.stages):
-                        clear_plan()  # finished: idle until the next episode
+            full_cmd, grip_out, logs = streamer.step(qpos)
+            if grip_out is not None:
+                send("gripper_cmd", pa.array(np.array([grip_out], dtype=np.float32)), metadata)
+            if full_cmd is not None:
+                send("joint_cmd", pa.array(full_cmd), metadata)
+            for line in logs:
+                print(line, file=sys.stderr)
+            if streamer.done:
+                streamer = None  # finished: idle until the next episode
 
 
 if __name__ == "__main__":
