@@ -15,9 +15,9 @@ Design-doc anchor: §11. Depends on: SPEC 010/210 (contract), 020 (scene ext),
 
 ## Per-scenario success (normative)
 
-- RS-7 (S1): success iff every ordered (product, spec, qty) is on the counter at t_end AND no non-ordered product is on the counter. Wrong item on counter at any time ⇒ immediate `extra_item` failure (safety asymmetry, VER-3 spirit).
-- RS-8 (S2): success iff both assigned slots hold an item of the assigned category passing RS-4 placement.
-- RS-9 (S3): success iff both misplaced items are in their planogram slots passing RS-4, AND their origin slots are not newly wrong.
+- RS-7: (S1) success iff every ordered (product, spec, qty) is on the counter at t_end AND no non-ordered product is on the counter. Wrong item on counter at any time ⇒ immediate `extra_item` failure (safety asymmetry, VER-3 spirit).
+- RS-8: (S2) success iff both assigned slots hold an item of the assigned category passing RS-4 placement.
+- RS-9: (S3) success iff both misplaced items are in their planogram slots passing RS-4, AND their origin slots are not newly wrong.
 
 ## Oracle/realistic ladder
 

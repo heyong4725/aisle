@@ -1,0 +1,27 @@
+# SPEC 200 RS-4: every retail placement threshold lives HERE, none inline
+# (mirrors verifier/thresholds.toml for the desk judge). See ADR-16 for
+# the geometric definitions.
+
+[placement]
+# item center within this xy distance of the slot template center
+pos_tol_m = 0.02
+# long-axis alignment: yaw error folded mod 180 degrees (ADR-16)
+yaw_tol_deg = 10.0
+# numeric epsilon on "zero overhang past the shelf edge"
+overhang_tol_m = 0.005
+# |item front edge - template front edge| along the facing axis
+alignment_tol_m = 0.015
+# resting band: item bottom within this of the board surface
+resting_tol_m = 0.03
+# an item within this xy radius of a slot center occupies the slot
+slot_occupancy_radius_m = 0.10
+
+[counter]
+# S1 on-counter footprint margin and resting band (RS-7)
+margin_m = 0.02
+resting_tol_m = 0.03
+
+[episode]
+# retail episodes are long-horizon (navigate + multi-goal); wall deadline
+# that gates success (ADR-16, mirrors the desk judge's timeout rule)
+timeout_s = 600.0

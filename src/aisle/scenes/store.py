@@ -78,7 +78,7 @@ def slot_world_pose(plano: dict, slot_id: str) -> tuple[list[float], float]:
     )
 
 
-def _spec_for(category: str, meds: dict) -> str:
+def spec_for(category: str, meds: dict) -> str:
     """S1's spec disambiguator, DERIVED from meds.toml (ADR-15): the box
     dimensions in mm — deterministic and distinct per product."""
     size_mm = "x".join(str(round(s * 1000)) for s in meds[category]["size"])
@@ -103,7 +103,7 @@ def generate_episode(seed: int, scenario: str) -> dict:
         goal["order"] = [
             {
                 "product": product,
-                "spec": _spec_for(product, meds),
+                "spec": spec_for(product, meds),
                 "qty": rng.randint(1, min(3, stock[product])),
             }
             for product in products
@@ -153,6 +153,24 @@ def stocked_items(plano: dict, episode: dict) -> list[StoreItem]:
     for category in load_meds():
         items.append(StoreItem(f"bin#{category}", category, "bin"))
     return items
+
+
+def spawn_pose(plano: dict, item: StoreItem, meds: dict | None = None) -> tuple:
+    """(x, y, z_center, yaw) where this item spawns — the SINGLE source for
+    build_store and the retail verifier's home reference (ADR-16), so the
+    scene and the verifier cannot drift."""
+    meds = meds or load_meds()
+    size = meds[item.category]["size"]
+    store = plano["store"]
+    if item.slot_id == "bin":
+        bin_row = sorted(meds)
+        k = bin_row.index(item.category)
+        span = store["bin_size"][1] - max(s["size"][1] for s in meds.values())
+        y = store["bin_pos"][1] - span / 2 + k * span / max(1, len(bin_row) - 1)
+        bin_top = store["bin_pos"][2] + store["bin_size"][2] / 2
+        return (store["bin_pos"][0], y, bin_top + size[2] / 2, 0.0)
+    world, yaw = slot_world_pose(plano, item.slot_id)
+    return (world[0], world[1], world[2] + size[2] / 2, yaw)
 
 
 @dataclass
@@ -246,27 +264,18 @@ def build_store(
     robot = scene.add_entity(gs.morphs.MJCF(file=FRANKA_MJCF))
 
     box_physics = physics["materials"]["box"]
-    bin_top = store["bin_pos"][2] + store["bin_size"][2] / 2
-    bin_row = sorted(load_meds())  # deterministic bin arrangement (ADR-15)
     items: dict[str, Any] = {}
     categories: dict[str, str] = {}
     for item in stocked_items(plano, episode):
-        size = tuple(meds[item.category]["size"])
-        if item.slot_id == "bin":
-            k = bin_row.index(item.category)
-            span = store["bin_size"][1] - max(s["size"][1] for s in meds.values())
-            y = store["bin_pos"][1] - span / 2 + k * span / max(1, len(bin_row) - 1)
-            pos = (store["bin_pos"][0], y, bin_top + size[2] / 2)
-            yaw = 0.0
-        else:
-            world, yaw = slot_world_pose(plano, item.slot_id)
-            pos = (world[0], world[1], world[2] + size[2] / 2)
+        x, y, z, yaw = spawn_pose(plano, item, meds)
         categories[item.item_id] = item.category
         # PR #18 review: spawn the ORIGINAL dimensions with the composed
         # world yaw as a physical rotation — the entity quaternion must
         # agree with the planogram's 7D template pose (RS-1/RS-4)
         items[item.item_id] = scene.add_entity(
-            gs.morphs.Box(size=size, pos=pos, quat=yaw_quat_wxyz(yaw)),
+            gs.morphs.Box(
+                size=tuple(meds[item.category]["size"]), pos=(x, y, z), quat=yaw_quat_wxyz(yaw)
+            ),
             material=gs.materials.Rigid(
                 friction=box_physics["friction"], rho=box_physics["density_kg_m3"]
             ),
