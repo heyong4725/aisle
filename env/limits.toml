@@ -38,9 +38,12 @@ gripper_dt_s = 0.0333
 # drop) and publishes wall_timeout until the next reset_done — the ONLY
 # event that restarts the timer (idle pauses must not stretch it). The
 # EPISODE timeout is the verifier's, in SIM time; sim can run slower than
-# wall (T08 live: ~0.5x with rendering), so this backstop must comfortably
-# exceed the episode budget in wall terms
-wall_timeout_s = 300.0
+# wall (T08 live: ~0.5x with rendering; the T15 STORE runs ~0.1x with 23
+# entities), so this backstop must comfortably exceed the episode budget
+# in wall terms for the SLOWEST scene: the 600 s-sim retail episode needs
+# ~15 wall-minutes. 300 s froze the base AND arm mid-episode at exactly
+# t+300 (T15 rounds 4-6) while the graph was healthy.
+wall_timeout_s = 1800.0
 
 # SPEC 210 MOB-3 — mobile base limits (extends SPEC 080). Class C.
 [embodiment.mobile]
@@ -69,12 +72,20 @@ arm_extended_reach_m = 0.40
 # base watchdog: a base_cmd whose accepting tick is older than this is stale;
 # the guard emits a stop [0,0] so a latched command cannot integrate forever
 # after the producer dies or the episode times out (MOB-3/BG-2)
-base_staleness_s = 0.1
+# 0.5: under sim backpressure (store rtf ~0.1) dora timers stretch and
+# a 0.1 s staleness zeroed the base between every nav command (T15 live
+# round 2); 0.5 still stops a dead producer within half a second
+base_staleness_s = 0.5
 # nav action lifecycle (MOB-2): arrival tolerances (position m, yaw rad) and
 # the timeout / stall tick budgets before a nav fails timeout / blocked
 # 0.05: the pick IK chain must solve at the WORST arrival corner — the
 # planning envelope test sweeps exactly these tolerances (T15)
 nav_arrival_tol_m = 0.05
 nav_arrival_yaw_rad = 0.05
+# rotate-phase omega cap: saturated rotation (1.5 rad/s) with the
+# pipeline's ~0.15 s-sim loop delay overshoots the 0.05 yaw band every
+# swing and limit-cycles (T15 round 8 tap); 0.3 keeps the worst
+# overshoot (~0.045) inside the band
+nav_rotate_omega_max = 0.3
 nav_timeout_ticks = 3000
 nav_stall_ticks = 200

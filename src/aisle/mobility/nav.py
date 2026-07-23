@@ -31,6 +31,13 @@ def load_nav_params(embodiment: str) -> dict:
     }
 
 
+def load_rotate_omega_max(embodiment: str) -> float:
+    """The rotate-phase omega cap (see limits.toml: loop-delay overshoot
+    must fit inside the arrival yaw band)."""
+    with open(_LIMITS, "rb") as f:
+        return float(tomllib.load(f)["embodiment"][embodiment]["nav_rotate_omega_max"])
+
+
 def resolve_nav_goal(goal: dict, locations: dict[str, list[float]]) -> list[float]:
     """Resolve a nav_goal to a store-frame [x, y, yaw] (MOB-2).
 
@@ -74,7 +81,13 @@ class NavStateMachine:
         self.pose: list[float] | None = None
         self.ticks = 0
         self._best_dist = math.inf
+        self._best_head = math.inf
         self._since_progress = 0
+        # rotate-only latch (T15 round 5): once inside the arrival radius
+        # the base must STOP translating and only rotate — un-latched
+        # drive/rotate alternation at the boundary chatters, distance never
+        # improves, and the stall detector misreads it as blocked
+        self.rotating = False
 
     def on_goal(self, target_pose: list[float], goal_id: str) -> list:
         if self.target is not None:  # TC-7: nav actions do not overlap
@@ -84,7 +97,9 @@ class NavStateMachine:
         self.pose = None
         self.ticks = 0
         self._best_dist = math.inf
+        self._best_head = math.inf
         self._since_progress = 0
+        self.rotating = False
         return []
 
     def on_base_pose(self, pose: list[float]) -> list:
@@ -106,15 +121,41 @@ class NavStateMachine:
         self.ticks += 1
         dist = math.hypot(self.target[0] - self.pose[0], self.target[1] - self.pose[1])
         yaw_err = abs(_wrap(self.target[2] - self.pose[2]))
+        # hysteresis: latch rotate-only inside the radius; release only if
+        # pushed well outside (2x), so boundary chatter cannot restart drive
+        was_rotating = self.rotating
+        if dist <= self.arrival_tol_m:
+            self.rotating = True
+        elif dist > 2 * self.arrival_tol_m:
+            self.rotating = False
+        if was_rotating != self.rotating:
+            # phase change: reset the progress baselines
+            self._best_dist = math.inf
+            self._best_head = math.inf
+            self._since_progress = 0
         # arrival requires BOTH translation AND orientation to converge (MOB-2)
         if dist <= self.arrival_tol_m and yaw_err <= self.arrival_yaw_rad:
             return self._finish("success", None)
-        # progress tracking (MOB-2 blocked): the combined remaining (position +
-        # orientation) must keep shrinking, so the rotation phase counts as
-        # progress and does not read as blocked
-        remaining = dist + yaw_err
-        if remaining < self._best_dist - 1e-6:
-            self._best_dist = remaining
+        # progress tracking (MOB-2 blocked): PHASE-AWARE and three-way —
+        # while latched-rotating, progress is the FINAL-yaw error; while
+        # driving, progress is distance OR the heading-to-bearing error
+        # (turning in place toward the bearing IS progress — T15 round 12:
+        # a mutex-creeped turn read as blocked because dist stood still)
+        progressed = False
+        if self.rotating:
+            if yaw_err < self._best_dist - 1e-6:
+                self._best_dist = yaw_err
+                progressed = True
+        else:
+            bearing = math.atan2(self.target[1] - self.pose[1], self.target[0] - self.pose[0])
+            head_err = abs(_wrap(bearing - self.pose[2]))
+            if dist < self._best_dist - 1e-6:
+                self._best_dist = dist
+                progressed = True
+            if head_err < self._best_head - 1e-4:
+                self._best_head = head_err
+                progressed = True
+        if progressed:
             self._since_progress = 0
         else:
             self._since_progress += 1
@@ -140,25 +181,34 @@ def _wrap(a: float) -> float:
     return (a + math.pi) % (2 * math.pi) - math.pi
 
 
-def base_cmd_toward(pose, target, limits, arrival_tol_m: float = 0.05) -> tuple[float, float]:
+def base_cmd_toward(
+    pose,
+    target,
+    limits,
+    arrival_tol_m: float = 0.05,
+    rotate_only: bool = False,
+    rotate_omega_max: float | None = None,
+) -> tuple[float, float]:
     """Diff-drive base_cmd [v, omega] driving `pose` toward `target`
     (store frame), clamped to the base velocity limits (MOB-2/MOB-3).
 
     Two phases: while farther than `arrival_tol_m`, steer toward the target
-    POSITION and drive forward; once in position, hold v=0 and rotate in
-    place to the target YAW. So a goal that only changes orientation still
-    rotates rather than reporting instant arrival."""
+    POSITION and drive forward; once in position (or the caller latches
+    `rotate_only` — NavStateMachine.rotating's hysteresis), hold v=0 and
+    rotate in place to the target YAW."""
     dx = float(target[0]) - float(pose[0])
     dy = float(target[1]) - float(pose[1])
     dist = math.hypot(dx, dy)
-    if dist > arrival_tol_m:
+    if not rotate_only and dist > arrival_tol_m:
         heading_err = _wrap(math.atan2(dy, dx) - float(pose[2]))
         omega = max(-limits.omega_max, min(limits.omega_max, _K_OMEGA * heading_err))
         # only drive forward while roughly aligned; turn in place otherwise
         align = max(0.0, math.cos(heading_err))
         v = max(0.0, min(limits.v_max, _K_V * dist * align))
         return v, omega
-    # in position: rotate to the target orientation
+    # in position: rotate to the target orientation, capped so the
+    # loop-delay overshoot stays inside the arrival band (T15 round 8)
+    cap = min(limits.omega_max, rotate_omega_max or limits.omega_max)
     yaw_err = _wrap(float(target[2]) - float(pose[2]))
-    omega = max(-limits.omega_max, min(limits.omega_max, _K_OMEGA * yaw_err))
+    omega = max(-cap, min(cap, _K_OMEGA * yaw_err))
     return 0.0, omega

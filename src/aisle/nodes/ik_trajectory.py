@@ -484,12 +484,23 @@ class StageStreamer:
     joint_cmd is None once the list is finished; gripper_value is emitted
     only on ramp ticks; logs are stderr-worthy stage transitions."""
 
-    def __init__(self, stages: list, home: np.ndarray, dt: float, max_vel: float) -> None:
+    def __init__(
+        self,
+        stages: list,
+        home: np.ndarray,
+        dt: float,
+        max_vel: float,
+        integ_cap: float = 0.15,
+    ) -> None:
         self.stages = list(stages)
         self.home = np.asarray(home, dtype=np.float32)
         self.n_arm = 7
         self.dt = dt
         self.max_vel = max_vel
+        # gravity-sag integral cap: 0.15 suits the desk poses; the store's
+        # yawed long-reach advance sags ~0.27 raw on the wrist pitch (T15
+        # round 12), so the S1 expert passes a higher cap
+        self.integ_cap = integ_cap
         self.stage_idx = 0
         self.wp_idx = 0
         self.settle_ticks = 0
@@ -528,7 +539,9 @@ class StageStreamer:
         # gravity (their gains are baked into the asset) — integrate the
         # tracking error into the COMMAND so the sim settles on target
         self.integ = np.clip(
-            self.integ + 0.004 * (self.current_cmd - qpos[: self.n_arm]), -0.15, 0.15
+            self.integ + 0.004 * (self.current_cmd - qpos[: self.n_arm]),
+            -self.integ_cap,
+            self.integ_cap,
         )
         corrected = np.clip(self.current_cmd + self.integ, _Q_MIN, _Q_MAX).astype(np.float32)
         # finger targets FOLLOW the stage's gripper intent (BRG-1 last-wins)

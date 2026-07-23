@@ -285,6 +285,10 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         )
     robot = handle.robot
     n_dof = robot.n_dofs
+    # carry coupling needs the hand's world position (T15, ADR-18)
+    hand_link = robot.get_link("hand") if is_store else None
+    held_item: str | None = None  # carry latch (T15, ADR-18)
+    held_offset = (0.0, 0.0, 0.0, 0.0)
 
     node = Node()
     node.send_output(
@@ -518,14 +522,81 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             else:
                 apply_commands()
             if is_mobile:
+                # carry latch bookkeeping (T15, ADR-18): on grip close, latch
+                # the nearest item to the hand with its base-frame offset; on
+                # grip open (hysteresis) release it back to physics
+                if is_store and hand_link is not None:
+                    fingers = float(np.mean(to_numpy(robot.get_qpos()).reshape(-1)[-2:]))
+                    if held_item is None and fingers < 0.025:
+                        hand_pos = to_numpy(hand_link.get_pos()).reshape(-1)[:3]
+                        best_id, best_d = None, 0.15
+                        for item_id, entity in handle.items.items():
+                            p = to_numpy(entity.get_pos()).reshape(-1)[:3]
+                            d = float(np.linalg.norm(p - hand_pos))
+                            if d < best_d:
+                                best_id, best_d = item_id, d
+                        if best_id is not None:
+                            p = to_numpy(handle.items[best_id].get_pos()).reshape(-1)[:3]
+                            q = to_numpy(handle.items[best_id].get_quat()).reshape(-1)[:4]
+                            item_yaw = 2.0 * float(np.arctan2(float(q[3]), float(q[0])))
+                            cos_b, sin_b = np.cos(-base_pose[2]), np.sin(-base_pose[2])
+                            dx, dy = p[0] - base_pose[0], p[1] - base_pose[1]
+                            held_item = best_id
+                            held_offset = (
+                                float(dx * cos_b - dy * sin_b),
+                                float(dx * sin_b + dy * cos_b),
+                                float(p[2]),
+                                float(item_yaw - base_pose[2]),
+                            )
+                            print(f"carry latch: {best_id}", file=sys.stderr)
+                    elif held_item is not None and fingers > 0.035:
+                        print(f"carry release: {held_item}", file=sys.stderr)
+                        held_item = None
                 # MOB-1/ADR-13: integrate the base from the latest base_cmd
                 # (held at rest during the post-reset settle) and re-base the
                 # arm's root before stepping
                 cmd = [0.0, 0.0] if settling else base_cmd
-                base_pose = integrate_base_pose(base_pose, cmd, dt)
-                half = base_pose[2] / 2
-                robot.set_pos(np.array([base_pose[0], base_pose[1], 0.0], dtype=np.float32))
-                robot.set_quat(np.array([np.cos(half), 0.0, 0.0, np.sin(half)], dtype=np.float32))
+                new_pose = integrate_base_pose(base_pose, cmd, dt)
+                # re-base ONLY when the base actually moved (T15 round 13):
+                # an every-tick set_pos/set_quat perturbs the solver state
+                # each step and the gravity-loaded wrist joints chronically
+                # lagged ~0.1-0.7 rad — the fingers plowed instead of
+                # pinching. A stationary base leaves the arm's PD untouched,
+                # matching the (proven) desk behavior.
+                if new_pose != base_pose:
+                    base_pose = new_pose
+                    half = base_pose[2] / 2
+                    robot.set_pos(np.array([base_pose[0], base_pose[1], 0.0], dtype=np.float32))
+                    robot.set_quat(
+                        np.array([np.cos(half), 0.0, 0.0, np.sin(half)], dtype=np.float32)
+                    )
+                    # CARRY LATCH (T15 rounds 14-15, ADR-18): set_pos
+                    # teleports the ARM but not a held box. A per-tick
+                    # proximity coupling proved fragile — one missed tick and
+                    # the cargo is gone (round 15 dropped both items
+                    # mid-transit). The held item is LATCHED once on grip
+                    # close (see below) with its base-frame offset and PINNED
+                    # to that offset on every re-base — an exact kinematic
+                    # attachment that cannot drift.
+                    if held_item is not None:
+                        off = held_offset
+                        cos_b, sin_b = np.cos(base_pose[2]), np.sin(base_pose[2])
+                        held_entity = handle.items[held_item]
+                        held_entity.set_pos(
+                            np.array(
+                                [
+                                    base_pose[0] + off[0] * cos_b - off[1] * sin_b,
+                                    base_pose[1] + off[0] * sin_b + off[1] * cos_b,
+                                    off[2],
+                                ],
+                                dtype=np.float32,
+                            )
+                        )
+                        hh = (base_pose[2] + off[3]) / 2
+                        held_entity.set_quat(
+                            np.array([np.cos(hh), 0.0, 0.0, np.sin(hh)], dtype=np.float32)
+                        )
+                        held_entity.zero_all_dofs_velocity()
             handle.scene.step()  # BRG-7: exceptions crash the node loudly
             sim_time_ns += int(dt * 1e9)
             due = scheduler.due()

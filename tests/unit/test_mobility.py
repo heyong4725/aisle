@@ -514,3 +514,84 @@ class TestBaseScan:
             [0.0, 0.0, math.pi / 2], obstacles, n=1, angle_min=0.0, angle_max=0.0, range_max=5.0
         )
         assert ranges[0] == pytest.approx(1.5, abs=1e-6)
+
+
+class TestRotateOnlyLatch:
+    """T15 round 5: drive/rotate alternation at the arrival boundary
+    chattered forever and read as blocked — once inside the radius the
+    machine latches rotate-only, released only well outside (hysteresis)."""
+
+    def _machine(self):
+        from aisle.mobility.nav import NavStateMachine
+
+        return NavStateMachine(
+            arrival_tol_m=0.05, timeout_ticks=100, stall_ticks=50, arrival_yaw_rad=0.05
+        )
+
+    def test_latch_engages_inside_and_holds_at_boundary(self):
+        m = self._machine()
+        m.on_goal([1.0, 0.0, 1.5708], "g")
+        m.on_base_pose([0.96, 0.0, 0.0])  # inside the radius
+        m.on_tick()
+        assert m.rotating
+        m.on_base_pose([0.93, 0.0, 0.5])  # drifted just past tol (0.07 < 2x)
+        m.on_tick()
+        assert m.rotating  # hysteresis holds
+        m.on_base_pose([0.80, 0.0, 0.5])  # pushed well outside (0.2 > 2x)
+        m.on_tick()
+        assert not m.rotating
+
+    def test_rotate_only_command_never_translates(self):
+        from aisle.mobility.guard import load_base_limits
+        from aisle.mobility.nav import base_cmd_toward
+
+        lim = load_base_limits("mobile")
+        v, omega = base_cmd_toward(
+            [0.93, 0.0, 0.0], [1.0, 0.0, 1.5708], lim, 0.05, rotate_only=True
+        )
+        assert v == 0.0 and omega > 0
+
+    def test_latched_rotation_converges_in_lifecycle(self):
+        """With the latch, a goal at the radius boundary converges to
+        success instead of stalling blocked."""
+        from aisle.mobility.guard import load_base_limits
+        from aisle.mobility.nav import base_cmd_toward
+        from aisle.mobility.base import integrate_base_pose
+
+        lim = load_base_limits("mobile")
+        m = self._machine()
+        m.on_goal([1.0, 0.0, 1.5708], "g")
+        pose = [0.955, 0.0, 0.0]  # right at the boundary, wrong yaw
+        result = None
+        for _ in range(100):
+            m.on_base_pose(pose)
+            out = m.on_tick()
+            if out and out[0][0] == "nav_result":
+                result = out[0][1]
+                break
+            v, omega = base_cmd_toward(pose, m.target, lim, 0.05, rotate_only=m.rotating)
+            pose = integrate_base_pose(pose, [v, omega], 0.02)
+        assert result is not None and result["status"] == "success", result
+
+
+def test_turn_in_place_toward_bearing_is_progress():
+    """T15 round 12: a mutex-creeped turn-in-place toward the bearing must
+    register as nav progress — the drive-phase metric counts heading
+    improvement, not just distance."""
+    from aisle.mobility.nav import NavStateMachine
+
+    m = NavStateMachine(
+        arrival_tol_m=0.05, timeout_ticks=1000, stall_ticks=50, arrival_yaw_rad=0.05
+    )
+    m.on_goal([1.0, 0.0, 0.0], "g")
+    yaw = 3.0  # facing away; distance will not change while turning
+    result = None
+    for _ in range(300):
+        m.on_base_pose([0.0, 0.0, yaw])
+        out = m.on_tick()
+        if out and out[0][0] == "nav_result":
+            result = out[0][1]
+            break
+        yaw -= 0.01  # slow creep-rate turn toward the bearing (0)
+    # 300 ticks of pure turning: NOT blocked (progress via heading)
+    assert result is None or result["failure"] != "blocked", result

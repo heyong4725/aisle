@@ -80,8 +80,12 @@ def pick_stages(
     rise/staging/pregrasp/advance/close/lift/retract, then a gentle carry
     tuck over the home footprint at staging height, grip held. Returns
     (stages, q_carry, place_tcp_z, error)."""
+    # fold the item yaw into (-pi/2, pi/2] (box pi-symmetry): an unfolded
+    # yaw near pi commands a J7 spin past its limit and the wrist tracks a
+    # clamped target for seconds (T15 live round 2: close fired 41 deg off)
+    folded_yaw = ((item_yaw_base + math.pi / 2) % math.pi) - math.pi / 2
     target_pose = np.concatenate(
-        [np.asarray(item_pos_base, dtype=np.float32), _yaw_quat_xyzw(item_yaw_base)]
+        [np.asarray(item_pos_base, dtype=np.float32), _yaw_quat_xyzw(folded_yaw)]
     )
     grasp, approach, place_z = plan_grasp(
         target_pose, size_xyz, front=False, tray_top_z=counter_top_z
@@ -124,12 +128,17 @@ def pick_stages(
     carry_path = ik_continuation(pre_pos + up, carry_pos, grasp_rot, retract_path[-1])
     if carry_path is None:
         return None, None, place_z, "IK failed: carry"
+    # grasp-critical tolerances (T15 round 11): with the default 0.10 rad
+    # completion tolerance the close fired while the sim arm still lagged
+    # ~3.4 cm laterally and the descending fingers PLOWED the box off its
+    # board. The descent must start from a CONVERGED hover and stay
+    # converged through the grip (the desk's lower/release discipline).
     stages = [
         Stage("rise", (q_rise,), 0.0, 0.1),
         Stage("staging", tuple(staging_path), 0.0, 0.1),
-        Stage("pregrasp", tuple(pregrasp_path), 0.0, 0.2),
-        Stage("advance", tuple(advance_path), 0.0, 0.3),
-        Stage("close", (advance_path[-1],), 1.0, 0.5),
+        Stage("pregrasp", tuple(pregrasp_path), 0.0, 0.4, track_tol=0.05),
+        Stage("advance", tuple(advance_path), 0.0, 0.5, vel=0.5, track_tol=0.03),
+        Stage("close", (advance_path[-1],), 1.0, 0.6, track_tol=0.03),
         Stage("lift", tuple(lift_path), 1.0, 0.2, vel=0.5),
         Stage("retract", tuple(retract_path), 1.0, 0.2, vel=0.5),
         Stage("carry", tuple(carry_path), 1.0, 0.3, vel=0.35),
@@ -208,6 +217,9 @@ def main() -> None:
     home = np.asarray(profile["home_qpos"], dtype=np.float32)
     meds = load_meds()
     plano = load_planogram()
+    from aisle.mobility.nav import load_nav_params
+
+    nav_params = load_nav_params("mobile")
     counter_top = plano["store"]["counter_pos"][2] + plano["store"]["counter_size"][2] / 2
     dt = 0.01
 
@@ -218,6 +230,8 @@ def main() -> None:
     roster: list[str] = []
     queue: list[dict] = []
     pending: dict | None = None  # the subtask a nav_result completes
+    settling: dict | None = None  # awaiting a STATIONARY base before arm work
+    settle_window: list[list[float]] = []
     streamer: StageStreamer | None = None
     after_stream: dict | None = None  # context for streamer completion
     base_pose = [0.0, 0.0, 0.0]
@@ -229,11 +243,13 @@ def main() -> None:
 
     def clear() -> None:
         nonlocal goal, roster, queue, pending, streamer, after_stream
-        nonlocal carry_q, placed, latest_poses
+        nonlocal carry_q, placed, latest_poses, settling, settle_window
         goal = None
         roster = []
         queue = []
         pending = None
+        settling = None
+        settle_window = []
         streamer = None
         after_stream = None
         carry_q = None
@@ -265,7 +281,7 @@ def main() -> None:
             print(f"pick {item_id} failed: {err}", file=sys.stderr)
             advance()
             return
-        streamer = StageStreamer(stages, home, dt, 1.0)
+        streamer = StageStreamer(stages, home, dt, 1.0, integ_cap=0.30)
         carry_q = q_carry
         carry_place_z = place_z
         after_stream = {"kind": "pick"}
@@ -277,14 +293,14 @@ def main() -> None:
             print("place aborted: nothing carried", file=sys.stderr)
             advance()
             return
-        drop_xy = (COUNTER_DROP_X, (placed - 1) * COUNTER_DROP_DY)
+        drop_xy = (COUNTER_DROP_X, placed * COUNTER_DROP_DY)
         stages, err = place_stages(carry_q, drop_xy, carry_place_z, home)
         if err:
             print(f"place failed: {err}", file=sys.stderr)
             advance()
             return
         placed += 1
-        streamer = StageStreamer(stages, home, dt, 1.0)
+        streamer = StageStreamer(stages, home, dt, 1.0, integ_cap=0.30)
         after_stream = {"kind": "place"}
         print(f"placing on counter (#{placed})", file=sys.stderr)
 
@@ -296,7 +312,7 @@ def main() -> None:
         subtask = queue.pop(0)
         op = subtask["op"]
         if op == "goto":
-            pending = {"op": "goto"}
+            pending = {"op": "goto", "location": subtask["location"]}
             send_nav({"location": subtask["location"]})
         elif op == "pick":
             pending = {"op": "pick", "slot": subtask["slot"], "category": subtask["category"]}
@@ -326,6 +342,49 @@ def main() -> None:
             advance()
         elif event["id"] == "base_pose":
             base_pose = [float(v) for v in event["value"].to_numpy(zero_copy_only=False)[:3]]
+            if settling is not None:
+                settle_window.append(list(base_pose))
+                if len(settle_window) > 10:
+                    settle_window.pop(0)
+                if len(settle_window) == 10:
+                    xs = [p[0] for p in settle_window]
+                    ys = [p[1] for p in settle_window]
+                    yaws = [p[2] for p in settle_window]
+                    still = (
+                        max(xs) - min(xs) < 1e-3
+                        and max(ys) - min(ys) < 1e-3
+                        and max(yaws) - min(yaws) < 5e-3
+                    )
+                    if still:
+                        ctx, settling = settling, None
+                        settle_window = []
+                        park = park_pose_for_slot(plano, ctx["slot"])
+                        pos_err = math.hypot(base_pose[0] - park[0], base_pose[1] - park[1])
+                        yaw_err = abs(_wrap(base_pose[2] - park[2]))
+                        # the gate matches the IK-proven envelope exactly (the unit
+                        # sweep covers +-arrival_tol, config-sourced)
+                        if (
+                            pos_err > nav_params["arrival_tol_m"]
+                            or yaw_err > nav_params["arrival_yaw_rad"]
+                        ):
+                            if ctx["reparks"] < 3:
+                                print(
+                                    f"settled off-park (pos {pos_err:.3f}, yaw {yaw_err:.3f});"
+                                    f" re-parking ({ctx['reparks'] + 1})",
+                                    file=sys.stderr,
+                                )
+                                pending = {
+                                    "op": "pick",
+                                    "slot": ctx["slot"],
+                                    "category": ctx["category"],
+                                    "reparks": ctx["reparks"] + 1,
+                                }
+                                send_nav({"pose": park})
+                            else:
+                                print("re-park budget exhausted; skipping pick", file=sys.stderr)
+                                advance()
+                        else:
+                            start_pick(ctx["slot"], ctx["category"])
         elif event["id"] == "poses":
             latest_poses = np.asarray(
                 event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
@@ -336,10 +395,31 @@ def main() -> None:
                 continue
             done, pending = pending, None
             if result.get("status") != "success":
-                print(f"nav failed ({result}); continuing plan", file=sys.stderr)
-                advance()
+                retries = done.get("retries", 0)
+                if retries < 2:
+                    # a stall under sim backpressure is transient: RETRY the
+                    # same leg rather than skipping the subtask (T15 round 2
+                    # skipped a pick and "placed" nothing)
+                    print(f"nav failed ({result}); retry {retries + 1}", file=sys.stderr)
+                    pending = {**done, "retries": retries + 1}
+                    if done["op"] == "pick":
+                        send_nav({"pose": park_pose_for_slot(plano, done["slot"])})
+                    else:
+                        send_nav({"location": done["location"]})
+                else:
+                    print(f"nav failed after retries ({result}); idling", file=sys.stderr)
             elif done["op"] == "pick":
-                start_pick(done["slot"], done["category"])
+                # T15 round 4: nav success SAMPLES an in-band instant while
+                # the base may still be swinging (backpressured controller) —
+                # planning from that sample missed the box by ~13 cm. Wait
+                # for a STATIONARY base, then verify the park, then plan.
+                settling = {
+                    "op": "pick",
+                    "slot": done["slot"],
+                    "category": done["category"],
+                    "reparks": done.get("reparks", 0),
+                }
+                settle_window = []
             else:
                 advance()
         elif event["id"] == "joint_state" and streamer is not None:
