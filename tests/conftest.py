@@ -216,13 +216,18 @@ def run_dataflow(graph: Path, timeout_s: float) -> DataflowRun:
 
 def run_dataflow_until_settled(graph: Path, record_out: Path, deadline_s: float) -> None:
     """Launch the dataflow and stop as soon as the duration-aware recorder
-    writes its explicit `__recorder_done__` sentinel (its window elapsed),
-    then kill the group and reap. Unlike run_dataflow's fixed window the wall
-    time is (genesis build + capture window), NOT the whole deadline: the
-    bridge never self-exits, so a fixed timeout would always elapse. A
-    mid-capture output STALL leaves no sentinel, so a truncated run cannot be
-    mistaken for a finished window — it hits `deadline_s` (the generous outer
-    cap for a slow build) and the test's coverage assertions then fail."""
+    writes its explicit `__recorder_done__` sentinel (its window elapsed with
+    the stream flowing), then kill the group and reap. Unlike run_dataflow's
+    fixed window the wall time is (genesis build + capture window), NOT the
+    whole deadline: the bridge never self-exits, so a fixed timeout would
+    always elapse.
+
+    The sentinel is written only when an event arrives AFTER the window, i.e.
+    the stream flowed through the whole window. A mid-capture STALL therefore
+    leaves no sentinel; this helper then RAISES on hitting `deadline_s` rather
+    than returning partial data — a stalled/truncated capture fails loudly, it
+    does not pass on a pre-stall slice. `deadline_s` is the generous outer cap
+    for a slow genesis build."""
     proc = subprocess.Popen(
         ["dora", "run", str(graph), "--uv"],
         cwd=REPO_ROOT,
@@ -239,11 +244,13 @@ def run_dataflow_until_settled(graph: Path, record_out: Path, deadline_s: float)
             '"__recorder_done__"' in line for line in record_out.read_text().splitlines()[-3:]
         )
 
+    settled = False
     try:
         deadline = time.monotonic() + deadline_s
         while time.monotonic() < deadline:
             time.sleep(2.0)
             if _sentinel_written():
+                settled = True
                 break
     finally:
         os.killpg(proc.pid, signal.SIGTERM)
@@ -253,6 +260,12 @@ def run_dataflow_until_settled(graph: Path, record_out: Path, deadline_s: float)
             os.killpg(proc.pid, signal.SIGKILL)
             proc.communicate()
         _reap_orphan_nodes(graph.parent)
+    if not settled:
+        raise AssertionError(
+            f"recorder never wrote its completion sentinel within {deadline_s}s: the "
+            "capture stalled (stream stopped mid-window) or the build never finished "
+            "— NOT a completed window, so the run is not accepted"
+        )
 
 
 def read_records(record_out: Path) -> list[dict]:

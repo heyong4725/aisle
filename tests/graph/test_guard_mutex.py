@@ -201,3 +201,35 @@ def test_watchdog_stops_latched_base_command(tmp_path, dataflow):
     assert any(v["reason"] == "base_stale" for v in viols), (
         f"no base_stale violation; reasons={sorted({v['reason'] for v in viols})}"
     )
+
+
+def test_capture_helper_fails_on_stall(tmp_path, dataflow):
+    """PR #14 re-review: run_dataflow_until_settled MUST NOT accept a stalled
+    capture. latch_driver emits ONE base_cmd then goes silent, so the recorder
+    (a 30 s window) never sees a post-window event and writes no
+    __recorder_done__ sentinel — the helper raises instead of returning a
+    truncated pre-stall slice after the deadline."""
+    import yaml
+
+    rec_out = tmp_path / "stall.jsonl"
+    graph = {
+        "nodes": [
+            {
+                "id": "driver",
+                "path": str(FIXTURES / "latch_driver.py"),
+                "inputs": {"tick": "dora/timer/millis/20"},
+                "outputs": ["base_cmd"],
+            },
+            {
+                "id": "rec",
+                "path": str(FIXTURES / "base_recorder.py"),
+                "inputs": {"base_cmd": {"source": "driver/base_cmd", "queue_size": 100}},
+                # 30 s window never completes: the stream stops after one event
+                "env": {"REC_OUT": str(rec_out), "RECORDER_DURATION_S": "30"},
+            },
+        ]
+    }
+    path = tmp_path / "stall.yaml"
+    path.write_text(yaml.safe_dump(graph))
+    with pytest.raises(AssertionError, match="sentinel"):
+        dataflow.run_until_settled(path, rec_out, deadline_s=12)
