@@ -61,6 +61,8 @@ class BridgeConfig:
     seed: int
     embodiment: str
     n_envs: int
+    scene: str = "pharmacy"  # "pharmacy" (desk) | "store" (T15 retail)
+    scenario: str = "S1"  # store episode scenario (RS-3)
 
 
 def parse_bridge_config(env: dict) -> BridgeConfig:
@@ -69,6 +71,8 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
         seed=int(env.get("AISLE_SEED", "0")),
         embodiment=env.get("AISLE_EMBODIMENT", "franka"),
         n_envs=int(env.get("AISLE_N_ENVS", "1")),
+        scene=env.get("AISLE_SCENE", "pharmacy"),
+        scenario=env.get("AISLE_SCENARIO", "S1"),
     )
 
 
@@ -82,6 +86,24 @@ def require_single_env_for_mobile(embodiment: str, n_envs: int) -> None:
         raise ValueError(
             f"mobile embodiment does not support batched envs (n_envs={n_envs}); "
             "run one env per bridge (SPEC 210 MOB-1, ADR-13)"
+        )
+
+
+def require_valid_store_config(cfg: BridgeConfig) -> None:
+    """T15 (ADR-18): the store scene is mobile-only (fixed-base robots
+    cannot reach across aisles) and single-env; teleport reset cannot
+    change STOCK, so only S1 (constant stock across seeds, RS-3) may roll
+    seeds through reset — S2/S3 need a rebuild per episode (deferred)."""
+    if cfg.scene != "store":
+        return
+    if cfg.embodiment != "mobile":
+        raise ValueError(f"store scene requires the mobile embodiment, got {cfg.embodiment!r}")
+    if cfg.n_envs != 1:
+        raise ValueError("store scene is single-env (ADR-13/ADR-18)")
+    if cfg.scenario != "S1":
+        raise ValueError(
+            f"store bridge supports scenario S1 only (teleport reset cannot change "
+            f"stock, ADR-18); got {cfg.scenario!r}"
         )
 
 
@@ -235,12 +257,32 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
 
     cfg = parse_bridge_config(os.environ)
     require_single_env_for_mobile(cfg.embodiment, cfg.n_envs)
+    require_valid_store_config(cfg)
     root = Path(os.environ.get("AISLE_ROOT", _REPO_ROOT))
     physics = load_physics()
     profile = physics["embodiment"][cfg.embodiment]
     dt = physics["sim"]["dt"]
 
-    handle = build_scene(seed=cfg.seed, embodiment=cfg.embodiment, n_envs=cfg.n_envs, headless=True)
+    # T15 (ADR-18): the store scene swaps in behind the same topic contract
+    # — entities/oracle/reset/scan come from the scene adapter below; the
+    # pharmacy path is byte-for-byte unchanged.
+    is_store = cfg.scene == "store"
+    if is_store:
+        from aisle.scenes.store import (
+            build_store,
+            load_planogram,
+            store_oracle_state,
+            store_scan_obstacles,
+            teleport_store_reset,
+        )
+
+        handle = build_store(
+            seed=cfg.seed, scenario=cfg.scenario, embodiment=cfg.embodiment, headless=True
+        )
+    else:
+        handle = build_scene(
+            seed=cfg.seed, embodiment=cfg.embodiment, n_envs=cfg.n_envs, headless=True
+        )
     robot = handle.robot
     n_dof = robot.n_dofs
 
@@ -289,7 +331,10 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     topic_rates = {**TOPIC_RATES, **({"base_pose": 50, "base_scan": 10} if is_mobile else {})}
     base_pose = [float(v) for v in profile.get("base_start", [0.0, 0.0, 0.0])]
     base_cmd = [0.0, 0.0]
-    scan_obstacles = _scan_obstacles(physics, cfg.embodiment) if is_mobile else []
+    if is_store:
+        scan_obstacles = store_scan_obstacles(load_planogram())
+    else:
+        scan_obstacles = _scan_obstacles(physics, cfg.embodiment) if is_mobile else []
 
     scheduler = RateScheduler(topic_rates, dt)
     commands = CommandQueue(cfg.n_envs)
@@ -366,7 +411,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                 )
             elif topic in ("oracle_state", "poses"):
                 if oracle_cache is None:
-                    oracle_cache = oracle_state(handle)
+                    oracle_cache = store_oracle_state(handle) if is_store else oracle_state(handle)
                 send(topic, env_id, oracle_cache[env_id] if cfg.n_envs > 1 else oracle_cache)
             elif topic in ("rgb_overhead", "rgb_wrist"):
                 rgb = frames[topic]
@@ -419,20 +464,25 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             dropped_counts[kind][env_id] = dropped_counts[kind].get(env_id, 0) + dropped
 
     def teleport_reset(seed: int) -> None:
-        """BRG-4: state injection from a fresh placement sample — no process
-        restart, no scene rebuild."""
-        layout = resolve_layout(physics, cfg.embodiment)
-        for placement in sample_placements(seed, list(handle.boxes), layout):
-            entity = handle.boxes[placement.name]
-            pos = np.array([placement.x, placement.y, placement.z], dtype=np.float32)
-            quat = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)  # genesis wxyz
-            if cfg.n_envs > 1:
-                entity.set_pos(np.tile(pos, (cfg.n_envs, 1)))
-                entity.set_quat(np.tile(quat, (cfg.n_envs, 1)))
-            else:
-                entity.set_pos(pos)
-                entity.set_quat(quat)
-            entity.zero_all_dofs_velocity()
+        """BRG-4: state injection — no process restart, no scene rebuild.
+        Desk: a fresh placement sample per seed. Store: every item back to
+        its spawn pose (S1 stock is seed-constant, ADR-18; the ORDER varies
+        with the seed via the episode goal, not the shelves)."""
+        if is_store:
+            teleport_store_reset(handle)
+        else:
+            layout = resolve_layout(physics, cfg.embodiment)
+            for placement in sample_placements(seed, list(handle.boxes), layout):
+                entity = handle.boxes[placement.name]
+                pos = np.array([placement.x, placement.y, placement.z], dtype=np.float32)
+                quat = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)  # genesis wxyz
+                if cfg.n_envs > 1:
+                    entity.set_pos(np.tile(pos, (cfg.n_envs, 1)))
+                    entity.set_quat(np.tile(quat, (cfg.n_envs, 1)))
+                else:
+                    entity.set_pos(pos)
+                    entity.set_quat(quat)
+                entity.zero_all_dofs_velocity()
         if "home_qpos" in profile:
             home = np.asarray(profile["home_qpos"], dtype=np.float32)
             batched_home = home if cfg.n_envs == 1 else np.tile(home, (cfg.n_envs, 1))

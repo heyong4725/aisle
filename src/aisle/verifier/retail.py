@@ -277,3 +277,80 @@ def score_episode(verdict: dict, t: float) -> dict:
         "penalties": list(verdict["penalties"]),
         "placement_scores": list(verdict["placement_scores"]),
     }
+
+
+def main() -> None:
+    """verifier-retail node (VER-1 pattern, RS-5/RS-6): oracle_state +
+    episode_goal in, episode_result out per TC-7/8 with the RS-6 fields
+    (penalties, placement_scores). Mirrors verifier-oracle's discipline:
+    freshness barrier on the opening reset, one result per goal."""
+    import json
+    import sys
+
+    import pyarrow as pa
+    from dora import Node
+
+    from aisle.scenes.store import load_planogram
+    from aisle.verifier.oracle import initial_capture_barrier
+
+    plano = load_planogram()
+    node = Node()
+    goal = None
+    goal_id = None
+    goal_t0_ns = None
+    goal_barrier_ns = -1
+    latest_oracle_ns = -1
+    result_seq = 0
+    cfg = None
+    for event in node:
+        if event["type"] != "INPUT":
+            continue
+        metadata = event.get("metadata") or {}
+        if event["id"] == "episode_goal":
+            if goal is not None:
+                print(f"goal {metadata.get('goal_id')} refused: episode active", file=sys.stderr)
+                continue
+            goal = json.loads(event["value"][0].as_py())
+            goal_id = metadata.get("goal_id", "")
+            goal_t0_ns = None
+            goal_barrier_ns = initial_capture_barrier(
+                latest_oracle_ns, int(goal.get("reset_sim_ns", 0))
+            )
+            cfg = build_retail_cfg(plano, goal)
+        elif event["id"] == "oracle_state":
+            sim_time_ns = int(metadata.get("sim_time_ns", 0))
+            latest_oracle_ns = max(latest_oracle_ns, sim_time_ns)
+            if goal is None or cfg is None or sim_time_ns <= goal_barrier_ns:
+                continue
+            if goal_t0_ns is None:
+                goal_t0_ns = sim_time_ns
+            state = event["value"].to_numpy(zero_copy_only=False)
+            t = (sim_time_ns - goal_t0_ns) / 1e9
+            verdict = judge_retail(state, plano, goal, t, cfg)
+            if verdict["status"] in ("success", "fail"):
+                record = score_episode(verdict, t)
+                result = {
+                    "status": verdict["status"],
+                    "failure": (verdict["penalties"] or [None])[0],
+                    "t_end": t,
+                    "seed": int(goal.get("seed", 0)),
+                    "goal_id": goal_id,
+                    "verifier": "retail-oracle",
+                    **record,
+                }
+                result_seq += 1
+                node.send_output(
+                    "episode_result",
+                    pa.array([json.dumps(result)]),
+                    metadata={
+                        "goal_id": goal_id,
+                        "sim_time_ns": sim_time_ns,
+                        "env_id": 0,
+                        "seq": result_seq,
+                    },
+                )
+                goal = None  # one result per goal (TC-7)
+
+
+if __name__ == "__main__":
+    main()
