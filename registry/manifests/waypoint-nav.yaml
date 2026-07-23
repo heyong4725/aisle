@@ -1,0 +1,24 @@
+# design doc §11.4 (ADR-17): plans base motion between named store
+# locations. Current implementation is the T11 nav-action node (MOB-2);
+# a collision-aware planner swaps behind this same manifest. base_cmd
+# goes to the GUARD (MOB-3), never straight to a driver.
+id: waypoint-nav
+kind: node
+provides: [waypoint_navigation]
+requires: []
+inputs:
+  nav_goal: {schema: json_utf8, rate_hz: 1}
+  base_pose: {schema: base_pose3d_f32, rate_hz: 50}
+  tick: {schema: timer_tick, rate_hz: 50}
+outputs:
+  nav_feedback: {schema: json_utf8, latency_class: best_effort}
+  nav_result: {schema: json_utf8, latency_class: best_effort}
+  base_cmd: {schema: base_cmd2d_f32, latency_class: soft_rt}
+embodiment:
+  arm: [franka]
+  gripper: any
+  base: [mobile]
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/nodes/nav_action.py

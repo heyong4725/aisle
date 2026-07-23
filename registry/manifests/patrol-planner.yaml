@@ -1,0 +1,19 @@
+# design doc §11.4 (ADR-17): coverage sequence over shelf zones; the hub
+# stub visits every zone once (agents may replace with smarter coverage).
+id: patrol-planner
+kind: node
+provides: [patrol_planning]
+requires: [waypoint_navigation]
+inputs:
+  patrol_goal: {schema: json_utf8, rate_hz: 1}
+  nav_result: {schema: json_utf8, rate_hz: 1}
+outputs:
+  nav_goal: {schema: json_utf8, latency_class: best_effort}
+embodiment:
+  arm: [franka]
+  gripper: any
+  base: [mobile]
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/nodes/patrol_planner.py

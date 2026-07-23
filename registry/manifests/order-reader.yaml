@@ -1,0 +1,18 @@
+# design doc §11.4 / SPEC 200 RS-10 (ADR-17): ORACLE rung — the order is
+# published directly from the episode goal; the realistic rung (OCR/VLM
+# on the rendered slip) swaps behind this same manifest.
+id: order-reader
+kind: node
+provides: [order_reading]
+requires: []
+inputs:
+  episode_goal: {schema: json_utf8, rate_hz: 1}
+outputs:
+  order: {schema: json_utf8, latency_class: best_effort}
+embodiment:
+  arm: [franka, so101]
+  gripper: any
+safety_class: perception
+eval: null
+origin: hub
+source: src/aisle/nodes/order_reader.py
