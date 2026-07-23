@@ -33,8 +33,9 @@ _SCENES_DIR = Path(__file__).parent
 
 SCENARIOS = ("S1", "S2", "S3")
 
-# v0 units are axis-aligned (ADR-15): yaw must be a quarter turn so boxes
-# spawn without rotated morphs (dimension swap instead)
+# v0 units sit at quarter-turn yaws (ADR-15): entities spawn with the REAL
+# composed rotation (yaw_quat_wxyz), but the pure aisle-width footprint
+# math (test_store_layout_navigable) assumes axis-aligned AABBs
 _QUARTER_YAWS = (0.0, math.pi / 2, -math.pi / 2, math.pi)
 
 
@@ -171,12 +172,14 @@ class StoreHandle:
     med_sizes: dict[str, list[float]] = field(default_factory=dict)
 
 
-def _swap_xy(size: tuple, yaw: float) -> tuple:
-    """Axis-aligned stand-in for a quarter-turn rotation (ADR-15): at
-    ±90° the x/y extents exchange."""
-    if abs(math.sin(yaw)) > 0.5:
-        return (size[1], size[0], size[2])
-    return size
+def yaw_quat_wxyz(yaw: float) -> tuple[float, float, float, float]:
+    """A pure-yaw rotation as a genesis morph quaternion (w-x-y-z — note:
+    genesis convention, NOT the TC-1 x-y-z-w wire order). PR #18 review:
+    entities must carry the planogram's composed world yaw physically, so
+    the scene agrees with its own 7D template poses (RS-1) and the RS-4
+    yaw/front-face checks read true orientations."""
+    half = yaw / 2
+    return (math.cos(half), 0.0, 0.0, math.sin(half))
 
 
 def build_store(
@@ -217,12 +220,12 @@ def build_store(
 
     shelf_material = gs.materials.Rigid(friction=physics["materials"]["shelf"]["friction"])
     for unit in plano["units"].values():
-        board = _swap_xy((geo["depth"], geo["width"], geo["board_thickness"]), unit["yaw"])
         for level_height in geo["level_heights"]:
             scene.add_entity(
                 gs.morphs.Box(
-                    size=board,
+                    size=(geo["depth"], geo["width"], geo["board_thickness"]),
                     pos=(unit["pos"][0], unit["pos"][1], level_height),
+                    quat=yaw_quat_wxyz(unit["yaw"]),
                     fixed=True,
                 ),
                 material=shelf_material,
@@ -254,13 +257,16 @@ def build_store(
             span = store["bin_size"][1] - max(s["size"][1] for s in meds.values())
             y = store["bin_pos"][1] - span / 2 + k * span / max(1, len(bin_row) - 1)
             pos = (store["bin_pos"][0], y, bin_top + size[2] / 2)
+            yaw = 0.0
         else:
             world, yaw = slot_world_pose(plano, item.slot_id)
-            size = _swap_xy(size, yaw)
             pos = (world[0], world[1], world[2] + size[2] / 2)
         categories[item.item_id] = item.category
+        # PR #18 review: spawn the ORIGINAL dimensions with the composed
+        # world yaw as a physical rotation — the entity quaternion must
+        # agree with the planogram's 7D template pose (RS-1/RS-4)
         items[item.item_id] = scene.add_entity(
-            gs.morphs.Box(size=size, pos=pos),
+            gs.morphs.Box(size=size, pos=pos, quat=yaw_quat_wxyz(yaw)),
             material=gs.materials.Rigid(
                 friction=box_physics["friction"], rho=box_physics["density_kg_m3"]
             ),

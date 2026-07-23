@@ -32,6 +32,28 @@ def _xyz(entity) -> list[float]:
     return [float(v) for v in to_numpy(entity.get_pos()).reshape(-1)[:3]]
 
 
+def _quat_wxyz(entity) -> list[float]:
+    return [float(v) for v in to_numpy(entity.get_quat()).reshape(-1)[:4]]
+
+
+def _assert_yaw(entity, yaw: float, label) -> None:
+    """The entity's PHYSICAL orientation matches the composed world yaw
+    (PR #18 review): quaternion equal up to sign, and the rotated +x
+    (front-face) direction points where the slot faces."""
+    from aisle.scenes.store import yaw_quat_wxyz
+
+    got = _quat_wxyz(entity)
+    want = list(yaw_quat_wxyz(yaw))
+    if got[0] * want[0] + got[3] * want[3] < 0:  # q and -q are the same rotation
+        want = [-c for c in want]
+    assert got == pytest.approx(want, abs=1e-5), (label, got, want)
+    # front direction: rotate body +x by the yaw
+    w, _, _, z = _quat_wxyz(entity)
+    front = (1 - 2 * z * z, 2 * w * z)
+    assert front[0] == pytest.approx(math.cos(yaw), abs=1e-5), label
+    assert front[1] == pytest.approx(math.sin(yaw), abs=1e-5), label
+
+
 def test_planogram_generation():
     """RS-1, RS-2: the built store is GENERATED from planogram.toml — one
     item per stocked slot AT its slot's world template pose (z = board
@@ -48,12 +70,15 @@ def test_planogram_generation():
     for slot_id, slot in plano["slots"].items():
         item_id = f"{slot_id}#0"
         assert item_id in handle.items, f"slot {slot_id} not stocked"
-        world, _ = slot_world_pose(plano, slot_id)
+        world, yaw = slot_world_pose(plano, slot_id)
         size_z = handle.med_sizes[slot["category"]][2]
         pos = _xyz(handle.items[item_id])
         assert pos[0] == pytest.approx(world[0], abs=1e-4), slot_id
         assert pos[1] == pytest.approx(world[1], abs=1e-4), slot_id
         assert pos[2] == pytest.approx(world[2] + size_z / 2, abs=1e-4), slot_id
+        # RS-1/RS-4 (PR #18 review): the item's PHYSICAL quaternion and
+        # front-face direction agree with the slot's composed world yaw
+        _assert_yaw(handle.items[item_id], yaw, slot_id)
 
     # bin stock: one item of every category resting on the bin's top
     store = plano["store"]
