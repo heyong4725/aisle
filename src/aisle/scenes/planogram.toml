@@ -1,0 +1,152 @@
+# SPEC 200 RS-1: the planogram — ONE source of truth for the store.
+# The store scene (build_store, RS-2) is GENERATED from this file and the
+# retail verifier (RS-5) queries it. Slot ids are "<unit>-L<level>-S<idx>"
+# (ADR-15). template_pose is 7d [x, y, z, qx, qy, qz, qw] (TC-1 quat order)
+# in the UNIT frame: origin at the unit's floor-center, +x facing the
+# aisle; z is the BOARD SURFACE (item base), so an item's center spawns at
+# z + size_z/2. Categories are med names (meds.toml, ADR-15).
+
+[store]
+# navigable aisle corridors between shelf rows MUST stay >= this (RS-2)
+aisle_min_width_m = 0.9
+# delivery counter (S1 drop target): fixed box, items delivered onto its top
+counter_pos = [-1.0, 0.0, 0.45]
+counter_size = [0.30, 0.90, 0.90]
+# restocking bin (S2 source): fixed platform, stock rests on its top surface
+bin_pos = [-1.0, 1.2, 0.15]
+bin_size = [0.40, 0.50, 0.30]
+
+[store.unit_geometry]
+# shared shelf-unit geometry (RS-2 toml-driven assets): two boards per unit
+width = 0.66
+depth = 0.30
+level_heights = [0.05, 0.35]
+board_thickness = 0.02
+
+# three units in two aisles (RS-2): row A faces -y, row B faces +y; the
+# corridor between their front planes is the navigable aisle. Yaw rotates
+# the unit frame's +x (facing) into the store frame.
+[units.A1]
+pos = [1.0, 1.6]
+yaw = -1.5708
+zone = "aisle_A"
+
+[units.A2]
+pos = [2.0, 1.6]
+yaw = -1.5708
+zone = "aisle_A"
+
+[units.B1]
+pos = [1.5, -1.6]
+yaw = 1.5708
+zone = "aisle_B"
+
+# --- slots (RS-1): file order IS the item/oracle order (ADR-15) ---
+
+[slots."A1-L0-S0"]
+category = "amoxicillin"
+template_pose = [0.05, -0.22, 0.06, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_A"
+
+[slots."A1-L0-S1"]
+category = "amoxicillin"
+template_pose = [0.05, 0.0, 0.06, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_A"
+
+[slots."A1-L0-S2"]
+category = "amoxicillin"
+template_pose = [0.05, 0.22, 0.06, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_A"
+
+[slots."A1-L1-S0"]
+category = "ibuprofen"
+template_pose = [0.05, -0.22, 0.36, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_A"
+
+[slots."A1-L1-S1"]
+category = "ibuprofen"
+template_pose = [0.05, 0.0, 0.36, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_A"
+
+[slots."A1-L1-S2"]
+category = "ibuprofen"
+template_pose = [0.05, 0.22, 0.36, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_A"
+
+[slots."A2-L0-S0"]
+category = "cetirizine"
+template_pose = [0.05, -0.22, 0.06, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_A"
+
+[slots."A2-L0-S1"]
+category = "cetirizine"
+template_pose = [0.05, 0.0, 0.06, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_A"
+
+[slots."A2-L0-S2"]
+category = "cetirizine"
+template_pose = [0.05, 0.22, 0.06, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_A"
+
+[slots."A2-L1-S0"]
+category = "omeprazole"
+template_pose = [0.05, -0.22, 0.36, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_A"
+
+[slots."A2-L1-S1"]
+category = "omeprazole"
+template_pose = [0.05, 0.0, 0.36, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_A"
+
+[slots."A2-L1-S2"]
+category = "omeprazole"
+template_pose = [0.05, 0.22, 0.36, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_A"
+
+[slots."B1-L0-S0"]
+category = "metformin"
+template_pose = [0.05, -0.22, 0.06, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_B"
+
+[slots."B1-L0-S1"]
+category = "metformin"
+template_pose = [0.05, 0.0, 0.06, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_B"
+
+[slots."B1-L0-S2"]
+category = "metformin"
+template_pose = [0.05, 0.22, 0.06, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_B"
+
+[slots."B1-L1-S0"]
+category = "amoxicillin"
+template_pose = [0.05, -0.22, 0.36, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_B"
+
+[slots."B1-L1-S1"]
+category = "ibuprofen"
+template_pose = [0.05, 0.0, 0.36, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_B"
+
+[slots."B1-L1-S2"]
+category = "cetirizine"
+template_pose = [0.05, 0.22, 0.36, 0.0, 0.0, 0.0, 1.0]
+capacity = 1
+shelf_zone = "aisle_B"
