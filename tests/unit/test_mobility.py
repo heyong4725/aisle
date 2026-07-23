@@ -554,9 +554,9 @@ class TestRotateOnlyLatch:
     def test_latched_rotation_converges_in_lifecycle(self):
         """With the latch, a goal at the radius boundary converges to
         success instead of stalling blocked."""
+        from aisle.mobility.base import integrate_base_pose
         from aisle.mobility.guard import load_base_limits
         from aisle.mobility.nav import base_cmd_toward
-        from aisle.mobility.base import integrate_base_pose
 
         lim = load_base_limits("mobile")
         m = self._machine()

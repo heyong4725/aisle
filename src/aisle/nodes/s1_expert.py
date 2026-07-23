@@ -41,7 +41,10 @@ from aisle.scenes.store import load_planogram, slot_world_pose, stocked_items
 PARK_STANDOFF_M = 0.48
 # counter drop spot in the BASE frame when parked at the "counter"
 # location: just past the counter's front face, spread along y per item
-COUNTER_DROP_X = 0.42
+# 0.50 = the counter CENTER from the park (probed reachable to z 0.70):
+# a 0.42 drop released at the counter's front edge and the box fell in
+# front of it whenever the park was a few cm short (T15 round 17)
+COUNTER_DROP_X = 0.50
 COUNTER_DROP_DY = 0.12
 
 
@@ -180,9 +183,9 @@ def place_stages(
         return None, "unwind: no in-limit wrist spin"
     q_unwind[6] = best[0]
     place_rot = topdown_rotation(best[1])
-    # +0.10 hover: the wrist-down envelope tops out ~0.78 at the drop x
-    # (probed), so the desk's +0.15 would overshoot the reachable cone
-    transfer_z = place_tcp_z + 0.10
+    # +0.06 hover: the wrist-down envelope tops out ~0.72 at the deeper
+    # 0.50 drop x (probed), so the hover hugs the reachable cone
+    transfer_z = place_tcp_z + 0.06
     transfer_pos = np.array([drop_xy[0], drop_xy[1], transfer_z])
     lower_pos = np.array([drop_xy[0], drop_xy[1], place_tcp_z])
     transfer_path = ik_continuation(start_tcp, transfer_pos, place_rot, q_unwind)
@@ -217,8 +220,9 @@ def main() -> None:
     home = np.asarray(profile["home_qpos"], dtype=np.float32)
     meds = load_meds()
     plano = load_planogram()
-    from aisle.mobility.nav import load_nav_params
+    from aisle.mobility.nav import load_locations, load_nav_params
 
+    locations = load_locations()
     nav_params = load_nav_params("mobile")
     counter_top = plano["store"]["counter_pos"][2] + plano["store"]["counter_size"][2] / 2
     dt = 0.01
@@ -312,7 +316,11 @@ def main() -> None:
         subtask = queue.pop(0)
         op = subtask["op"]
         if op == "goto":
-            pending = {"op": "goto", "location": subtask["location"]}
+            pending = {
+                "op": "goto",
+                "location": subtask["location"],
+                "target": locations[subtask["location"]],
+            }
             send_nav({"location": subtask["location"]})
         elif op == "pick":
             pending = {"op": "pick", "slot": subtask["slot"], "category": subtask["category"]}
@@ -358,33 +366,39 @@ def main() -> None:
                     if still:
                         ctx, settling = settling, None
                         settle_window = []
-                        park = park_pose_for_slot(plano, ctx["slot"])
-                        pos_err = math.hypot(base_pose[0] - park[0], base_pose[1] - park[1])
-                        yaw_err = abs(_wrap(base_pose[2] - park[2]))
-                        # the gate matches the IK-proven envelope exactly (the unit
-                        # sweep covers +-arrival_tol, config-sourced)
+                        if ctx["op"] == "pick":
+                            target = park_pose_for_slot(plano, ctx["slot"])
+                        else:
+                            target = ctx["target"]
+                        pos_err = math.hypot(base_pose[0] - target[0], base_pose[1] - target[1])
+                        yaw_err = abs(_wrap(base_pose[2] - target[2]))
+                        # the gate matches the IK-proven envelope exactly (the
+                        # unit sweep covers +-arrival_tol, config-sourced)
                         if (
                             pos_err > nav_params["arrival_tol_m"]
                             or yaw_err > nav_params["arrival_yaw_rad"]
                         ):
                             if ctx["reparks"] < 3:
                                 print(
-                                    f"settled off-park (pos {pos_err:.3f}, yaw {yaw_err:.3f});"
-                                    f" re-parking ({ctx['reparks'] + 1})",
+                                    f"settled off-target (pos {pos_err:.3f}, yaw {yaw_err:.3f});"
+                                    f" re-navigating ({ctx['reparks'] + 1})",
                                     file=sys.stderr,
                                 )
-                                pending = {
-                                    "op": "pick",
-                                    "slot": ctx["slot"],
-                                    "category": ctx["category"],
-                                    "reparks": ctx["reparks"] + 1,
-                                }
-                                send_nav({"pose": park})
+                                pending = {**ctx, "reparks": ctx["reparks"] + 1}
+                                if ctx["op"] == "pick":
+                                    send_nav({"pose": target})
+                                else:
+                                    send_nav({"location": ctx["location"]})
                             else:
-                                print("re-park budget exhausted; skipping pick", file=sys.stderr)
-                                advance()
-                        else:
+                                print("re-navigation budget exhausted; continuing", file=sys.stderr)
+                                if ctx["op"] == "pick":
+                                    start_pick(ctx["slot"], ctx["category"])
+                                else:
+                                    advance()
+                        elif ctx["op"] == "pick":
                             start_pick(ctx["slot"], ctx["category"])
+                        else:
+                            advance()
         elif event["id"] == "poses":
             latest_poses = np.asarray(
                 event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
@@ -408,20 +422,13 @@ def main() -> None:
                         send_nav({"location": done["location"]})
                 else:
                     print(f"nav failed after retries ({result}); idling", file=sys.stderr)
-            elif done["op"] == "pick":
-                # T15 round 4: nav success SAMPLES an in-band instant while
-                # the base may still be swinging (backpressured controller) —
-                # planning from that sample missed the box by ~13 cm. Wait
-                # for a STATIONARY base, then verify the park, then plan.
-                settling = {
-                    "op": "pick",
-                    "slot": done["slot"],
-                    "category": done["category"],
-                    "reparks": done.get("reparks", 0),
-                }
-                settle_window = []
             else:
-                advance()
+                # T15 rounds 4/17: nav success SAMPLES an in-band instant
+                # while the base may still be swinging — EVERY leg settles
+                # and verifies before the next action (an unverified counter
+                # park released the box off the counter's front edge).
+                settling = {**done, "reparks": done.get("reparks", 0)}
+                settle_window = []
         elif event["id"] == "joint_state" and streamer is not None:
             qpos = np.asarray(
                 event["value"].to_numpy(zero_copy_only=False), dtype=np.float32

@@ -54,8 +54,9 @@ def test_scripted_order_pick(tmp_path):
         start_new_session=True,
     )
     try:
-        # store-sim rtf ~0.1 (ADR-18): build ~2.5 min + a ~13 min episode
-        stdout, stderr = proc.communicate(timeout=1560)
+        # store-sim rtf ~0.1 (ADR-18): build ~2.5 min + a ~25 min episode
+        # (settle-renavigate loops add legs); first green run: 28:39 total
+        stdout, stderr = proc.communicate(timeout=2100)
     except subprocess.TimeoutExpired:
         os.killpg(proc.pid, signal.SIGTERM)
         try:

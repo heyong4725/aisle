@@ -56,11 +56,29 @@ architecture; the agent picks and records). Task: T15. Relates to
    `verifier-` prefix authorizes oracle_state, VAL-6) scores per RS-6/7,
    rollout `--tier S1` sources goals from the episode generator.
 
+9. **Kinematic grasp attach (the carry mechanism).** The kinematic
+   base teleports the arm each moving tick, which no physical pinch can
+   survive (three designs fell in live rounds 14-18: unpinned cargo slid
+   out instantly; per-tick proximity coupling lost the box on one missed
+   tick; base-frame pinning destroyed the pinch and parked the box
+   mid-air). The landed design is the standard sim solution: from grip
+   close (fingers < 0.025) to finger open (> 0.035, hysteresis) the held
+   item is kinematically attached to the HAND LINK — its hand-frame
+   offset is captured at latch and re-applied every tick; physics
+   re-owns the box at the drop hover. Bridge-side, observable in the
+   log as `carry latch:` / `carry release:`.
+10. **Nav robustness under backpressure** (rounds 8-13): rotate-phase
+   omega cap (loop-delay overshoot must fit the yaw band), rotate-only
+   hysteresis latch (boundary chatter), three-way phase-aware progress
+   (dist driving / bearing turning / final-yaw rotating), settle-verify-
+   renavigate on EVERY leg against the IK-proven tolerance, and a
+   conditional re-base (a stationary base must not touch the solver).
+
 ## Known limits (v1)
 
 - Store rtf ~0.1 on the dev machine: the acceptance episode runs
   ~15 wall-minutes; the gate budgets accordingly (nightly-suite scale,
   like the M0 gate).
-- Grasp success depends on the wrist converging before `close`
-  (bail-advance covers transient lag); no regrasp on a failed grip.
+- Grasp capture is verified by the carry latch engaging; no regrasp
+  loop on a failed grip (the settle-verify gate makes misses rare).
 - S2/S3 end-to-end rollouts deferred (bridge rebuild-per-episode).
