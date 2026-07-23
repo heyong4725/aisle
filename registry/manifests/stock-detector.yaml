@@ -1,0 +1,23 @@
+# design doc §11.4 / SPEC 200 RS-10 (ADR-17): ORACLE rung — empty-slot
+# detection + category, diffing oracle_state against the planogram with
+# the verifier's own occupancy geometry (cannot drift). Realistic rung
+# (shelf-label vision) swaps behind this same manifest.
+id: stock-detector
+kind: node
+provides: [stock_detection]
+requires: []
+inputs:
+  # NON-privileged tier-T0 perception poses (SPEC 010): identical
+  # layout/ordering contract to oracle_state, VAL-6-clean
+  poses: {schema: posearray7d_f32, rate_hz: 15}
+  episode_goal: {schema: json_utf8, rate_hz: 1}
+outputs:
+  stock_report: {schema: json_utf8, latency_class: best_effort}
+embodiment:
+  arm: [franka]
+  gripper: any
+  base: [mobile]
+safety_class: perception
+eval: null
+origin: hub
+source: src/aisle/nodes/stock_detector.py

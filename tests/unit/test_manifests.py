@@ -32,6 +32,15 @@ EXPECTED_IDS = {
     "dora-genesis",  # executable bridge identity (T08)
     "rollout-client",  # episode driver for runnable graphs (T08)
     "nav-action",  # SPEC 210 MOB-2 navigation action (T11)
+    # T14 retail capability extension (design doc §11.4, ADR-17)
+    "base-driver-sim",
+    "waypoint-nav",
+    "patrol-planner",
+    "order-reader",
+    "stock-detector",
+    "misplacement-detector",
+    "placement-controller",
+    "task-planner",
 }
 
 

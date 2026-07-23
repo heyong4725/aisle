@@ -1,0 +1,25 @@
+# The bridge's BASE facet (abstract capability exemplar, arm-driver-sim
+# pattern, ADR-17): dora-genesis serves it in sim; Phase-4 hardware swaps
+# a real base driver behind the same contract (SPEC 210 MOB-1).
+id: base-driver-sim
+kind: node
+provides: [base_actuation]
+requires: []
+inputs:
+  base_cmd: {schema: base_cmd2d_f32, rate_hz: 50}
+outputs:
+  base_pose: {schema: base_pose3d_f32, latency_class: hard_rt}
+  base_scan: {schema: base_scan_f32, latency_class: soft_rt}
+embodiment:
+  arm: [franka]
+  gripper: any
+  base: [mobile]
+safety_class: motion
+eval:
+  # CAP-6: motion class ships with an evalcard — the T11 mobile
+  # conformance suite verifies exactly this facet's contract
+  suite: tests/accept/test_contract_mobile.py (MOB-1 conformance)
+  pass_rate: 1.0
+  last_run: "2026-07-23"
+origin: hub
+source: src/aisle/nodes/dora_genesis.py
