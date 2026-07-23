@@ -132,11 +132,14 @@ def clamp_base_cmd(
 
     v, omega = float(cmd[0]), float(cmd[1])
 
+    # float32 wire tolerance (T15 live run): a producer commanding EXACTLY
+    # the limit arrives one f32 ULP above it (0.8 -> 0.80000001); clip
+    # silently inside the tolerance, flag a violation only for real excess
     cv = _clip(v, -limits.v_max, limits.v_max)
-    if cv != v:
+    if abs(v) - limits.v_max > 1e-5:
         violations.append({"reason": "base_velocity", "axis": "v", "requested": v, "clamped": cv})
     co = _clip(omega, -limits.omega_max, limits.omega_max)
-    if co != omega:
+    if abs(omega) - limits.omega_max > 1e-5:
         violations.append(
             {"reason": "base_velocity", "axis": "omega", "requested": omega, "clamped": co}
         )

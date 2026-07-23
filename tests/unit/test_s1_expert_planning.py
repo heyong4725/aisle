@@ -82,8 +82,42 @@ def test_pick_and_place_stages_solve_for_an_l1_slot():
 
     placed, err = place_stages(q_carry, (0.42, 0.0), place_z, home)
     assert err is None, err
-    assert [s.name for s in placed] == ["transfer", "lower", "release", "clear", "home"]
-    assert placed[1].gripper == 1.0 and placed[2].gripper == 0.0  # open only when lowered
+    assert [s.name for s in placed] == ["unwind", "transfer", "lower", "release", "clear", "home"]
+    assert placed[2].gripper == 1.0 and placed[3].gripper == 0.0  # open only when lowered
+
+
+def test_pick_solves_across_the_nav_tolerance_envelope():
+    """T15 live-run regression: the nav arrival tolerance (0.1 m / 0.1 rad)
+    offsets the item in the base frame — the pick chain must SOLVE at the
+    tolerance corners, not just the nominal park (the first live episode
+    failed IK exactly here)."""
+    from aisle.mobility.nav import load_nav_params
+    from aisle.nodes.s1_expert import PARK_STANDOFF_M, pick_stages, place_stages
+    from aisle.scenes.pharmacy import load_meds
+
+    params = load_nav_params("mobile")
+    tol, ytol = params["arrival_tol_m"], params["arrival_yaw_rad"]
+    meds = load_meds()
+    home = _home()
+    counter_top = 0.55
+    for category in ("amoxicillin", "omeprazole"):
+        size = meds[category]["size"]
+        z = 0.36 + size[2] / 2
+        for dx in (-tol, 0.0, tol):
+            for dy in (-tol, 0.0, tol):
+                for dyaw in (-ytol, 0.0, ytol):
+                    # base offset (dx, dy, dyaw) => item moves oppositely
+                    import math as _m
+
+                    rel_x = PARK_STANDOFF_M - dx
+                    rel_y = -dy
+                    cos_y, sin_y = _m.cos(-dyaw), _m.sin(-dyaw)
+                    pos = [rel_x * cos_y - rel_y * sin_y, rel_x * sin_y + rel_y * cos_y, z]
+                    yaw = _m.pi - dyaw
+                    stages, q_carry, place_z, err = pick_stages(pos, yaw, size, home, counter_top)
+                    assert err is None, (category, dx, dy, dyaw, err)
+                    placed, perr = place_stages(q_carry, (0.42, 0.0), place_z, home)
+                    assert perr is None, (category, dx, dy, dyaw, perr)
 
 
 def test_task_planner_prefers_open_sky_slots():

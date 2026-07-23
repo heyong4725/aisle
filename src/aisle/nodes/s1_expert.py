@@ -19,6 +19,7 @@ import math
 
 import numpy as np
 
+from aisle.nodes.budget_guard import fk_flange
 from aisle.nodes.grasp_topdown import plan_grasp
 from aisle.nodes.ik_trajectory import (
     STAGING_Z,
@@ -33,9 +34,11 @@ from aisle.scenes.pharmacy import load_meds, load_physics
 from aisle.scenes.store import load_planogram, slot_world_pose, stocked_items
 
 # base standoff from the SLOT center along the unit facing (m): puts the
-# slot ~0.55 m dead ahead in the base frame — the desk shelf geometry the
-# grasp/ik stack is tuned for (ADR-18)
-PARK_STANDOFF_M = 0.55
+# slot dead ahead in the base frame at desk-like geometry (ADR-18).
+# 0.48, not the desk's 0.55: nav arrival tolerance (0.1 m / 0.1 rad)
+# offsets the item in the base frame, and the pregrasp chain must stay
+# inside the reach envelope at the WORST tolerance corner (T15 live run)
+PARK_STANDOFF_M = 0.48
 # counter drop spot in the BASE frame when parked at the "counter"
 # location: just past the counter's front face, spread along y per item
 COUNTER_DROP_X = 0.42
@@ -115,7 +118,10 @@ def pick_stages(
     # staging height (the desk transfer discipline: an unconstrained joint
     # swing tilts the wrist and the box creep-rotates in the grip)
     carry_pos = np.array([home_tcp[0], home_tcp[1], staging_z])
-    carry_path = ik_continuation(pre_pos + up, carry_pos, topdown_rotation(0.0), retract_path[-1])
+    # carry HOLDS the grasp orientation: a yaw flip over this short path
+    # fails the continuation (T15 live run); the flip to the neutral place
+    # wrist happens in the LONG place transfer, desk-style
+    carry_path = ik_continuation(pre_pos + up, carry_pos, grasp_rot, retract_path[-1])
     if carry_path is None:
         return None, None, place_z, "IK failed: carry"
     stages = [
@@ -131,28 +137,53 @@ def pick_stages(
     return stages, carry_path[-1], place_z, None
 
 
+def rotation_to_quat_of(q_arm: np.ndarray):
+    """TC-1 quat of the flange rotation at q (shared franka DH)."""
+    from aisle.nodes.ik_trajectory import rotation_to_quat
+
+    return rotation_to_quat(fk_flange(np.asarray(q_arm, dtype=np.float64))[1])
+
+
 def place_stages(
     q_start: np.ndarray, drop_xy, place_tcp_z: float, home: np.ndarray
 ) -> tuple[list[Stage] | None, str | None]:
     """The split PLACE half at the counter (mirrors StagedPlan's tuned
-    place stages): transfer over the drop point, converge-lower, open
-    stationary, clear, home."""
+    place stages): wrist unwind, transfer over the drop point,
+    converge-lower, open stationary, clear, home."""
     home_arm = np.asarray(home, dtype=np.float32)[:7]
-    place_rot = topdown_rotation(0.0)
     q_start = np.asarray(q_start, dtype=np.float32)[:7]
     start_tcp = fk_tcp(q_start)
+    # unwind the carried grasp yaw toward the neutral place wrist AT the
+    # carry point. NOT an IK solve (it branch-hops, T15 unit sweep): J7 is
+    # coaxial with the wrist-down flange, so the unwind is a PURE J7 spin
+    # — minimal motion by construction, box-symmetric (a half-turn residual
+    # is an equivalent grasp), clamped into the J7 limits.
+    rot_start = quat_to_rotation(rotation_to_quat_of(q_start))
+    yaw_cur = math.atan2(rot_start[1, 0], rot_start[0, 0])
+    q_unwind = q_start.copy()
+    best = None
+    for residual in (0.0, math.pi, -math.pi):
+        j7 = q_start[6] - (yaw_cur - residual)
+        if -2.8973 <= j7 <= 2.8973:
+            if best is None or abs(j7 - q_start[6]) < abs(best[0] - q_start[6]):
+                best = (j7, residual)
+    if best is None:
+        return None, "unwind: no in-limit wrist spin"
+    q_unwind[6] = best[0]
+    place_rot = topdown_rotation(best[1])
     # +0.10 hover: the wrist-down envelope tops out ~0.78 at the drop x
     # (probed), so the desk's +0.15 would overshoot the reachable cone
     transfer_z = place_tcp_z + 0.10
     transfer_pos = np.array([drop_xy[0], drop_xy[1], transfer_z])
     lower_pos = np.array([drop_xy[0], drop_xy[1], place_tcp_z])
-    transfer_path = ik_continuation(start_tcp, transfer_pos, place_rot, q_start)
+    transfer_path = ik_continuation(start_tcp, transfer_pos, place_rot, q_unwind)
     if transfer_path is None:
         return None, "IK failed: transfer"
     lower_path = ik_continuation(transfer_pos, lower_pos, place_rot, transfer_path[-1])
     if lower_path is None:
         return None, "IK failed: lower"
     stages = [
+        Stage("unwind", (q_unwind,), 1.0, 0.2, vel=0.5),
         Stage("transfer", tuple(transfer_path), 1.0, 0.3, vel=0.35),
         Stage("lower", tuple(lower_path), 1.0, 1.0, vel=0.35, track_tol=0.03),
         Stage("release", (lower_path[-1],), 0.0, 1.5, vel=0.35, track_tol=0.03),
