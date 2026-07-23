@@ -339,7 +339,9 @@ def build_scene(
         material=tray_material,
     )
 
-    if embodiment == "franka":
+    if embodiment in ("franka", "mobile"):
+        # mobile reuses the franka arm on a kinematic base (ADR-13); the
+        # bridge re-bases it each tick
         robot = scene.add_entity(gs.morphs.MJCF(file=FRANKA_MJCF))
     else:
         if not SO101_URDF.exists():

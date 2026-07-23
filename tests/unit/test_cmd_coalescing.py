@@ -146,6 +146,19 @@ def test_bridge_config_from_env():
     assert (cfg.seed, cfg.embodiment, cfg.n_envs) == (7, "so101", 4)
 
 
+def test_mobile_rejects_batched_envs():
+    """SPEC 210 MOB-1/ADR-13 (PR #14 review): the kinematic base is single-
+    env per bridge; mobile with n_envs > 1 is rejected at startup rather
+    than mislabel one global base_pose under every env. Fixed-base profiles
+    and single-env mobile pass."""
+    from aisle.nodes.dora_genesis import require_single_env_for_mobile
+
+    with pytest.raises(ValueError, match="batched envs"):
+        require_single_env_for_mobile("mobile", 4)
+    require_single_env_for_mobile("mobile", 1)  # ok
+    require_single_env_for_mobile("franka", 8)  # fixed-base batching unaffected
+
+
 def test_non_integral_env_id_is_error():
     """BRG-5: fractional and boolean env_id values are rejected, never
     silently coerced into a route (0.7 must not become env 0)."""

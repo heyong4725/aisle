@@ -1,0 +1,27 @@
+id: nav-action
+kind: node
+provides: [navigation]
+requires: []
+inputs:
+  # SPEC 210 MOB-2: goal_id action — {location} or {pose:[x,y,yaw]}
+  nav_goal: {schema: json_utf8, rate_hz: 1}
+  # base pose feedback (MOB-1) the controller drives from
+  base_pose: {schema: base_pose3d_f32, rate_hz: 50}
+  # >=2 Hz feedback/controller cadence (MOB-2); wire from dora/timer/millis/<=500
+  tick: {schema: timer_tick, rate_hz: 50}
+outputs:
+  # >=2 Hz lifecycle (MOB-2): {t, dist_remaining} then {status, failure, t_end}
+  nav_feedback: {schema: json_utf8, latency_class: best_effort}
+  nav_result: {schema: json_utf8, latency_class: best_effort}
+  # diff-drive command to the budget guard (MOB-3), never straight to the bridge
+  base_cmd: {schema: base_cmd2d_f32, latency_class: soft_rt}
+embodiment:
+  # mobile only: navigation needs a base profile (MOB-4). gripper: any — the
+  # nav node does not actuate a gripper (schema requires the field)
+  arm: [franka]
+  gripper: any
+  base: [mobile]
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/nodes/nav_action.py

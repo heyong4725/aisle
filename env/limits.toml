@@ -41,3 +41,38 @@ gripper_dt_s = 0.0333
 # wall (T08 live: ~0.5x with rendering), so this backstop must comfortably
 # exceed the episode budget in wall terms
 wall_timeout_s = 300.0
+
+# SPEC 210 MOB-3 — mobile base limits (extends SPEC 080). Class C.
+[embodiment.mobile]
+# differential-drive base command limits
+v_max = 0.8
+omega_max = 1.5
+# creep speed the base is clamped to whenever the arm is in motion — arm
+# motion and base motion above creep MUST NOT be commanded together (MOB-3)
+v_creep = 0.05
+omega_creep = 0.1
+# contract dt of the base_cmd topic (MOB-1: <=50 Hz)
+base_cmd_dt_s = 0.02
+# keep-out: min base-to-shelf distance (m) required while the arm is
+# extended beyond the base footprint (MOB-3 keep-out zones)
+min_shelf_dist_m = 0.35
+# mutex hold: a commanded arm-target change keeps the base clamped to creep
+# for this long; refreshed by each change, expires on command silence so a
+# settled arm releases the base and a still-travelling arm keeps it held
+# (MOB-3; must exceed a single arm move's travel time)
+arm_motion_hold_s = 1.0
+# the arm is "reaching" (keep-out active) when the flange extends past this
+# horizontal reach from the base origin; the home/ready pose (~0.31 m) is NOT
+# reaching, so the base may still approach a shelf to set up before the arm
+# extends to manipulate (MOB-3, CON-15 ADR-14)
+arm_extended_reach_m = 0.40
+# base watchdog: a base_cmd whose accepting tick is older than this is stale;
+# the guard emits a stop [0,0] so a latched command cannot integrate forever
+# after the producer dies or the episode times out (MOB-3/BG-2)
+base_staleness_s = 0.1
+# nav action lifecycle (MOB-2): arrival tolerances (position m, yaw rad) and
+# the timeout / stall tick budgets before a nav fails timeout / blocked
+nav_arrival_tol_m = 0.1
+nav_arrival_yaw_rad = 0.1
+nav_timeout_ticks = 3000
+nav_stall_ticks = 200

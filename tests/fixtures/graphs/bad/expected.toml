@@ -64,9 +64,11 @@ codes = ["MOTION_UNGATED"]
 root = "tests/fixtures/roots/eval_null"
 codes = ["EVAL_MISSING_FOR_MOTION", "MOTION_UNGATED"]
 
-[embodiment_mismatch_mobile]
+[embodiment_mismatch_humanoid]
 codes = ["EMBODIMENT_MISMATCH"]
-embodiment = "mobile"
+# humanoid: an arm profile no capability supports (MOB-4 made `mobile`
+# valid — it resolves to the franka arm — so it is no longer a mismatch)
+embodiment = "humanoid"
 
 [rate_incompatible_slow_timer]
 codes = []
@@ -143,9 +145,9 @@ codes = ["GRAPH_INVALID"]
 codes = []
 warnings = ["RATE_INCOMPATIBLE"]
 
-[embodiment_mismatch_verifier_mobile]
+[embodiment_mismatch_verifier_humanoid]
 codes = ["EMBODIMENT_MISMATCH"]
-embodiment = "mobile"
+embodiment = "humanoid"
 
 # discovered by the T03 re-review
 

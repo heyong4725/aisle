@@ -1,0 +1,8 @@
+# SPEC 210 MOB-2: named navigation targets in the store frame (MOB-5).
+# Each is [x, y, yaw] (metres, radians). Poses are resolved by the nav
+# action; unknown names are a loud error, never a silent default.
+[locations]
+counter = [0.0, 0.0, 0.0]
+bin = [2.0, -1.0, 3.14159]
+shelf_zone_A = [1.5, 1.0, 1.5708]
+shelf_zone_B = [1.5, -1.0, -1.5708]

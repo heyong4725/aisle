@@ -73,15 +73,22 @@ class GuardLimits:
         return np.asarray(self.qdot_max, dtype=np.float32) * self.cmd_dt_s
 
 
+# mobile reuses the franka arm's limits (ADR-14); its own [embodiment.mobile]
+# section carries only the base limits (load_base_limits). Mirrors the
+# validator's EMBODIMENT_ARM resolution.
+_ARM_EMBODIMENT = {"mobile": "franka"}
+
+
 def load_limits(embodiment: str) -> GuardLimits:
     with open(_REPO_ROOT / "env" / "limits.toml", "rb") as f:
         raw = tomllib.load(f)
-    if embodiment not in raw["embodiment"]:
+    arm_kind = _ARM_EMBODIMENT.get(embodiment, embodiment)
+    if arm_kind not in raw["embodiment"]:
         raise ValueError(
             f"env/limits.toml has no limits section for embodiment {embodiment!r};"
             " the guard refuses to guess (BG-2)"
         )
-    emb = raw["embodiment"][embodiment]
+    emb = raw["embodiment"][arm_kind]
     return GuardLimits(
         n_arm_dof=emb["n_arm_dof"],
         q_min=tuple(emb["q_min"]),
@@ -293,15 +300,48 @@ def main(clock=None) -> None:
     import pyarrow as pa
     from dora import Node
 
+    from aisle.mobility.guard import (
+        base_creep_deadline,
+        clamp_base_cmd,
+        load_base_limits,
+        valid_base_pose,
+    )
+
     clock = clock or time.monotonic
     embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
     limits = load_limits(embodiment)
     fallback = np.asarray(limits.fallback_qpos, dtype=np.float32)
+    is_mobile = embodiment == "mobile"
+    base_limits = load_base_limits(embodiment) if is_mobile else None
+    # MOB-3 keep-out geometry: the shelf AABBs and the base footprint radius
+    # the base must not drive into with the arm extended
+    shelves: list = []
+    footprint_r = 0.0
+    if is_mobile:
+        from aisle.nodes.dora_genesis import _scan_obstacles
+        from aisle.scenes.pharmacy import load_physics
+
+        physics = load_physics()
+        shelves = _scan_obstacles(physics, embodiment)
+        footprint_r = float(physics["embodiment"][embodiment]["base_footprint_radius_m"])
 
     node = Node()
     envs: dict[int, dict] = {}
     seq: dict[str, int] = {}
     counts: dict[str, int] = {}
+
+    def new_state() -> dict:
+        return {
+            "last_safe": fallback,
+            "last_gripper": 0.0,
+            # MOB-3 mutex: the base is held at creep until this deadline; a
+            # commanded arm-target change pushes it out, silence lets it pass
+            "arm_motion_deadline": float("-inf"),
+            "base_pose": None,  # latest base_pose feedback (MOB-3 keep-out)
+            "last_base_cmd_t": None,  # wall time of the last base_cmd (watchdog)
+            "last_base_safe": [0.0, 0.0],  # last emitted safe base cmd
+            "timer": EpisodeTimer(),
+        }
 
     def next_seq(topic: str) -> int:
         seq[topic] = seq.get(topic, 0) + 1
@@ -325,16 +365,25 @@ def main(clock=None) -> None:
         now = clock()
         if event["id"] == "joint_cmd":
             env_id = int(metadata.get("env_id", 0))
-            state = envs.setdefault(
-                env_id, {"last_safe": fallback, "last_gripper": 0.0, "timer": EpisodeTimer()}
-            )
+            state = envs.setdefault(env_id, new_state())
             timed_out = state["timer"].on_command(now) > limits.wall_timeout_s
+            prev_arm = np.asarray(state["last_safe"], dtype=np.float32)[: limits.n_arm_dof]
             safe, violations = clamp_joint_cmd(
                 event["value"].to_numpy(zero_copy_only=False),
                 state["last_safe"],
                 limits,
                 timed_out=timed_out,
             )
+            # MOB-3 mutex: a commanded arm-target CHANGE (re)opens a hold
+            # window of base_limits.arm_motion_hold_s. The window PERSISTS
+            # while the arm travels even if the same target repeats, and
+            # EXPIRES on command silence — so a settled arm releases the base
+            # and a still-moving arm keeps it clamped. Deterministic (CON-5).
+            if is_mobile:
+                changed = bool(np.any(safe[: limits.n_arm_dof] != prev_arm))
+                state["arm_motion_deadline"] = base_creep_deadline(
+                    state["arm_motion_deadline"], changed, now, base_limits.arm_motion_hold_s
+                )
             state["last_safe"] = safe
             # the fingers ARE the gripper: keep the gripper channel's rate
             # reference in sync so alternating channels cannot double the
@@ -342,11 +391,66 @@ def main(clock=None) -> None:
             state["last_gripper"] = fingers_to_gripper(safe, limits)
             send("joint_cmd_safe", pa.array(safe), metadata)
             publish_violations(violations, metadata)
+        elif event["id"] == "base_pose" and is_mobile:
+            # MOB-3 keep-out feedback: cache the base pose. VALIDATE it first
+            # (BG-3): a malformed pose must not crash clamp_base_cmd or bypass
+            # keep-out — a bad pose caches None so keep-out fails closed.
+            env_id = int(metadata.get("env_id", 0))
+            state = envs.setdefault(env_id, new_state())
+            pose = event["value"].to_numpy(zero_copy_only=False).tolist()
+            if valid_base_pose(pose):
+                state["base_pose"] = [float(p) for p in pose]
+            else:
+                state["base_pose"] = None
+                publish_violations(
+                    [
+                        {
+                            "reason": "base_pose_malformed",
+                            "axis": "pose",
+                            "requested": None,
+                            "clamped": None,
+                        }
+                    ],
+                    metadata,
+                )
+        elif event["id"] == "base_cmd" and is_mobile:
+            # MOB-3: base velocity limits, arm/base mutual exclusion (base
+            # clamped to creep while the arm moves), the shelf keep-out (no
+            # entry into a shelf zone with the arm reaching), and the BG-2
+            # episode wall timeout. Never dropped (BG-3).
+            env_id = int(metadata.get("env_id", 0))
+            state = envs.setdefault(env_id, new_state())
+            state["last_base_cmd_t"] = now
+            timed_out = state["timer"].on_command(now) > limits.wall_timeout_s
+            arm_in_motion = now < state["arm_motion_deadline"]
+            arm = np.asarray(state["last_safe"], dtype=np.float32)[: limits.n_arm_dof]
+            ee = fk_ee_pos(arm)
+            arm_extended = float(np.hypot(ee[0], ee[1])) > base_limits.arm_extended_reach_m
+            safe_b, violations = clamp_base_cmd(
+                event["value"].to_numpy(zero_copy_only=False),
+                arm_in_motion,
+                base_limits,
+                base_pose=state["base_pose"],
+                shelves=shelves,
+                arm_extended=arm_extended,
+                footprint_radius=footprint_r,
+            )
+            if timed_out and safe_b != [0.0, 0.0]:
+                violations.append(
+                    {
+                        "reason": "base_timeout",
+                        "axis": "cmd",
+                        "requested": safe_b,
+                        "clamped": [0.0, 0.0],
+                    }
+                )
+                safe_b = [0.0, 0.0]
+            state["last_base_safe"] = safe_b
+            send("base_cmd_safe", pa.array(np.asarray(safe_b, dtype=np.float32)), metadata)
+            publish_violations(violations, metadata)
         elif event["id"] == "gripper_cmd":
             env_id = int(metadata.get("env_id", 0))
-            state = envs.setdefault(
-                env_id, {"last_safe": fallback, "last_gripper": 0.0, "timer": EpisodeTimer()}
-            )
+            state = envs.setdefault(env_id, new_state())
             timed_out = state["timer"].on_command(now) > limits.wall_timeout_s
             raw = event["value"].to_numpy(zero_copy_only=False)
             value = float(raw[0]) if len(raw) else float("nan")
@@ -368,6 +472,40 @@ def main(clock=None) -> None:
                 state["timer"].on_reset(now)
                 state["last_safe"] = fallback
                 state["last_gripper"] = 0.0
+                state["arm_motion_deadline"] = float("-inf")
+                # MOB-3: clear the cached pose (keep-out fails closed until a
+                # fresh pose arrives) and the watchdog/latched-base state
+                state["base_pose"] = None
+                state["last_base_cmd_t"] = None
+                state["last_base_safe"] = [0.0, 0.0]
+        elif event["id"] == "base_watchdog" and is_mobile:
+            # MOB-3 watchdog on a DEDICATED fast input (separate from the 0.2 Hz
+            # BG-5 stats `tick`): the bridge latches the last base_cmd_safe and
+            # integrates it every tick, so a stale command (producer died) or a
+            # wall-timed-out episode would drive forever. Stop any latched
+            # moving base by emitting [0, 0] once.
+            for env_id, state in envs.items():
+                last_t = state["last_base_cmd_t"]
+                if last_t is None or state["last_base_safe"] == [0.0, 0.0]:
+                    continue
+                stale = now - last_t > base_limits.base_staleness_s
+                timed_out = state["timer"].on_command(now) > limits.wall_timeout_s
+                if stale or timed_out:
+                    reason = "base_timeout" if timed_out else "base_stale"
+                    meta = {"env_id": env_id}
+                    send("base_cmd_safe", pa.array(np.zeros(2, dtype=np.float32)), meta)
+                    publish_violations(
+                        [
+                            {
+                                "reason": reason,
+                                "axis": "cmd",
+                                "requested": state["last_base_safe"],
+                                "clamped": [0.0, 0.0],
+                            }
+                        ],
+                        meta,
+                    )
+                    state["last_base_safe"] = [0.0, 0.0]
         elif event["id"] == "tick":
             # BG-5: cumulative violation counts every 5 s, timer-driven —
             # emitted even when no commands flow

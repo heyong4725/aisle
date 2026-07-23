@@ -74,7 +74,12 @@
           "items": { "enum": ["franka", "so101"] },
           "minItems": 1
         },
-        "gripper": { "enum": ["parallel", "any"] }
+        "gripper": { "enum": ["parallel", "any"] },
+        "base": {
+          "type": "array",
+          "items": { "enum": ["mobile"] },
+          "minItems": 1
+        }
       }
     },
     "safety_class": { "enum": ["perception", "decision", "motion"] },

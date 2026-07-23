@@ -5,6 +5,7 @@ import json
 import os
 import signal
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -213,6 +214,60 @@ def run_dataflow(graph: Path, timeout_s: float) -> DataflowRun:
         return DataflowRun(True, proc.returncode, stdout or "", stderr or "")
 
 
+def run_dataflow_until_settled(graph: Path, record_out: Path, deadline_s: float) -> None:
+    """Launch the dataflow and stop as soon as the duration-aware recorder
+    writes its explicit `__recorder_done__` sentinel (its window elapsed with
+    the stream flowing), then kill the group and reap. Unlike run_dataflow's
+    fixed window the wall time is (genesis build + capture window), NOT the
+    whole deadline: the bridge never self-exits, so a fixed timeout would
+    always elapse.
+
+    The sentinel is written only when an event arrives AFTER the window, i.e.
+    the stream flowed through the whole window. A mid-capture STALL therefore
+    leaves no sentinel; this helper then RAISES on hitting `deadline_s` rather
+    than returning partial data — a stalled/truncated capture fails loudly, it
+    does not pass on a pre-stall slice. `deadline_s` is the generous outer cap
+    for a slow genesis build."""
+    proc = subprocess.Popen(
+        ["dora", "run", str(graph), "--uv"],
+        cwd=REPO_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+
+    def _sentinel_written() -> bool:
+        if not record_out.exists():
+            return False
+        return any(
+            '"__recorder_done__"' in line for line in record_out.read_text().splitlines()[-3:]
+        )
+
+    settled = False
+    try:
+        deadline = time.monotonic() + deadline_s
+        while time.monotonic() < deadline:
+            time.sleep(2.0)
+            if _sentinel_written():
+                settled = True
+                break
+    finally:
+        os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            proc.communicate(timeout=15)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.communicate()
+        _reap_orphan_nodes(graph.parent)
+    if not settled:
+        raise AssertionError(
+            f"recorder never wrote its completion sentinel within {deadline_s}s: the "
+            "capture stalled (stream stopped mid-window) or the build never finished "
+            "— NOT a completed window, so the run is not accepted"
+        )
+
+
 def read_records(record_out: Path) -> list[dict]:
     if not record_out.exists():  # recorder saw zero events
         return []
@@ -230,4 +285,9 @@ def dataflow():
     to whichever conftest hit sys.path first)."""
     from types import SimpleNamespace
 
-    return SimpleNamespace(write=write_bridge_dataflow, run=run_dataflow, read=read_records)
+    return SimpleNamespace(
+        write=write_bridge_dataflow,
+        run=run_dataflow,
+        run_until_settled=run_dataflow_until_settled,
+        read=read_records,
+    )
