@@ -13,7 +13,15 @@ MUST honor it byte-for-byte.
 - TC-3: Image topics carry metadata `h`, `w`, `enc` ("rgb8") and data as a flat
   `UInt8` Arrow array of length h*w*3. Consumers MUST NOT assume resolution.
 - TC-4: Rates are contracts, not hints: producers MUST publish within ±20% of
-  the declared rate under nominal load; consumers MUST tolerate jitter within that band.
+  the declared rate under nominal load; consumers MUST tolerate jitter within
+  that band. The ±20% band is measured in WALL-CLOCK time on real hardware.
+  Under SIMULATION the deterministic scheduler advances sim time and the sim
+  MAY run sub-realtime (T08 live: ~0.5x with rendering; the mobile
+  guard↔bridge feedback cycle is slower still); conformance is then enforced
+  against the SIM-TIME rate (±20%), and the wall-clock rate MUST only stay
+  above a liveness floor of 0.5x the declared rate — enough to catch a grossly
+  throttled sim. Sim wall thresholds tighten toward the full band as hardware
+  fidelity lands.
 
 ## 2. Topics (producer → schema @ rate)
 
@@ -56,7 +64,8 @@ MUST honor it byte-for-byte.
 
 - TC-A1 (`tests/accept/test_contract.py::test_schema_conformance`): run the
   bridge 10 s headless; every observed message validates against §2 schemas,
-  TC-2 metadata present, rates within TC-4 band. Cites TC-1..5.
+  TC-2 metadata present, rates within the TC-4 band (sim-time rate ±20% in
+  simulation, wall-clock held above the 0.5x liveness floor). Cites TC-1..5.
 - TC-A2 (`::test_reset_service`): 20 seeded resets; no observation interleaves
   reset→reset_done; identical seed twice ⇒ identical `oracle_state` first
   message (CON-5). Cites TC-6.
