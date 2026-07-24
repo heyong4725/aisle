@@ -90,21 +90,18 @@ def require_single_env_for_mobile(embodiment: str, n_envs: int) -> None:
 
 
 def require_valid_store_config(cfg: BridgeConfig) -> None:
-    """T15 (ADR-18): the store scene is mobile-only (fixed-base robots
-    cannot reach across aisles) and single-env; teleport reset cannot
-    change STOCK, so only S1 (constant stock across seeds, RS-3) may roll
-    seeds through reset — S2/S3 need a rebuild per episode (deferred)."""
+    """T15/T16 (ADR-18/ADR-19): the store scene is mobile-only (fixed-base
+    robots cannot reach across aisles) and single-env. Every scenario rolls
+    through teleport reset: the build set is episode-independent (full
+    stock) and the reset realizes S1/S2/S3 by stash/swap teleports."""
     if cfg.scene != "store":
         return
     if cfg.embodiment != "mobile":
         raise ValueError(f"store scene requires the mobile embodiment, got {cfg.embodiment!r}")
     if cfg.n_envs != 1:
         raise ValueError("store scene is single-env (ADR-13/ADR-18)")
-    if cfg.scenario != "S1":
-        raise ValueError(
-            f"store bridge supports scenario S1 only (teleport reset cannot change "
-            f"stock, ADR-18); got {cfg.scenario!r}"
-        )
+    if cfg.scenario not in ("S1", "S2", "S3"):
+        raise ValueError(f"unknown store scenario {cfg.scenario!r} (RS-3: S1|S2|S3)")
 
 
 class ResetQuarantine:
@@ -270,6 +267,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     if is_store:
         from aisle.scenes.store import (
             build_store,
+            generate_episode,
             load_planogram,
             store_oracle_state,
             store_scan_obstacles,
@@ -478,11 +476,12 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
 
     def teleport_reset(seed: int) -> None:
         """BRG-4: state injection — no process restart, no scene rebuild.
-        Desk: a fresh placement sample per seed. Store: every item back to
-        its spawn pose (S1 stock is seed-constant, ADR-18; the ORDER varies
-        with the seed via the episode goal, not the shelves)."""
+        Desk: a fresh placement sample per seed. Store: the SEED's episode
+        layout for the configured scenario (T16, ADR-19) — the same
+        generator that produces the goal drives the physical state, so the
+        two can never disagree (RS-3, CON-5)."""
         if is_store:
-            teleport_store_reset(handle)
+            teleport_store_reset(handle, generate_episode(seed, cfg.scenario))
         else:
             layout = resolve_layout(physics, cfg.embodiment)
             for placement in sample_placements(seed, list(handle.boxes), layout):

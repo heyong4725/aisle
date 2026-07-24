@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from aisle.scenes.pharmacy import load_meds
-from aisle.scenes.store import slot_world_pose, spawn_pose, spec_for, stocked_items
+from aisle.scenes.store import full_stock, slot_world_pose, spawn_pose, spec_for
 
 _VERIFIER_DIR = Path(__file__).parent
 
@@ -74,7 +74,10 @@ def build_retail_cfg(plano: dict, episode_goal: dict, placement: dict | None = N
     threshold_kwargs) so tests build cfgs exactly as production does."""
     placement = placement or load_placement()
     meds = load_meds()
-    stock = stocked_items(plano, episode_goal)
+    # T16 (ADR-19): the roster is the FULL stock — the bridge's entity set
+    # is episode-independent, so the index map into oracle_state must be
+    # too (an episode-shrunk roster desyncs every index after an S2 slot)
+    stock = full_stock(plano)
     p, c, e = placement["placement"], placement["counter"], placement["episode"]
     return RetailCfg(
         item_ids=tuple(item.item_id for item in stock),
