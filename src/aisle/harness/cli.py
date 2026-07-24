@@ -27,7 +27,10 @@ def _git_sha(root: Path) -> str:
     ).stdout.strip()
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """The full CLI surface (CON-8). Exposed so the research contract's
+    copy-paste examples are TESTED against the real argparse tree (T17):
+    a doc example that drifts from the CLI fails a unit test."""
     parser = argparse.ArgumentParser(prog="harness", description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -56,6 +59,12 @@ def main() -> int:
         help="skip the HAR-8 open-idea gate (humans only; recorded in the manifest)",
     )
     roll.add_argument("--run-id", default=None, help="override the generated run id (CON-5)")
+    roll.add_argument(
+        "--env-baseline",
+        default="origin/main",
+        help="git ref for the TRUSTED frozen-set baseline (ADR-21); "
+        "'local' is the logged dev override (humans only)",
+    )
     roll.add_argument("--timeout-s", type=float, default=None)
 
     tr = subparsers.add_parser("traces", help="query recorded traces (HAR-6)")
@@ -84,8 +93,11 @@ def main() -> int:
     rclose.add_argument("--observed", required=True)
     rclose.add_argument("--verdict", required=True, choices=["up", "down", "flat"])
     rclose.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    return parser
 
-    args = parser.parse_args()
+
+def main() -> int:
+    args = build_parser().parse_args()
 
     if args.command == "validate":
         report = validate(args.graph, args.root, args.embodiment, args.allow_unproven)
@@ -117,6 +129,7 @@ def main() -> int:
             no_idea_gate=args.no_idea_gate,
             timeout_s=args.timeout_s,
             embodiment=args.embodiment,
+            env_baseline=args.env_baseline,
         )
         return emit_report(report, lambda level, e: f"rollout {level}: {e}")
 

@@ -173,3 +173,79 @@ def test_guard_and_limits_are_hashed(tmp_path):
     assert with_limits != with_guard
     limits.write_text("[embodiment.franka]\nq = 1\n")
     assert get_hash(root) != with_limits
+
+
+class TestTrustedBaseline:
+    """ADR-21 (PR #24): --check --baseline <ref> defeats the regenerate-
+    the-json attack — the baseline hash comes from the git object store at
+    a protected ref the research agent cannot move, and the checker itself
+    must match its blob there."""
+
+    def _trusted_root(self, tmp_path: Path) -> Path:
+        import shutil
+
+        repo = Path(__file__).resolve().parents[2]
+        root = make_root(tmp_path)
+        shutil.copy(repo / "tools" / "env_hash.py", root / "tools" / "env_hash.py")
+        (root / "harness").mkdir()
+        (root / "harness" / "budget.toml").write_text(
+            "[campaign]\ntokens = 5000000\nepisodes = 500\nwall_h = 40.0\n"
+        )
+        env = {
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@t",
+            "HOME": str(tmp_path),
+        }
+
+        def git(*args):
+            proc = subprocess.run(
+                ["git", *args],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={**env, "PATH": __import__("os").environ["PATH"]},
+            )
+            assert proc.returncode == 0, (args, proc.stderr)
+
+        git("init", "-q")
+        assert run_env_hash("--write", "--root", str(root)).returncode == 0
+        git("add", "-A")
+        git("commit", "-qm", "baseline")
+        git("update-ref", "refs/remotes/origin/main", "HEAD")
+        return root
+
+    def test_clean_tree_passes_trusted_check(self, tmp_path):
+        root = self._trusted_root(tmp_path)
+        proc = run_env_hash("--check", "--baseline", "origin/main", "--root", str(root))
+        assert proc.returncode == 0, proc.stdout
+        assert json.loads(proc.stdout)["baseline"] == "origin/main"
+
+    def test_regenerated_local_json_does_not_bless_frozen_edits(self, tmp_path):
+        """The PR #24 attack verbatim: edit frozen code, rerun --write —
+        the LOCAL check passes, the TRUSTED check refuses."""
+        root = self._trusted_root(tmp_path)
+        (root / "src" / "aisle" / "verifier" / "thresholds.toml").write_text("upright_deg = 90\n")
+        assert run_env_hash("--write", "--root", str(root)).returncode == 0
+        local = run_env_hash("--check", "--root", str(root))
+        assert local.returncode == 0  # the attack defeats the local check...
+        trusted = run_env_hash("--check", "--baseline", "origin/main", "--root", str(root))
+        assert trusted.returncode == 1  # ...but not the trusted one
+        assert "diverges from origin/main" in json.loads(trusted.stdout)["error"]
+
+    def test_tampered_checker_is_refused(self, tmp_path):
+        """Rewriting the checker itself cannot bless anything: the trusted
+        mode verifies tools/env_hash.py against its blob at the ref."""
+        root = self._trusted_root(tmp_path)
+        with open(root / "tools" / "env_hash.py", "a") as f:
+            f.write("\n# patched\n")
+        trusted = run_env_hash("--check", "--baseline", "origin/main", "--root", str(root))
+        assert trusted.returncode == 1
+        assert "not trusted" in json.loads(trusted.stdout)["error"]
+
+    def test_missing_ref_is_an_explicit_error(self, tmp_path):
+        root = self._trusted_root(tmp_path)
+        proc = run_env_hash("--check", "--baseline", "origin/nope", "--root", str(root))
+        assert proc.returncode == 1
+        assert "origin/nope" in json.loads(proc.stdout)["error"]

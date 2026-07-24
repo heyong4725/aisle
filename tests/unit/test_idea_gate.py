@@ -52,10 +52,13 @@ def test_close_requires_an_open_idea_and_valid_verdict(tmp_path):
         close_idea(tmp_path, "b", "I1", "actually up", "up", "t2")
 
 
-def _fake_root(tmp_path: Path, hash_ok: bool = True) -> Path:
+def _fake_root(
+    tmp_path: Path, hash_ok: bool = True, episodes_ceiling: int = 500, wall_h: float = 40.0
+) -> Path:
     """A minimal root that passes/fails the env-hash gate deterministically;
     the REAL registry rides along (symlink) so the validation gate can pass
-    and the idea gate is what decides."""
+    and the idea gate is what decides. Carries a campaign budget.toml
+    (ADR-21) with configurable ceilings."""
     (tmp_path / "registry").symlink_to(REPO_ROOT / "registry")
     (tmp_path / "tools").mkdir(parents=True)
     (tmp_path / "tools" / "env_hash.py").write_text(
@@ -65,6 +68,10 @@ def _fake_root(tmp_path: Path, hash_ok: bool = True) -> Path:
         + ("True" if hash_ok else "False")
         + " else 1)\n"
     )
+    (tmp_path / "harness").mkdir()
+    (tmp_path / "harness" / "budget.toml").write_text(
+        f"[campaign]\ntokens = 5000000\nepisodes = {episodes_ceiling}\nwall_h = {wall_h}\n"
+    )
     return tmp_path
 
 
@@ -72,7 +79,9 @@ def test_gate_refuses_on_env_hash_mismatch(tmp_path):
     """HAR-2: rollout MUST refuse when tools/env_hash.py --check fails
     (CON-7 frozen-set drift)."""
     root = _fake_root(tmp_path, hash_ok=False)
-    result = run_gates(root, REPO_ROOT / "graphs" / "expert_t0.yaml", "b", no_idea_gate=True)
+    result = run_gates(
+        root, REPO_ROOT / "graphs" / "expert_t0.yaml", "b", no_idea_gate=True, env_baseline="local"
+    )
     assert result["ok"] is False and result["gate"] == "env_hash"
 
 
@@ -85,13 +94,13 @@ def test_gate_refuses_without_open_idea_and_bypass_is_recorded(tmp_path):
     graph = REPO_ROOT / "graphs" / "expert_t0.yaml"
     if not validate(graph, REPO_ROOT, "franka", allow_unproven=False)["ok"]:
         pytest.skip("expert graph does not validate in this environment")
-    refused = run_gates(root, graph, "b", no_idea_gate=False)
+    refused = run_gates(root, graph, "b", no_idea_gate=False, env_baseline="local")
     assert refused["ok"] is False and refused["gate"] == "idea"
     log_idea(root, "b", "the campaign idea", "t0", "sha")
-    passed = run_gates(root, graph, "b", no_idea_gate=False)
+    passed = run_gates(root, graph, "b", no_idea_gate=False, env_baseline="local")
     assert passed["ok"] is True
     assert passed["idea"] == "I1" and passed["no_idea_gate"] is False
-    bypass = run_gates(root, graph, "b", no_idea_gate=True)
+    bypass = run_gates(root, graph, "b", no_idea_gate=True, env_baseline="local")
     assert bypass["ok"] is True and bypass["no_idea_gate"] is True
 
 
@@ -139,3 +148,140 @@ def test_report_cli_json_contract(tmp_path):
     )
     assert proc.returncode == 1
     assert json.loads(proc.stdout)["ok"] is False
+
+
+def test_reserve_budget_is_atomic_check_and_reserve(tmp_path):
+    """ADR-21 round 3 (PR #24): budget spend is RESERVED before launch
+    under the ledger lock — a second reservation past the ceiling refuses,
+    and an unsettled reservation stays charged (crash accounting)."""
+    from aisle.harness.rollout import budget_remaining, reserve_budget, settle_budget
+
+    root = _fake_root(tmp_path, hash_ok=True, episodes_ceiling=10)
+    first = reserve_budget(root, "r1", episodes=8)
+    assert first["ok"] is True and first["entry"]
+    # unsettled reservation charges the ceiling: 3 > 2 left -> refused
+    refused = reserve_budget(root, "r2", episodes=3)
+    assert refused["ok"] is False and refused["gate"] == "budget"
+    assert "episode budget" in refused["detail"]
+    # settling at the ACTUAL count (5 of 8 ran) releases the difference
+    settle_budget(root, "r1", episodes=5, wall_s=60.0)
+    assert budget_remaining(root)["episodes_left"] == 5
+    assert reserve_budget(root, "r2", episodes=3)["ok"] is True
+
+
+def test_wall_ceiling_refuses_reservation(tmp_path):
+    from aisle.harness.rollout import reserve_budget, settle_budget
+
+    root = _fake_root(tmp_path, hash_ok=True, wall_h=0.5)
+    ok = reserve_budget(root, "r1", episodes=1)
+    assert ok["ok"] is True
+    settle_budget(root, "r1", episodes=1, wall_s=1900.0)  # > 0.5 h spent
+    refused = reserve_budget(root, "r2", episodes=1)
+    assert refused["ok"] is False and refused["gate"] == "budget"
+    assert "wall-clock" in refused["detail"]
+
+
+def test_ledger_chain_is_tamper_evident(tmp_path):
+    """ADR-21 round 3: the ledger is hash-chained — editing any entry
+    breaks verification, and manifests carry entry hashes for the audit."""
+    from aisle.harness.rollout import reserve_budget, settle_budget, verify_ledger
+
+    root = _fake_root(tmp_path, hash_ok=True)
+    reserve_budget(root, "r1", episodes=2)
+    settle_budget(root, "r1", episodes=2, wall_s=30.0)
+    assert verify_ledger(root) is True
+    path = root / "runs" / "campaign_ledger.jsonl"
+    tampered = path.read_text().replace('"episodes": 2', '"episodes": 1', 1)
+    path.write_text(tampered)
+    assert verify_ledger(root) is False
+
+
+def test_local_override_is_exempt_from_budget_refusal(tmp_path):
+    """PR #24 P2: exhausted campaign budgets must NOT block local
+    development runs — they neither charge nor consume the campaign."""
+    from aisle.harness.rollout import reserve_budget, settle_budget
+
+    root = _fake_root(tmp_path, hash_ok=True, episodes_ceiling=1)
+    reserve_budget(root, "r1", episodes=1)
+    settle_budget(root, "r1", episodes=1, wall_s=10.0)
+    graph = REPO_ROOT / "graphs" / "expert_t0.yaml"
+    result = run_gates(root, graph, "b", no_idea_gate=True, env_baseline="local", episodes=5)
+    assert result["ok"] is True  # exhausted campaign, local run still allowed
+    assert result["budget"]["episodes_left"] == 0  # ...and remaining is reported
+
+
+def test_unknown_baseline_is_refused(tmp_path):
+    """ADR-21 round 3 (PR #24): only the server-resolved 'origin/main' or
+    the logged 'local' override are accepted — an agent cannot point the
+    gate at HEAD or any ref it controls."""
+    root = _fake_root(tmp_path, hash_ok=True)
+    graph = REPO_ROOT / "graphs" / "expert_t0.yaml"
+    for ref in ("HEAD", "main", "refs/heads/feature", "origin/other"):
+        result = run_gates(root, graph, "b", no_idea_gate=True, env_baseline=ref)
+        assert result["ok"] is False and result["gate"] == "env_hash", ref
+        assert "unknown baseline" in result["detail"]
+
+
+def test_gates_record_the_env_baseline(tmp_path):
+    """ADR-21: every gate result names the frozen-set baseline that
+    validated it — 'local' (the dev override) is auditable in manifests."""
+    root = _fake_root(tmp_path, hash_ok=True)
+    graph = REPO_ROOT / "graphs" / "expert_t0.yaml"
+    result = run_gates(root, graph, "b", no_idea_gate=True, env_baseline="local")
+    assert result["ok"] is True and result["env_baseline"] == "local"
+    assert result["env_baseline_oid"] is None  # no immutable identity claimed
+
+
+def test_trusted_baseline_resolves_from_the_server_not_local_refs(tmp_path):
+    """ADR-21 round 3 (PR #24): the trusted baseline is FETCHED from the
+    remote at gate time and pinned by commit OID — moving the local
+    remote-tracking ref (the reviewer's attack) changes nothing, and a
+    root with no remote fails CLOSED."""
+    import os as _os
+
+    from aisle.harness.rollout import resolve_trusted_baseline
+
+    env = {
+        "PATH": _os.environ["PATH"],
+        "HOME": str(tmp_path),
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
+
+    def git(cwd, *args):
+        proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, env=env)
+        assert proc.returncode == 0, (args, proc.stderr)
+        return proc.stdout.strip()
+
+    server = tmp_path / "server.git"
+    server.mkdir()
+    git(server, "init", "-q", "--bare", "-b", "main")
+    work = tmp_path / "work"
+    work.mkdir()
+    git(work, "init", "-q", "-b", "main")
+    (work / "f.txt").write_text("baseline\n")
+    git(work, "add", "-A")
+    git(work, "commit", "-qm", "baseline")
+    git(work, "remote", "add", "origin", str(server))
+    git(work, "push", "-q", "origin", "main")
+    server_oid = git(work, "rev-parse", "HEAD")
+
+    oid, err = resolve_trusted_baseline(work)
+    assert err is None and oid == server_oid
+
+    # the attack: advance local work and MOVE the local remote-tracking ref
+    (work / "f.txt").write_text("tampered\n")
+    git(work, "add", "-A")
+    git(work, "commit", "-qm", "local tamper")
+    git(work, "update-ref", "refs/remotes/origin/main", "HEAD")
+    oid, err = resolve_trusted_baseline(work)
+    assert err is None and oid == server_oid  # still the SERVER's head
+
+    # fail closed without a remote
+    lonely = tmp_path / "lonely"
+    lonely.mkdir()
+    git(lonely, "init", "-q", "-b", "main")
+    oid, err = resolve_trusted_baseline(lonely)
+    assert oid is None and err is not None

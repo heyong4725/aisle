@@ -30,6 +30,8 @@ def test_rollout_two_episodes_end_to_end(tmp_path):
     run_id = f"accept-smoke-{logged['id']}"
     code, report = run_harness(
         "rollout",
+        "--env-baseline",
+        "local",
         "--graph",
         str(REPO_ROOT / "graphs" / "expert_t0.yaml"),
         "--tier",
