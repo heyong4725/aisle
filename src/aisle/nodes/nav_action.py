@@ -66,7 +66,12 @@ def main() -> None:
             else:
                 machine.on_goal(target, metadata.get("goal_id", ""))
         elif event["id"] == "base_pose":
-            machine.on_base_pose(event["value"].to_numpy(zero_copy_only=False).tolist())
+            # the TC-2 sim stamp drives the machine's stall/timeout budgets
+            # (SIM seconds, CON-5) — outcomes must not depend on host rtf
+            machine.on_base_pose(
+                event["value"].to_numpy(zero_copy_only=False).tolist(),
+                int(metadata.get("sim_time_ns", 0)),
+            )
         elif event["id"] == "tick":
             # drive toward the target THIS tick (if navigating), then advance
             # the lifecycle; on a terminal result, stop the base

@@ -306,29 +306,31 @@ def test_base_topic_schemas_in_vocabulary():
 class TestNavLifecycle:
     """MOB-2: the nav action's pure lifecycle — goal opens it, per-tick
     feedback {t, dist_remaining} >= 2 Hz, and a result {status, failure,
-    t_end}. Deterministic ticks (CON-5), no wall clock."""
+    t_end}. Timeout/stall are SIM-second budgets keyed to base_pose sim
+    stamps (PR #21 round 4, CON-5): outcomes are a function of the
+    trajectory alone, never of the host machine's rtf."""
+
+    # 50 Hz base_pose: one sim stamp every 20 ms
+    STEP_NS = 20_000_000
 
     def _machine(self):
         from aisle.mobility.nav import NavStateMachine
 
-        return NavStateMachine(
-            arrival_tol_m=0.1, timeout_ticks=20, stall_ticks=5, arrival_yaw_rad=0.1
-        )
+        return NavStateMachine(arrival_tol_m=0.1, timeout_s=0.4, stall_s=0.1, arrival_yaw_rad=0.1)
 
     def test_goal_then_feedback_until_arrival(self):
-        from aisle.mobility.nav import NavStateMachine
-
-        m = NavStateMachine(arrival_tol_m=0.1, timeout_ticks=20, stall_ticks=5, arrival_yaw_rad=0.1)
+        m = self._machine()
         assert m.on_goal([1.0, 0.0, 0.0], "nav-1") == []
-        m.on_base_pose([0.0, 0.0, 0.0])
+        m.on_base_pose([0.0, 0.0, 0.0], 0)
         out = m.on_tick()
         assert out[0][0] == "nav_feedback"
         assert out[0][1]["t"] == 1 and out[0][1]["dist_remaining"] == pytest.approx(1.0)
         # drive closer, then arrive
-        m.on_base_pose([0.95, 0.0, 0.0])
+        m.on_base_pose([0.95, 0.0, 0.0], self.STEP_NS)
         out = m.on_tick()
         assert out[0][0] == "nav_result"
-        assert out[0][1] == {"status": "success", "failure": None, "t_end": 2}
+        # t_end reports SIM seconds since the first stamped pose
+        assert out[0][1] == {"status": "success", "failure": None, "t_end": 0.02}
 
     def test_second_goal_while_active_is_refused(self):
         """TC-7: nav actions do not overlap."""
@@ -336,31 +338,42 @@ class TestNavLifecycle:
         m.on_goal([1.0, 0.0, 0.0], "nav-1")
         assert m.on_goal([2.0, 0.0, 0.0], "nav-2") == []
 
-    def test_timeout(self):
+    def test_timeout_is_sim_time(self):
         m = self._machine()
         m.on_goal([5.0, 0.0, 0.0], "nav-1")
-        m.on_base_pose([0.0, 0.0, 0.0])
         # never arrives, but keeps making tiny progress so it is not blocked
         result = None
-        for i in range(1, 30):
-            m.on_base_pose([i * 0.01, 0.0, 0.0])
+        for i in range(30):
+            m.on_base_pose([i * 0.01, 0.0, 0.0], i * self.STEP_NS)
             out = m.on_tick()
             if out and out[0][0] == "nav_result":
                 result = out[0][1]
                 break
-        assert result == {"status": "fail", "failure": "timeout", "t_end": 20}
+        # 0.4 sim s elapsed at stamp 20 (regardless of how many wall ticks)
+        assert result == {"status": "fail", "failure": "timeout", "t_end": 0.4}
 
     def test_blocked_when_no_progress(self):
         m = self._machine()
         m.on_goal([5.0, 0.0, 0.0], "nav-1")
-        m.on_base_pose([1.0, 0.0, 0.0])  # stuck here
         result = None
-        for _ in range(10):
-            out = m.on_tick()  # pose never changes
+        for i in range(10):
+            m.on_base_pose([1.0, 0.0, 0.0], i * self.STEP_NS)  # stuck: sim
+            out = m.on_tick()  # advances, the pose never does
             if out and out[0][0] == "nav_result":
                 result = out[0][1]
                 break
         assert result is not None and result["failure"] == "blocked"
+
+    def test_stall_needs_sim_evidence_not_wall_ticks(self):
+        """CON-5: wall ticks WITHOUT fresh sim stamps must never fail a
+        leg — a slow host that ticks many times between base_pose updates
+        would otherwise fake a stall."""
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-1")
+        m.on_base_pose([1.0, 0.0, 0.0], 0)
+        for _ in range(50):  # many wall ticks, sim frozen at stamp 0
+            out = m.on_tick()
+            assert not (out and out[0][0] == "nav_result"), out
 
     def test_yaw_must_converge_before_success(self):
         """MOB-2 (PR #14 re-review): a pose goal is NOT complete on x/y alone
@@ -368,15 +381,13 @@ class TestNavLifecycle:
         wrong yaw the action keeps running until the yaw is within tolerance."""
         from aisle.mobility.nav import NavStateMachine
 
-        m = NavStateMachine(
-            arrival_tol_m=0.1, timeout_ticks=50, stall_ticks=50, arrival_yaw_rad=0.1
-        )
+        m = NavStateMachine(arrival_tol_m=0.1, timeout_s=1.0, stall_s=1.0, arrival_yaw_rad=0.1)
         m.on_goal([0.0, 0.0, 1.5708], "y1")
-        m.on_base_pose([0.0, 0.0, 0.0])  # in position, wrong orientation
+        m.on_base_pose([0.0, 0.0, 0.0], 0)  # in position, wrong orientation
         out = m.on_tick()
         assert out[0][0] == "nav_feedback"  # NOT success — yaw not converged
         assert set(out[0][1]) == {"t", "dist_remaining"}  # MOB-2 contract shape
-        m.on_base_pose([0.0, 0.0, 1.55])  # rotated close to target yaw
+        m.on_base_pose([0.0, 0.0, 1.55], self.STEP_NS)  # rotated near target
         out = m.on_tick()
         assert out[0][0] == "nav_result" and out[0][1]["status"] == "success"
 
@@ -524,20 +535,18 @@ class TestRotateOnlyLatch:
     def _machine(self):
         from aisle.mobility.nav import NavStateMachine
 
-        return NavStateMachine(
-            arrival_tol_m=0.05, timeout_ticks=100, stall_ticks=50, arrival_yaw_rad=0.05
-        )
+        return NavStateMachine(arrival_tol_m=0.05, timeout_s=3.0, stall_s=1.0, arrival_yaw_rad=0.05)
 
     def test_latch_engages_inside_and_holds_at_boundary(self):
         m = self._machine()
         m.on_goal([1.0, 0.0, 1.5708], "g")
-        m.on_base_pose([0.96, 0.0, 0.0])  # inside the radius
+        m.on_base_pose([0.96, 0.0, 0.0], 0)  # inside the radius
         m.on_tick()
         assert m.rotating
-        m.on_base_pose([0.93, 0.0, 0.5])  # drifted just past tol (0.07 < 2x)
+        m.on_base_pose([0.93, 0.0, 0.5], 20_000_000)  # just past tol (< 2x)
         m.on_tick()
         assert m.rotating  # hysteresis holds
-        m.on_base_pose([0.80, 0.0, 0.5])  # pushed well outside (0.2 > 2x)
+        m.on_base_pose([0.80, 0.0, 0.5], 40_000_000)  # well outside (> 2x)
         m.on_tick()
         assert not m.rotating
 
@@ -563,8 +572,8 @@ class TestRotateOnlyLatch:
         m.on_goal([1.0, 0.0, 1.5708], "g")
         pose = [0.955, 0.0, 0.0]  # right at the boundary, wrong yaw
         result = None
-        for _ in range(100):
-            m.on_base_pose(pose)
+        for i in range(100):
+            m.on_base_pose(pose, i * 20_000_000)
             out = m.on_tick()
             if out and out[0][0] == "nav_result":
                 result = out[0][1]
@@ -580,14 +589,12 @@ def test_turn_in_place_toward_bearing_is_progress():
     improvement, not just distance."""
     from aisle.mobility.nav import NavStateMachine
 
-    m = NavStateMachine(
-        arrival_tol_m=0.05, timeout_ticks=1000, stall_ticks=50, arrival_yaw_rad=0.05
-    )
+    m = NavStateMachine(arrival_tol_m=0.05, timeout_s=20.0, stall_s=1.0, arrival_yaw_rad=0.05)
     m.on_goal([1.0, 0.0, 0.0], "g")
     yaw = 3.0  # facing away; distance will not change while turning
     result = None
-    for _ in range(300):
-        m.on_base_pose([0.0, 0.0, yaw])
+    for i in range(300):
+        m.on_base_pose([0.0, 0.0, yaw], i * 20_000_000)
         out = m.on_tick()
         if out and out[0][0] == "nav_result":
             result = out[0][1]
@@ -603,13 +610,15 @@ class TestNavCaptureBand:
     stalled 0.5 mm outside the arrival radius with yaw still ~pi off,
     dithered below the progress epsilons, and failed blocked three times."""
 
+    STEP_NS = 20_000_000
+
     def _machine(self):
         from aisle.mobility.nav import NavStateMachine
 
         return NavStateMachine(
             arrival_tol_m=0.05,
-            timeout_ticks=2000,
-            stall_ticks=5,
+            timeout_s=40.0,
+            stall_s=0.1,
             arrival_yaw_rad=0.05,
             capture_tol_m=0.075,
         )
@@ -618,21 +627,21 @@ class TestNavCaptureBand:
         # the S1 gate failure verbatim: parked 0.0505 m out, yaw ~pi off
         m = self._machine()
         m.on_goal([-0.5, 0.0, 3.14], "nav-1")
-        m.on_base_pose([-0.4995, -0.0505, -0.02])  # dist ~0.0505, stuck
-        for _ in range(6):  # exhaust the drive-phase stall window
+        for i in range(7):  # exhaust the drive-phase stall window (0.1 sim s)
+            m.on_base_pose([-0.4995, -0.0505, -0.02], i * self.STEP_NS)
             out = m.on_tick()
             assert not (out and out[0][0] == "nav_result"), out
         assert m.rotating  # captured: final-rotate, not blocked
-        m.on_base_pose([-0.4995, -0.0505, 3.13])  # rotated to the final yaw
+        m.on_base_pose([-0.4995, -0.0505, 3.13], 8 * self.STEP_NS)  # rotated
         out = m.on_tick()
         assert out[0][0] == "nav_result" and out[0][1]["status"] == "success"
 
     def test_drive_stall_outside_capture_still_fails_blocked(self):
         m = self._machine()
         m.on_goal([5.0, 0.0, 0.0], "nav-1")
-        m.on_base_pose([1.0, 0.0, 0.0])  # 4 m away, genuinely stuck
         result = None
-        for _ in range(10):
+        for i in range(10):
+            m.on_base_pose([1.0, 0.0, 0.0], i * self.STEP_NS)  # 4 m out, stuck
             out = m.on_tick()
             if out and out[0][0] == "nav_result":
                 result = out[0][1]
@@ -644,7 +653,7 @@ class TestNavCaptureBand:
         # rotate handoff — the tight radius stays the aim point
         m = self._machine()
         m.on_goal([0.1, 0.0, 0.0], "nav-1")
-        m.on_base_pose([0.04, 0.0, 0.0])  # dist 0.06: in capture, driving
+        m.on_base_pose([0.04, 0.0, 0.0], 0)  # dist 0.06: in capture, driving
         out = m.on_tick()
         assert out[0][0] == "nav_feedback"
         assert not m.rotating
@@ -652,7 +661,7 @@ class TestNavCaptureBand:
     def test_capture_tol_defaults_to_1p5x_arrival(self):
         from aisle.mobility.nav import NavStateMachine
 
-        m = NavStateMachine(arrival_tol_m=0.1, timeout_ticks=20, stall_ticks=5, arrival_yaw_rad=0.1)
+        m = NavStateMachine(arrival_tol_m=0.1, timeout_s=1.0, stall_s=0.1, arrival_yaw_rad=0.1)
         assert m.capture_tol_m == pytest.approx(0.15)
 
     def test_load_nav_params_exposes_capture_tol(self):

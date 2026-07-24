@@ -27,8 +27,8 @@ def load_nav_params(embodiment: str) -> dict:
         "arrival_tol_m": float(p["nav_arrival_tol_m"]),
         "arrival_yaw_rad": float(p["nav_arrival_yaw_rad"]),
         "capture_tol_m": float(p["nav_capture_tol_m"]),
-        "timeout_ticks": int(p["nav_timeout_ticks"]),
-        "stall_ticks": int(p["nav_stall_ticks"]),
+        "timeout_s": float(p["nav_timeout_sim_s"]),
+        "stall_s": float(p["nav_stall_sim_s"]),
     }
 
 
@@ -69,15 +69,20 @@ class NavStateMachine:
     """Pure nav-action lifecycle (SPEC 210 MOB-2), mirroring the episode
     action (TC-7). A goal opens a nav toward a store-frame target; each
     tick emits feedback {t, dist_remaining} (>= 2 Hz) or a terminal result
-    {status, failure, t_end}. Ticks are deterministic (CON-5): a wall clock
-    would make same-seed runs diverge. Handlers return
-    [(topic, payload, goal_id), ...]."""
+    {status, failure, t_end}.
+
+    Timeout and stall are measured in SIM seconds via the sim_time_ns
+    stamps riding base_pose (PR #21 round 4, CON-5): wall-tick budgets made
+    the OUTCOME depend on the machine's rtf — the same seed passed on one
+    machine and timed out on another because a converging leg burned wall
+    ticks, not sim time. Decisions keyed to sim stamps are a function of
+    the trajectory alone. Handlers return [(topic, payload, goal_id), ...]."""
 
     def __init__(
         self,
         arrival_tol_m: float,
-        timeout_ticks: int,
-        stall_ticks: int,
+        timeout_s: float,
+        stall_s: float,
         arrival_yaw_rad: float,
         capture_tol_m: float | None = None,
     ) -> None:
@@ -90,15 +95,17 @@ class NavStateMachine:
         # detector). Config-sourced (nav_capture_tol_m); 1.5x arrival when
         # constructed bare.
         self.capture_tol_m = 1.5 * arrival_tol_m if capture_tol_m is None else capture_tol_m
-        self.timeout_ticks = timeout_ticks
-        self.stall_ticks = stall_ticks
+        self.timeout_s = timeout_s
+        self.stall_s = stall_s
         self.target: list[float] | None = None
         self.goal_id: str | None = None
         self.pose: list[float] | None = None
         self.ticks = 0
+        self._sim_ns: int | None = None
+        self._t0_ns: int | None = None
+        self._progress_ns: int | None = None
         self._best_dist = math.inf
         self._best_head = math.inf
-        self._since_progress = 0
         # rotate-only latch (T15 round 5): once inside the arrival radius
         # the base must STOP translating and only rotate — un-latched
         # drive/rotate alternation at the boundary chatters, distance never
@@ -112,20 +119,24 @@ class NavStateMachine:
         self.goal_id = goal_id
         self.pose = None
         self.ticks = 0
+        self._t0_ns = None
+        self._progress_ns = None
         self._best_dist = math.inf
         self._best_head = math.inf
-        self._since_progress = 0
         self.rotating = False
         return []
 
-    def on_base_pose(self, pose: list[float]) -> list:
-        """Latest base pose (MOB-1 base_pose); consumed by the next tick."""
+    def on_base_pose(self, pose: list[float], sim_time_ns: int) -> list:
+        """Latest base pose (MOB-1 base_pose) with its sim stamp (TC-2);
+        consumed by the next tick."""
         if self.target is not None:
             self.pose = [float(v) for v in pose]
+            self._sim_ns = int(sim_time_ns)
         return []
 
     def _finish(self, status: str, failure: str | None) -> list:
-        result = {"status": status, "failure": failure, "t_end": self.ticks}
+        elapsed = 0.0 if self._t0_ns is None else (self._sim_ns - self._t0_ns) / 1e9
+        result = {"status": status, "failure": failure, "t_end": round(elapsed, 3)}
         goal_id = self.goal_id
         self.target = None
         self.goal_id = None
@@ -135,6 +146,9 @@ class NavStateMachine:
         if self.target is None or self.pose is None:
             return []
         self.ticks += 1
+        if self._t0_ns is None:
+            self._t0_ns = self._sim_ns
+            self._progress_ns = self._sim_ns
         dist = math.hypot(self.target[0] - self.pose[0], self.target[1] - self.pose[1])
         yaw_err = abs(_wrap(self.target[2] - self.pose[2]))
         # hysteresis: latch rotate-only inside the radius; release only if
@@ -148,7 +162,7 @@ class NavStateMachine:
             # phase change: reset the progress baselines
             self._best_dist = math.inf
             self._best_head = math.inf
-            self._since_progress = 0
+            self._progress_ns = self._sim_ns
         # arrival requires BOTH translation AND orientation to converge
         # (MOB-2); once latched-rotating, the capture band counts as arrived
         # — rotate-only cannot translate, so demanding the tight radius from
@@ -176,20 +190,18 @@ class NavStateMachine:
                 self._best_head = head_err
                 progressed = True
         if progressed:
-            self._since_progress = 0
-        else:
-            self._since_progress += 1
-            if self._since_progress >= self.stall_ticks:
-                if not self.rotating and dist <= self.capture_tol_m:
-                    # captured: the drive stalled ON the target (within the
-                    # band) — hand off to the final rotate instead of blocked
-                    self.rotating = True
-                    self._best_dist = math.inf
-                    self._best_head = math.inf
-                    self._since_progress = 0
-                else:
-                    return self._finish("fail", "blocked")
-        if self.ticks >= self.timeout_ticks:
+            self._progress_ns = self._sim_ns
+        elif (self._sim_ns - self._progress_ns) / 1e9 >= self.stall_s:
+            if not self.rotating and dist <= self.capture_tol_m:
+                # captured: the drive stalled ON the target (within the
+                # band) — hand off to the final rotate instead of blocked
+                self.rotating = True
+                self._best_dist = math.inf
+                self._best_head = math.inf
+                self._progress_ns = self._sim_ns
+            else:
+                return self._finish("fail", "blocked")
+        if (self._sim_ns - self._t0_ns) / 1e9 >= self.timeout_s:
             return self._finish("fail", "timeout")
         # MOB-2 contract feedback is {t, dist_remaining}; orientation progress
         # is tracked internally (above) and verified via base_pose, not

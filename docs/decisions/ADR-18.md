@@ -94,14 +94,15 @@ architecture; the agent picks and records). Task: T15. Relates to
    for retail-scale ones (600 sim s / 2100 wall s per episode) on
    S1..S3. The acceptance gate drives the PUBLIC harness path, not a
    bare `dora run`.
-14. **Store camera policy** (HAR-4, PR #21 round 2). expert_s1.yaml now
-   declares `rgb_overhead` so the harness records overhead.mp4.
-   `store_topic_rates` keeps that stream at 5 Hz — ample for an episode
-   video, and the desk 30 Hz frame transport is pure overhead at store
-   scale — and drops the consumer-less wrist/depth streams (their
-   renders were waste in every store run). Desk rates are untouched;
-   the gate asserts the video and the rgb_overhead trace through the
-   public path.
+14. **HAR-4 video at contract rates** (PR #21 rounds 2-4). expert_s1.yaml
+   declares `rgb_overhead` so the harness records overhead.mp4, and the
+   gate asserts the video and the rgb_overhead trace through the public
+   path. A round-2 attempt to run the store cameras at reduced rates
+   (5 Hz overhead, wrist/depth dropped) was REVERTED in round 4: SPEC
+   010's TC-4 rates are a stable Class C contract with no store
+   exception, and the probe run showed the 30 Hz transport was never
+   the failure cause anyway (~20% rtf cost, no stalls). The store
+   publishes all camera streams at contract rates.
 15. **Nav capture band** (MOB-2, PR #21 round 3). With the video stream
    perturbing event timing, the counter park landed 0.5 mm OUTSIDE the
    0.05 arrival radius and nav could not recover: a diff-drive base
@@ -124,14 +125,18 @@ architecture; the agent picks and records). Task: T15. Relates to
    not. Inside `nav_near_field_m` (0.25) the drive phase turns at the
    rotate-phase cap (0.3) — the same physics as the round-8 rotate fix,
    applied to the approach.
-17. **Nav budgets scale with rtf** (MOB-2, PR #21 round 3, the terminal
-   finding). The wall-t tap acquitted every transport suspect (base_pose
-   gaps < 0.1 s wall end to end) and showed a CORRECT, converging final
-   rotate — 2.3 rad at the 0.3 cap, exactly on command — killed by
-   `nav_timeout_ticks` = 3000 wall ticks (60 s): nav budgets are WALL
-   ticks measuring a SIM process, and at store rtf ~0.3 a sim-second
-   costs ~3x the desk's ticks. 12000/400. (On real hardware wall == sim
-   and these shrink back — the sim-relaxation stance from PR #14.)
+17. **Nav budgets in SIM seconds** (MOB-2, PR #21 rounds 3-4, CON-5).
+   The wall-t tap acquitted every transport suspect (base_pose gaps
+   < 0.1 s wall end to end) and showed a CORRECT, converging final
+   rotate — 2.3 rad at the 0.3 cap, exactly on command — killed by the
+   wall-tick timeout budget: wall ticks measure a SIM process, so the
+   OUTCOME depended on host rtf (the same seed passed on one machine
+   and timed out on the reviewer's). Round 4 moved the machine to
+   sim-time budgets keyed to base_pose sim stamps (`nav_timeout_sim_s`
+   60, `nav_stall_sim_s` 5): decisions are a function of the trajectory
+   alone, wall ticks without fresh sim evidence can never fail a leg,
+   and nav_result t_end now reports sim seconds. MOB-2's contract
+   (goal/feedback >= 2 Hz/result shapes) is unchanged.
 
 ## Known limits (v1)
 
