@@ -16,3 +16,13 @@ SCN-4 = "so101 asset blocked on owner acquisition (ADR-6); franka half verified"
 
 
 # SPEC 210 mobility — post-M0, deferred to T11.
+
+# SPEC 300/310 powder family — GATED (PW-0): no task beyond the T20 spike
+# may start until the human go/no-go ADR. Tests citing these land with
+# T21 (contract: FT-2, BAL-1, TOOL-1) and T22/T23 (scene/verifier: PW-3,
+# PW-4); the implementing PRs MUST remove these waivers.
+PW-3 = "gated by PW-0 ADR; oracle_mass tests land with T22 (bench scene)"
+PW-4 = "gated by PW-0 ADR; honest-scope rule cited by T23 verifier/docs tests"
+FT-2 = "gated by PW-0 ADR; impedance-reject test lands with T21 (SPEC 310)"
+BAL-1 = "gated by PW-0 ADR; balance settling test lands with T21 (SPEC 310)"
+TOOL-1 = "gated by PW-0 ADR; tool-change lifecycle test lands with T21 (SPEC 310)"
