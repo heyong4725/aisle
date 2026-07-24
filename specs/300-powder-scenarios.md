@@ -14,14 +14,21 @@ conventions), 050 (registry ext), 070 (rollout tiers).
   scoops); (c) qualitative pile/pour sanity (angle of repose forms; no
   explosion). Results land in `docs/decisions/ADR-powder-spike.md` with a
   human go/no-go and the chosen solver + particle budget. All PW thresholds
-  below marked TBD-SPIKE are filled by that ADR via one spec-change PR.
+  below marked TBD-SPIKE — including the TIER TARGET-MASS RANGES (a
+  percentage tolerance is meaningless for targets near the particle-mass
+  quantization the spike measures) — are filled by that ADR via one
+  spec-change PR.
 
 ## Scene & oracle
 
 - PW-1: Bench scene extends SPEC 020 conventions: fixed-base arm (franka
   profile), two balance stations (source vessel on balance A, receiving vessel
-  on balance B), tool rack with ≥3 scoop/spatula tools of graded capacity,
-  vessel rack. `build_bench(seed, material_cfg, ...)` pure per SCN-1.
+  on balance B), a source RESERVOIR (the workstation's hopper) that refills
+  the source vessel across PW-7 redo-cycles — free in sim (the PW-12 teleport
+  rebuild restores material) but named here so the redo workflow has an
+  explicit material supply on hardware — tool rack with ≥3 scoop/spatula
+  tools of graded capacity, vessel rack. `build_bench(seed, material_cfg,
+  ...)` pure per SCN-1.
 - PW-2: Powder = particle system; `scenes/materials.toml` defines named
   materials as parameter sets {particle_size, density, friction, cohesion},
   seed-sampled for randomization tiers. No material params inline (SCN-2 spirit).
@@ -39,12 +46,13 @@ conventions), 050 (registry ext), 070 (rollout tiers).
 
 - PW-5 (P0): scoop-and-dump — transfer ANY nonzero mass source→receiver without
   spill > TBD-SPIKE mg outside vessels. Sanity tier.
-- PW-6 (P1): open-loop target — transfer target mass ±10%, single strategy,
-  known material.
-- PW-7 (P2): closed-loop target — target mass ±1% via multi-scoop with
-  balance feedback; overshoot beyond tolerance triggers redo-cycle (reset,
-  re-dose) per the workstation's spec; success counts final state only,
-  redo count reported.
+- PW-6 (P1): open-loop target — transfer target mass (range TBD-SPIKE)
+  ±10%, single strategy, known material.
+- PW-7 (P2): closed-loop target — target mass (range TBD-SPIKE; MUST sit
+  well above the particle-mass quantization floor the spike measures) ±1%
+  via multi-scoop with balance feedback; overshoot beyond tolerance
+  triggers redo-cycle (reset, re-dose) per the workstation's spec; success
+  counts final state only, redo count reported.
 - PW-8 (P3): material randomization — P2 criteria over seed-sampled materials
   (PW-2); reports per-material-cluster success (the robustness claim).
 - PW-9 (P4): autonomous tooling — agent-composed graphs choose tool per
