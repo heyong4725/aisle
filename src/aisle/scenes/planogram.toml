@@ -9,9 +9,12 @@
 [store]
 # navigable aisle corridors between shelf rows MUST stay >= this (RS-2)
 aisle_min_width_m = 0.9
-# delivery counter (S1 drop target): fixed box, items delivered onto its top
-counter_pos = [-1.0, 0.0, 0.45]
-counter_size = [0.30, 0.90, 0.90]
+# delivery counter (S1 drop target): fixed box, items delivered onto its
+# top. Top at 0.55 m: a FLOOR-mounted franka cannot top-down place at
+# 0.9 m + box height (wrist-down folds the reach; probed in T15) — a
+# raised arm mount is the Phase-4 fix (ADR-18)
+counter_pos = [-1.0, 0.0, 0.275]
+counter_size = [0.30, 0.90, 0.55]
 # restocking bin (S2 source): fixed platform, stock rests on its top surface
 bin_pos = [-1.0, 1.2, 0.15]
 bin_size = [0.40, 0.50, 0.30]

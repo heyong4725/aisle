@@ -100,3 +100,26 @@ def test_rollout_refuses_unsafe_or_reused_run_ids(tmp_path):
     # the fake root), proving tier is no longer a refusal cause
     tiered = rollout(tier="T1", run_id="fresh", **common)
     assert "Phase 2" not in str(tiered.get("error", ""))
+
+
+def test_tier_budgets_scale_for_retail_tiers():
+    """RS-6/HAR-1 (PR #21): `harness rollout` is the public path for EVERY
+    tier, so retail tiers (S1..S3, store-sim rtf ~0.1) get episode/wall
+    budgets a healthy ~25-wall-minute episode fits inside, while desk tiers
+    keep the tight ADR-11 budgets."""
+    from aisle.harness.rollout import (
+        EPISODE_TIMEOUT_S,
+        PER_EPISODE_BUDGET_S,
+        RETAIL_EPISODE_TIMEOUT_S,
+        RETAIL_PER_EPISODE_BUDGET_S,
+        tier_budgets,
+    )
+
+    for tier in ("S1", "S2", "S3"):
+        assert tier_budgets(tier) == (RETAIL_EPISODE_TIMEOUT_S, RETAIL_PER_EPISODE_BUDGET_S)
+    for tier in ("T0", "T1", "T2"):
+        assert tier_budgets(tier) == (EPISODE_TIMEOUT_S, PER_EPISODE_BUDGET_S)
+    # the S1 gate's observed shape: ~101.5 sim s episode, ~28:39 wall total
+    # (ADR-18) — the retail budgets must clear both with headroom
+    assert RETAIL_EPISODE_TIMEOUT_S > 102
+    assert RETAIL_PER_EPISODE_BUDGET_S > 25 * 60

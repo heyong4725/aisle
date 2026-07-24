@@ -32,6 +32,8 @@ def main() -> None:
     from aisle.topics import make_sender
 
     seeds = [int(s) for s in os.environ.get("AISLE_SEEDS", "0").split(",")]
+    tier = os.environ.get("AISLE_TIER", "T0")
+    retail = tier in ("S1", "S2", "S3")  # RS-6: rollout gains --tier
     meds_env = os.environ.get("AISLE_TARGET_MEDS", "")
     targets = (
         meds_env.split(",")
@@ -40,13 +42,15 @@ def main() -> None:
     )
     # refuse bad config LOUDLY at startup: an unknown med deadlocks the run
     # (the verifier refuses the goal without emitting a result), and a
-    # short target list would IndexError mid-run
-    unknown = [m for m in targets if m not in MED_NAMES]
-    if unknown or len(targets) != len(seeds):
-        raise SystemExit(
-            f"rollout-client config refused: unknown meds {unknown}, "
-            f"{len(targets)} targets for {len(seeds)} seeds"
-        )
+    # short target list would IndexError mid-run. Retail tiers carry no
+    # target_med — their goals come from the seeded episode generator.
+    if not retail:
+        unknown = [m for m in targets if m not in MED_NAMES]
+        if unknown or len(targets) != len(seeds):
+            raise SystemExit(
+                f"rollout-client config refused: unknown meds {unknown}, "
+                f"{len(targets)} targets for {len(seeds)} seeds"
+            )
     timeout_s = float(os.environ.get("AISLE_TIMEOUT_S", "30"))
     results_path = os.environ.get("AISLE_RESULTS", "")
 
@@ -69,9 +73,16 @@ def main() -> None:
                 phase = "awaiting_reset"
         elif event["id"] == "reset_done" and phase == "awaiting_reset":
             reset_meta = event.get("metadata") or {}
-            goal = {
-                "tier": os.environ.get("AISLE_TIER", "T0"),
-                "target_med": targets[episode],
+            if retail:
+                # RS-3/RS-6: the retail goal IS the seeded oracle task
+                # description; the verifier derives requirements from it
+                from aisle.scenes.store import generate_episode
+
+                goal = generate_episode(seeds[episode], tier)
+            else:
+                goal = {"target_med": targets[episode]}
+            goal |= {
+                "tier": tier,
                 "timeout_s": timeout_s,
                 "seed": seeds[episode],
                 # the teleport's sim time (BRG-4): the verifier captures the

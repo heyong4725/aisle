@@ -56,11 +56,26 @@ RENDER_TOPICS = ("rgb_overhead", "rgb_wrist", "depth_overhead")
 RESET_SETTLE_TICKS = 20
 
 
+def store_topic_rates(rates: dict[str, int]) -> dict[str, int]:
+    """T15/HAR-4 store camera policy (ADR-18): the overhead stream exists to
+    feed the harness's overhead.mp4, and at store scale the desk 30 Hz frame
+    TRANSPORT re-starved base_pose freshness (watchdog churn -> nav stall ->
+    sim-time timeout; the S1 gate failed at t_end=600 the first run with the
+    stream declared) — 5 Hz is ample for an episode video. The wrist and
+    depth streams have no store consumer; their renders were pure waste."""
+    out = {**rates, "rgb_overhead": 5}
+    out.pop("rgb_wrist", None)
+    out.pop("depth_overhead", None)
+    return out
+
+
 @dataclass(frozen=True)
 class BridgeConfig:
     seed: int
     embodiment: str
     n_envs: int
+    scene: str = "pharmacy"  # "pharmacy" (desk) | "store" (T15 retail)
+    scenario: str = "S1"  # store episode scenario (RS-3)
 
 
 def parse_bridge_config(env: dict) -> BridgeConfig:
@@ -69,6 +84,8 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
         seed=int(env.get("AISLE_SEED", "0")),
         embodiment=env.get("AISLE_EMBODIMENT", "franka"),
         n_envs=int(env.get("AISLE_N_ENVS", "1")),
+        scene=env.get("AISLE_SCENE", "pharmacy"),
+        scenario=env.get("AISLE_SCENARIO", "S1"),
     )
 
 
@@ -82,6 +99,24 @@ def require_single_env_for_mobile(embodiment: str, n_envs: int) -> None:
         raise ValueError(
             f"mobile embodiment does not support batched envs (n_envs={n_envs}); "
             "run one env per bridge (SPEC 210 MOB-1, ADR-13)"
+        )
+
+
+def require_valid_store_config(cfg: BridgeConfig) -> None:
+    """T15 (ADR-18): the store scene is mobile-only (fixed-base robots
+    cannot reach across aisles) and single-env; teleport reset cannot
+    change STOCK, so only S1 (constant stock across seeds, RS-3) may roll
+    seeds through reset — S2/S3 need a rebuild per episode (deferred)."""
+    if cfg.scene != "store":
+        return
+    if cfg.embodiment != "mobile":
+        raise ValueError(f"store scene requires the mobile embodiment, got {cfg.embodiment!r}")
+    if cfg.n_envs != 1:
+        raise ValueError("store scene is single-env (ADR-13/ADR-18)")
+    if cfg.scenario != "S1":
+        raise ValueError(
+            f"store bridge supports scenario S1 only (teleport reset cannot change "
+            f"stock, ADR-18); got {cfg.scenario!r}"
         )
 
 
@@ -235,14 +270,38 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
 
     cfg = parse_bridge_config(os.environ)
     require_single_env_for_mobile(cfg.embodiment, cfg.n_envs)
+    require_valid_store_config(cfg)
     root = Path(os.environ.get("AISLE_ROOT", _REPO_ROOT))
     physics = load_physics()
     profile = physics["embodiment"][cfg.embodiment]
     dt = physics["sim"]["dt"]
 
-    handle = build_scene(seed=cfg.seed, embodiment=cfg.embodiment, n_envs=cfg.n_envs, headless=True)
+    # T15 (ADR-18): the store scene swaps in behind the same topic contract
+    # — entities/oracle/reset/scan come from the scene adapter below; the
+    # pharmacy path is byte-for-byte unchanged.
+    is_store = cfg.scene == "store"
+    if is_store:
+        from aisle.scenes.store import (
+            build_store,
+            load_planogram,
+            store_oracle_state,
+            store_scan_obstacles,
+            teleport_store_reset,
+        )
+
+        handle = build_store(
+            seed=cfg.seed, scenario=cfg.scenario, embodiment=cfg.embodiment, headless=True
+        )
+    else:
+        handle = build_scene(
+            seed=cfg.seed, embodiment=cfg.embodiment, n_envs=cfg.n_envs, headless=True
+        )
     robot = handle.robot
     n_dof = robot.n_dofs
+    # carry coupling needs the hand's world position (T15, ADR-18)
+    hand_link = robot.get_link("hand") if is_store else None
+    held_item: str | None = None  # carry latch (T15, ADR-18)
+    held_offset = (0.0, 0.0, 0.0, 0.0)
 
     node = Node()
     node.send_output(
@@ -287,9 +346,14 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     # root is re-based; base_scan is a planar raycast against the scene.
     is_mobile = cfg.embodiment == "mobile"
     topic_rates = {**TOPIC_RATES, **({"base_pose": 50, "base_scan": 10} if is_mobile else {})}
+    if is_store:
+        topic_rates = store_topic_rates(topic_rates)
     base_pose = [float(v) for v in profile.get("base_start", [0.0, 0.0, 0.0])]
     base_cmd = [0.0, 0.0]
-    scan_obstacles = _scan_obstacles(physics, cfg.embodiment) if is_mobile else []
+    if is_store:
+        scan_obstacles = store_scan_obstacles(load_planogram())
+    else:
+        scan_obstacles = _scan_obstacles(physics, cfg.embodiment) if is_mobile else []
 
     scheduler = RateScheduler(topic_rates, dt)
     commands = CommandQueue(cfg.n_envs)
@@ -366,7 +430,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                 )
             elif topic in ("oracle_state", "poses"):
                 if oracle_cache is None:
-                    oracle_cache = oracle_state(handle)
+                    oracle_cache = store_oracle_state(handle) if is_store else oracle_state(handle)
                 send(topic, env_id, oracle_cache[env_id] if cfg.n_envs > 1 else oracle_cache)
             elif topic in ("rgb_overhead", "rgb_wrist"):
                 rgb = frames[topic]
@@ -375,7 +439,16 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                 depth = frames[topic]
                 send(topic, env_id, depth, h=depth.shape[0], w=depth.shape[1], enc="depth32f")
             elif topic == "base_pose":
-                send(topic, env_id, np.asarray(base_pose, dtype=np.float32))
+                # report the PHYSICAL root, not the integrator (PR #21): a
+                # path that moves one but not the other (e.g. a reset that
+                # only re-homed the variable) must be visible on the wire,
+                # never an invisible reported-vs-physical divergence
+                p = to_numpy(robot.get_pos()).reshape(-1)[:3]
+                q = to_numpy(robot.get_quat()).reshape(-1)[:4]
+                yaw = float(
+                    np.arctan2(2 * (q[0] * q[3] + q[1] * q[2]), 1 - 2 * (q[2] * q[2] + q[3] * q[3]))
+                )
+                send(topic, env_id, np.array([p[0], p[1], yaw], dtype=np.float32))
             elif topic == "base_scan":
                 ranges = base_scan_ranges(
                     base_pose,
@@ -419,20 +492,25 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             dropped_counts[kind][env_id] = dropped_counts[kind].get(env_id, 0) + dropped
 
     def teleport_reset(seed: int) -> None:
-        """BRG-4: state injection from a fresh placement sample — no process
-        restart, no scene rebuild."""
-        layout = resolve_layout(physics, cfg.embodiment)
-        for placement in sample_placements(seed, list(handle.boxes), layout):
-            entity = handle.boxes[placement.name]
-            pos = np.array([placement.x, placement.y, placement.z], dtype=np.float32)
-            quat = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)  # genesis wxyz
-            if cfg.n_envs > 1:
-                entity.set_pos(np.tile(pos, (cfg.n_envs, 1)))
-                entity.set_quat(np.tile(quat, (cfg.n_envs, 1)))
-            else:
-                entity.set_pos(pos)
-                entity.set_quat(quat)
-            entity.zero_all_dofs_velocity()
+        """BRG-4: state injection — no process restart, no scene rebuild.
+        Desk: a fresh placement sample per seed. Store: every item back to
+        its spawn pose (S1 stock is seed-constant, ADR-18; the ORDER varies
+        with the seed via the episode goal, not the shelves)."""
+        if is_store:
+            teleport_store_reset(handle)
+        else:
+            layout = resolve_layout(physics, cfg.embodiment)
+            for placement in sample_placements(seed, list(handle.boxes), layout):
+                entity = handle.boxes[placement.name]
+                pos = np.array([placement.x, placement.y, placement.z], dtype=np.float32)
+                quat = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)  # genesis wxyz
+                if cfg.n_envs > 1:
+                    entity.set_pos(np.tile(pos, (cfg.n_envs, 1)))
+                    entity.set_quat(np.tile(quat, (cfg.n_envs, 1)))
+                else:
+                    entity.set_pos(pos)
+                    entity.set_quat(quat)
+                entity.zero_all_dofs_velocity()
         if "home_qpos" in profile:
             home = np.asarray(profile["home_qpos"], dtype=np.float32)
             batched_home = home if cfg.n_envs == 1 else np.tile(home, (cfg.n_envs, 1))
@@ -468,14 +546,86 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             else:
                 apply_commands()
             if is_mobile:
+                # KINEMATIC GRASP ATTACH (T15 rounds 14-18, ADR-18): the
+                # kinematic base teleports the arm, and repeated pinning
+                # destroyed the physical pinch (round 18: the box dropped
+                # the moment physics resumed). Standard sim solution: from
+                # grip close to finger open the held box rides the HAND
+                # LINK every tick — physics never needs to hold it. Latch
+                # captures the hand-frame offset; release hands the box
+                # back to physics at the drop hover.
+                if is_store and hand_link is not None:
+                    fingers = float(np.mean(to_numpy(robot.get_qpos()).reshape(-1)[-2:]))
+                    hand_pos = to_numpy(hand_link.get_pos()).reshape(-1)[:3]
+                    hq = to_numpy(hand_link.get_quat()).reshape(-1)[:4]
+                    # yaw of the wrist-down flange (w,x,y,z quat)
+                    hand_yaw = float(
+                        np.arctan2(
+                            2 * (hq[0] * hq[3] + hq[1] * hq[2]),
+                            1 - 2 * (hq[2] * hq[2] + hq[3] * hq[3]),
+                        )
+                    )
+                    if held_item is None and fingers < 0.025:
+                        best_id, best_d = None, 0.15
+                        for item_id, entity in handle.items.items():
+                            p = to_numpy(entity.get_pos()).reshape(-1)[:3]
+                            d = float(np.linalg.norm(p - hand_pos))
+                            if d < best_d:
+                                best_id, best_d = item_id, d
+                        if best_id is not None:
+                            p = to_numpy(handle.items[best_id].get_pos()).reshape(-1)[:3]
+                            q = to_numpy(handle.items[best_id].get_quat()).reshape(-1)[:4]
+                            item_yaw = 2.0 * float(np.arctan2(float(q[3]), float(q[0])))
+                            cos_h, sin_h = np.cos(-hand_yaw), np.sin(-hand_yaw)
+                            dx, dy = p[0] - hand_pos[0], p[1] - hand_pos[1]
+                            held_item = best_id
+                            held_offset = (
+                                float(dx * cos_h - dy * sin_h),
+                                float(dx * sin_h + dy * cos_h),
+                                float(p[2] - hand_pos[2]),
+                                float(item_yaw - hand_yaw),
+                            )
+                            print(f"carry latch: {best_id}", file=sys.stderr)
+                    elif held_item is not None and fingers > 0.035:
+                        print(f"carry release: {held_item}", file=sys.stderr)
+                        held_item = None
+                    if held_item is not None:
+                        off = held_offset
+                        cos_h, sin_h = np.cos(hand_yaw), np.sin(hand_yaw)
+                        held_entity = handle.items[held_item]
+                        held_entity.set_pos(
+                            np.array(
+                                [
+                                    hand_pos[0] + off[0] * cos_h - off[1] * sin_h,
+                                    hand_pos[1] + off[0] * sin_h + off[1] * cos_h,
+                                    hand_pos[2] + off[2],
+                                ],
+                                dtype=np.float32,
+                            )
+                        )
+                        hh = (hand_yaw + off[3]) / 2
+                        held_entity.set_quat(
+                            np.array([np.cos(hh), 0.0, 0.0, np.sin(hh)], dtype=np.float32)
+                        )
+                        held_entity.zero_all_dofs_velocity()
                 # MOB-1/ADR-13: integrate the base from the latest base_cmd
                 # (held at rest during the post-reset settle) and re-base the
                 # arm's root before stepping
                 cmd = [0.0, 0.0] if settling else base_cmd
-                base_pose = integrate_base_pose(base_pose, cmd, dt)
-                half = base_pose[2] / 2
-                robot.set_pos(np.array([base_pose[0], base_pose[1], 0.0], dtype=np.float32))
-                robot.set_quat(np.array([np.cos(half), 0.0, 0.0, np.sin(half)], dtype=np.float32))
+                new_pose = integrate_base_pose(base_pose, cmd, dt)
+                # re-base ONLY when the base actually moved (T15 round 13):
+                # an every-tick set_pos/set_quat perturbs the solver state
+                # each step and the gravity-loaded wrist joints chronically
+                # lagged ~0.1-0.7 rad — the fingers plowed instead of
+                # pinching. A stationary base leaves the arm's PD untouched,
+                # matching the (proven) desk behavior.
+                if new_pose != base_pose:
+                    base_pose = new_pose
+                    half = base_pose[2] / 2
+                    robot.set_pos(np.array([base_pose[0], base_pose[1], 0.0], dtype=np.float32))
+                    robot.set_quat(
+                        np.array([np.cos(half), 0.0, 0.0, np.sin(half)], dtype=np.float32)
+                    )
             handle.scene.step()  # BRG-7: exceptions crash the node loudly
             sim_time_ns += int(dt * 1e9)
             due = scheduler.due()
@@ -527,9 +677,20 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             teleport_reset(reset_seed)
             if is_mobile:
                 # MOB-1/ADR-13: re-home the base to the store-frame start and
-                # drop the in-flight base command (mirrors the arm re-home)
+                # drop the in-flight base command (mirrors the arm re-home).
+                # The robot ROOT moves too (PR #21): the tick handler re-bases
+                # only when the integrated pose CHANGES, so a variable-only
+                # re-home would leave the physical base at the pre-reset pose
                 base_pose = [float(v) for v in profile.get("base_start", [0.0, 0.0, 0.0])]
                 base_cmd = [0.0, 0.0]
+                half = base_pose[2] / 2
+                robot.set_pos(np.array([base_pose[0], base_pose[1], 0.0], dtype=np.float32))
+                robot.set_quat(np.array([np.cos(half), 0.0, 0.0, np.sin(half)], dtype=np.float32))
+                if held_item is not None:
+                    # a mid-carry reset hands the item back to physics: the
+                    # latch would otherwise pin the respawned item to the hand
+                    print(f"carry release: {held_item} (reset)", file=sys.stderr)
+                    held_item = None
             node.send_output(
                 "reset_done",
                 pa.array(np.array([1], dtype=np.uint32)),

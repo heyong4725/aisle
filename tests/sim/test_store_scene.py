@@ -133,3 +133,35 @@ def test_episode_generators_seeded():
         # and it IS a misplacement: item category != found-in slot category
         item_cat = s3.categories[entry["item"]]
         assert item_cat != plano["slots"][entry["found_in"]]["category"], entry
+
+
+def test_store_oracle_and_teleport_reset():
+    """T15 Stage A (ADR-18): store_oracle_state is n_items*7 in STOCK
+    order with TC-1 quats matching the spawn poses, and teleport reset
+    restores a disturbed item exactly."""
+    import numpy as np
+
+    from aisle.scenes.store import (
+        spawn_pose,
+        stocked_items,
+        store_oracle_state,
+        teleport_store_reset,
+    )
+
+    handle = build_store(seed=1, scenario="S1")
+    stock = stocked_items(handle.planogram, handle.episode)
+    state = store_oracle_state(handle)
+    assert state.shape == (len(stock) * 7,)
+    # first item's block matches its spawn pose (pos + yaw quat, TC-1)
+    x, y, z, yaw = spawn_pose(handle.planogram, stock[0])
+    assert state[0] == pytest.approx(x, abs=1e-5)
+    assert state[2] == pytest.approx(z, abs=1e-5)
+    assert abs(float(state[5])) == pytest.approx(abs(math.sin(yaw / 2)), abs=1e-5)  # qz
+
+    # disturb an item, teleport back, oracle matches the original state
+    item = handle.items[stock[0].item_id]
+    item.set_pos(np.array([0.0, 0.0, 0.5], dtype=np.float32))
+    assert store_oracle_state(handle)[0] != pytest.approx(x, abs=1e-3)
+    teleport_store_reset(handle)
+    restored = store_oracle_state(handle)
+    assert np.allclose(restored, state, atol=1e-5)

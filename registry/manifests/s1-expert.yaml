@@ -1,0 +1,28 @@
+# T15 (ADR-18): the hand-written scripted S1 driver — the retail analog
+# of the desk expert baseline. Navigates to computed park poses, then
+# executes split pick/place stage lists through the guard.
+id: s1-expert
+kind: node
+provides: [s1_expert_driving]
+requires: [waypoint_navigation, task_planning, order_reading]
+inputs:
+  episode_goal: {schema: json_utf8, rate_hz: 1}
+  order: {schema: json_utf8, rate_hz: 1}
+  subtask_plan: {schema: json_utf8, rate_hz: 1}
+  nav_result: {schema: json_utf8, rate_hz: 1}
+  base_pose: {schema: base_pose3d_f32, rate_hz: 50}
+  poses: {schema: posearray7d_f32, rate_hz: 15}
+  joint_state: {schema: jointvec_f32, rate_hz: 100}
+  reset_done: {schema: reset_done_u32, rate_hz: 1}
+outputs:
+  nav_goal: {schema: json_utf8, latency_class: best_effort}
+  joint_cmd: {schema: jointvec_f32, latency_class: hard_rt}
+  gripper_cmd: {schema: scalar_f32, latency_class: hard_rt}
+embodiment:
+  arm: [franka]
+  gripper: any
+  base: [mobile]
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/nodes/s1_expert.py

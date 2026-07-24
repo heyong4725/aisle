@@ -1,0 +1,180 @@
+# The hand-written S1 retail expert graph (T15, SPEC 200 acceptance;
+# ADR-18) — the retail analog of expert_t0. Node ids ARE registry manifest
+# ids (VAL-1/2); every motion edge (arm AND base) routes through
+# budget-guard (VAL-5/MOB-3) with base_pose + base_watchdog wired
+# (MOBILE_GUARD_INCOMPLETE); oracle_state feeds only the verifier (VAL-6);
+# perception rides the non-privileged `poses` topic.
+nodes:
+  - id: dora-genesis
+    path: ../src/aisle/nodes/dora_genesis.py
+    env:
+      AISLE_SCENE: store
+      AISLE_SCENARIO: S1
+      AISLE_EMBODIMENT: mobile
+    inputs:
+      tick: dora/timer/millis/10
+      joint_cmd:
+        source: budget-guard/joint_cmd_safe
+        queue_size: 100
+      gripper_cmd:
+        source: budget-guard/gripper_cmd_safe
+        queue_size: 100
+      base_cmd:
+        source: budget-guard/base_cmd_safe
+        queue_size: 100
+      reset:
+        source: reset/bridge_reset
+        queue_size: 100
+    outputs:
+      - bridge_info
+      - joint_state
+      - gripper_state
+      - oracle_state
+      - poses
+      - reset_done
+      - base_pose
+      - base_scan
+      - frame_info
+      # HAR-4: the harness's trace recorder builds overhead.mp4 from this
+      # stream (the bridge renders it either way; undeclared, dora drops it
+      # and the public rollout returned videos: [] — PR #21)
+      - rgb_overhead
+
+  - id: reset
+    path: ../src/aisle/reset/service.py
+    inputs:
+      reset:
+        source: rollout-client/reset
+        queue_size: 100
+      reset_done:
+        source: dora-genesis/reset_done
+        queue_size: 100
+    outputs:
+      - bridge_reset
+      - reset_done
+
+  - id: budget-guard
+    path: ../src/aisle/nodes/budget_guard.py
+    env:
+      AISLE_EMBODIMENT: mobile
+      AISLE_SCENE: store
+    inputs:
+      tick: dora/timer/millis/5000
+      base_watchdog: dora/timer/millis/50
+      joint_cmd:
+        source: s1-expert/joint_cmd
+        queue_size: 100
+      gripper_cmd:
+        source: s1-expert/gripper_cmd
+        queue_size: 100
+      base_cmd:
+        source: waypoint-nav/base_cmd
+        queue_size: 100
+      base_pose:
+        source: dora-genesis/base_pose
+        queue_size: 1
+      reset_done:
+        source: dora-genesis/reset_done
+        queue_size: 100
+    outputs:
+      - joint_cmd_safe
+      - gripper_cmd_safe
+      - base_cmd_safe
+      - violation
+      - guard_stats
+
+  - id: waypoint-nav
+    path: ../src/aisle/nodes/nav_action.py
+    env:
+      AISLE_EMBODIMENT: mobile
+    inputs:
+      tick: dora/timer/millis/20
+      nav_goal:
+        source: s1-expert/nav_goal
+        queue_size: 100
+      base_pose:
+        source: dora-genesis/base_pose
+        queue_size: 1
+    outputs:
+      - nav_feedback
+      - nav_result
+      - base_cmd
+
+  - id: order-reader
+    path: ../src/aisle/nodes/order_reader.py
+    inputs:
+      episode_goal:
+        source: rollout-client/episode_goal
+        queue_size: 100
+    outputs:
+      - order
+
+  - id: task-planner
+    path: ../src/aisle/nodes/task_planner.py
+    inputs:
+      episode_goal:
+        source: rollout-client/episode_goal
+        queue_size: 100
+    outputs:
+      - subtask_plan
+
+  - id: s1-expert
+    path: ../src/aisle/nodes/s1_expert.py
+    inputs:
+      episode_goal:
+        source: rollout-client/episode_goal
+        queue_size: 100
+      order:
+        source: order-reader/order
+        queue_size: 100
+      subtask_plan:
+        source: task-planner/subtask_plan
+        queue_size: 100
+      nav_result:
+        source: waypoint-nav/nav_result
+        queue_size: 100
+      base_pose:
+        source: dora-genesis/base_pose
+        queue_size: 1
+      poses:
+        source: dora-genesis/poses
+        queue_size: 1
+      joint_state:
+        source: dora-genesis/joint_state
+        # latest-wins: joint_state is STATE (the desk expert lesson)
+        queue_size: 1
+      reset_done:
+        source: dora-genesis/reset_done
+        queue_size: 100
+    outputs:
+      - nav_goal
+      - joint_cmd
+      - gripper_cmd
+
+  - id: verifier-retail
+    path: ../src/aisle/verifier/retail.py
+    inputs:
+      oracle_state:
+        source: dora-genesis/oracle_state
+        queue_size: 100
+      episode_goal:
+        source: rollout-client/episode_goal
+        queue_size: 100
+    outputs:
+      - episode_result
+
+  - id: rollout-client
+    path: ../src/aisle/harness/rollout_client.py
+    env:
+      AISLE_TIER: S1
+    inputs:
+      tick: dora/timer/millis/1000
+      reset_done:
+        source: reset/reset_done
+        queue_size: 100
+      episode_result:
+        source: verifier-retail/episode_result
+        queue_size: 100
+    outputs:
+      - reset
+      - episode_goal
