@@ -40,6 +40,22 @@ GENESIS_BUILD_BUDGET_S = 420
 PER_EPISODE_BUDGET_S = 150
 PRE_DATA_STALL_S = 600
 STALL_S = 180
+# retail tiers (RS-6, ADR-18): store-sim rtf ~0.1 on the dev machine — the
+# fixed-seed S1 episode runs ~101.5 sim s / ~25 wall min plus a ~2.5 min
+# store build (first green run: 28:39 total). The desk budgets above would
+# kill a HEALTHY retail episode at 60 sim s / 150 wall s (PR #21)
+RETAIL_EPISODE_TIMEOUT_S = 600
+RETAIL_PER_EPISODE_BUDGET_S = 2100
+
+
+def tier_budgets(tier: str) -> tuple[int, int]:
+    """(episode timeout in SIM seconds, per-episode WALL budget in seconds)
+    for a tier: `harness rollout` is the public path for EVERY tier (HAR-1,
+    RS-6), so retail tiers get nightly-suite-scale budgets, desk tiers keep
+    the tight ADR-11 ones."""
+    if tier in ("S1", "S2", "S3"):
+        return RETAIL_EPISODE_TIMEOUT_S, RETAIL_PER_EPISODE_BUDGET_S
+    return EPISODE_TIMEOUT_S, PER_EPISODE_BUDGET_S
 
 
 def parse_seed_range(spec: str) -> list[int]:
@@ -172,6 +188,7 @@ def rollout(
     ).stdout.strip()
     env_hash = gates["env_hash"]
 
+    episode_timeout_s, per_episode_budget_s = tier_budgets(tier)
     env = {
         **os.environ,
         "AISLE_SEEDS": ",".join(str(s) for s in seeds),
@@ -181,11 +198,11 @@ def rollout(
         "AISLE_TIER": tier,
         # M0-5: the embodiment profile swap rides on env, zero YAML edits
         "AISLE_EMBODIMENT": embodiment,
-        "AISLE_TIMEOUT_S": str(EPISODE_TIMEOUT_S),
+        "AISLE_TIMEOUT_S": str(episode_timeout_s),
         "AISLE_RESULTS": str(results_path),
     }
     started = time.monotonic()
-    deadline = started + (timeout_s or (GENESIS_BUILD_BUDGET_S + PER_EPISODE_BUDGET_S * episodes))
+    deadline = started + (timeout_s or (GENESIS_BUILD_BUDGET_S + per_episode_budget_s * episodes))
     proc = subprocess.Popen(
         ["dora", "run", str(exec_graph), "--uv"],
         # cwd = the run dir: dora spawns nodes with this cwd, which is what

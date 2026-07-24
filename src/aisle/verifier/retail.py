@@ -335,7 +335,13 @@ def main() -> None:
                     "t_end": t,
                     "seed": int(goal.get("seed", 0)),
                     "goal_id": goal_id,
-                    "verifier": "retail-oracle",
+                    # TC-7/TC-8: the discriminator stays in the closed
+                    # "oracle"|"realistic" set — this verifier reads
+                    # privileged oracle_state, so its verdicts are countable
+                    # ground truth; retail identity is the ADDITIVE field
+                    # below (spec-conflict #22, resolved per option 1)
+                    "verifier": "oracle",
+                    "suite": "retail",
                     **record,
                 }
                 result_seq += 1

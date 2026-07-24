@@ -424,7 +424,16 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                 depth = frames[topic]
                 send(topic, env_id, depth, h=depth.shape[0], w=depth.shape[1], enc="depth32f")
             elif topic == "base_pose":
-                send(topic, env_id, np.asarray(base_pose, dtype=np.float32))
+                # report the PHYSICAL root, not the integrator (PR #21): a
+                # path that moves one but not the other (e.g. a reset that
+                # only re-homed the variable) must be visible on the wire,
+                # never an invisible reported-vs-physical divergence
+                p = to_numpy(robot.get_pos()).reshape(-1)[:3]
+                q = to_numpy(robot.get_quat()).reshape(-1)[:4]
+                yaw = float(
+                    np.arctan2(2 * (q[0] * q[3] + q[1] * q[2]), 1 - 2 * (q[2] * q[2] + q[3] * q[3]))
+                )
+                send(topic, env_id, np.array([p[0], p[1], yaw], dtype=np.float32))
             elif topic == "base_scan":
                 ranges = base_scan_ranges(
                     base_pose,
@@ -653,9 +662,20 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             teleport_reset(reset_seed)
             if is_mobile:
                 # MOB-1/ADR-13: re-home the base to the store-frame start and
-                # drop the in-flight base command (mirrors the arm re-home)
+                # drop the in-flight base command (mirrors the arm re-home).
+                # The robot ROOT moves too (PR #21): the tick handler re-bases
+                # only when the integrated pose CHANGES, so a variable-only
+                # re-home would leave the physical base at the pre-reset pose
                 base_pose = [float(v) for v in profile.get("base_start", [0.0, 0.0, 0.0])]
                 base_cmd = [0.0, 0.0]
+                half = base_pose[2] / 2
+                robot.set_pos(np.array([base_pose[0], base_pose[1], 0.0], dtype=np.float32))
+                robot.set_quat(np.array([np.cos(half), 0.0, 0.0, np.sin(half)], dtype=np.float32))
+                if held_item is not None:
+                    # a mid-carry reset hands the item back to physics: the
+                    # latch would otherwise pin the respawned item to the hand
+                    print(f"carry release: {held_item} (reset)", file=sys.stderr)
+                    held_item = None
             node.send_output(
                 "reset_done",
                 pa.array(np.array([1], dtype=np.uint32)),

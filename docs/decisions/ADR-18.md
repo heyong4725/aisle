@@ -74,6 +74,27 @@ architecture; the agent picks and records). Task: T15. Relates to
    renavigate on EVERY leg against the IK-proven tolerance, and a
    conditional re-base (a stationary base must not touch the solver).
 
+11. **Reported base_pose IS the physical root** (PR #21). The teleport
+   reset re-homed the integrator variable without moving the robot root,
+   and the change-conditional re-base (item 10) then never fired — the
+   physical base silently stayed at the pre-reset pose. Two-part fix:
+   the mobile reset explicitly `set_pos`/`set_quat`s the root to
+   base_start (and releases a mid-carry latch), and base_pose is
+   published from a `get_pos`/`get_quat` READBACK, so any future
+   reported-vs-physical divergence is visible on the wire and caught by
+   the multi-episode reset regression (tests/graph/test_mobile_bridge).
+12. **Discriminator stays closed** (spec-conflict #22, option 1). The
+   retail verifier consumes privileged oracle_state, so its verdicts ARE
+   countable ground truth (TC-8): episode_result carries
+   `verifier: "oracle"` and retail identity rides the ADDITIVE
+   `suite: "retail"` field — no schema fork, no spec change.
+13. **`harness rollout` runs every tier** (RS-6, PR #21). The CLI accepts
+   `--embodiment mobile`, and `tier_budgets` swaps the desk budgets
+   (60 sim s / 150 wall s — they would kill a healthy retail episode)
+   for retail-scale ones (600 sim s / 2100 wall s per episode) on
+   S1..S3. The acceptance gate drives the PUBLIC harness path, not a
+   bare `dora run`.
+
 ## Known limits (v1)
 
 - Store rtf ~0.1 on the dev machine: the acceptance episode runs
