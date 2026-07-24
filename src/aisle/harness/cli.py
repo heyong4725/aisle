@@ -27,7 +27,10 @@ def _git_sha(root: Path) -> str:
     ).stdout.strip()
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """The full CLI surface (CON-8). Exposed so the research contract's
+    copy-paste examples are TESTED against the real argparse tree (T17):
+    a doc example that drifts from the CLI fails a unit test."""
     parser = argparse.ArgumentParser(prog="harness", description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -84,8 +87,11 @@ def main() -> int:
     rclose.add_argument("--observed", required=True)
     rclose.add_argument("--verdict", required=True, choices=["up", "down", "flat"])
     rclose.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    return parser
 
-    args = parser.parse_args()
+
+def main() -> int:
+    args = build_parser().parse_args()
 
     if args.command == "validate":
         report = validate(args.graph, args.root, args.embodiment, args.allow_unproven)
