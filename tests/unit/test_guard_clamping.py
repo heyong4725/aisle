@@ -266,10 +266,10 @@ def test_fallback_qpos_matches_scene_home():
 
 
 def test_wall_backstop_value_is_pinned():
-    """BG-2 (T08 review): the episode wall backstop was widened 60 -> 300 s
-    when live runs showed sim can run below realtime; this pin makes any
-    future change to the frozen limit deliberate, and documents the
-    relation it must keep: comfortably above the verifier's SIM-time
-    episode timeout divided by the worst observed sim rate (60 s / ~0.4x
-    => ~150 s wall, x2 margin)."""
-    assert LIMITS.wall_timeout_s == 300.0
+    """BG-2 (T08 review; revised T15): the pin makes any change to the
+    frozen backstop deliberate. 60 -> 300 s when desk live runs showed
+    sub-realtime sim; 300 -> 1800 s when the T15 STORE scene (rtf ~0.1,
+    23 entities) froze the base AND arm at exactly t+300 mid-healthy-
+    episode — a full S1 episode measures ~700 s wall, so 1800 keeps the
+    x2.5 margin while still catching a hung pipeline within 30 min."""
+    assert LIMITS.wall_timeout_s == 1800.0

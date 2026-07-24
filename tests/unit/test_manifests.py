@@ -41,6 +41,9 @@ EXPECTED_IDS = {
     "misplacement-detector",
     "placement-controller",
     "task-planner",
+    # T15 S1 expert graph (ADR-18)
+    "verifier-retail",
+    "s1-expert",
 }
 
 

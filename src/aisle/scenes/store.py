@@ -332,3 +332,53 @@ def build_store(
         scenario=scenario,
         med_sizes={name: list(meds[name]["size"]) for name in meds},
     )
+
+
+def store_scan_obstacles(plano: dict) -> list[tuple[float, float, float, float]]:
+    """Planar AABBs (cx, cy, hx, hy) of the store's fixed structures —
+    unit footprints, counter, bin — for base_scan raycasts and the guard's
+    keep-out (ADR-18: the store bridge/guard use THESE, not the desk
+    shelf). Quarter-turn units swap their half-extents (ADR-15)."""
+    geo = plano["store"]["unit_geometry"]
+    obstacles = []
+    for unit in plano["units"].values():
+        swap = abs(math.sin(unit["yaw"])) > 0.5
+        hx = (geo["width"] if swap else geo["depth"]) / 2
+        hy = (geo["depth"] if swap else geo["width"]) / 2
+        obstacles.append((unit["pos"][0], unit["pos"][1], hx, hy))
+    store = plano["store"]
+    for label in ("counter", "bin"):
+        pos, size = store[f"{label}_pos"], store[f"{label}_size"]
+        obstacles.append((pos[0], pos[1], size[0] / 2, size[1] / 2))
+    return obstacles
+
+
+def store_oracle_state(handle: StoreHandle):
+    """Ground-truth state for the store (mirrors pharmacy.oracle_state):
+    per item (STOCK order, ADR-15) position (3) + TC-1 (x, y, z, w) quat.
+    Shape (n_items*7,) — the store is single-env (ADR-18)."""
+    import numpy as np
+
+    from aisle.scenes.pharmacy import to_numpy
+
+    parts = []
+    for entity in handle.items.values():
+        pos = np.atleast_2d(to_numpy(entity.get_pos()))
+        quat_wxyz = np.atleast_2d(to_numpy(entity.get_quat()))
+        parts.extend((pos, np.roll(quat_wxyz, -1, axis=-1)))
+    return np.concatenate(parts, axis=-1).astype(np.float32)[0]
+
+
+def teleport_store_reset(handle: StoreHandle) -> None:
+    """Teleport every item back to its spawn pose (S1 stock is constant
+    across seeds, ADR-18 — the order changes, the shelves do not)."""
+    import numpy as np
+
+    meds = load_meds()
+    plano = handle.planogram
+    for item in stocked_items(plano, handle.episode):
+        x, y, z, yaw = spawn_pose(plano, item, meds)
+        entity = handle.items[item.item_id]
+        entity.set_pos(np.array([x, y, z], dtype=np.float32))
+        entity.set_quat(np.array(yaw_quat_wxyz(yaw), dtype=np.float32))
+        entity.zero_all_dofs_velocity()

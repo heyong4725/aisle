@@ -248,3 +248,43 @@ def test_module_import_stays_sim_free():
     )
     proc = run_cli(["-c", probe])
     assert proc.returncode == 0, proc.stderr
+
+
+class TestStoreBridgeConfig:
+    """T15 Stage A (ADR-18): the bridge's store-scene config gate."""
+
+    def test_scene_defaults_to_pharmacy(self):
+        from aisle.nodes.dora_genesis import parse_bridge_config
+
+        cfg = parse_bridge_config({})
+        assert cfg.scene == "pharmacy" and cfg.scenario == "S1"
+
+    def test_store_requires_mobile_single_env_s1(self):
+        from aisle.nodes.dora_genesis import parse_bridge_config, require_valid_store_config
+
+        good = parse_bridge_config({"AISLE_SCENE": "store", "AISLE_EMBODIMENT": "mobile"})
+        require_valid_store_config(good)  # ok
+        import pytest as _pytest
+
+        for env, match in (
+            ({"AISLE_SCENE": "store", "AISLE_EMBODIMENT": "franka"}, "mobile"),
+            (
+                {"AISLE_SCENE": "store", "AISLE_EMBODIMENT": "mobile", "AISLE_SCENARIO": "S2"},
+                "S1 only",
+            ),
+        ):
+            with _pytest.raises(ValueError, match=match):
+                require_valid_store_config(parse_bridge_config(env))
+
+    def test_store_scan_obstacles_cover_the_structures(self):
+        """ADR-18: base_scan/keep-out obstacles = every unit + counter +
+        bin, quarter-turn extents swapped (deterministic)."""
+        from aisle.scenes.store import load_planogram, store_scan_obstacles
+
+        plano = load_planogram()
+        obstacles = store_scan_obstacles(plano)
+        assert len(obstacles) == len(plano["units"]) + 2
+        assert obstacles == store_scan_obstacles(plano)
+        # A1 at yaw -pi/2: width (0.66) lies along x -> hx = 0.33
+        a1 = obstacles[0]
+        assert a1[2] == pytest.approx(0.33) and a1[3] == pytest.approx(0.15)

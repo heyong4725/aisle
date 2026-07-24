@@ -318,11 +318,19 @@ def main(clock=None) -> None:
     shelves: list = []
     footprint_r = 0.0
     if is_mobile:
-        from aisle.nodes.dora_genesis import _scan_obstacles
         from aisle.scenes.pharmacy import load_physics
 
         physics = load_physics()
-        shelves = _scan_obstacles(physics, embodiment)
+        # keep-out geometry follows the SCENE (T15/ADR-18): the store's
+        # units + counter + bin, or the desk shelf/tray
+        if os.environ.get("AISLE_SCENE", "pharmacy") == "store":
+            from aisle.scenes.store import load_planogram, store_scan_obstacles
+
+            shelves = store_scan_obstacles(load_planogram())
+        else:
+            from aisle.nodes.dora_genesis import _scan_obstacles
+
+            shelves = _scan_obstacles(physics, embodiment)
         footprint_r = float(physics["embodiment"][embodiment]["base_footprint_radius_m"])
 
     node = Node()

@@ -34,6 +34,13 @@ NODE_PATTERNS = (
     "harness/rollout_client.py",
     "harness/trace_recorder.py",
     "verifier/oracle.py",
+    # retail suite (T15): the S1 expert graph's nodes — a rollout teardown
+    # that misses these leaks spinning processes (the T15 debug lesson:
+    # leaked orphans at ~165% CPU starve later runs)
+    "nodes/s1_expert.py",
+    "nodes/order_reader.py",
+    "nodes/task_planner.py",
+    "verifier/retail.py",
 )
 
 
