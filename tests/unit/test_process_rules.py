@@ -116,7 +116,9 @@ def test_adr_log_exists_and_is_wellformed():
     adrs = sorted(adr_dir.glob("ADR-*.md"))
     assert adrs, "no ADRs recorded"
     for adr in adrs:
-        assert re.fullmatch(r"ADR-\w+\.md", adr.name), adr.name
+        # numbered (ADR-7), milestone (ADR-M0), and named spike ADRs
+        # (ADR-powder-spike — the PW-0-mandated filename) all count
+        assert re.fullmatch(r"ADR-[\w-]+\.md", adr.name), adr.name
         text = adr.read_text()
         assert text.strip().startswith("#"), f"{adr.name} missing a title heading"
         assert len(text.strip()) > 100, f"{adr.name} is empty boilerplate"
