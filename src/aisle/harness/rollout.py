@@ -85,27 +85,90 @@ def compute_metrics(episodes: list[dict]) -> dict:
     }
 
 
+def load_campaign_budget(root: Path) -> dict:
+    """ADR-21: the campaign ceilings from harness/budget.toml (FROZEN — a
+    research agent must not raise its own budget)."""
+    import tomllib
+
+    with open(root / "harness" / "budget.toml", "rb") as f:
+        return tomllib.load(f)["campaign"]
+
+
+def budget_ledger(root: Path) -> list[dict]:
+    path = root / "runs" / "campaign_ledger.jsonl"
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def budget_remaining(root: Path) -> dict:
+    """Episodes/wall remaining under the campaign ceilings; the token
+    ceiling is reported for the external accountant (HAR-5: only the LLM
+    harness can count tokens — manifests carry the log for the audit)."""
+    ceilings = load_campaign_budget(root)
+    spent_eps = sum(int(e.get("episodes", 0)) for e in budget_ledger(root))
+    spent_wall = sum(float(e.get("wall_s", 0.0)) for e in budget_ledger(root))
+    return {
+        "episodes_left": int(ceilings["episodes"]) - spent_eps,
+        "wall_h_left": round(float(ceilings["wall_h"]) - spent_wall / 3600.0, 3),
+        "tokens_ceiling": int(ceilings["tokens"]),
+    }
+
+
+def charge_budget(root: Path, run_id: str, episodes: int, wall_s: float) -> None:
+    path = root / "runs" / "campaign_ledger.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {"run_id": run_id, "episodes": episodes, "wall_s": round(wall_s, 1)}
+    with open(path, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
 def run_gates(
-    root: Path, graph: Path, branch: str, no_idea_gate: bool, embodiment: str = "franka"
+    root: Path,
+    graph: Path,
+    branch: str,
+    no_idea_gate: bool,
+    embodiment: str = "franka",
+    env_baseline: str = "origin/main",
+    episodes: int = 0,
 ) -> dict:
-    """HAR-2: refuse on env-hash mismatch, on validation failure, and on a
-    missing OPEN idea (unless --no-idea-gate — humans only; logged)."""
-    hash_proc = subprocess.run(
-        [sys.executable, str(root / "tools" / "env_hash.py"), "--check", "--root", str(root)],
-        capture_output=True,
-        text=True,
-    )
+    """HAR-2: refuse on env-hash mismatch (TRUSTED baseline by default,
+    ADR-21: the fingerprint AND the checker are verified against a
+    protected git ref the agent cannot move; --env-baseline local is the
+    dev override — humans only; logged), on validation failure, on a
+    missing OPEN idea (unless --no-idea-gate — humans only; logged), and
+    on an exhausted campaign budget (episodes/wall; tokens are audited
+    externally per HAR-5)."""
+    hash_cmd = [sys.executable, str(root / "tools" / "env_hash.py"), "--check", "--root", str(root)]
+    if env_baseline != "local":
+        hash_cmd += ["--baseline", env_baseline]
+    hash_proc = subprocess.run(hash_cmd, capture_output=True, text=True)
     if hash_proc.returncode != 0:
         return {"ok": False, "gate": "env_hash", "detail": hash_proc.stdout.strip()}
     env_hash = json.loads(hash_proc.stdout)["env_hash"]
+    remaining = budget_remaining(root)
+    if episodes > 0 and remaining["episodes_left"] < episodes:
+        return {
+            "ok": False,
+            "gate": "budget",
+            "detail": f"campaign episode budget exhausted: {remaining['episodes_left']} left, "
+            f"{episodes} requested (harness/budget.toml, ADR-21)",
+        }
+    if remaining["wall_h_left"] <= 0.0:
+        return {
+            "ok": False,
+            "gate": "budget",
+            "detail": "campaign wall-clock budget exhausted (harness/budget.toml, ADR-21)",
+        }
     # validate against the embodiment that will actually run (M0-5): a
     # graph whose nodes do not support it must refuse HERE, not crash
     # hours into the rollout
     validation = validate(graph, root, embodiment, allow_unproven=False)
     if not validation["ok"]:
         return {"ok": False, "gate": "validate", "detail": validation["errors"]}
+    gates = {"env_hash": env_hash, "env_baseline": env_baseline, "budget": remaining}
     if no_idea_gate:
-        return {"ok": True, "env_hash": env_hash, "idea": None, "no_idea_gate": True}
+        return {"ok": True, **gates, "idea": None, "no_idea_gate": True}
     ideas = open_ideas(root, branch)
     if not ideas:
         return {
@@ -114,7 +177,7 @@ def run_gates(
             "detail": f"no OPEN idea for branch {branch!r} (HAR-8); "
             "log one with `harness report log --idea ...`",
         }
-    return {"ok": True, "env_hash": env_hash, "idea": ideas[-1]["id"], "no_idea_gate": False}
+    return {"ok": True, **gates, "idea": ideas[-1]["id"], "no_idea_gate": False}
 
 
 def instrumented_graph(graph: Path, root: Path, run_dir: Path) -> Path:
@@ -162,6 +225,7 @@ def rollout(
     no_idea_gate: bool,
     timeout_s: float | None = None,
     embodiment: str = "franka",
+    env_baseline: str = "origin/main",
 ) -> dict:
     """HAR-1: the full run. Returns the report dict (CON-8: caller emits)."""
     if reset_mode != "teleport":
@@ -172,7 +236,7 @@ def rollout(
         return {"ok": False, "error": f"unsafe run_id {run_id!r}"}
     if (root / "runs" / run_id).exists():
         return {"ok": False, "error": f"run_id {run_id!r} already exists; refusing to overwrite"}
-    gates = run_gates(root, graph, branch, no_idea_gate, embodiment)
+    gates = run_gates(root, graph, branch, no_idea_gate, embodiment, env_baseline, episodes)
     if not gates["ok"]:
         return {"ok": False, "refused": gates}
 
@@ -271,10 +335,20 @@ def rollout(
         "verifier": verifier,
         "idea": gates.get("idea"),
         "no_idea_gate": gates.get("no_idea_gate", False),
+        # ADR-21: which frozen-set baseline validated this run — "local" is
+        # the logged dev override, auditable in every manifest
+        "env_baseline": gates.get("env_baseline"),
         # HAR-5: best-effort token accounting
         "tokens_log": os.environ.get("ANTHROPIC_TOKENS_LOG"),
     }
     (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=1))
+    # ADR-21: charge the campaign ledger and report what remains — the
+    # §8.2.3 budget contract ({"budget": {"episodes_left": ...}}). Runs
+    # under the logged dev override are NOT campaign spend: the ledger
+    # meters the campaign, and dev/acceptance runs would slowly exhaust
+    # it into a confusing refusal months later
+    if env_baseline != "local":
+        charge_budget(root, run_id, len(episode_records), wall_s)
     return {
         "ok": len(episode_records) >= episodes,
         "stalled": stalled,
@@ -287,4 +361,5 @@ def rollout(
             "wall_s": round(wall_s, 1),
             "sim_s": round(sum(e.get("t_end", 0.0) for e in episode_records), 1),
         },
+        "budget": budget_remaining(root),
     }

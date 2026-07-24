@@ -130,3 +130,28 @@ def test_registry_examples_parse_too():
         assert argv[0] in ("search", "lint"), argv
         for flag in (a for a in argv[1:] if a.startswith("--")):
             assert flag.split("=")[0] in src, f"unknown registry flag {flag} in {argv}"
+
+
+def test_budget_ceilings_match_the_frozen_config():
+    """PR #24 (ADR-21): the contract states the REAL campaign ceilings —
+    pinned to harness/budget.toml (itself frozen) so prose and enforcement
+    cannot drift."""
+    import tomllib
+
+    with open(REPO_ROOT / "harness" / "budget.toml", "rb") as f:
+        ceilings = tomllib.load(f)["campaign"]
+    text = _text()
+    assert f"{ceilings['tokens']:,}" in text  # e.g. 5,000,000
+    assert str(ceilings["episodes"]) in text
+    assert f"{ceilings['wall_h']:g} hours" in text
+    # and the enforcement surface is described
+    assert "campaign_ledger" in text and "episodes_left" in text
+
+
+def test_trusted_baseline_rule_is_stated():
+    """PR #24 (ADR-21): the contract describes the TRUSTED gate — baseline
+    on origin/main, checker self-verified, local override logged."""
+    text = _text()
+    assert "origin/main" in text
+    assert "--env-baseline local" in text
+    assert "manifest" in text

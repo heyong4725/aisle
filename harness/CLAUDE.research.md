@@ -24,9 +24,15 @@ the retail verifier.
 
 1. **The frozen set is off-limits** (CON-7). You MUST NOT edit anything
    under `src/aisle/scenes`, `src/aisle/verifier`, `src/aisle/reset`,
-   `env`, or `src/aisle/nodes/budget_guard.py`, nor `graphs/expert_*.yaml`.
-   `harness rollout` refuses to run if their hash does not match the
-   committed fingerprint — editing them is cheating, not iteration.
+   `env`, `src/aisle/nodes/budget_guard.py`, `harness/budget.toml`, or
+   `graphs/expert_*.yaml`. `harness rollout` verifies the frozen tree —
+   and the hash checker itself — against the fingerprint committed on
+   the protected `origin/main` branch (ADR-21), a baseline you cannot
+   move: regenerating `tools/env_hash.json` or rewriting the checker
+   after an edit is refused, not blessed. The `--env-baseline local`
+   override exists for human-reviewed development branches only and is
+   recorded in every run manifest, where the campaign audit will find
+   it. Editing frozen code is cheating, not iteration.
 2. **Log the idea BEFORE the rollout** (HAR-8). Every rollout requires an
    OPEN idea on your branch: one-line hypothesis + expected effect,
    logged with `harness report log --idea ...` before you run, closed
@@ -90,12 +96,17 @@ entirely: solve S1 well and most of your library should transfer.
 
 Desk classes (VER-3):
 
-- `wrong_object` — a NON-target medicine ended in the tray. The 10x
-  penalty class: treat any occurrence as a blocking bug.
+- `wrong_object` — fires the MOMENT any non-target medicine ENTERS the
+  tray, before success or timeout is even considered (the safety
+  asymmetry). The 10x penalty class: treat any occurrence as a
+  blocking bug.
 - `never_grasped` — the target never left its spawn pose.
-- `dropped` — grasped, then lost before verified placement.
-- `collision` — a guard-detected impact ended the episode.
-- `timeout` — episode budget elapsed without success.
+- `dropped` — the target ended up on the floor.
+- `collision` — a NON-target box was knocked beyond the displacement
+  tolerance from its start pose (the oracle's contact proxy, ADR-8 —
+  poses are the only contact evidence it has).
+- `timeout` — the episode deadline passed; a placement completed after
+  it is a timeout, never a late success.
 
 Retail classes (RS-4, per placement criterion):
 
@@ -114,17 +125,25 @@ Retail classes (RS-4, per placement criterion):
 Retail episode results carry `verifier: "oracle"`, `suite: "retail"`,
 `penalties`, and `placement_scores` (RS-6).
 
-## 6. Budget semantics
+## 6. Budget semantics (ceilings in `harness/budget.toml`, FROZEN)
 
-- **Episodes**: each rollout's episode count draws from the campaign's
-  episode budget; the report JSON echoes what you spent. Prefer few,
-  well-hypothesized rollouts over sweeps.
-- **Tokens** (HAR-5): your token spend is logged via
-  `ANTHROPIC_TOKENS_LOG` into the run manifest — tokens-to-success is a
-  headline metric. Summarize, don't re-read.
-- **Wall-clock**: store-sim runs at rtf well below 1; a retail episode
-  costs minutes of wall time. Batch seeds into one rollout instead of
-  serial single-episode runs.
+Your campaign ceilings — you cannot raise them (the file is in the
+frozen set):
+
+- **Tokens: 5,000,000** (design §9.5, HAR-5). Only the LLM harness can
+  count tokens, so the harness REPORTS this ceiling while your spend is
+  logged via `ANTHROPIC_TOKENS_LOG` into every run manifest; the
+  campaign audit reconciles the two. Tokens-to-success is a headline
+  metric — summarize, don't re-read.
+- **Episodes: 500**, enforced at the gate: every rollout charges
+  `runs/campaign_ledger.jsonl`, and a request past the remaining budget
+  is REFUSED (`gate: budget`). Each rollout report returns
+  `budget.episodes_left`. Prefer few, well-hypothesized rollouts over
+  sweeps.
+- **Wall-clock: 40 hours**, enforced the same way (`budget.wall_h_left`
+  in every report). Store-sim runs at rtf well below 1; a retail
+  episode costs minutes of wall time — batch seeds into one rollout
+  instead of serial single-episode runs.
 - **pass@1 / pass@8** (HAR-3): pass@8 counts IN-CONTEXT retries within
   an episode, never best-of-8 independent episodes. Design for recovery,
   not re-rolls.

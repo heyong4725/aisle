@@ -49,6 +49,9 @@ def rollout_50(run_id: str, timeout: float = 4 * 3600) -> dict:
             "teleport",
             "--run-id",
             run_id,
+            # ADR-21: dev branches carry legitimate frozen diffs; logged
+            "--env-baseline",
+            "local",
             timeout=timeout,
         )
         assert code == 0, report
@@ -118,6 +121,8 @@ def test_m0_3_mutated_frozen_file_refuses_rollout():
             "--reset",
             "teleport",
             "--no-idea-gate",
+            "--env-baseline",
+            "local",
             timeout=300,
         )
         assert code != 0

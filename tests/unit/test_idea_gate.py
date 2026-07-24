@@ -52,10 +52,13 @@ def test_close_requires_an_open_idea_and_valid_verdict(tmp_path):
         close_idea(tmp_path, "b", "I1", "actually up", "up", "t2")
 
 
-def _fake_root(tmp_path: Path, hash_ok: bool = True) -> Path:
+def _fake_root(
+    tmp_path: Path, hash_ok: bool = True, episodes_ceiling: int = 500, wall_h: float = 40.0
+) -> Path:
     """A minimal root that passes/fails the env-hash gate deterministically;
     the REAL registry rides along (symlink) so the validation gate can pass
-    and the idea gate is what decides."""
+    and the idea gate is what decides. Carries a campaign budget.toml
+    (ADR-21) with configurable ceilings."""
     (tmp_path / "registry").symlink_to(REPO_ROOT / "registry")
     (tmp_path / "tools").mkdir(parents=True)
     (tmp_path / "tools" / "env_hash.py").write_text(
@@ -64,6 +67,10 @@ def _fake_root(tmp_path: Path, hash_ok: bool = True) -> Path:
         + ', "env_hash": "h"}))\nsys.exit(0 if '
         + ("True" if hash_ok else "False")
         + " else 1)\n"
+    )
+    (tmp_path / "harness").mkdir()
+    (tmp_path / "harness" / "budget.toml").write_text(
+        f"[campaign]\ntokens = 5000000\nepisodes = {episodes_ceiling}\nwall_h = {wall_h}\n"
     )
     return tmp_path
 
@@ -139,3 +146,41 @@ def test_report_cli_json_contract(tmp_path):
     )
     assert proc.returncode == 1
     assert json.loads(proc.stdout)["ok"] is False
+
+
+def test_budget_gate_refuses_when_episode_ceiling_exhausted(tmp_path):
+    """ADR-21 (PR #24): the campaign episode ceiling (harness/budget.toml,
+    FROZEN) is enforced at the gate — a rollout requesting more episodes
+    than remain refuses with gate=budget; a passing gate reports what
+    remains per the §8.2.3 budget contract."""
+    from aisle.harness.rollout import charge_budget
+
+    root = _fake_root(tmp_path, hash_ok=True, episodes_ceiling=10)
+    graph = REPO_ROOT / "graphs" / "expert_t0.yaml"
+    charge_budget(root, "r1", episodes=8, wall_s=60.0)
+    ok = run_gates(root, graph, "b", no_idea_gate=True, episodes=2)
+    assert ok["ok"] is True
+    assert ok["budget"]["episodes_left"] == 2
+    refused = run_gates(root, graph, "b", no_idea_gate=True, episodes=3)
+    assert refused["ok"] is False and refused["gate"] == "budget"
+    assert "episode budget" in refused["detail"]
+
+
+def test_budget_gate_refuses_when_wall_ceiling_exhausted(tmp_path):
+    from aisle.harness.rollout import charge_budget
+
+    root = _fake_root(tmp_path, hash_ok=True, wall_h=0.5)
+    graph = REPO_ROOT / "graphs" / "expert_t0.yaml"
+    charge_budget(root, "r1", episodes=1, wall_s=1900.0)  # > 0.5 h spent
+    refused = run_gates(root, graph, "b", no_idea_gate=True, episodes=1)
+    assert refused["ok"] is False and refused["gate"] == "budget"
+    assert "wall-clock" in refused["detail"]
+
+
+def test_gates_record_the_env_baseline(tmp_path):
+    """ADR-21: every gate result names the frozen-set baseline that
+    validated it — 'local' (the dev override) is auditable in manifests."""
+    root = _fake_root(tmp_path, hash_ok=True)
+    graph = REPO_ROOT / "graphs" / "expert_t0.yaml"
+    result = run_gates(root, graph, "b", no_idea_gate=True, env_baseline="local")
+    assert result["ok"] is True and result["env_baseline"] == "local"

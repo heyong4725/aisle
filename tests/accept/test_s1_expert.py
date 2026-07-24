@@ -54,6 +54,11 @@ def test_scripted_order_pick():
             "teleport",
             "--run-id",
             run_id,
+            # ADR-21: acceptance runs on dev branches whose frozen files
+            # legitimately differ from origin/main (env-change PRs); the
+            # override is logged in the run manifest
+            "--env-baseline",
+            "local",
             timeout=2700,
         )
         assert code == 0, report

@@ -59,6 +59,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="skip the HAR-8 open-idea gate (humans only; recorded in the manifest)",
     )
     roll.add_argument("--run-id", default=None, help="override the generated run id (CON-5)")
+    roll.add_argument(
+        "--env-baseline",
+        default="origin/main",
+        help="git ref for the TRUSTED frozen-set baseline (ADR-21); "
+        "'local' is the logged dev override (humans only)",
+    )
     roll.add_argument("--timeout-s", type=float, default=None)
 
     tr = subparsers.add_parser("traces", help="query recorded traces (HAR-6)")
@@ -123,6 +129,7 @@ def main() -> int:
             no_idea_gate=args.no_idea_gate,
             timeout_s=args.timeout_s,
             embodiment=args.embodiment,
+            env_baseline=args.env_baseline,
         )
         return emit_report(report, lambda level, e: f"rollout {level}: {e}")
 
