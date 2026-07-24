@@ -25,14 +25,17 @@ the retail verifier.
 1. **The frozen set is off-limits** (CON-7). You MUST NOT edit anything
    under `src/aisle/scenes`, `src/aisle/verifier`, `src/aisle/reset`,
    `env`, `src/aisle/nodes/budget_guard.py`, `harness/budget.toml`, or
-   `graphs/expert_*.yaml`. `harness rollout` verifies the frozen tree —
-   and the hash checker itself — against the fingerprint committed on
-   the protected `origin/main` branch (ADR-21), a baseline you cannot
-   move: regenerating `tools/env_hash.json` or rewriting the checker
-   after an edit is refused, not blessed. The `--env-baseline local`
-   override exists for human-reviewed development branches only and is
-   recorded in every run manifest, where the campaign audit will find
-   it. Editing frozen code is cheating, not iteration.
+   `graphs/expert_*.yaml`. `harness rollout` FETCHES the protected
+   `origin/main` head from the remote server at gate time, pins it by
+   commit OID, and verifies the frozen tree — and the hash checker
+   itself — against that immutable commit (ADR-21): regenerating
+   `tools/env_hash.json`, rewriting the checker, moving local refs, or
+   pointing the gate at another ref is refused, not blessed. Every run
+   manifest records the resolved OID for the audit. The
+   `--env-baseline local` override exists for human-reviewed
+   development branches only and is likewise recorded in every
+   manifest, where the campaign audit will find it. Editing frozen
+   code is cheating, not iteration.
 2. **Log the idea BEFORE the rollout** (HAR-8). Every rollout requires an
    OPEN idea on your branch: one-line hypothesis + expected effect,
    logged with `harness report log --idea ...` before you run, closed
@@ -135,12 +138,16 @@ frozen set):
   logged via `ANTHROPIC_TOKENS_LOG` into every run manifest; the
   campaign audit reconciles the two. Tokens-to-success is a headline
   metric — summarize, don't re-read.
-- **Episodes: 500**, enforced at the gate: every rollout charges
-  `runs/campaign_ledger.jsonl`, and a request past the remaining budget
-  is REFUSED (`gate: budget`). Each rollout report returns
-  `budget.episodes_left`. Prefer few, well-hypothesized rollouts over
-  sweeps.
-- **Wall-clock: 40 hours**, enforced the same way (`budget.wall_h_left`
+- **Episodes: 500**, RESERVED atomically before launch: every rollout
+  reserves its episode count in the hash-chained
+  `runs/campaign_ledger.jsonl` under a lock (concurrent runs cannot
+  both squeeze past the ceiling), settles to actuals when it ends —
+  crash paths included — and a request past the remaining budget is
+  REFUSED (`gate: budget`). Each report returns `budget.episodes_left`;
+  each manifest records its reservation's chain hash. Prefer few,
+  well-hypothesized rollouts over sweeps.
+- **Wall-clock: 40 hours**, enforced the same way, and each run's own
+  deadline is CAPPED to the remaining wall budget (`budget.wall_h_left`
   in every report). Store-sim runs at rtf well below 1; a retail
   episode costs minutes of wall time — batch seeds into one rollout
   instead of serial single-episode runs.

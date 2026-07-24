@@ -94,11 +94,48 @@ def load_campaign_budget(root: Path) -> dict:
         return tomllib.load(f)["campaign"]
 
 
+_LEDGER = "runs/campaign_ledger.jsonl"
+
+
+def _entry_hash(prev_hash: str, entry: dict) -> str:
+    """Tamper-evident chain (ADR-21 round 3): each ledger entry hashes its
+    predecessor's hash + its own canonical content — an edited or dropped
+    line breaks every hash after it, and each run manifest records its
+    entries' hashes so the audit can cross-verify."""
+    canon = json.dumps({k: entry[k] for k in sorted(entry) if k != "hash"}, sort_keys=True)
+    return hashlib.sha256((prev_hash + canon).encode()).hexdigest()
+
+
 def budget_ledger(root: Path) -> list[dict]:
-    path = root / "runs" / "campaign_ledger.jsonl"
+    path = root / _LEDGER
     if not path.exists():
         return []
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def verify_ledger(root: Path) -> bool:
+    """True iff every entry's chain hash verifies."""
+    prev = ""
+    for entry in budget_ledger(root):
+        if entry.get("hash") != _entry_hash(prev, entry):
+            return False
+        prev = entry["hash"]
+    return True
+
+
+def _ledger_spend(entries: list[dict]) -> tuple[int, float]:
+    """(episodes, wall_s) spent: settled runs at their actuals, UNSETTLED
+    reservations at their reserved episodes (a crashed run stays charged —
+    conservative accounting, ADR-21 round 3)."""
+    settled = {e["run_id"]: e for e in entries if e.get("kind") == "settle"}
+    episodes = wall = 0.0
+    for e in entries:
+        if e.get("kind") == "settle":
+            episodes += int(e.get("episodes", 0))
+            wall += float(e.get("wall_s", 0.0))
+        elif e.get("kind") == "reserve" and e["run_id"] not in settled:
+            episodes += int(e.get("episodes", 0))
+    return int(episodes), wall
 
 
 def budget_remaining(root: Path) -> dict:
@@ -106,8 +143,7 @@ def budget_remaining(root: Path) -> dict:
     ceiling is reported for the external accountant (HAR-5: only the LLM
     harness can count tokens — manifests carry the log for the audit)."""
     ceilings = load_campaign_budget(root)
-    spent_eps = sum(int(e.get("episodes", 0)) for e in budget_ledger(root))
-    spent_wall = sum(float(e.get("wall_s", 0.0)) for e in budget_ledger(root))
+    spent_eps, spent_wall = _ledger_spend(budget_ledger(root))
     return {
         "episodes_left": int(ceilings["episodes"]) - spent_eps,
         "wall_h_left": round(float(ceilings["wall_h"]) - spent_wall / 3600.0, 3),
@@ -115,12 +151,103 @@ def budget_remaining(root: Path) -> dict:
     }
 
 
-def charge_budget(root: Path, run_id: str, episodes: int, wall_s: float) -> None:
-    path = root / "runs" / "campaign_ledger.jsonl"
+class _LedgerLock:
+    """O_EXCL lockfile: reserve is check-then-append under one lock, so
+    concurrent rollouts cannot both pass a nearly-exhausted ceiling."""
+
+    def __init__(self, root: Path, timeout_s: float = 10.0):
+        self.path = root / "runs" / "campaign_ledger.lock"
+        self.timeout_s = timeout_s
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        deadline = time.monotonic() + self.timeout_s
+        while True:
+            try:
+                fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.close(fd)
+                return self
+            except FileExistsError:
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"campaign ledger locked: {self.path}") from None
+                time.sleep(0.05)
+
+    def __exit__(self, *exc):
+        self.path.unlink(missing_ok=True)
+
+
+def _append_ledger(root: Path, entry: dict) -> str:
+    entries = budget_ledger(root)
+    prev = entries[-1]["hash"] if entries else ""
+    entry["hash"] = _entry_hash(prev, entry)
+    path = root / _LEDGER
     path.parent.mkdir(parents=True, exist_ok=True)
-    entry = {"run_id": run_id, "episodes": episodes, "wall_s": round(wall_s, 1)}
     with open(path, "a") as f:
         f.write(json.dumps(entry) + "\n")
+    return entry["hash"]
+
+
+def reserve_budget(root: Path, run_id: str, episodes: int) -> dict:
+    """ADR-21 round 3: atomically CHECK AND RESERVE before launch. Returns
+    {"ok": True, "entry": <hash>, "remaining": {...}} or a gate-shaped
+    refusal. The reservation charges the episode ceiling immediately; an
+    interrupted run therefore never runs off-ledger."""
+    try:
+        with _LedgerLock(root):
+            remaining = budget_remaining(root)
+            if remaining["episodes_left"] < episodes:
+                return {
+                    "ok": False,
+                    "gate": "budget",
+                    "detail": f"campaign episode budget exhausted: "
+                    f"{remaining['episodes_left']} left, {episodes} requested "
+                    f"(harness/budget.toml, ADR-21)",
+                }
+            if remaining["wall_h_left"] <= 0.0:
+                return {
+                    "ok": False,
+                    "gate": "budget",
+                    "detail": "campaign wall-clock budget exhausted (harness/budget.toml, ADR-21)",
+                }
+            entry_hash = _append_ledger(
+                root, {"kind": "reserve", "run_id": run_id, "episodes": episodes}
+            )
+            return {"ok": True, "entry": entry_hash, "remaining": remaining}
+    except TimeoutError as stuck:
+        return {"ok": False, "gate": "budget", "detail": str(stuck)}
+
+
+def settle_budget(root: Path, run_id: str, episodes: int, wall_s: float) -> str:
+    """The reconciliation entry (written in `finally`): actual episodes and
+    wall seconds supersede the reservation in the accounting."""
+    with _LedgerLock(root):
+        return _append_ledger(
+            root,
+            {"kind": "settle", "run_id": run_id, "episodes": episodes, "wall_s": round(wall_s, 1)},
+        )
+
+
+def resolve_trusted_baseline(root: Path) -> tuple[str | None, str | None]:
+    """(commit OID, error): fetch refs/heads/main FROM THE REMOTE SERVER
+    and resolve the fetched head (ADR-21 round 3). The baseline identity
+    comes from the branch-protected server at gate time — never from a
+    locally movable ref like refs/remotes/origin/main or HEAD — and the
+    returned OID is content-addressed: the blobs it names cannot be
+    altered without changing it. Fail-closed: no remote, no trusted gate."""
+    fetch = subprocess.run(
+        ["git", "fetch", "--quiet", "origin", "refs/heads/main"],
+        capture_output=True,
+        text=True,
+        cwd=root,
+    )
+    if fetch.returncode != 0:
+        return None, f"cannot fetch origin main: {fetch.stderr.strip() or 'no remote?'}"
+    head = subprocess.run(
+        ["git", "rev-parse", "FETCH_HEAD"], capture_output=True, text=True, cwd=root
+    )
+    if head.returncode != 0:
+        return None, "cannot resolve FETCH_HEAD after fetch"
+    return head.stdout.strip(), None
 
 
 def run_gates(
@@ -133,40 +260,63 @@ def run_gates(
     episodes: int = 0,
 ) -> dict:
     """HAR-2: refuse on env-hash mismatch (TRUSTED baseline by default,
-    ADR-21: the fingerprint AND the checker are verified against a
-    protected git ref the agent cannot move; --env-baseline local is the
-    dev override — humans only; logged), on validation failure, on a
-    missing OPEN idea (unless --no-idea-gate — humans only; logged), and
-    on an exhausted campaign budget (episodes/wall; tokens are audited
-    externally per HAR-5)."""
+    ADR-21: the baseline commit is fetched from the remote SERVER and
+    pinned by OID — a research agent cannot satisfy it by moving local
+    refs or passing its own; --env-baseline local is the dev override —
+    humans only; logged), on validation failure, on a missing OPEN idea
+    (unless --no-idea-gate — humans only; logged), and — for trusted runs
+    only — on an exhausted campaign budget (episodes/wall reserved
+    atomically by rollout(); tokens are audited externally per HAR-5).
+    Local-override runs are exempt from budget refusal and never charge
+    the ledger: the budget meters the campaign, not development."""
+    if env_baseline not in ("origin/main", "local"):
+        return {
+            "ok": False,
+            "gate": "env_hash",
+            "detail": f"unknown baseline {env_baseline!r}: only the protected "
+            "'origin/main' (server-resolved) or the logged dev override 'local' "
+            "are accepted (ADR-21)",
+        }
+    baseline_oid = None
     hash_cmd = [sys.executable, str(root / "tools" / "env_hash.py"), "--check", "--root", str(root)]
     if env_baseline != "local":
-        hash_cmd += ["--baseline", env_baseline]
+        baseline_oid, err = resolve_trusted_baseline(root)
+        if err:
+            return {"ok": False, "gate": "env_hash", "detail": err}
+        hash_cmd += ["--baseline", baseline_oid]
     hash_proc = subprocess.run(hash_cmd, capture_output=True, text=True)
     if hash_proc.returncode != 0:
         return {"ok": False, "gate": "env_hash", "detail": hash_proc.stdout.strip()}
     env_hash = json.loads(hash_proc.stdout)["env_hash"]
     remaining = budget_remaining(root)
-    if episodes > 0 and remaining["episodes_left"] < episodes:
-        return {
-            "ok": False,
-            "gate": "budget",
-            "detail": f"campaign episode budget exhausted: {remaining['episodes_left']} left, "
-            f"{episodes} requested (harness/budget.toml, ADR-21)",
-        }
-    if remaining["wall_h_left"] <= 0.0:
-        return {
-            "ok": False,
-            "gate": "budget",
-            "detail": "campaign wall-clock budget exhausted (harness/budget.toml, ADR-21)",
-        }
+    if env_baseline != "local":
+        if episodes > 0 and remaining["episodes_left"] < episodes:
+            return {
+                "ok": False,
+                "gate": "budget",
+                "detail": f"campaign episode budget exhausted: {remaining['episodes_left']} left, "
+                f"{episodes} requested (harness/budget.toml, ADR-21)",
+            }
+        if remaining["wall_h_left"] <= 0.0:
+            return {
+                "ok": False,
+                "gate": "budget",
+                "detail": "campaign wall-clock budget exhausted (harness/budget.toml, ADR-21)",
+            }
     # validate against the embodiment that will actually run (M0-5): a
     # graph whose nodes do not support it must refuse HERE, not crash
     # hours into the rollout
     validation = validate(graph, root, embodiment, allow_unproven=False)
     if not validation["ok"]:
         return {"ok": False, "gate": "validate", "detail": validation["errors"]}
-    gates = {"env_hash": env_hash, "env_baseline": env_baseline, "budget": remaining}
+    gates = {
+        "env_hash": env_hash,
+        "env_baseline": env_baseline,
+        # the resolved immutable identity (ADR-21 round 3): the audit
+        # re-verifies blobs at this OID, not at whatever a ref says later
+        "env_baseline_oid": baseline_oid,
+        "budget": remaining,
+    }
     if no_idea_gate:
         return {"ok": True, **gates, "idea": None, "no_idea_gate": True}
     ideas = open_ideas(root, branch)
@@ -239,6 +389,15 @@ def rollout(
     gates = run_gates(root, graph, branch, no_idea_gate, embodiment, env_baseline, episodes)
     if not gates["ok"]:
         return {"ok": False, "refused": gates}
+    # ADR-21 round 3: RESERVE atomically before launch (trusted runs only;
+    # the ledger meters the campaign, not development) — concurrent
+    # rollouts contend under the ledger lock and an interrupted run stays
+    # charged at its reservation until settled
+    reservation = None
+    if env_baseline != "local":
+        reservation = reserve_budget(root, run_id, episodes)
+        if not reservation["ok"]:
+            return {"ok": False, "refused": reservation}
 
     seeds = (seeds * ((episodes + len(seeds) - 1) // len(seeds)))[:episodes]
     run_dir = root / "runs" / run_id
@@ -266,7 +425,13 @@ def rollout(
         "AISLE_RESULTS": str(results_path),
     }
     started = time.monotonic()
-    deadline = started + (timeout_s or (GENESIS_BUILD_BUDGET_S + per_episode_budget_s * episodes))
+    run_budget_s = timeout_s or (GENESIS_BUILD_BUDGET_S + per_episode_budget_s * episodes)
+    if env_baseline != "local":
+        # ADR-21 round 3: the run is CAPPED to the campaign's remaining
+        # wall budget — a single long rollout cannot blow through the
+        # ceiling it passed at the gate
+        run_budget_s = min(run_budget_s, gates["budget"]["wall_h_left"] * 3600.0)
+    deadline = started + run_budget_s
     proc = subprocess.Popen(
         ["dora", "run", str(exec_graph), "--uv"],
         # cwd = the run dir: dora spawns nodes with this cwd, which is what
@@ -304,6 +469,10 @@ def rollout(
                 break
             time.sleep(2.0)
     finally:
+        # ADR-21 round 3: reconcile the reservation with actuals no matter
+        # how the run ended — crash paths settle too
+        if reservation is not None:
+            settle_budget(root, run_id, len(episode_records), time.monotonic() - started)
         try:
             os.killpg(proc.pid, signal.SIGTERM)
             proc.wait(timeout=20)
@@ -336,19 +505,16 @@ def rollout(
         "idea": gates.get("idea"),
         "no_idea_gate": gates.get("no_idea_gate", False),
         # ADR-21: which frozen-set baseline validated this run — "local" is
-        # the logged dev override, auditable in every manifest
+        # the logged dev override, auditable in every manifest — and the
+        # RESOLVED immutable commit OID plus this run's ledger reservation
+        # hash, so the audit can re-verify both
         "env_baseline": gates.get("env_baseline"),
+        "env_baseline_oid": gates.get("env_baseline_oid"),
+        "budget_reservation": (reservation or {}).get("entry"),
         # HAR-5: best-effort token accounting
         "tokens_log": os.environ.get("ANTHROPIC_TOKENS_LOG"),
     }
     (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=1))
-    # ADR-21: charge the campaign ledger and report what remains — the
-    # §8.2.3 budget contract ({"budget": {"episodes_left": ...}}). Runs
-    # under the logged dev override are NOT campaign spend: the ledger
-    # meters the campaign, and dev/acceptance runs would slowly exhaust
-    # it into a confusing refusal months later
-    if env_baseline != "local":
-        charge_budget(root, run_id, len(episode_records), wall_s)
     return {
         "ok": len(episode_records) >= episodes,
         "stalled": stalled,

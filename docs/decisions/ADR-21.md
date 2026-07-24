@@ -42,6 +42,29 @@ Status: accepted (CON-15). Task: T17 (PR #24 review). Relates to
    in manifests for the external audit. Dev-override runs do not charge
    the ledger — the budget meters the campaign, not development.
 
+## Round 3 hardening (PR #24 re-review)
+
+1. **Server-resolved, OID-pinned baseline.** `origin/main` as a local
+   remote-tracking ref is movable, and `--env-baseline HEAD` was
+   accepted. Now: the gate accepts ONLY `origin/main` or `local`; for
+   the trusted path it `git fetch`es `refs/heads/main` from the remote
+   SERVER at gate time, resolves FETCH_HEAD to a commit OID (immutable:
+   content-addressed blobs), verifies against that OID, and records the
+   OID in the gate result and run manifest. Moving local refs changes
+   nothing; no remote ⇒ fail closed.
+2. **Reserve → settle accounting.** Spend was check-then-append. Now:
+   `reserve_budget` atomically checks-and-reserves under an O_EXCL
+   ledger lock BEFORE launch (concurrent rollouts contend); the run's
+   deadline is capped to the remaining wall budget; `settle_budget`
+   reconciles to actuals in the teardown `finally` (crash paths
+   settle); an unsettled reservation stays charged (conservative). The
+   ledger is a tamper-evident hash chain (each entry hashes its
+   predecessor + content; `verify_ledger`), and each manifest records
+   its reservation hash so the audit cross-verifies chain and spend.
+3. **Local exemption.** Dev-override runs neither charge the ledger nor
+   pass through the budget refusal (the budget meters the campaign);
+   remaining budget is still reported.
+
 ## Evidence
 
 - tests/unit/test_env_hash.py::TestTrustedBaseline — the review's attack
