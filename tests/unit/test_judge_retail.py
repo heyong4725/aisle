@@ -32,16 +32,19 @@ def _yaw_to_quat_xyzw(yaw: float) -> tuple[float, float, float, float]:
     return (0.0, 0.0, math.sin(half), math.cos(half))  # TC-1 wire order
 
 
-def _state(cfg, overrides: dict) -> np.ndarray:
-    """oracle_state (n*7, TC-1) with every item at its home pose, overridden
-    per item_id with (x, y, z, yaw)."""
+def _state(cfg, overrides: dict, goal: dict | None = None, plano: dict | None = None):
+    """oracle_state (n*7, TC-1): every item at the EPISODE's initial layout
+    (T16/ADR-19 — the reset's physical truth: S2 stash, S3 swap; home when
+    no goal given), overridden per item_id with (x, y, z, yaw)."""
+    from aisle.scenes.store import episode_layout
 
+    layout = episode_layout(plano, goal) if goal is not None else {}
     blocks = []
     for idx, item_id in enumerate(cfg.item_ids):
         if item_id in overrides:
             x, y, z, yaw = overrides[item_id]
         else:
-            x, y, z, yaw = cfg.home_poses[idx]
+            x, y, z, yaw = layout.get(item_id, cfg.home_poses[idx])
         blocks.extend([x, y, z, *_yaw_to_quat_xyzw(yaw)])
     return np.asarray(blocks, dtype=np.float32)
 
@@ -50,7 +53,7 @@ def _judge(plano, goal, overrides, t=1.0):
     from aisle.verifier.retail import judge_retail
 
     cfg = _cfg(plano, goal)
-    return judge_retail(_state(cfg, overrides), plano, goal, t, cfg)
+    return judge_retail(_state(cfg, overrides, goal, plano), plano, goal, t, cfg)
 
 
 def _slot_pose(plano, slot_id, category=None, dx=0.0, dy=0.0, dyaw=0.0):
@@ -250,7 +253,7 @@ class TestS2:
 
         goal = S2_GOAL
         cfg = _cfg(plano, goal)
-        return judge_retail(_state(cfg, overrides), plano, goal, t, cfg)
+        return judge_retail(_state(cfg, overrides, goal, plano), plano, goal, t, cfg)
 
     def test_perfect_restock_succeeds(self):
         plano = _plano()
@@ -342,7 +345,7 @@ class TestS2:
         }
         from aisle.verifier.retail import judge_retail
 
-        v = judge_retail(_state(cfg, overrides), plano, goal, 1.0, cfg)
+        v = judge_retail(_state(cfg, overrides, goal, plano), plano, goal, 1.0, cfg)
         score = v["placement_scores"][0]
         assert not score["overhang"]
         assert score["pos"] and score["yaw"] and score["front_face"]
@@ -472,7 +475,7 @@ class TestReviewRound1:
             "bin#amoxicillin": (x, y, z + 0.025, yaw),  # floating 2.5 cm high
             "bin#metformin": _slot_pose(plano, "B1-L0-S1", "metformin"),
         }
-        v = judge_retail(_state(cfg, overrides), plano, goal, 1.0, cfg)
+        v = judge_retail(_state(cfg, overrides, goal, plano), plano, goal, 1.0, cfg)
         score = next(s for s in v["placement_scores"] if s["slot"] == "A1-L0-S0")
         assert not score["pos"]
         assert score["yaw"] and score["front_face"] and score["alignment"]

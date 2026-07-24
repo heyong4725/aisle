@@ -155,6 +155,34 @@ def stocked_items(plano: dict, episode: dict) -> list[StoreItem]:
     return items
 
 
+# the stash line (T16, ADR-19): items an episode removes from play (S2's
+# emptied slots) are teleported HERE — outside the store floor, on the
+# ground plane, spaced along x by stock index. The build set never changes;
+# only poses do, so ONE built scene realizes every scenario by teleport.
+STASH_Y = -6.0
+
+
+def full_stock(plano: dict) -> list[StoreItem]:
+    """T16 (ADR-19): the episode-INDEPENDENT build set — every slot item
+    plus one bin item per category (ADR-15). A teleport reset moves items,
+    never adds or removes them."""
+    return stocked_items(plano, {})
+
+
+def episode_layout(plano: dict, episode: dict, meds: dict | None = None) -> dict[str, tuple]:
+    """RS-3 (ADR-19): world pose (x, y, z_center, yaw) for EVERY full-stock
+    item under an episode — in-play items at their (possibly swapped, RS-9)
+    spawn poses, S2's emptied-slot items on the stash line (the bin remains
+    the RS-8 restock source, ADR-15). Pure in (plano, episode) — CON-5."""
+    meds = meds or load_meds()
+    layout = {item.item_id: spawn_pose(plano, item, meds) for item in stocked_items(plano, episode)}
+    for k, item in enumerate(full_stock(plano)):
+        if item.item_id not in layout:
+            size = meds[item.category]["size"]
+            layout[item.item_id] = (0.4 * k, STASH_Y, size[2] / 2, 0.0)
+    return layout
+
+
 def spawn_pose(plano: dict, item: StoreItem, meds: dict | None = None) -> tuple:
     """(x, y, z_center, yaw) where this item spawns — the SINGLE source for
     build_store and the retail verifier's home reference (ADR-16), so the
@@ -266,8 +294,12 @@ def build_store(
     box_physics = physics["materials"]["box"]
     items: dict[str, Any] = {}
     categories: dict[str, str] = {}
-    for item in stocked_items(plano, episode):
-        x, y, z, yaw = spawn_pose(plano, item, meds)
+    # T16 (ADR-19): the FULL stock builds at the episode's layout — the
+    # entity set is episode-independent (S2 stashes, never removes), so a
+    # teleport reset can realize any scenario on this one scene
+    layout = episode_layout(plano, episode, meds)
+    for item in full_stock(plano):
+        x, y, z, yaw = layout[item.item_id]
         categories[item.item_id] = item.category
         # PR #18 review: spawn the ORIGINAL dimensions with the composed
         # world yaw as a physical rotation — the entity quaternion must
@@ -369,16 +401,16 @@ def store_oracle_state(handle: StoreHandle):
     return np.concatenate(parts, axis=-1).astype(np.float32)[0]
 
 
-def teleport_store_reset(handle: StoreHandle) -> None:
-    """Teleport every item back to its spawn pose (S1 stock is constant
-    across seeds, ADR-18 — the order changes, the shelves do not)."""
+def teleport_store_reset(handle: StoreHandle, episode: dict) -> None:
+    """BRG-4/TC-6 (T16, ADR-19): teleport every item to the episode's
+    layout — one built scene realizes any scenario (S1 spawn poses, S2
+    stash, S3 swap). State injection only: no rebuild, no entity churn."""
     import numpy as np
 
-    meds = load_meds()
-    plano = handle.planogram
-    for item in stocked_items(plano, handle.episode):
-        x, y, z, yaw = spawn_pose(plano, item, meds)
-        entity = handle.items[item.item_id]
+    layout = episode_layout(handle.planogram, episode, load_meds())
+    for item_id, (x, y, z, yaw) in layout.items():
+        entity = handle.items[item_id]
         entity.set_pos(np.array([x, y, z], dtype=np.float32))
         entity.set_quat(np.array(yaw_quat_wxyz(yaw), dtype=np.float32))
         entity.zero_all_dofs_velocity()
+    handle.episode = episode

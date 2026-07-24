@@ -117,9 +117,14 @@ def test_episode_generators_seeded():
     s2 = build_store(seed=4, scenario="S2")
     empty = {entry["slot"] for entry in s2.episode["restock"]}
     assert len(empty) == 2
+    from aisle.scenes.store import STASH_Y
+
     for slot_id in plano["slots"]:
-        present = f"{slot_id}#0" in s2.items
-        assert present == (slot_id not in empty), slot_id
+        # T16 (ADR-19): the entity SET is episode-independent — de-stocked
+        # items exist but build at the stash, off the store floor
+        assert f"{slot_id}#0" in s2.items, slot_id
+        stashed = _xyz(s2.items[f"{slot_id}#0"])[1] == pytest.approx(STASH_Y, abs=1e-4)
+        assert stashed == (slot_id in empty), slot_id
 
     s3 = build_store(seed=4, scenario="S3")
     entries = s3.episode["misplaced"]
@@ -162,6 +167,81 @@ def test_store_oracle_and_teleport_reset():
     item = handle.items[stock[0].item_id]
     item.set_pos(np.array([0.0, 0.0, 0.5], dtype=np.float32))
     assert store_oracle_state(handle)[0] != pytest.approx(x, abs=1e-3)
-    teleport_store_reset(handle)
+    teleport_store_reset(handle, handle.episode)
     restored = store_oracle_state(handle)
     assert np.allclose(restored, state, atol=1e-5)
+
+
+def test_one_build_realizes_every_scenario_by_teleport():
+    """T16 (RS-3/RS-8/RS-9, ADR-19): the store build is episode-INDEPENDENT
+    (full stock) and `teleport_store_reset(handle, episode)` realizes any
+    scenario on the one built scene — S2 stashes the emptied slots' items
+    off the floor, S3 places the misplaced pair at their found_in slots —
+    and both scenarios are WINNABLE: teleporting the goal items to their
+    required slots turns judge_retail to success."""
+    import numpy as np
+
+    from aisle.scenes.pharmacy import load_meds
+    from aisle.scenes.store import (
+        STASH_Y,
+        full_stock,
+        spawn_pose,
+        store_oracle_state,
+        teleport_store_reset,
+    )
+    from aisle.verifier.retail import build_retail_cfg, judge_retail
+
+    meds = load_meds()
+    handle = build_store(seed=1, scenario="S1")
+    plano = handle.planogram
+    stock = full_stock(plano)
+    ids = [i.item_id for i in stock]
+    assert set(handle.items) == set(ids)  # constant entity set, all scenarios
+
+    def place(item_id, slot_id):
+        from aisle.scenes.store import yaw_quat_wxyz
+
+        world, yaw = slot_world_pose(plano, slot_id)
+        size = meds[handle.categories[item_id]]["size"]
+        entity = handle.items[item_id]
+        entity.set_pos(np.array([world[0], world[1], world[2] + size[2] / 2], dtype=np.float32))
+        entity.set_quat(np.array(yaw_quat_wxyz(yaw), dtype=np.float32))
+        entity.zero_all_dofs_velocity()
+
+    # --- S2: emptied slots vacant, bin stocked, winnable from the bin
+    s2 = generate_episode(7, "S2")
+    teleport_store_reset(handle, s2)
+    emptied = [e["slot"] for e in s2["restock"]]
+    for slot_id in emptied:
+        for item in stock:
+            if item.item_id.startswith(f"{slot_id}#"):
+                assert _xyz(handle.items[item.item_id])[1] == pytest.approx(STASH_Y, abs=1e-4)
+    cfg = build_retail_cfg(plano, s2)
+    verdict = judge_retail(store_oracle_state(handle), plano, s2, 1.0, cfg)
+    assert verdict["status"] != "success"  # not won at reset
+    for entry in s2["restock"]:  # restock each slot from the bin (RS-8)
+        place(f"bin#{entry['category']}", entry["slot"])
+    verdict = judge_retail(store_oracle_state(handle), plano, s2, 2.0, cfg)
+    assert verdict["status"] == "success", verdict
+
+    # --- S3: pair physically at found_in; winnable by re-shelving (RS-9)
+    s3 = generate_episode(3, "S3")
+    teleport_store_reset(handle, s3)
+    for entry in s3["misplaced"]:
+        world, _yaw = slot_world_pose(plano, entry["found_in"])
+        x, y, _z = _xyz(handle.items[entry["item"]])
+        assert (x, y) == pytest.approx((world[0], world[1]), abs=1e-4)
+    cfg = build_retail_cfg(plano, s3)
+    verdict = judge_retail(store_oracle_state(handle), plano, s3, 1.0, cfg)
+    assert verdict["status"] != "success"
+    for entry in s3["misplaced"]:
+        place(entry["item"], entry["belongs_in"])
+    verdict = judge_retail(store_oracle_state(handle), plano, s3, 2.0, cfg)
+    assert verdict["status"] == "success", verdict
+
+    # --- back to S1: every item at its spawn pose again
+    s1 = generate_episode(1, "S1")
+    teleport_store_reset(handle, s1)
+    for item in stock:
+        x, y, z, _yaw = spawn_pose(plano, item, meds)
+        assert _xyz(handle.items[item.item_id]) == pytest.approx([x, y, z], abs=1e-4)

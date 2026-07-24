@@ -259,18 +259,25 @@ class TestStoreBridgeConfig:
         cfg = parse_bridge_config({})
         assert cfg.scene == "pharmacy" and cfg.scenario == "S1"
 
-    def test_store_requires_mobile_single_env_s1(self):
+    def test_store_accepts_every_scenario_mobile_single_env(self):
+        """T16 (RS-3): the store bridge accepts S1/S2/S3 — the build is
+        episode-independent (full stock) and the teleport reset realizes
+        any scenario by stash/swap, so the S1-only restriction is gone.
+        Mobile-only and single-env still hold (ADR-13/ADR-18)."""
         from aisle.nodes.dora_genesis import parse_bridge_config, require_valid_store_config
 
-        good = parse_bridge_config({"AISLE_SCENE": "store", "AISLE_EMBODIMENT": "mobile"})
-        require_valid_store_config(good)  # ok
+        for scenario in ("S1", "S2", "S3"):
+            good = parse_bridge_config(
+                {"AISLE_SCENE": "store", "AISLE_EMBODIMENT": "mobile", "AISLE_SCENARIO": scenario}
+            )
+            require_valid_store_config(good)  # ok
         import pytest as _pytest
 
         for env, match in (
             ({"AISLE_SCENE": "store", "AISLE_EMBODIMENT": "franka"}, "mobile"),
             (
-                {"AISLE_SCENE": "store", "AISLE_EMBODIMENT": "mobile", "AISLE_SCENARIO": "S2"},
-                "S1 only",
+                {"AISLE_SCENE": "store", "AISLE_EMBODIMENT": "mobile", "AISLE_SCENARIO": "S9"},
+                "scenario",
             ),
         ):
             with _pytest.raises(ValueError, match=match):
@@ -288,3 +295,90 @@ class TestStoreBridgeConfig:
         # A1 at yaw -pi/2: width (0.66) lies along x -> hx = 0.33
         a1 = obstacles[0]
         assert a1[2] == pytest.approx(0.33) and a1[3] == pytest.approx(0.15)
+
+
+class TestEpisodeLayout:
+    """T16 (RS-3, CON-5): `episode_layout` gives every FULL-STOCK item a
+    world pose under an episode — the pure core that lets one built scene
+    realize any scenario by teleport (supersedes ADR-18's deferred
+    rebuild-per-episode; ADR-19)."""
+
+    def _fixtures(self):
+        from aisle.scenes.store import full_stock, generate_episode, load_planogram
+
+        plano = load_planogram()
+        return plano, full_stock(plano), generate_episode
+
+    def test_full_stock_is_episode_independent(self):
+        """The build set must be CONSTANT: teleport reset can move items,
+        never add or remove them."""
+        from aisle.scenes.store import full_stock, load_planogram, stocked_items
+
+        plano = load_planogram()
+        ids = [i.item_id for i in full_stock(plano)]
+        assert ids == [i.item_id for i in stocked_items(plano, {})]
+        # every slot item and one bin item per category are present
+        slots = sum(s["capacity"] for s in plano["slots"].values())
+        assert len(ids) > slots  # bin items on top of slot stock
+
+    def test_s1_layout_is_all_spawn_poses(self):
+        from aisle.scenes.store import episode_layout, load_meds, spawn_pose
+
+        plano, stock, gen = self._fixtures()
+        meds = load_meds()
+        layout = episode_layout(plano, gen(1, "S1"))
+        assert set(layout) == {i.item_id for i in stock}
+        for item in stock:
+            assert layout[item.item_id] == pytest.approx(spawn_pose(plano, item, meds))
+
+    def test_s2_layout_stashes_the_emptied_slots(self):
+        """RS-3/RS-8: the emptied slots' items go to the stash (outside
+        the store floor); the bin keeps one item of every category as the
+        restock source; everyone else spawns normally."""
+        from aisle.scenes.store import STASH_Y, episode_layout
+
+        plano, stock, gen = self._fixtures()
+        episode = gen(7, "S2")
+        emptied = {e["slot"] for e in episode["restock"]}
+        layout = episode_layout(plano, episode)
+        assert set(layout) == {i.item_id for i in stock}
+        stashed = [i for i in stock if i.item_id.split("#")[0] in emptied]
+        assert stashed, "S2 must empty at least one stocked slot"
+        for item in stashed:
+            assert layout[item.item_id][1] == pytest.approx(STASH_Y)
+        for item in stock:
+            if item.slot_id == "bin":
+                assert layout[item.item_id][1] != pytest.approx(STASH_Y)
+
+    def test_s3_layout_swaps_the_misplaced_pair(self):
+        from aisle.scenes.store import episode_layout, load_planogram, slot_world_pose
+
+        plano, stock, gen = self._fixtures()
+        episode = gen(3, "S3")
+        layout = episode_layout(plano, episode)
+        for entry in episode["misplaced"]:
+            world, yaw = slot_world_pose(load_planogram(), entry["found_in"])
+            x, y, _z, _yaw = layout[entry["item"]]
+            assert (x, y) == pytest.approx((world[0], world[1]))
+
+    def test_layout_is_deterministic(self):
+        from aisle.scenes.store import episode_layout
+
+        plano, _stock, gen = self._fixtures()
+        for scenario in ("S1", "S2", "S3"):
+            episode = gen(5, scenario)
+            assert episode_layout(plano, episode) == episode_layout(plano, episode)
+
+
+def test_retail_cfg_roster_is_full_stock_for_every_scenario():
+    """T16: the verifier's index map must match the bridge's CONSTANT
+    entity set — an S2 goal must not shrink the roster (the old
+    episode-dependent roster desynced item indices from oracle_state)."""
+    from aisle.scenes.store import full_stock, generate_episode, load_planogram
+    from aisle.verifier.retail import build_retail_cfg
+
+    plano = load_planogram()
+    full = tuple(i.item_id for i in full_stock(plano))
+    for scenario in ("S1", "S2", "S3"):
+        cfg = build_retail_cfg(plano, generate_episode(2, scenario))
+        assert cfg.item_ids == full

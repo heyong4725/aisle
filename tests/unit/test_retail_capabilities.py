@@ -32,11 +32,16 @@ def _plano():
     return load_planogram()
 
 
-def _state_at_home(cfg, overrides: dict | None = None) -> np.ndarray:
-    """oracle_state with every item at its spawn pose (TC-1 quats)."""
+def _state_at_home(cfg, overrides: dict | None = None, goal: dict | None = None) -> np.ndarray:
+    """oracle_state at the EPISODE's initial layout when a goal is given
+    (T16/ADR-19: the reset's physical truth — S2 stash, S3 swap), else
+    every item at its spawn pose (TC-1 quats)."""
+    from aisle.scenes.store import episode_layout
+
+    layout = episode_layout(_plano(), goal) if goal is not None else {}
     blocks = []
     for idx, item_id in enumerate(cfg.item_ids):
-        x, y, z, yaw = (overrides or {}).get(item_id, cfg.home_poses[idx])
+        x, y, z, yaw = (overrides or {}).get(item_id, layout.get(item_id, cfg.home_poses[idx]))
         half = yaw / 2
         blocks.extend([x, y, z, 0.0, 0.0, math.sin(half), math.cos(half)])
     return np.asarray(blocks, dtype=np.float32)
@@ -85,11 +90,11 @@ def test_stock_detector_finds_exactly_the_destocked_slots():
     plano = _plano()
     goal = generate_episode(4, "S2")
     cfg = build_retail_cfg(plano, goal)
-    report = detect_stock(_state_at_home(cfg), plano, cfg)
+    report = detect_stock(_state_at_home(cfg, goal=goal), plano, cfg)
     expected = {entry["slot"]: entry["category"] for entry in goal["restock"]}
     assert {e["slot"]: e["category"] for e in report["empty_slots"]} == expected
     # deterministic (CON-5)
-    assert report == detect_stock(_state_at_home(cfg), plano, cfg)
+    assert report == detect_stock(_state_at_home(cfg, goal=goal), plano, cfg)
 
 
 def test_misplacement_detector_finds_exactly_the_swap():
@@ -103,7 +108,7 @@ def test_misplacement_detector_finds_exactly_the_swap():
     plano = _plano()
     goal = generate_episode(4, "S3")
     cfg = build_retail_cfg(plano, goal)
-    report = detect_misplacements(_state_at_home(cfg), plano, cfg)
+    report = detect_misplacements(_state_at_home(cfg, goal=goal), plano, cfg)
     expected = {(e["item"], e["found_in"], e["belongs_in"]) for e in goal["misplaced"]}
     assert {(e["item"], e["found_in"], e["belongs_in"]) for e in report["misplaced"]} == expected
 
