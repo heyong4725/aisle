@@ -87,16 +87,17 @@ def test_pick_and_place_stages_solve_for_an_l1_slot():
 
 
 def test_pick_solves_across_the_nav_tolerance_envelope():
-    """T15 live-run regression: the nav arrival tolerance (0.1 m / 0.1 rad)
-    offsets the item in the base frame — the pick chain must SOLVE at the
-    tolerance corners, not just the nominal park (the first live episode
-    failed IK exactly here)."""
+    """T15 live-run regression: the widest pose nav can ACCEPT — the
+    CAPTURE band (a stalled drive hands off to rotate inside it, PR #21
+    round 3) times the arrival yaw — offsets the item in the base frame,
+    and the pick chain must SOLVE at those corners, not just the nominal
+    park (the first live episode failed IK exactly here)."""
     from aisle.mobility.nav import load_nav_params
     from aisle.nodes.s1_expert import PARK_STANDOFF_M, pick_stages, place_stages
     from aisle.scenes.pharmacy import load_meds
 
     params = load_nav_params("mobile")
-    tol, ytol = params["arrival_tol_m"], params["arrival_yaw_rad"]
+    tol, ytol = params["capture_tol_m"], params["arrival_yaw_rad"]
     meds = load_meds()
     home = _home()
     counter_top = 0.55

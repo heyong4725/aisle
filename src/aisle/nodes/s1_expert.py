@@ -373,9 +373,13 @@ def main() -> None:
                         pos_err = math.hypot(base_pose[0] - target[0], base_pose[1] - target[1])
                         yaw_err = abs(_wrap(base_pose[2] - target[2]))
                         # the gate matches the IK-proven envelope exactly (the
-                        # unit sweep covers +-arrival_tol, config-sourced)
+                        # unit sweep covers +-capture_tol, config-sourced):
+                        # nav ACCEPTS a captured stall up to capture_tol_m
+                        # (PR #21 round 3), so verifying against the tighter
+                        # arrival radius would re-park a pose nav can never
+                        # improve on
                         if (
-                            pos_err > nav_params["arrival_tol_m"]
+                            pos_err > nav_params["capture_tol_m"]
                             or yaw_err > nav_params["arrival_yaw_rad"]
                         ):
                             if ctx["reparks"] < 3:

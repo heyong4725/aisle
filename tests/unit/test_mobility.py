@@ -595,3 +595,118 @@ def test_turn_in_place_toward_bearing_is_progress():
         yaw -= 0.01  # slow creep-rate turn toward the bearing (0)
     # 300 ticks of pure turning: NOT blocked (progress via heading)
     assert result is None or result["failure"] != "blocked", result
+
+
+class TestNavCaptureBand:
+    """MOB-2 capture band (T15/PR #21 round 3): a diff-drive base cannot
+    point-stabilize onto a target it is effectively ON — the S1 gate run
+    stalled 0.5 mm outside the arrival radius with yaw still ~pi off,
+    dithered below the progress epsilons, and failed blocked three times."""
+
+    def _machine(self):
+        from aisle.mobility.nav import NavStateMachine
+
+        return NavStateMachine(
+            arrival_tol_m=0.05,
+            timeout_ticks=2000,
+            stall_ticks=5,
+            arrival_yaw_rad=0.05,
+            capture_tol_m=0.075,
+        )
+
+    def test_drive_stall_inside_capture_hands_off_to_rotate_then_succeeds(self):
+        # the S1 gate failure verbatim: parked 0.0505 m out, yaw ~pi off
+        m = self._machine()
+        m.on_goal([-0.5, 0.0, 3.14], "nav-1")
+        m.on_base_pose([-0.4995, -0.0505, -0.02])  # dist ~0.0505, stuck
+        for _ in range(6):  # exhaust the drive-phase stall window
+            out = m.on_tick()
+            assert not (out and out[0][0] == "nav_result"), out
+        assert m.rotating  # captured: final-rotate, not blocked
+        m.on_base_pose([-0.4995, -0.0505, 3.13])  # rotated to the final yaw
+        out = m.on_tick()
+        assert out[0][0] == "nav_result" and out[0][1]["status"] == "success"
+
+    def test_drive_stall_outside_capture_still_fails_blocked(self):
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-1")
+        m.on_base_pose([1.0, 0.0, 0.0])  # 4 m away, genuinely stuck
+        result = None
+        for _ in range(10):
+            out = m.on_tick()
+            if out and out[0][0] == "nav_result":
+                result = out[0][1]
+                break
+        assert result is not None and result["failure"] == "blocked"
+
+    def test_capture_band_never_relaxes_a_live_drive(self):
+        # inside capture but still PROGRESSING: no early success, no
+        # rotate handoff — the tight radius stays the aim point
+        m = self._machine()
+        m.on_goal([0.1, 0.0, 0.0], "nav-1")
+        m.on_base_pose([0.04, 0.0, 0.0])  # dist 0.06: in capture, driving
+        out = m.on_tick()
+        assert out[0][0] == "nav_feedback"
+        assert not m.rotating
+
+    def test_capture_tol_defaults_to_1p5x_arrival(self):
+        from aisle.mobility.nav import NavStateMachine
+
+        m = NavStateMachine(arrival_tol_m=0.1, timeout_ticks=20, stall_ticks=5, arrival_yaw_rad=0.1)
+        assert m.capture_tol_m == pytest.approx(0.15)
+
+    def test_load_nav_params_exposes_capture_tol(self):
+        """The config value rides load_nav_params so the expert's verify
+        gate and the IK envelope sweep read the SAME band nav enforces."""
+        from aisle.mobility.nav import load_nav_params
+
+        params = load_nav_params("mobile")
+        assert params["capture_tol_m"] >= params["arrival_tol_m"]
+
+
+class TestNavNearField:
+    """MOB-2 near-field omega cap (T15/PR #21 round 3): near the target the
+    bearing swings fast and a saturated turn with the pipeline loop delay
+    ORBITS the target — the S1 gate run circled the counter for ~8 sim
+    seconds (dist 0.19 -> 0.27) and failed blocked. Inside nav_near_field_m
+    the drive phase turns at the rotate-phase cap."""
+
+    def _limits(self):
+        from aisle.mobility.guard import load_base_limits
+
+        return load_base_limits("mobile")
+
+    def test_near_target_drive_omega_is_capped(self):
+        from aisle.mobility.nav import base_cmd_toward
+
+        # beside the target (dist 0.2, bearing ~90 deg off): omega would
+        # saturate at omega_max without the near-field cap
+        v, omega = base_cmd_toward(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.2, 0.0],
+            self._limits(),
+            arrival_tol_m=0.05,
+            rotate_omega_max=0.3,
+            near_field_m=0.25,
+        )
+        assert abs(omega) <= 0.3
+        assert v <= 0.2 + 1e-9  # v stays dist-scaled
+
+    def test_far_field_turn_rate_is_unchanged(self):
+        from aisle.mobility.nav import base_cmd_toward
+
+        limits = self._limits()
+        v, omega = base_cmd_toward(
+            [0.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            limits,
+            arrival_tol_m=0.05,
+            rotate_omega_max=0.3,
+            near_field_m=0.25,
+        )
+        assert abs(omega) == pytest.approx(limits.omega_max)
+
+    def test_load_near_field_reads_config(self):
+        from aisle.mobility.nav import load_near_field_m
+
+        assert load_near_field_m("mobile") > 0.0

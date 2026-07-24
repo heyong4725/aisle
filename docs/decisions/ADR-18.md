@@ -94,6 +94,44 @@ architecture; the agent picks and records). Task: T15. Relates to
    for retail-scale ones (600 sim s / 2100 wall s per episode) on
    S1..S3. The acceptance gate drives the PUBLIC harness path, not a
    bare `dora run`.
+14. **Store camera policy** (HAR-4, PR #21 round 2). expert_s1.yaml now
+   declares `rgb_overhead` so the harness records overhead.mp4.
+   `store_topic_rates` keeps that stream at 5 Hz — ample for an episode
+   video, and the desk 30 Hz frame transport is pure overhead at store
+   scale — and drops the consumer-less wrist/depth streams (their
+   renders were waste in every store run). Desk rates are untouched;
+   the gate asserts the video and the rgb_overhead trace through the
+   public path.
+15. **Nav capture band** (MOB-2, PR #21 round 3). With the video stream
+   perturbing event timing, the counter park landed 0.5 mm OUTSIDE the
+   0.05 arrival radius and nav could not recover: a diff-drive base
+   cannot point-stabilize onto a target it is effectively ON (bearing
+   flips at mm range, progress under the detector's epsilons), so the
+   leg failed `blocked` with the final yaw still ~pi off — three times,
+   then idle, then episode timeout. `nav_capture_tol_m` (0.075): a
+   drive-phase stall inside the band latches the final ROTATE instead
+   of failing, and arrival accepts the band once latched-rotating. The
+   expert's park-verify reads the same band, and the IK envelope sweep
+   proves pick+place solve at the CAPTURE corners, so every pose nav
+   can accept stays solvable. Green runs were landing 1 mm inside the
+   radius by luck; the band removes the coin flip.
+16. **Near-field omega cap** (MOB-2, PR #21 round 3, with item 15). The
+   capture band alone was not enough: the drive controller ORBITED the
+   counter (tap: dist 2.43 -> 0.19, then RISING to 0.27, yaw swinging at
+   saturated omega 1.5 through ~8 sim s) — near the target the bearing
+   swings fast, K_OMEGA saturates, and the ~0.15 s-sim loop delay
+   overshoots every swing; v self-scales with dist (K_V) but omega did
+   not. Inside `nav_near_field_m` (0.25) the drive phase turns at the
+   rotate-phase cap (0.3) — the same physics as the round-8 rotate fix,
+   applied to the approach.
+17. **Nav budgets scale with rtf** (MOB-2, PR #21 round 3, the terminal
+   finding). The wall-t tap acquitted every transport suspect (base_pose
+   gaps < 0.1 s wall end to end) and showed a CORRECT, converging final
+   rotate — 2.3 rad at the 0.3 cap, exactly on command — killed by
+   `nav_timeout_ticks` = 3000 wall ticks (60 s): nav budgets are WALL
+   ticks measuring a SIM process, and at store rtf ~0.3 a sim-second
+   costs ~3x the desk's ticks. 12000/400. (On real hardware wall == sim
+   and these shrink back — the sim-relaxation stance from PR #14.)
 
 ## Known limits (v1)
 

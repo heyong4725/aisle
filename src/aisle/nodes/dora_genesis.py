@@ -56,6 +56,19 @@ RENDER_TOPICS = ("rgb_overhead", "rgb_wrist", "depth_overhead")
 RESET_SETTLE_TICKS = 20
 
 
+def store_topic_rates(rates: dict[str, int]) -> dict[str, int]:
+    """T15/HAR-4 store camera policy (ADR-18): the overhead stream exists to
+    feed the harness's overhead.mp4, and at store scale the desk 30 Hz frame
+    TRANSPORT re-starved base_pose freshness (watchdog churn -> nav stall ->
+    sim-time timeout; the S1 gate failed at t_end=600 the first run with the
+    stream declared) — 5 Hz is ample for an episode video. The wrist and
+    depth streams have no store consumer; their renders were pure waste."""
+    out = {**rates, "rgb_overhead": 5}
+    out.pop("rgb_wrist", None)
+    out.pop("depth_overhead", None)
+    return out
+
+
 @dataclass(frozen=True)
 class BridgeConfig:
     seed: int
@@ -333,6 +346,8 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     # root is re-based; base_scan is a planar raycast against the scene.
     is_mobile = cfg.embodiment == "mobile"
     topic_rates = {**TOPIC_RATES, **({"base_pose": 50, "base_scan": 10} if is_mobile else {})}
+    if is_store:
+        topic_rates = store_topic_rates(topic_rates)
     base_pose = [float(v) for v in profile.get("base_start", [0.0, 0.0, 0.0])]
     base_cmd = [0.0, 0.0]
     if is_store:

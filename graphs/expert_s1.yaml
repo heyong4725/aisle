@@ -35,6 +35,10 @@ nodes:
       - base_pose
       - base_scan
       - frame_info
+      # HAR-4: the harness's trace recorder builds overhead.mp4 from this
+      # stream (the bridge renders it either way; undeclared, dora drops it
+      # and the public rollout returned videos: [] — PR #21)
+      - rgb_overhead
 
   - id: reset
     path: ../src/aisle/reset/service.py

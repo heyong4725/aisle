@@ -27,6 +27,7 @@ def main() -> None:
         base_cmd_toward,
         load_locations,
         load_nav_params,
+        load_near_field_m,
         load_rotate_omega_max,
         resolve_nav_goal,
     )
@@ -38,6 +39,7 @@ def main() -> None:
     params = load_nav_params(embodiment)
     arrival_tol_m = params["arrival_tol_m"]
     rotate_cap = load_rotate_omega_max(embodiment)
+    near_field = load_near_field_m(embodiment)
     machine = NavStateMachine(**params)
 
     node = Node()
@@ -76,6 +78,7 @@ def main() -> None:
                     arrival_tol_m,
                     rotate_only=machine.rotating,
                     rotate_omega_max=rotate_cap,
+                    near_field_m=near_field,
                 )
                 send_base_cmd(v, omega, machine.goal_id or "")
             emissions = machine.on_tick()

@@ -108,7 +108,11 @@ def _write_reset_graph(tmp: Path, rec_out: Path) -> Path:
                 "env": {
                     "DRIVER_MODE": "reset",
                     "DRIVER_RESET_SEEDS": "2,3",
-                    "DRIVER_RESET_SPACING": "250",
+                    # spacing counts base_pose EVENTS (50 Hz SIM): at wall
+                    # rtf r the Nth event lands at N/50/r wall seconds, so
+                    # both resets (150, 300) must fit the recorder window
+                    # even at rtf ~0.5 (300/50/0.5 = 12 s < 30 s)
+                    "DRIVER_RESET_SPACING": "150",
                 },
             },
             {
@@ -129,7 +133,7 @@ def _write_reset_graph(tmp: Path, rec_out: Path) -> Path:
                     "base_pose": {"source": "bridge/base_pose", "queue_size": 1000},
                     "reset_done": {"source": "bridge/reset_done", "queue_size": 100},
                 },
-                "env": {"REC_OUT": str(rec_out), "RECORDER_DURATION_S": "16"},
+                "env": {"REC_OUT": str(rec_out), "RECORDER_DURATION_S": "30"},
             },
         ]
     }

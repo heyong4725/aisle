@@ -82,10 +82,33 @@ base_staleness_s = 0.5
 # planning envelope test sweeps exactly these tolerances (T15)
 nav_arrival_tol_m = 0.05
 nav_arrival_yaw_rad = 0.05
+# capture band (T15/PR #21 round 3): a diff-drive base cannot point-
+# stabilize onto a target it is already ON — a drive-phase stall 0.5 mm
+# OUTSIDE the arrival radius dithered (bearing flips at mm range, progress
+# below the detector's epsilons) and nav declared blocked with yaw still
+# ~pi off. A stall inside this band hands off to the final rotate instead,
+# and arrival accepts it once rotated. The pick/place IK envelope sweep
+# covers THESE corners, so every captured pose stays solvable.
+nav_capture_tol_m = 0.075
 # rotate-phase omega cap: saturated rotation (1.5 rad/s) with the
 # pipeline's ~0.15 s-sim loop delay overshoots the 0.05 yaw band every
 # swing and limit-cycles (T15 round 8 tap); 0.3 keeps the worst
 # overshoot (~0.045) inside the band
 nav_rotate_omega_max = 0.3
-nav_timeout_ticks = 3000
-nav_stall_ticks = 200
+# near-field radius (T15/PR #21 round 3): inside it the DRIVE phase caps
+# omega to nav_rotate_omega_max too. Near the target the bearing swings
+# fast, K_OMEGA saturates omega (1.5), and the ~0.15 s-sim loop delay
+# overshoots every swing — the S1 gate run ORBITED the counter for ~8 sim
+# seconds (dist 0.19 -> 0.27, then blocked). v already self-scales with
+# dist (K_V), so the omega cap is the missing half of the round-8 fix.
+nav_near_field_m = 0.25
+# nav budgets are WALL ticks (20 ms) measuring a SIM process: at store
+# rtf ~0.3 every sim-second costs ~3x the desk's ticks. The PR #21 round-3
+# tap showed a CORRECT, converging final rotate (2.3 rad at the 0.3 cap =
+# ~7 sim s = ~20 wall s) killed by the old 3000-tick (60 s) budget after
+# the near-field spiral had already spent most of it. Worst store leg:
+# ~2.5 m spiral approach + up-to-pi rotate ~ 30 sim s ~ 100 wall s at
+# rtf 0.3; 12000 ticks (240 s) doubles that. Genuine blockage is still
+# caught by the stall detector (400 ticks = 8 s wall).
+nav_timeout_ticks = 12000
+nav_stall_ticks = 400

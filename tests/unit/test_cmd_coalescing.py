@@ -202,3 +202,21 @@ def test_reset_quarantine_zero_ticks_never_holds():
     q = ResetQuarantine(0)
     q.arm()
     assert q.hold() is False
+
+
+def test_store_topic_rates_keep_overhead_drop_unconsumed_cameras():
+    """T15/HAR-4 store camera policy (ADR-18): the store bridge keeps a
+    5 Hz rgb_overhead stream (the harness overhead video source — 30 Hz
+    transport starved base_pose freshness and timed out the S1 gate) and
+    drops the consumer-less wrist/depth streams; every non-camera topic
+    keeps its contract rate."""
+    from aisle.nodes.dora_genesis import TOPIC_RATES, store_topic_rates
+
+    desk = {**TOPIC_RATES, "base_pose": 50, "base_scan": 10}
+    store = store_topic_rates(desk)
+    assert store["rgb_overhead"] == 5
+    assert "rgb_wrist" not in store and "depth_overhead" not in store
+    untouched = {
+        k: v for k, v in desk.items() if k not in ("rgb_overhead", "rgb_wrist", "depth_overhead")
+    }
+    assert {k: store[k] for k in untouched} == untouched

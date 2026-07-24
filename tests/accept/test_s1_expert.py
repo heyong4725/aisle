@@ -70,6 +70,11 @@ def test_scripted_order_pick():
         assert record["suite"] == "retail"
         assert record["seed"] == 1
         assert report["pass1"] == 1.0
+        # HAR-4: the retail rollout records the overhead video and traces
+        # like every other rollout — a green run with videos: [] means the
+        # graph dropped the rgb_overhead stream (PR #21)
+        assert any("overhead" in v for v in report["videos"]), report["videos"]
+        assert (REPO_ROOT / report["traces_dir"] / "dora-genesis__rgb_overhead.arrow").exists()
     finally:
         run_harness(
             "report",
