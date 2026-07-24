@@ -47,3 +47,22 @@ T14 registry ext      → §11.4 capabilities: base-driver-sim, waypoint-nav,
                         manifests (implementations may be oracle-rung stubs first).
 T15 S1 expert graph   → scripted S1 episode end-to-end (test_s1_expert gate).
 Then: agent campaigns on S1→S2→S3 measure the H3 transfer curve (design doc §11.5).
+
+Bench suite tasks (powder family; T20 may run now; T21+ gated by PW-0 ADR):
+T20 powder spike     → tools/spikes/powder_spike.py per PW-0: solver benchmark
+                       (MPM vs PBD/SPH), particle-count sweep, scripted-scoop
+                       repeatability, qualitative report + plots. Class A
+                       (tools/), no spec edits, results to
+                       docs/decisions/ADR-powder-spike.md as DRAFT for human
+                       go/no-go. Runs on Metal; note CUDA deltas if a box exists.
+T21 bench contract   → SPEC 310: ft stream, impedance mode+reject, balances with
+                       settling, tare + tool-change services, TOOL_MISMATCH check.
+T22 bench scene      → PW-1..3: build_bench, materials.toml, tools.toml,
+                       particle oracle.
+T23 mass verifier    → PW-10,11: judge_mass + redo-cycle semantics + new
+                       failure classes.
+T24 registry ext     → PW-13 manifests incl. naive fixed-scoop baseline
+                       (the deliberate strategy gap stays open).
+T25 P0 expert graph  → scripted scoop transfer (test_p0_expert gate).
+Then: agent campaigns P1→P4; dosing-efficiency curves; H3 via material-
+conditioned skill accumulation.

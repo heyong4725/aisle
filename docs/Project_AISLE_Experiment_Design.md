@@ -614,3 +614,48 @@ Mobility: `base-driver-sim` (velocity or waypoint commands; base pose out), `way
 ### 11.5 Scoring and what the suite buys the research
 
 Scoring is competition-style per episode: binary task success, wall-clock time, and penalties (wrong item delivered, item dropped, placement criteria failed) — reported alongside the standard pass@k so results are comparable both internally and to the external competition. Research-wise the suite is the strongest possible testbed for **H3 (skill accumulation)**: S1, S2, and S3 share navigation, shelf perception, and placement skills almost entirely — an agent that has solved S1 with a persistent library should attack S2 with most of its skills already evalcarded, and the S1→S2→S3 transfer curve becomes the headline accumulation figure, far more convincing than the desk-tier transfers. It also stress-tests the composer: S1 graphs will be 2–3x larger than T1 graphs, probing whether typed composition holds up at realistic scale.
+---
+
+## 12. Bench suite: powder transfer & precision weighing (P0–P4)
+
+A third scenario family, derived from a real lab-automation workstation spec
+(solid-powder transfer and weighing: force-controlled arm + interchangeable
+scoops + dual 0.001 g analytical balances, AI-agent-driven scoop→weigh→adjust
+loop). It is the purest ENPIRE-shaped task in AISLE: **the balance is a free,
+continuous, real-world auto-verifier**, so the expensive EN-module engineering
+every other family needs comes built into the instrument.
+
+**Why it earns its place:** (1) closed-loop continuous-quantity control —
+discrete pick/place families never exercise it; (2) the strongest skill-library
+fit: dosing strategies conditioned on material properties are exactly
+evalcarded skills, and the workstation's "precision improves with use" claim
+is hypothesis H3 as a product promise; (3) the best Phase-4 hardware target in
+the project — a desktop station (one arm, two balances, enclosed, benign
+failures) is affordable and safe in a way the retail store mock-up is not;
+(4) commercially real (materials science, pharma pre-formulation, chemistry).
+
+**The honest constraint:** powder is granular media. Genesis's particle solvers
+(MPM/SPH/PBD) make this simulatable *qualitatively* — scooping, pouring,
+piling — but milligram-level dynamics (cohesion, humidity, static, abrasion) do
+not transfer. The family's sim scope is therefore fixed by rule PW-4: sim
+validates control strategy and architecture (coarse-to-fine dosing, overshoot
+recovery, tool selection, convergence behavior under material randomization);
+milligram-precision claims are hardware-only. The sim oracle is nonetheless
+exact (particle count × particle mass), so the research loop runs honestly —
+it is the dynamics, not the ground truth, that is approximate. A one-week
+feasibility spike (PW-0) gates the family: particle throughput on Metal,
+scripted-scoop repeatability, solver choice. Its ADR fills every TBD threshold.
+
+**Architecture additions** (SPEC 310): wrist force/torque stream and an
+impedance command mode (the workstation arm is force-controlled; force limits
+become the primary safety mechanism near glass vessels), balance topics with
+real-instrument settling semantics, tare and tool-change as dora Services, and
+a TOOL_MISMATCH validator check tying tool choices to manifest-declared
+capacities. Tiers P0–P4 climb from scoop-anything through closed-loop ±1%
+multi-scoop dosing to material randomization and autonomous tool selection,
+scored on dosing-efficiency curves (final error, scoop count, redo count,
+spill) rather than binary success alone.
+
+AISLE thus holds three families — **desk** (pharmacy, T0–T4), **store**
+(retail, S1–S3), **bench** (powder, P0–P4) — sharing one runtime, one registry,
+one verifier discipline, and one research loop.
