@@ -127,6 +127,11 @@ def test_registry_completeness():
     WITH a written evalcard (the §8.4 governance path is the only way in).
     The deliberate gap holds: no CURATED capability provides rearrangement
     (an agent-authored rearrangement skill is the intended fill, §3)."""
+    import tomllib
+
+    curated_file = REPO_ROOT / "registry" / "schema" / "curated_core.toml"
+    curated = set(tomllib.loads(curated_file.read_text())["core"])
+    assert curated == EXPECTED_IDS, "curated_core.toml drifted from the CAP-5 list"
     files = sorted(MANIFESTS_DIR.glob("*.yaml"))
     manifests = [yaml.safe_load(f.read_text()) for f in files]
     ids = {m["id"] for m in manifests}

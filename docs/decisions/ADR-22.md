@@ -14,25 +14,29 @@ LIBRARY is what the S1→S2→S3 transfer curve measures.
    manifest's `source` points at, and `eval.yaml` — the shipped
    mini-rollout config that IS the skill's eval suite: {suite, graph,
    tier, episodes, seeds, embodiment, min_pass_rate}.
-2. **`harness skill register skills/<name>` = validate → eval →
-   evalcard → install.** Schema lint (CAP-3, reusing the registry's
-   machinery) and governance checks run BEFORE any eval spend; the
-   shipped rollout measures pass1; a result under the skill's own
-   `min_pass_rate` refuses installation; success writes the CAP-1
-   evalcard `{suite, pass_rate, last_run}` (clock injected, CON-5) and
-   installs the manifest into `registry/manifests/`, where the validator
-   and `registry search` treat it like any capability.
+2. **`harness skill register skills/<name>` = validate → STAGE →
+   lint → eval → evalcard → final lint** (revised per the PR #30
+   review). The candidate manifest is STAGED into the registry before
+   its eval — carrying a clearly-labelled provisional evalcard so
+   CAP-6's motion gate can pass during the skill's own evaluation
+   (otherwise a fresh candidate is MANIFEST_MISSING to the HAR-2
+   validator, and an update would evaluate the OLD manifest). The whole
+   registry is linted after staging and after finalization (CAP-2/3);
+   the eval graph must USE the candidate (a node with the skill's id —
+   an unrelated green graph cannot mint the evalcard); default eval run
+   ids are uniquified so same-day retries work; ANY failure rolls the
+   registry back byte-for-byte.
 3. **Governance is the PR, not the CLI** (§9.4): the CLI only writes
    files; a human merges the PR carrying the skill + its installed
-   manifest. Two hard refusals encode the trust boundary: `origin` must
-   be `agent-authored` (hub manifests are curated by hand), and a skill
-   may never shadow a curated core id.
-4. **CAP-5's completeness pin evolves, not breaks**: the curated core
-   ids remain pinned exactly; any manifest beyond them must be
-   agent-authored WITH a non-null evalcard — the registration path is
-   the only way in. The deliberate rearrangement gap now binds the
-   CURATED set (an agent-authored rearrangement skill is the intended
-   fill).
+   manifest. Hard refusals encode the trust boundary: `origin` must be
+   `agent-authored`, and curated-core ids are refused from the
+   single-sourced Class-C list `registry/schema/curated_core.toml`
+   REGARDLESS of current file state — deleting a core manifest opens
+   nothing.
+4. **CAP-5 amended by spec-change (CON-14)**: the curated core is
+   pinned exactly and single-sourced; extras must be evalcarded
+   agent-authored skills. The amendment is its own spec-change PR (the
+   prerequisite of this task), not a test rewrite.
 5. **Eval rollouts run `--env-baseline local` + `no_idea_gate`**
    (defaults overridable in eval.yaml): registration is library
    machinery, not campaign research spend — both flags are recorded in
