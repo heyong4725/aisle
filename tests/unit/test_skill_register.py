@@ -1,5 +1,5 @@
 """T18: skill registration (design doc §8.4 item 1, §3 rule 3, §9.2;
-CAP-5 curated-core amendment) — `harness skill register` validates the
+CAP-5/CAP-7 curated-core amendment) — `harness skill register` validates the
 skill (CAP-1..3), STAGES the candidate into the registry so its own eval
 can discover it (the PR #30 blocker), runs the shipped eval suite bound
 to the candidate, writes the evalcard (CAP-6), and rolls back exactly on
@@ -194,7 +194,7 @@ def test_eval_graph_must_use_the_candidate(tmp_path):
 
 
 def test_curated_id_refused_even_when_core_file_deleted(tmp_path):
-    """PR #30: core protection comes from the Class-C curated list, not
+    """CAP-7: core protection comes from the Class-C curated list, not
     mutable file presence — deleting the core manifest opens nothing."""
     root = _registry(tmp_path)
     (root / "registry" / "manifests" / "oracle-pose.yaml").unlink()
