@@ -3,6 +3,7 @@ validate (SPEC 060), rollout (HAR-1..5), traces (HAR-6), report (HAR-7)."""
 
 import argparse
 import datetime
+import json
 import subprocess
 import sys
 import uuid
@@ -93,6 +94,13 @@ def build_parser() -> argparse.ArgumentParser:
     rclose.add_argument("--observed", required=True)
     rclose.add_argument("--verdict", required=True, choices=["up", "down", "flat"])
     rclose.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+
+    sk = subparsers.add_parser("skill", help="skill library operations (design doc 8.4)")
+    sk_sub = sk.add_subparsers(dest="skill_command", required=True)
+    skr = sk_sub.add_parser("register", help="validate + eval + evalcard + install")
+    skr.add_argument("skill_dir", type=Path, help="skills/<name>/ directory")
+    skr.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    skr.add_argument("--run-id", default=None, help="override the eval run id (CON-5)")
     return parser
 
 
@@ -132,6 +140,24 @@ def main() -> int:
             env_baseline=args.env_baseline,
         )
         return emit_report(report, lambda level, e: f"rollout {level}: {e}")
+
+    if args.command == "skill":
+        from aisle.harness.rollout import rollout
+        from aisle.harness.skill import RegistrationError, register_skill
+
+        try:
+            report = register_skill(
+                args.skill_dir,
+                args.root,
+                run_rollout=rollout,
+                now=datetime.date.today().isoformat(),
+                run_id=args.run_id,
+            )
+        except RegistrationError as refused:
+            print(json.dumps({"ok": False, "error": str(refused)}))
+            return 1
+        print(json.dumps(report))
+        return 0
 
     if args.command == "traces":
         from aisle.harness.traces import query
