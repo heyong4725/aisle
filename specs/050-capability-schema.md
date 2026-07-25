@@ -13,11 +13,14 @@ Status: DRAFT. Files: `registry/schema/capability.schema.json`, `registry/manife
   spec-change (SPEC 200 §11.4 retail set; future family sets). The curated id
   list is single-sourced in `registry/schema/curated_core.toml` (Class C).
   Beyond the curated core, the registry admits ONLY registered skills
-  (design doc §8.4): origin=agent-authored WITH a non-null evalcard, installed
-  by `harness skill register` — which MUST refuse any id on the curated list
-  regardless of current file state. Deliberate gap: no CURATED capability
-  provides a rearrangement skill (design doc §3); an agent-authored
-  rearrangement skill is the intended fill.
+  (design doc §8.4, enforced per CAP-7). Deliberate gap: no CURATED
+  capability provides a rearrangement skill (design doc §3); an
+  agent-authored rearrangement skill is the intended fill.
+- CAP-7: Registration governance (T18): `harness skill register` MUST refuse
+  any id on the curated list regardless of current registry file state
+  (deleting a core manifest opens nothing), and every non-curated manifest
+  MUST be origin=agent-authored with a non-null evalcard — the registration
+  path is the only way past the curated core.
 - CAP-6: `eval` may be null only while origin=hub AND safety_class!=motion... exception: the two sim drivers ship with M0 evalcards generated from TC-A1..A3 runs.
 
 Acceptance: `tests/unit/test_manifests.py::test_all_lint` (CAP-1..3), `::test_search_cli_json` (CAP-4), `::test_registry_completeness` (CAP-5 — the curated list exactly, extras must be evalcarded agent-authored skills, curated gap asserted); `tests/unit/test_skill_register.py` (the registration path).
