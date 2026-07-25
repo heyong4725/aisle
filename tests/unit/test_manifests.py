@@ -122,12 +122,11 @@ def test_search_no_match_is_ok_empty():
 
 
 def test_registry_completeness():
-    """CAP-5 (curated-core amendment): the curated list is single-sourced
-    in registry/schema/curated_core.toml and pinned exactly; every curated
-    manifest is present; any extra must be a registered skill — origin
-    agent-authored WITH a non-null evalcard (CAP-7's admission rule). The
-    deliberate gap binds the CURATED set: no curated capability provides
-    rearrangement (the agent-authored fill is the intent, design doc §3)."""
+    """CAP-5 as evolved by T18: the CURATED core is pinned exactly, and any
+    manifest beyond it must be a REGISTERED SKILL — origin agent-authored
+    WITH a written evalcard (the §8.4 governance path is the only way in).
+    The deliberate gap holds: no CURATED capability provides rearrangement
+    (an agent-authored rearrangement skill is the intended fill, §3)."""
     import tomllib
 
     curated_file = REPO_ROOT / "registry" / "schema" / "curated_core.toml"
