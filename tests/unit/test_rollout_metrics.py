@@ -74,6 +74,81 @@ def test_instrumented_graph_adds_recorder_and_absolutizes(tmp_path):
     assert (REPO_ROOT / "graphs" / "expert_t0.yaml").read_text() == original
 
 
+def test_rollout_relative_root_pins_absolute_paths_for_dora(tmp_path, monkeypatch):
+    """HAR-1: rollout() itself must resolve a relative root BEFORE spawning
+    dora (whose cwd is the run dir): otherwise AISLE_RESULTS and
+    AISLE_TRACE_DIR are relative strings the nodes resolve against dora's
+    cwd, sending passing episodes into a nested runs/<id>/runs/<id>/ tree
+    the stall watcher never sees (T18 live shakeout, 600 s stall kill).
+    Removing root.resolve() in rollout() must fail THIS test, not only the
+    instrumented_graph one."""
+    from aisle.harness import rollout as ro
+
+    root = tmp_path / "proj"
+    (root / "graphs").mkdir(parents=True)
+    (root / "graphs" / "g.yaml").write_text(
+        "nodes:\n- id: n\n  path: ../src/n.py\n  outputs: [t]\n"
+    )
+    (root / "harness").mkdir()
+    (root / "harness" / "budget.toml").write_text(
+        "[campaign]\ntokens = 1\nepisodes = 1\nwall_h = 1\n"
+    )
+    captured = {}
+
+    class FakeProc:
+        pid = 2**22  # nonexistent pgid: the kill path raises ProcessLookupError
+        returncode = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout=None):
+            return 0
+
+        def communicate(self, input=None, timeout=None):
+            return ("", "")
+
+    def fake_popen(cmd, cwd=None, env=None, **kwargs):
+        # subprocess.run (the git calls) rides the same Popen; only the
+        # dora spawn is under test
+        if cmd[0] == "dora":
+            captured["cwd"] = Path(cwd)
+            captured["env"] = env
+        proc = FakeProc()
+        proc.args = cmd
+        return proc
+
+    monkeypatch.setattr(ro.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(ro, "run_gates", lambda *a, **k: {"ok": True, "env_hash": "x"})
+    monkeypatch.setattr(ro, "reap_orphans", lambda *a, **k: None)
+    monkeypatch.chdir(root)
+    report = ro.rollout(
+        root=Path("."),
+        graph=Path("graphs/g.yaml"),
+        tier="T0",
+        episodes=1,
+        seeds=[0],
+        reset_mode="teleport",
+        verifier="oracle",
+        run_id="rootnorm",
+        branch="test",
+        no_idea_gate=True,
+        env_baseline="local",
+    )
+    assert report["ok"] is False  # the fake dora ran zero episodes
+    assert captured["cwd"].is_absolute()
+    assert Path(captured["env"]["AISLE_RESULTS"]).is_absolute()
+    doc = yaml.safe_load((root / "runs" / "rootnorm" / "graph.yaml").read_text())
+    recorder = next(n for n in doc["nodes"] if n["id"] == "trace-recorder")
+    assert Path(recorder["env"]["AISLE_TRACE_DIR"]).is_absolute()
+
+
 def test_instrumented_graph_absolutizes_with_relative_root(tmp_path, monkeypatch):
     """HAR-4: a RELATIVE root (e.g. `--root .`) must still yield absolute
     node paths — dora's cwd is the run dir, so a relative trace-recorder
