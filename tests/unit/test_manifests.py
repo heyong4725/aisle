@@ -122,14 +122,27 @@ def test_search_no_match_is_ok_empty():
 
 
 def test_registry_completeness():
-    """CAP-5: the initial registry is exactly the 12 specified ids, and the
-    deliberate gap holds: no capability provides any rearrangement skill."""
+    """CAP-5 (curated-core amendment): the curated list is single-sourced
+    in registry/schema/curated_core.toml and pinned exactly; every curated
+    manifest is present; any extra must be a registered skill — origin
+    agent-authored WITH a non-null evalcard (CAP-7's admission rule). The
+    deliberate gap binds the CURATED set: no curated capability provides
+    rearrangement (the agent-authored fill is the intent, design doc §3)."""
+    import tomllib
+
+    curated_file = REPO_ROOT / "registry" / "schema" / "curated_core.toml"
+    curated = set(tomllib.loads(curated_file.read_text())["core"])
+    assert curated == EXPECTED_IDS, "curated_core.toml drifted from the CAP-5 list"
     files = sorted(MANIFESTS_DIR.glob("*.yaml"))
     manifests = [yaml.safe_load(f.read_text()) for f in files]
-    assert {m["id"] for m in manifests} == EXPECTED_IDS
-    assert len(manifests) == len(EXPECTED_IDS)
-    all_provides = {p for m in manifests for p in m["provides"]}
-    assert not any("rearrang" in p for p in all_provides)
+    ids = {m["id"] for m in manifests}
+    assert EXPECTED_IDS <= ids, f"curated core missing: {EXPECTED_IDS - ids}"
+    for m in manifests:
+        if m["id"] not in EXPECTED_IDS:
+            assert m["origin"] == "agent-authored", m["id"]
+            assert m["eval"] is not None, f"{m['id']} installed without an evalcard"
+    core_provides = {p for m in manifests if m["id"] in EXPECTED_IDS for p in m["provides"]}
+    assert not any("rearrang" in p for p in core_provides)
 
 
 CAP1_REQUIRED = [

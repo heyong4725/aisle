@@ -1,0 +1,33 @@
+# CAP-5: the CURATED core manifest ids, single-sourced (Class C — this
+# file is CODEOWNERS-protected). `harness skill register` MUST refuse
+# these ids regardless of current registry file state, and the CAP-5
+# completeness test pins the registry to exactly this set plus
+# evalcarded agent-authored skills.
+core = [
+  "arm-driver-sim",
+  "base-driver-sim",
+  "budget-guard",
+  "camera-source",
+  "detector-openvocab",
+  "dora-genesis",
+  "grasp-planner-topdown",
+  "gripper-driver-sim",
+  "ik-trajectory",
+  "misplacement-detector",
+  "nav-action",
+  "ocr-label",
+  "oracle-pose",
+  "order-reader",
+  "patrol-planner",
+  "placement-controller",
+  "pose-estimator",
+  "reset",
+  "rollout-client",
+  "s1-expert",
+  "stock-detector",
+  "task-planner",
+  "task-state-machine",
+  "verifier-oracle",
+  "verifier-retail",
+  "waypoint-nav",
+]
