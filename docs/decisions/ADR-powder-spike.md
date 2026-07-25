@@ -7,104 +7,116 @@ DECISION: (human)
 
 ## Setup
 
-`tools/spikes/powder_spike.py`, genesis 1.2.3, **Metal** backend,
-macOS 26.5 arm64 (this machine). Powder = MPM sand (PBD particles and SPH
+`tools/spikes/powder_spike.py`, genesis 1.2.3, macOS arm64 (this
+machine), Metal + CPU backends. Powder = MPM sand (PBD particles and SPH
 liquid benchmarked as the "as available" comparators; SPH is a liquid
 model, not a powder candidate). Particle size 4 mm, bulk density
-1500 kg/m³ (particle mass 0.096 g). All numbers from the STABLE
-integration regime (finding 1). Reproduce with
-`uv run python tools/spikes/powder_spike.py --backend metal`; raw JSON and
-plots in `runs/spike-powder/`.
+1500 kg/m³ (particle mass 0.096 g). All dynamic cases at dt 1 ms /
+substeps 4 — substep_dt 0.25 ms sits under genesis's suggested stability
+bound (0.3125 ms); coarser regimes drew instability warnings or exploded
+outright (finding 1). Reproduce:
+`uv run python tools/spikes/powder_spike.py --backend metal` (~5 h);
+raw JSON + plots in `runs/spike-powder/`. The sweep exits 0 IFF every
+case succeeded; the recorded run is `ok: false` — see (d).
 
-## (a) Solver throughput — steps/sec (dt 1 ms, substeps 2)
+## (d) Determinism — the decisive result (CON-5)
+
+Identical seed, run twice, fresh processes, particle-state digests at
+0.1 mm resolution:
+
+| backend | same-seed digests | same-seed buckets | sweep completion |
+|---|---|---|---|
+| **cpu** | **EQUAL (bit-exact)** | equal | 20/20 scoops |
+| **metal** | DIFFERENT | 37 vs 29 transferred, 538 vs 568 spilled | 18/20 (2 stochastic crashes; the same seed passes on rerun) |
+
+Metal MPM is nondeterministic (GPU atomics) AND stochastically unstable
+(~10% of scoop cases crashed in the sweep; earlier reproduced class:
+rigid-solver "invalid constraint forces causing nan"). CPU is bit-exact
+across processes. **Consequence: any scored/aggregated statistic for this
+family must run on a deterministic backend; Metal is an exploration
+backend only.** This creates the family's central tension — see the
+recommendation.
+
+## (a) Solver throughput — steps/sec (stability-bounded regime, Metal)
 
 | particles | MPM sand | PBD particle | SPH liquid |
 |---|---|---|---|
-| 4,913 | **280** | 211 | 225 |
-| 19,683 | **242** | 108 | 94 |
-| 50,653 | **177** | 50 | 42 |
+| 4,913 | **154** | 113 | 148 |
+| 19,683 | **130** | 56 | 111 |
+| 50,653 | **94** | 26 | 74 |
 
-MPM scales far better (0.63x from 5k→50k vs ~0.24x for PBD/SPH). At 20k
-particles MPM runs at rtf 0.24, at 50k rtf 0.18 — the same order as the
-store sim the harness already budgets for (nightly-suite scale, ADR-18).
-Genesis build time is ~2.6 s per scene — rebuild-per-episode is viable
-for this family, unlike the store.
+MPM scales best. But the deterministic backend is what matters for
+scoring, and CPU MPM runs the 5k scoop scene at ~7 steps/s (a 1.6 sim-s
+scoop takes ~3.9 wall-minutes) — roughly 20x slower than Metal.
 
-## (b) Scripted scoop repeatability — 20 seeded reps, 20/20 completed
+## (b) Scripted scoop repeatability — identity-tracked accounting
 
-Lipped spatula (blade 50×90 mm + back wall + side rails), kinematic
-drive, ~5k particles, seed-jittered pile placement and dip depth (±1 mm).
+Every particle lands in exactly one bucket (source / receiver /
+spilled_new / out_at_baseline / airborne_or_on_tool); the partition
+provably sums to N. The settle splash is identity-excluded from spill
+(mean 4.6 particles/run in this regime), and the airborne/tool bucket
+was empty in every completed rep — nothing hidden.
 
-- transferred mass: **mean 4.82 g, std 2.68 g — CV 55.6%** (range
-  0.5–12.6 g; quantization 0.096 g/particle)
-- spill outside both vessels: **mean 16.1 g** (median 15.6, max 36.3) —
-  ~3x the transferred mass
-- no explosions: max end-state particle speed 5.5 m/s across all reps
+CPU (the statistically sound series, 20/20): transferred **mean 6.76 g,
+std 5.95 g — CV 87.9%** (range 0.0–21.7 g); spilled_new **mean 55.9 g,
+median 56.0, max 81.5** — spill is ~8x the transferred mass. Metal
+(noise-inclusive, 18/20): mean 7.01 g, CV 98.7%, spill mean 58.9 g.
+No explosions in completed reps (max end speed 1.8 m/s = falling
+stragglers).
 
-A 1 mm dip-depth change flips the primitive between small-but-clean
-(13 particles, zero spill) and large-but-messy (308 transferred, 612
-spilled) — dosing variance is dominated by tool pose at particle scale.
+The scripted primitive is essentially a coin flip per scoop at this
+particle scale: open-loop dosing is not a viable strategy, and spill
+dominates transfer.
 
-## (c) Pour / angle of repose — MARGINAL-FAIL
+## (c) Pile/pour sanity — pour works mechanically; repose does not emerge
 
-Low-drop column slump, 14.5k particles, fully settled (max end speed
-0.003 m/s — no explosion):
+TRUE pour (driven vessel tilting 130° at height): **96–99% of material
+streams out** across friction_angle ∈ {default, 35, 55} — pour mechanics
+and the rigid-vessel coupling work. But the resulting piles relax toward
+flat: flank-fit angles 2.7–6.3° (slump: 0.7–6.0°), versus ~30–40° for
+physical powder; a transient ~31° flank mid-settle relaxes away as the
+pile keeps creeping. End speeds 1.0–1.9 m/s are straggler streams, not
+explosions (no NaN, no ejection). **Granular repose does not hold in
+this regime and the friction_angle knob does not fix it** — scenes and
+verifiers must not depend on heap geometry.
 
-| friction_angle | repose angle (flank fit) |
-|---|---|
-| default | 2.7° |
-| 15 | 4.1° |
-| 35 | 0.8° |
-| 55 | 7.0° |
+## Engineering findings that bind T21/T22 (all measured)
 
-A physical powder piles at ~30–40°. MPM sand at this particle scale
-spreads nearly flat, and the friction_angle knob is non-monotonic and
-never exceeds 7.6°: **granular repose behavior does not emerge in this
-regime**. (A 24 cm high-drop variant splattered to 0.5° regardless —
-that part is experiment design, but the low-drop slump is a fair test.)
-
-## Findings the tables don't show (all measured, not assumed)
-
-1. **Integration regime is load-bearing.** dt 2 ms / substeps 1 EXPLODES
-   a plain 1 cm settle (particles ejected >100 m/s) on BOTH Metal and
-   CPU — not a Metal artifact. dt 1 ms / substeps 2 is calm (residual
-   0.37 m/s).
-2. **CPIC is required** against thin rigid boxes (vessel walls, blade):
-   without it the settle ejects the pile. Separately, spawning particles
-   within ~1 particle size of a rigid surface NaNs the solve — spawn
-   clearance is a scene-construction rule for T22.
-3. **Kinematic tools must carry true velocity.** A teleport-driven tool
-   with zeroed velocities neither drags nor carries powder (swept blade
-   came up EMPTY); `set_pos/set_quat` + `set_dofs_velocity` with the
-   trajectory velocity makes the coupling physical. Directly constrains
-   how the bench bridge (T22) must drive tools.
-4. **A flat blade does not scoop** — payload requires a lip (back wall +
-   rails).
-5. MPS tensors from `get_particles_pos/vel` need a `.cpu()` hop.
+1. Integration regime is load-bearing: dt 2 ms / substeps 1 explodes a
+   plain 1 cm settle on BOTH Metal and CPU; the stability-bounded
+   regime (substep_dt ≤ genesis's suggested bound) is calm.
+2. CPIC is required against thin rigid boxes; spawning particles within
+   ~1 particle size of a rigid surface NaNs the solve.
+3. Kinematic tools must carry TRUE velocity (`set_dofs_velocity`) — a
+   zero-velocity teleported tool neither drags nor carries powder.
+4. A flat blade does not scoop; payload requires a lip (back wall +
+   rails). A 1 mm dip-depth change flips payload by an order of
+   magnitude — tool-pose sensitivity dominates dosing variance.
+5. MPS tensors need a `.cpu()` hop before numpy.
 
 ## Recommendation to the human decider
 
-- **Solver: MPM sand.** Only candidate with powder-like contact behavior
-  and the only one whose scaling supports 20–50k particles (rtf
-  0.18–0.24 — nightly-suite scale, precedented by the store).
-- **Particle budget: ~20k** (242 steps/s) as the default; 50k affordable
-  for held-out evaluation runs.
-- **PW-5 spill threshold**: scripted-scoop spill median was 15.6 g
-  (163 particles); a P0 sanity threshold near ~2x that (≈30 g at this
-  scale) rejects only genuinely wild behavior.
-- **PW-6 (open-loop ±10%) looks unachievable as specced**: CV 55.6% for
-  a scripted scoop. Either the tier's tolerance loosens, or it is
-  reframed as "best-effort open-loop baseline" whose expected failure
-  motivates P2.
-- **PW-7 (closed-loop ±1%) is exactly what the variance argues for** —
-  multi-scoop with balance feedback; quantization (0.096 g/particle)
-  bounds achievable tolerance: ±1% of targets under ~10 g is
-  sub-particle and needs target masses ≥ ~50 g or finer particles (at
-  ~8x the particle count per volume for 2 mm).
-- **Do not build repose-dependent behavior into scenes or verifiers**
-  (finding c): heaps will not hold. PW-2's material realism is limited
-  to {density, contact friction w/ tools, cohesion-free flow}; if pile
-  geometry ever matters, budget a dedicated calibration pass or a
-  different solver.
+The family faces a **determinism / throughput / fidelity trilemma**:
+
+- Deterministic scoring (CON-5) requires CPU today → ~7 steps/s at 5k
+  particles → a closed-loop P2 episode (~60 sim-s) costs ~2.4 wall-hours.
+  Campaign-viable only for P0/P1-scale primitives or smaller scenes.
+- Metal is 20x faster but nondeterministic and ~10%-crashy: usable for
+  exploration, not for scored statistics.
+- If the family proceeds past P1, a **CUDA determinism spike** (PW-0
+  names CUDA as optional) should decide whether a deterministic-enough
+  GPU path exists before committing to P2+.
+
+Within that frame: solver = **MPM sand** (only powder-like candidate,
+best scaling); particle budget ≤ ~5k for CPU-scored work, 20–50k
+affordable for Metal exploration. PW-5 spill threshold: CPU spill median
+was 56 g at this scale — a sanity threshold near ~2x (≈110 g) rejects
+only wild behavior, and the tier should score spill primarily through
+PW-11's continuous spill_mg rather than a hard limit. PW-6 (open-loop
+±10%) is not achievable with a scripted primitive (CV ~88%): reframe as
+a best-effort baseline or drop. PW-7 (±1%): particle quantization
+(0.096 g) plus CV means targets must be ≥ ~50 g or particles finer (8x
+count per volume at 2 mm — untested throughput). Do not build
+repose-dependent behavior into scenes or verifiers.
 
 DECISION: (human)
