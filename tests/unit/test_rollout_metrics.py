@@ -74,6 +74,18 @@ def test_instrumented_graph_adds_recorder_and_absolutizes(tmp_path):
     assert (REPO_ROOT / "graphs" / "expert_t0.yaml").read_text() == original
 
 
+def test_instrumented_graph_absolutizes_with_relative_root(tmp_path, monkeypatch):
+    """HAR-4: a RELATIVE root (e.g. `--root .`) must still yield absolute
+    node paths — dora's cwd is the run dir, so a relative trace-recorder
+    path kills the dataflow at startup with zero episodes and no
+    diagnostics (live T18 registration shakeout)."""
+    monkeypatch.chdir(REPO_ROOT)
+    out = instrumented_graph(Path("graphs/expert_t0.yaml"), Path("."), tmp_path)
+    doc = yaml.safe_load(out.read_text())
+    for node in doc["nodes"]:
+        assert Path(node["path"]).is_absolute(), node["id"]
+
+
 def test_rollout_refuses_unsafe_or_reused_run_ids(tmp_path):
     """PR #11 review: a traversal-shaped run_id must never touch paths
     outside runs/, and an existing run must never be overwritten. Also:

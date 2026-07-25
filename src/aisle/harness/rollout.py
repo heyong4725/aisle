@@ -348,7 +348,9 @@ def instrumented_graph(graph: Path, root: Path, run_dir: Path) -> Path:
     doc["nodes"].append(
         {
             "id": "trace-recorder",
-            "path": str(root / "src" / "aisle" / "harness" / "trace_recorder.py"),
+            # .resolve(): a relative root (`--root .`) with dora cwd = the
+            # run dir otherwise kills the dataflow at startup, zero episodes
+            "path": str((root / "src" / "aisle" / "harness" / "trace_recorder.py").resolve()),
             "inputs": inputs,
             "env": {"AISLE_TRACE_DIR": str(run_dir / "traces")},
         }
@@ -378,6 +380,11 @@ def rollout(
     env_baseline: str = "origin/main",
 ) -> dict:
     """HAR-1: the full run. Returns the report dict (CON-8: caller emits)."""
+    # A relative root (`--root .`) must be pinned to THIS process's cwd:
+    # dora runs with cwd = the run dir, so relative AISLE_RESULTS /
+    # AISLE_TRACE_DIR strings would resolve to a nested runs/<id>/runs/<id>/
+    # tree the stall watcher never sees (T18 live shakeout)
+    root = root.resolve()
     if reset_mode != "teleport":
         return {"ok": False, "error": "behavioral reset is Phase 2 (RST-2)"}
     if verifier != "oracle":
