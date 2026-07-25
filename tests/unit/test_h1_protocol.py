@@ -228,3 +228,90 @@ def test_summary_counts_violations_and_timeouts():
     s = summarize(records)
     assert s["sessions_timed_out"] == 1
     assert s["attempts_with_workspace_violations"] == 1
+
+
+def test_resume_refuses_treatment_mismatch():
+    """PR #27 r3: a resumed segment must be the SAME experiment — any
+    drift in commit/model/CLI/prompt/budgets refuses the merge."""
+    from h1_protocol import check_resume_treatment
+
+    base = {
+        "commit": "abc",
+        "agent": "claude",
+        "agent_cli_version": "2.1.214",
+        "model": "claude-fable-5",
+        "prompt_sha256": "p1",
+        "session_wall_budget_s": 1200.0,
+        "claude_max_turns": 50,
+        "episodes_per_attempt": 8,
+    }
+    assert check_resume_treatment(None, base) is None
+    assert check_resume_treatment({"treatment": dict(base)}, base) is None
+    drifted = {**base, "commit": "def"}
+    msg = check_resume_treatment({"treatment": base}, drifted)
+    assert msg is not None and "commit" in msg
+
+
+def test_runner_errors_merge_resolves_reran_attempts():
+    """PR #27 r3: prior errors whose attempt now has a complete record
+    are resolved; retained errors keep the aggregate NOT-ok."""
+    from h1_protocol import merge_runner_errors
+
+    existing = {"runner_errors": [{"attempt": 3, "error": "x"}, {"attempt": 5, "error": "y"}]}
+    records = [{"attempt": 3}]  # attempt 3 re-ran successfully
+    merged = merge_runner_errors(existing, records, [{"attempt": 7, "error": "z"}])
+    assert [e["attempt"] for e in merged] == [5, 7]
+    assert merge_runner_errors(existing, [{"attempt": 3}, {"attempt": 5}], []) == []
+
+
+def test_episode_accounting_counts_each_scored_rollout_once():
+    """PR #27 r3: explicit protocol episode accounting — one rollout per
+    valid first graph, one more only when a DIFFERENT final was scored."""
+    from h1_protocol import episodes_scored
+
+    records = [
+        {  # first valid, final identical -> one rollout
+            "first_graph": {"valid": True},
+            "final_graph": {"valid": True},
+            "final_same_as_first": True,
+        },
+        {  # first invalid, fixed final -> one rollout (final only)
+            "first_graph": {"valid": False},
+            "final_graph": {"valid": True},
+            "final_same_as_first": False,
+        },
+        {  # both scored -> two rollouts
+            "first_graph": {"valid": True},
+            "final_graph": {"valid": True},
+            "final_same_as_first": False,
+        },
+        {"first_graph": {"valid": False}, "final_graph": {"valid": False}},  # none
+    ]
+    assert episodes_scored(records, 8) == 8 + 8 + 16
+
+
+def test_first_graph_shim_snapshots_on_first_validate(tmp_path, monkeypatch):
+    """PR #27 r3: the zero-shot artifact is the graph CONSUMED BY THE
+    FIRST validate call — the shim snapshots before delegating, once."""
+    from h1_protocol import SHIM
+
+    graph = tmp_path / "agent_h1.yaml"
+    snap = tmp_path / "first_graph.yaml"
+    shim_src = SHIM.format(python=sys.executable, graph=str(graph), snap=str(snap))
+    # neuter the delegation for the test: everything before the import
+    shim_body = shim_src.split("from aisle.harness.cli import main")[0]
+
+    def invoke(argv):
+        monkeypatch.setattr(sys, "argv", argv)
+        exec(compile(shim_body, "<shim>", "exec"), {})
+
+    graph.write_text("nodes: [v1]\n")
+    invoke(["harness", "validate", "g"])
+    assert snap.read_text() == "nodes: [v1]\n"
+    graph.write_text("nodes: [v2]\n")  # later fix must NOT overwrite the snapshot
+    invoke(["harness", "validate", "g"])
+    assert snap.read_text() == "nodes: [v1]\n"
+    # non-validate invocations never snapshot
+    snap.unlink()
+    invoke(["harness", "traces", "query"])
+    assert not snap.exists()

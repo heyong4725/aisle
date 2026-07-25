@@ -18,13 +18,14 @@ working (>0% success) graph within 3 validate-fix cycles.
    or sibling attempts. The session composes `graphs/agent_h1.yaml` and
    iterates `harness validate`; a workspace audit (`git status`) records
    every file the session touched beyond the graph as a violation.
-3. **Scoring is untouchable by the agent.** The runner snapshots the
-   FIRST parseable graph during the session (filesystem watcher) and the
-   final graph at exit, then scores BOTH in a SEPARATE CLEAN worktree at
-   the pinned OID into which only the graph text is copied — an agent
-   that rewrites validators, harness code, or anything else in its own
-   workspace changes nothing about its score (and earns a violation
-   record).
+3. **Scoring is untouchable by the agent.** The zero-shot artifact is
+   the graph CONSUMED BY THE FIRST `harness validate` call, captured by
+   a runner-installed shim on the session venv's entry point (race-free;
+   an agent that composes but never validates gets its final composition
+   as the flagged zero-shot artifact). First and final graphs are scored
+   in SEPARATE FRESH worktrees at the pinned OID — one per scored graph,
+   so a corrected final never inherits warm caches, run dirs, or ledger
+   state — into which only the graph text is copied.
 4. **The headline is first-graph valid AND launching** (H1's own words):
    zero-shot = the first snapshot passes the scorer's validate AND its
    8-seed `--tier T1` rollout produces ≥1 episode result. Launch is
@@ -35,22 +36,39 @@ working (>0% success) graph within 3 validate-fix cycles.
 5. **Validate-fix cycles** = structured command telemetry for BOTH arms:
    claude stream-json tool_use/tool_result pairs; codex `--json`
    `command_execution` items (never text-occurrence counting).
-6. **Equal treatment.** Both arms: the same wall-clock session budget
-   (20 min), the same prompt, bypassed permissions
-   (`--dangerously-skip-permissions` / codex
-   `--dangerously-bypass-approvals-and-sandbox --ignore-user-config`),
-   explicit pinned models. Recorded limitation: claude additionally has
-   `--max-turns 50` as a secondary stop; codex has no turn-cap flag, so
-   the wall budget is the binding constraint for both.
+6. **Equal treatment, write-confined.** Both arms: the same wall-clock
+   session budget (20 min), the same prompt, explicit pinned models, and
+   WRITE CONFINEMENT to the session workspace — claude via a
+   `sandbox-exec` profile (writes limited to the worktree/scratch/caches;
+   the H1 results tree is read-DENIED so prior attempts cannot leak in),
+   codex via its native `--sandbox workspace-write` with
+   `approval_policy=never --ignore-user-config`. `--no-sandbox` exists
+   as a recorded escape hatch if sandbox-exec breaks a CLI. Recorded
+   limitations: claude additionally has `--max-turns 50` (no codex
+   equivalent; the wall budget binds both), and read access outside the
+   denied results tree is not restricted.
 7. **Failure attribution.** Agent failures (no graph, invalid, refusal,
-   timeout) are COMPLETE records — the measurement. Infrastructure
-   failures (worktree/uv/CLI crash with no output) raise `InfraError`,
-   land in `runner_errors`, and fail the protocol exit (CON-8) — they
-   never contaminate agent statistics.
-8. **Resume merges.** `--start N` loads the existing results file,
-   merges records by attempt index (a re-run index replaces its old
-   record), and recomputes the summary over the union.
-9. **No parallelism**: one attempt at a time — rollout scoring must not
+   timeout) are COMPLETE records — the measurement. ANY nonzero agent-CLI
+   exit that is not the runner's own timeout kill is an infrastructure
+   failure (`InfraError` → `runner_errors` → protocol exits nonzero,
+   CON-8) — API errors and CLI crashes never contaminate agent
+   statistics. Timeout kills the whole process GROUP (agent-spawned
+   children included).
+8. **Resume merges, same treatment only.** `--start N` REFUSES if the
+   existing results' treatment block (commit OID, model, CLI version,
+   prompt sha, budgets) differs from the current invocation — mixed
+   treatments never masquerade as one experiment. Records merge by
+   attempt index; prior runner errors whose attempts were successfully
+   re-run are resolved; the aggregate `ok` reflects the RETAINED error
+   union, and the summary is recomputed over all records.
+9. **Budget accounting is explicit, not campaign spend.** Scoring
+   rollouts run `--env-baseline local` (ADR-21: logged in every
+   manifest, neither charging nor consulting the campaign ledger — H1 is
+   a human-run protocol, not the research campaign), and the results
+   report `total_episodes_scored` (one 8-seed rollout per valid first
+   graph, plus one per DIFFERING valid final) so the protocol's own
+   episode spend is first-class.
+10. **No parallelism**: one attempt at a time — rollout scoring must not
    contend for the machine (the T20 orphan-load lesson).
 
 ## Outputs

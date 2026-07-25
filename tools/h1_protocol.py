@@ -214,6 +214,57 @@ def merge_results(existing: dict | None, new_records: list[dict]) -> list[dict]:
     return [by_idx[i] for i in sorted(by_idx)]
 
 
+def check_resume_treatment(existing: dict | None, current: dict) -> str | None:
+    """A resumed segment MUST be the same experiment (PR #27 r3): commit,
+    model, CLI version, prompt, and budgets all have to match, or the
+    union would silently mix treatments under the current label."""
+    if not existing:
+        return None
+    prior = existing.get("treatment") or {}
+    for key in (
+        "commit",
+        "agent",
+        "agent_cli_version",
+        "model",
+        "prompt_sha256",
+        "session_wall_budget_s",
+        "claude_max_turns",
+        "episodes_per_attempt",
+    ):
+        if prior.get(key) != current.get(key):
+            return (
+                f"resume treatment mismatch on {key!r}: existing={prior.get(key)!r} "
+                f"current={current.get(key)!r} — use a fresh --out for a new treatment"
+            )
+    return None
+
+
+def episodes_scored(records: list[dict], per_rollout: int) -> int:
+    """The protocol's explicit episode accounting (PR #27 r3): one scored
+    rollout per VALID first graph, plus one per valid final graph that
+    DIFFERS from the first (identical finals reuse the first's score)."""
+    total = 0
+    for r in records:
+        if (r.get("first_graph") or {}).get("valid"):
+            total += per_rollout
+        if (r.get("final_graph") or {}).get("valid") and not r.get("final_same_as_first"):
+            total += per_rollout
+    return total
+
+
+def merge_runner_errors(
+    existing: dict | None, records: list[dict], new_errors: list[dict]
+) -> list[dict]:
+    """Prior errors whose attempt index now has a COMPLETE record were
+    resolved by the re-run; everything else is retained. ok must reflect
+    the RETAINED union, not just the new segment (PR #27 r3)."""
+    have = {int(r["attempt"]) for r in records}
+    retained = [
+        e for e in ((existing or {}).get("runner_errors") or []) if int(e["attempt"]) not in have
+    ]
+    return retained + new_errors
+
+
 # ------------------------------------------------------------------- runner
 
 
@@ -240,10 +291,94 @@ def make_worktree(oid: str, dest: Path) -> Path:
     return dest
 
 
+SHIM = """#!{python}
+# H1 runner shim (ADR-h1-protocol): snapshot the graph CONSUMED BY THE
+# FIRST `harness validate` call — the race-free zero-shot artifact —
+# then delegate to the real CLI.
+import shutil, sys
+from pathlib import Path
+
+graph = Path({graph!r})
+snap = Path({snap!r})
+if "validate" in sys.argv[1:] and graph.exists() and not snap.exists():
+    shutil.copy(graph, snap)
+from aisle.harness.cli import main
+
+sys.exit(main())
+"""
+
+
+def install_first_graph_shim(wt: Path, attempt_dir: Path) -> Path:
+    """Wrap the session venv's `harness` entry point so the FIRST validate
+    invocation snapshots exactly the graph it validated (no poll race)."""
+    entry = wt / ".venv" / "bin" / "harness"
+    if not entry.exists():
+        raise InfraError(f"no harness entry point at {entry}")
+    snap = attempt_dir / "first_graph.yaml"
+    entry.write_text(
+        SHIM.format(
+            python=str(wt / ".venv" / "bin" / "python"),
+            graph=str(wt / GRAPH_REL),
+            snap=str(snap),
+        )
+    )
+    entry.chmod(0o755)
+    return snap
+
+
 def remove_worktree(wt: Path) -> None:
     subprocess.run(
         ["git", "worktree", "remove", "--force", str(wt)], cwd=REPO_ROOT, capture_output=True
     )
+
+
+SANDBOX_PROFILE = """(version 1)
+(allow default)
+(deny file-write*)
+(allow file-write*
+  (subpath {worktree!r})
+  (subpath {scratch!r})
+  (subpath {attempt!r})
+  (subpath {tmpdir!r})
+  (subpath "/private/var/folders")
+  (subpath "/dev")
+  (subpath {home_claude!r})
+  (literal {home_claude_json!r})
+  (subpath {home_codex!r})
+  (subpath {home_cache!r})
+  (subpath {home_lib_caches!r}))
+(deny file-read* (subpath {h1_out!r}))
+"""
+
+
+def sandbox_wrap(
+    cmd: list[str], wt: Path, scratch: Path, attempt_dir: Path, out: Path
+) -> list[str]:
+    """macOS write-confinement for the bypassed session: writes only inside
+    the session worktree/scratch/attempt dir/caches, and the H1 results
+    tree is unreadable (prior attempts cannot leak in). The scored
+    artifacts stay sound regardless (clean-worktree scoring); this bounds
+    collateral damage and cross-attempt visibility."""
+    import os
+    import tempfile as _tf
+
+    home = Path.home()
+    profile = SANDBOX_PROFILE.format(
+        worktree=str(wt),
+        scratch=str(scratch),
+        attempt=str(attempt_dir),
+        tmpdir=os.environ.get("TMPDIR", "/tmp"),
+        home_claude=str(home / ".claude"),
+        home_claude_json=str(home / ".claude.json"),
+        home_codex=str(home / ".codex"),
+        home_cache=str(home / ".cache"),
+        home_lib_caches=str(home / "Library" / "Caches"),
+        h1_out=str(out),
+    )
+    pf = _tf.NamedTemporaryFile("w", suffix=".sb", delete=False)
+    pf.write(profile)
+    pf.close()
+    return ["sandbox-exec", "-f", pf.name, *cmd]
 
 
 def agent_cmd(agent: str, model: str) -> list[str]:
@@ -271,51 +406,73 @@ def agent_cmd(agent: str, model: str) -> list[str]:
         model,
         "--skip-git-repo-check",
         "--ignore-user-config",
-        "--dangerously-bypass-approvals-and-sandbox",
+        # codex's NATIVE sandbox provides the write confinement that
+        # sandbox-exec provides for claude: workspace-write, no approvals
+        "--sandbox",
+        "workspace-write",
+        "-c",
+        "approval_policy=never",
         TASK_PROMPT,
     ]
 
 
-def run_session(agent: str, model: str, wt: Path, attempt_dir: Path) -> dict:
-    """Popen + poll: enforces the shared wall budget, snapshots the FIRST
-    parseable graph the session writes, captures the event log."""
+def run_session(
+    agent: str, model: str, wt: Path, attempt_dir: Path, scratch: Path, out: Path, sandbox: bool
+) -> dict:
+    """One session under the shared wall budget. The first-graph snapshot
+    comes from the validate SHIM (race-free); on timeout the whole process
+    GROUP is killed (agent-spawned children included); a nonzero CLI exit
+    that is not our timeout kill is an infrastructure failure — never an
+    agent statistic (PR #27 r3)."""
+    import os
+    import signal as _signal
+
+    snap = install_first_graph_shim(wt, attempt_dir)
     graph_path = wt / GRAPH_REL
-    first_snapshot: str | None = None
+    cmd = agent_cmd(agent, model)
+    if sandbox and agent == "claude" and sys.platform == "darwin":
+        cmd = sandbox_wrap(cmd, wt, scratch, attempt_dir, out)
     t0 = time.monotonic()
+    timed_out = False
     with open(attempt_dir / "session.jsonl", "w") as log:
         proc = subprocess.Popen(
-            agent_cmd(agent, model), cwd=wt, stdout=log, stderr=subprocess.DEVNULL, text=True
+            cmd,
+            cwd=wt,
+            stdout=log,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            start_new_session=True,
         )
-        timed_out = False
-        while proc.poll() is None:
-            if first_snapshot is None and graph_path.exists():
-                text = graph_path.read_text(errors="replace")
-                if is_parseable_graph(text):
-                    first_snapshot = text
-                    (attempt_dir / "first_graph.yaml").write_text(text)
-            if time.monotonic() - t0 > SESSION_TIMEOUT_S:
-                proc.kill()
-                timed_out = True
-                break
-            time.sleep(1.0)
-        proc.wait(timeout=30)
-    # the first write may have landed between the last poll and exit
-    if first_snapshot is None and graph_path.exists():
-        text = graph_path.read_text(errors="replace")
-        if is_parseable_graph(text):
-            first_snapshot = text
-            (attempt_dir / "first_graph.yaml").write_text(text)
+        try:
+            proc.wait(timeout=SESSION_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                os.killpg(proc.pid, _signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait(timeout=30)
+    if proc.returncode != 0 and not timed_out:
+        raise InfraError(f"{agent} CLI exited rc={proc.returncode} (not an agent outcome)")
     lines = (attempt_dir / "session.jsonl").read_text(errors="replace").splitlines()
-    if proc.returncode not in (0, None) and not lines and not timed_out:
-        raise InfraError(f"{agent} session crashed with rc={proc.returncode} and no output")
     telemetry = (parse_claude_events if agent == "claude" else parse_codex_events)(lines)
     porcelain = _run(["git", "status", "--porcelain"], cwd=wt, timeout=60).stdout
+    first_captured = snap.exists()
+    if not first_captured and graph_path.exists():
+        # the agent composed but NEVER validated: its one composition IS
+        # the zero-shot artifact (flagged; §8.2.4's (a) is then decided
+        # entirely by the scorer's validate)
+        text = graph_path.read_text(errors="replace")
+        if is_parseable_graph(text):
+            snap.write_text(text)
+            first_captured = True
     return {
         **telemetry,
         "session_wall_s": round(time.monotonic() - t0, 1),
         "session_timed_out": timed_out,
         "session_rc": proc.returncode,
-        "first_graph_captured": first_snapshot is not None,
+        "first_graph_captured": first_captured,
+        "first_graph_via_shim": telemetry["validate_calls"] > 0,
         "final_graph_exists": graph_path.exists(),
         "workspace_violations": audit_workspace(porcelain),
     }
@@ -355,6 +512,13 @@ def score_graph(graph_text: str, score_wt: Path, run_id: str, attempt_dir: Path,
             "--reset",
             "teleport",
             "--no-idea-gate",
+            # ADR-h1-protocol: H1 scoring is PROTOCOL spend, not campaign
+            # spend — the local override neither charges nor consults the
+            # campaign ledger (ADR-21 semantics) and is recorded in every
+            # manifest; the protocol's own episode accounting lands in the
+            # results (total_episodes_scored) and is bounded up front
+            "--env-baseline",
+            "local",
             "--run-id",
             run_id,
         ],
@@ -375,16 +539,17 @@ def score_graph(graph_text: str, score_wt: Path, run_id: str, attempt_dir: Path,
     }
 
 
-def run_attempt(agent: str, model: str, oid: str, index: int, out: Path, scratch: Path) -> dict:
+def run_attempt(
+    agent: str, model: str, oid: str, index: int, out: Path, scratch: Path, sandbox: bool
+) -> dict:
     attempt_dir = out / agent / f"attempt_{index:02d}"
     attempt_dir.mkdir(parents=True, exist_ok=True)
     session_wt = scratch / f"{agent}_{index:02d}_session"
-    score_wt = scratch / f"{agent}_{index:02d}_score"
     try:
         make_worktree(oid, session_wt)
-        session = run_session(agent, model, session_wt, attempt_dir)
+        session = run_session(agent, model, session_wt, attempt_dir, scratch, out, sandbox)
         first_text = (
-            (attempt_dir / "first_graph.yaml").read_text()
+            (attempt_dir / "first_graph.yaml").read_text(errors="replace")
             if session["first_graph_captured"]
             else None
         )
@@ -397,30 +562,32 @@ def run_attempt(agent: str, model: str, oid: str, index: int, out: Path, scratch
         remove_worktree(session_wt)
 
     record: dict = {"agent": agent, "attempt": index, **session}
-    try:
-        make_worktree(oid, score_wt)
-        none_score = {"valid": False, "launched": False, "launch_outcome": "no_graph", "pass1": 0.0}
-        record["first_graph"] = (
-            score_graph(first_text, score_wt, f"h1-{agent}-{index:02d}-first", attempt_dir, "first")
-            if first_text
-            else dict(none_score)
-        )
-        if final_text is None:
-            record["final_graph"] = dict(none_score)
-        elif final_text == first_text:
-            record["final_graph"] = dict(record["first_graph"])
-        else:
-            record["final_graph"] = score_graph(
-                final_text, score_wt, f"h1-{agent}-{index:02d}-final", attempt_dir, "final"
-            )
-    finally:
-        remove_worktree(score_wt)
+    none_score = {"valid": False, "launched": False, "launch_outcome": "no_graph", "pass1": 0.0}
+
+    def _score(text: str, tag: str) -> dict:
+        # a FRESH pinned worktree per scored graph (PR #27 r3 P2): no warm
+        # caches, run dirs, or ledger state shared between first and final
+        wt = scratch / f"{agent}_{index:02d}_score_{tag}"
+        try:
+            make_worktree(oid, wt)
+            return score_graph(text, wt, f"h1-{agent}-{index:02d}-{tag}", attempt_dir, tag)
+        finally:
+            remove_worktree(wt)
+
+    record["first_graph"] = _score(first_text, "first") if first_text else dict(none_score)
+    record["final_same_as_first"] = final_text is not None and final_text == first_text
+    if final_text is None:
+        record["final_graph"] = dict(none_score)
+    elif record["final_same_as_first"]:
+        record["final_graph"] = dict(record["first_graph"])
+    else:
+        record["final_graph"] = _score(final_text, "final")
     record["valid_first_try"] = record["first_graph"]["valid"]
     (attempt_dir / "record.json").write_text(json.dumps(record, indent=1))
     return record
 
 
-def treatment(agent: str, model: str, oid: str) -> dict:
+def treatment(agent: str, model: str, oid: str, sandbox: bool = True) -> dict:
     version = subprocess.run(
         [agent, "--version"], capture_output=True, text=True, timeout=30
     ).stdout.strip()
@@ -434,6 +601,8 @@ def treatment(agent: str, model: str, oid: str) -> dict:
         "claude_max_turns": CLAUDE_MAX_TURNS if agent == "claude" else None,
         "argv": agent_cmd(agent, model)[:-1] if agent == "codex" else agent_cmd(agent, model)[3:],
         "episodes_per_attempt": ROLLOUT_EPISODES,
+        "sandbox": sandbox,
+        "env_baseline": "local (protocol spend, not campaign spend; per-manifest logged)",
     }
 
 
@@ -444,6 +613,11 @@ def main() -> int:
     parser.add_argument("--attempts", type=int, default=20)
     parser.add_argument("--start", type=int, default=0, help="resume from attempt index (merges)")
     parser.add_argument("--out", type=Path, default=OUT_DIR)
+    parser.add_argument(
+        "--no-sandbox",
+        action="store_true",
+        help="disable the sandbox-exec write confinement (recorded in treatment)",
+    )
     args = parser.parse_args()
 
     model = args.model or DEFAULT_MODELS[args.agent]
@@ -453,6 +627,11 @@ def main() -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     path = args.out / f"h1_results_{args.agent}.json"
     existing = json.loads(path.read_text()) if path.exists() else None
+    current_treatment = treatment(args.agent, model, oid, sandbox=not args.no_sandbox)
+    mismatch = check_resume_treatment(existing, current_treatment)
+    if mismatch:
+        print(json.dumps({"ok": False, "error": mismatch}))
+        return 1
 
     records, infra_errors = [], []
     with tempfile.TemporaryDirectory(prefix="aisle-h1-") as scratch_s:
@@ -460,7 +639,9 @@ def main() -> int:
         for i in range(args.start, args.start + args.attempts):
             print(f"[h1] {args.agent} attempt {i} ...", file=sys.stderr)
             try:
-                record = run_attempt(args.agent, model, oid, i, args.out, scratch)
+                record = run_attempt(
+                    args.agent, model, oid, i, args.out, scratch, not args.no_sandbox
+                )
             except InfraError as bad:
                 infra_errors.append({"attempt": i, "error": str(bad)})
                 print(f"[h1] attempt {i} INFRA error: {bad}", file=sys.stderr)
@@ -474,14 +655,16 @@ def main() -> int:
             print(f"[h1] attempt {i}: {json.dumps(brief)}", file=sys.stderr)
 
     merged = merge_results(existing, records)
+    all_errors = merge_runner_errors(existing, merged, infra_errors)
     results = {
         "experiment": "H1 (design doc 8.2.4)",
         "task": "T1",
-        "treatment": treatment(args.agent, model, oid),
+        "treatment": current_treatment,
         "records": merged,
         "summary": summarize(merged),
-        "runner_errors": ((existing or {}).get("runner_errors") or []) + infra_errors,
-        "ok": not infra_errors,
+        "total_episodes_scored": episodes_scored(merged, ROLLOUT_EPISODES),
+        "runner_errors": all_errors,
+        "ok": not all_errors,
     }
     path.write_text(json.dumps(results, indent=1))
     print(json.dumps({"ok": results["ok"], "results": str(path), "summary": results["summary"]}))
