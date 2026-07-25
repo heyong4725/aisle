@@ -384,7 +384,10 @@ def test_sandbox_profile_allows_the_nested_cli_scratchpad(tmp_path):
 
     from h1_protocol import sandbox_wrap
 
-    probe = "mkdir -p /private/tmp/claude-$(id -u)/h1-test-probe && echo OK && rmdir /private/tmp/claude-$(id -u)/h1-test-probe"
+    probe = (
+        "mkdir -p /private/tmp/claude-$(id -u)/h1-test-probe && echo OK "
+        "&& rmdir /private/tmp/claude-$(id -u)/h1-test-probe"
+    )
     cmd = sandbox_wrap(
         ["/bin/sh", "-c", probe],
         tmp_path / "wt",
