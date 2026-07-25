@@ -311,10 +311,16 @@ SHIM_SNIPPET = """def main() -> int:
     import sys as _h1_sys
     from pathlib import Path as _H1Path
 
-    _h1_graph = _H1Path({graph!r})
-    _h1_snap = _H1Path({snap!r})
-    if "validate" in _h1_sys.argv[1:] and _h1_graph.exists() and not _h1_snap.exists():
-        _h1_shutil.copy(_h1_graph, _h1_snap)
+    try:  # the shim must be TRANSPARENT: its own defects may never
+        # perturb the agent's validate (r7: a bad snap path failed the
+        # call and the agent adaptively worked around it)
+        _h1_graph = _H1Path({graph!r})
+        _h1_snap = _H1Path({snap!r})
+        if "validate" in _h1_sys.argv[1:] and _h1_graph.exists() and not _h1_snap.exists():
+            _h1_snap.parent.mkdir(parents=True, exist_ok=True)
+            _h1_shutil.copy(_h1_graph, _h1_snap)
+    except Exception:
+        pass
 """
 
 
@@ -647,6 +653,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    args.out = args.out.resolve()  # r7: a relative --out sent the shim's
+    # snapshot path into the SESSION worktree's cwd instead of the runner's
     model = args.model or DEFAULT_MODELS[args.agent]
     oid = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True
