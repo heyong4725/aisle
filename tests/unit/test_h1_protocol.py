@@ -315,3 +315,58 @@ def test_first_graph_shim_snapshots_on_first_validate(tmp_path, monkeypatch):
     snap.unlink()
     invoke(["harness", "traces", "query"])
     assert not snap.exists()
+
+
+def test_sandbox_profile_uses_valid_sbpl_string_literals(tmp_path):
+    """CON-8: sandbox setup MUST produce a runnable CLI wrapper, including
+    valid double-quoted string arguments in the macOS SBPL profile."""
+    from h1_protocol import sandbox_wrap
+
+    wt = tmp_path / "session"
+    scratch = tmp_path / "scratch"
+    attempt = tmp_path / "attempt"
+    out = tmp_path / "runs" / "h1"
+    cmd = sandbox_wrap(["claude", "--version"], wt, scratch, attempt, out)
+    profile_path = Path(cmd[2])
+    try:
+        profile = profile_path.read_text()
+    finally:
+        profile_path.unlink()
+
+    assert "(subpath '" not in profile
+    assert "(literal '" not in profile
+    assert f'(subpath "{wt}")' in profile
+    assert f'(subpath "{scratch}")' in profile
+    assert f'(literal "{Path.home() / ".claude.json"}")' in profile
+    deny_results = f'(deny file-read* (subpath "{out}"))'
+    allow_attempt = f'(allow file-read* (subpath "{attempt}"))'
+    assert profile.index(deny_results) < profile.index(allow_attempt)
+
+
+def test_session_cli_failure_preserves_stderr(tmp_path, monkeypatch):
+    """CON-8: infrastructure failures MUST keep child stderr out of JSON
+    stdout while preserving it as an artifact and in the runner error."""
+    import h1_protocol
+
+    wt = tmp_path / "session"
+    attempt = tmp_path / "attempt"
+    scratch = tmp_path / "scratch"
+    out = tmp_path / "runs" / "h1"
+    (wt / ".venv" / "bin").mkdir(parents=True)
+    (wt / ".venv" / "bin" / "harness").write_text("#!/bin/sh\n")
+    attempt.mkdir(parents=True)
+    marker = "sandbox profile failed to compile"
+    monkeypatch.setattr(
+        h1_protocol,
+        "agent_cmd",
+        lambda _agent, _model: [
+            sys.executable,
+            "-c",
+            f"import sys; print({marker!r}, file=sys.stderr); raise SystemExit(65)",
+        ],
+    )
+
+    with pytest.raises(h1_protocol.InfraError, match=marker):
+        h1_protocol.run_session("claude", "test-model", wt, attempt, scratch, out, False)
+
+    assert (attempt / "session.stderr").read_text().strip() == marker

@@ -40,7 +40,8 @@ working (>0% success) graph within 3 validate-fix cycles.
    session budget (20 min), the same prompt, explicit pinned models, and
    WRITE CONFINEMENT to the session workspace — claude via a
    `sandbox-exec` profile (writes limited to the worktree/scratch/caches;
-   the H1 results tree is read-DENIED so prior attempts cannot leak in),
+   the H1 results tree is read-DENIED except for the current attempt
+   artifacts required by the snapshot shim, so prior attempts cannot leak in),
    codex via its native `--sandbox workspace-write` with
    `approval_policy=never --ignore-user-config`. `--no-sandbox` exists
    as a recorded escape hatch if sandbox-exec breaks a CLI. Recorded
@@ -73,8 +74,9 @@ working (>0% success) graph within 3 validate-fix cycles.
 
 ## Outputs
 
-`runs/h1/<agent>/attempt_NN/` (session log, first/final graph snapshots,
-validate/rollout reports, record) and `runs/h1/h1_results_<agent>.json`
+`runs/h1/<agent>/attempt_NN/` (session JSONL and stderr logs, first/final
+graph snapshots, validate/rollout reports, record) and
+`runs/h1/h1_results_<agent>.json`
 with the treatment block and summary (zero-shot valid-and-launching rate
 vs the 80% target, working-within-3-cycles, mean pass@1, violations,
 timeouts). The committed table lands in `analysis/` once both arms run.
