@@ -336,19 +336,25 @@ SANDBOX_PROFILE = """(version 1)
 (allow default)
 (deny file-write*)
 (allow file-write*
-  (subpath {worktree!r})
-  (subpath {scratch!r})
-  (subpath {attempt!r})
-  (subpath {tmpdir!r})
+  (subpath {worktree})
+  (subpath {scratch})
+  (subpath {attempt})
+  (subpath {tmpdir})
   (subpath "/private/var/folders")
   (subpath "/dev")
-  (subpath {home_claude!r})
-  (literal {home_claude_json!r})
-  (subpath {home_codex!r})
-  (subpath {home_cache!r})
-  (subpath {home_lib_caches!r}))
-(deny file-read* (subpath {h1_out!r}))
+  (subpath {home_claude})
+  (literal {home_claude_json})
+  (subpath {home_codex})
+  (subpath {home_cache})
+  (subpath {home_lib_caches}))
+(deny file-read* (subpath {h1_out}))
+(allow file-read* (subpath {attempt}))
 """
+
+
+def _sbpl_string(path: str | Path) -> str:
+    """Encode a path as a macOS Sandbox Profile Language string literal."""
+    return json.dumps(str(path))
 
 
 def sandbox_wrap(
@@ -364,16 +370,16 @@ def sandbox_wrap(
 
     home = Path.home()
     profile = SANDBOX_PROFILE.format(
-        worktree=str(wt),
-        scratch=str(scratch),
-        attempt=str(attempt_dir),
-        tmpdir=os.environ.get("TMPDIR", "/tmp"),
-        home_claude=str(home / ".claude"),
-        home_claude_json=str(home / ".claude.json"),
-        home_codex=str(home / ".codex"),
-        home_cache=str(home / ".cache"),
-        home_lib_caches=str(home / "Library" / "Caches"),
-        h1_out=str(out),
+        worktree=_sbpl_string(wt),
+        scratch=_sbpl_string(scratch),
+        attempt=_sbpl_string(attempt_dir),
+        tmpdir=_sbpl_string(os.environ.get("TMPDIR", "/tmp")),
+        home_claude=_sbpl_string(home / ".claude"),
+        home_claude_json=_sbpl_string(home / ".claude.json"),
+        home_codex=_sbpl_string(home / ".codex"),
+        home_cache=_sbpl_string(home / ".cache"),
+        home_lib_caches=_sbpl_string(home / "Library" / "Caches"),
+        h1_out=_sbpl_string(out),
     )
     pf = _tf.NamedTemporaryFile("w", suffix=".sb", delete=False)
     pf.write(profile)
@@ -432,32 +438,44 @@ def run_session(
     cmd = agent_cmd(agent, model)
     if sandbox and agent == "claude" and sys.platform == "darwin":
         cmd = sandbox_wrap(cmd, wt, scratch, attempt_dir, out)
+    sandbox_profile = Path(cmd[2]) if cmd[:2] == ["sandbox-exec", "-f"] else None
     t0 = time.monotonic()
     timed_out = False
-    with open(attempt_dir / "session.jsonl", "w") as log:
-        proc = subprocess.Popen(
-            cmd,
-            cwd=wt,
-            stdout=log,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            start_new_session=True,
-        )
-        try:
-            proc.wait(timeout=SESSION_TIMEOUT_S)
-        except subprocess.TimeoutExpired:
-            timed_out = True
+    stderr_path = attempt_dir / "session.stderr"
+    try:
+        with open(attempt_dir / "session.jsonl", "w") as log, open(stderr_path, "w") as stderr:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=wt,
+                stdout=log,
+                stderr=stderr,
+                text=True,
+                start_new_session=True,
+            )
             try:
-                os.killpg(proc.pid, _signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            proc.wait(timeout=30)
+                proc.wait(timeout=SESSION_TIMEOUT_S)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                try:
+                    os.killpg(proc.pid, _signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                proc.wait(timeout=30)
+    finally:
+        if sandbox_profile is not None:
+            sandbox_profile.unlink(missing_ok=True)
     if proc.returncode != 0 and not timed_out:
-        raise InfraError(f"{agent} CLI exited rc={proc.returncode} (not an agent outcome)")
+        detail = stderr_path.read_text(errors="replace").strip()
+        suffix = f": {detail[-1000:]}" if detail else ""
+        raise InfraError(f"{agent} CLI exited rc={proc.returncode} (not an agent outcome){suffix}")
     lines = (attempt_dir / "session.jsonl").read_text(errors="replace").splitlines()
     telemetry = (parse_claude_events if agent == "claude" else parse_codex_events)(lines)
     porcelain = _run(["git", "status", "--porcelain"], cwd=wt, timeout=60).stdout
-    first_captured = snap.exists()
+    # the flag must reflect HOW the snapshot was captured, not whether the
+    # agent tried to validate (a sandbox-broken validate counts as a call
+    # but never runs the shim — the r4 smoke caught exactly this)
+    via_shim = snap.exists()
+    first_captured = via_shim
     if not first_captured and graph_path.exists():
         # the agent composed but NEVER validated: its one composition IS
         # the zero-shot artifact (flagged; §8.2.4's (a) is then decided
@@ -472,7 +490,7 @@ def run_session(
         "session_timed_out": timed_out,
         "session_rc": proc.returncode,
         "first_graph_captured": first_captured,
-        "first_graph_via_shim": telemetry["validate_calls"] > 0,
+        "first_graph_via_shim": via_shim,
         "final_graph_exists": graph_path.exists(),
         "workspace_violations": audit_workspace(porcelain),
     }
