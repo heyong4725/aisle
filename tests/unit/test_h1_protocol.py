@@ -370,3 +370,25 @@ def test_session_cli_failure_preserves_stderr(tmp_path, monkeypatch):
         h1_protocol.run_session("claude", "test-model", wt, attempt, scratch, out, False)
 
     assert (attempt / "session.stderr").read_text().strip() == marker
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="sandbox-exec is macOS-only")
+def test_sandbox_profile_allows_the_nested_cli_scratchpad(tmp_path):
+    """The r5 smoke regression: the nested Claude CLI mkdirs its Bash
+    scratchpad under /private/tmp/claude-<uid>/ — the profile must allow
+    it or every session shell command EPERMs and the agent flies blind."""
+    import subprocess
+
+    from h1_protocol import sandbox_wrap
+
+    probe = "mkdir -p /private/tmp/claude-$(id -u)/h1-test-probe && echo OK && rmdir /private/tmp/claude-$(id -u)/h1-test-probe"
+    cmd = sandbox_wrap(
+        ["/bin/sh", "-c", probe],
+        tmp_path / "wt",
+        tmp_path / "sc",
+        tmp_path / "at",
+        tmp_path / "out",
+    )
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    Path(cmd[2]).unlink(missing_ok=True)
+    assert proc.returncode == 0 and "OK" in proc.stdout, proc.stderr[:200]
