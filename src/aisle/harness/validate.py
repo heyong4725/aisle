@@ -1,14 +1,17 @@
-"""Dataflow validator (SPEC 060 VAL-1..6, CON-8).
+"""Dataflow validator (SPEC 060 VAL-1..7, CON-8).
 
 Loads a dora dataflow YAML plus every registry manifest and rejects graphs
 that cannot run safely: unresolved node ids, duplicate ids, missing
 producers, schema mismatches against the CAP-2 vocabulary, oracle leaks
-(VAL-6), ungated motion (VAL-5), and motion nodes without evalcards.
+(VAL-6), ungated motion (VAL-5), motion nodes without evalcards, and
+pip:-sourced nodes whose distribution is not installed (INSTALL_MISSING).
 Hints are the research agent's learning signal: every error names a registry
 capability or a concrete fix. No genesis or dora imports (unit territory).
 """
 
 import difflib
+import functools
+import importlib.metadata
 import json
 import tomllib
 from collections import Counter
@@ -177,6 +180,44 @@ def load_graph(path: Path) -> tuple[list | None, list[dict]]:
     return nodes, []
 
 
+def _pip_dist(manifest: dict) -> str | None:
+    """The normalized pip distribution name of a manifest's source, or None
+    for non-pip sources. Scheme match is case-insensitive (a lowercase-only
+    match let `PIP:x` dodge the check), the name is stripped and cut at the
+    first extras/specifier character (`pip:dora-yolo[gpu]`/`==1.2` probed
+    the literal string, falsely flagging installed dists). An empty name
+    maps to '' — a structured error, never a `version('')` ValueError
+    (PR #34 review)."""
+    source = manifest.get("source")
+    if not isinstance(source, str) or not source[:4].lower() == "pip:":
+        return None
+    name = source[4:].strip()
+    for cut in "[=<>!~;@":
+        name = name.split(cut, 1)[0]
+    return name.strip()
+
+
+@functools.cache
+def _pip_installed(dist: str) -> bool:
+    try:
+        importlib.metadata.version(dist)
+    except (importlib.metadata.PackageNotFoundError, ValueError):
+        return False
+    return True
+
+
+def _manifest_launchable(manifest: dict, arm_kind: str) -> bool:
+    """A candidate INSTALL_MISSING alternative must itself survive the NEXT
+    compile: an installed distribution (or source-tree node) AND compatible
+    with the graph's embodiment — an so101-only suggestion on a franka
+    graph just trades INSTALL_MISSING for EMBODIMENT_MISMATCH."""
+    dist = _pip_dist(manifest)
+    if dist is not None and not _pip_installed(dist):
+        return False
+    arms = manifest.get("embodiment", {}).get("arm", [])
+    return not arms or arm_kind in arms
+
+
 def validate_nodes(
     nodes: list[dict],
     manifests: dict[str, dict],
@@ -198,6 +239,10 @@ def validate_nodes(
             )
 
     graph_nodes = {n["id"]: n for n in nodes}
+    # MOB-4: an embodiment resolves to an ARM kind; `mobile` runs the
+    # franka arm on a base, so a franka-arm graph validates unchanged
+    # under `mobile`. Arm nodes are checked against the resolved arm.
+    arm_kind = EMBODIMENT_ARM.get(embodiment, embodiment)
     for node in nodes:
         node_id = node["id"]
         manifest = manifests.get(node_id)
@@ -234,6 +279,43 @@ def validate_nodes(
                         )
                     )
             continue
+        # VAL-2 INSTALL_MISSING (H1-discovered): a pip:-sourced capability
+        # that is not installed validates into a graph that cannot launch —
+        # the agent's only signal is this error, so the hint must name an
+        # installed same-capability alternative when one exists
+        dist = _pip_dist(manifest)
+        if dist is not None and not _pip_installed(dist):
+            provided = set(manifest.get("provides") or [])
+            # a usable alternative must FULLY cover the missing node's
+            # capabilities — a partial provider is not a replacement
+            alternatives = sorted(
+                other_id
+                for other_id, other in manifests.items()
+                if other_id != node_id
+                and provided <= set(other.get("provides") or [])
+                and _manifest_launchable(other, arm_kind)
+            )
+            if alternatives:
+                hint = f"use an installed provider of {sorted(provided)}: " + ", ".join(
+                    alternatives
+                )
+            elif dist:
+                hint = (
+                    f"install {dist!r} (env-change PR) or author a node "
+                    f"providing {sorted(provided)}"
+                )
+            else:
+                # `install ''` is a nonsense instruction (red-team, PR #34)
+                hint = (
+                    "fix the manifest source: `pip:` carries no distribution "
+                    f"name; name one or author a node providing {sorted(provided)}"
+                )
+            detail = (
+                f"manifest source {manifest.get('source')!r}: distribution "
+                + (f"{dist!r} is not installed in this environment" if dist else "name is empty")
+                + " — the graph would validate but never launch"
+            )
+            errors.append(_entry("INSTALL_MISSING", {"node": node_id}, detail, hint))
         # VAL-4: every schema name a graph node's manifest references must be
         # in the vocabulary — including unwired ports; never silently passed
         for direction in ("inputs", "outputs"):
@@ -263,10 +345,6 @@ def validate_nodes(
                         "or extend the manifest (Class B change)",
                     )
                 )
-        # MOB-4: an embodiment resolves to an ARM kind; `mobile` runs the
-        # franka arm on a base, so a franka-arm graph validates unchanged
-        # under `mobile`. Arm nodes are checked against the resolved arm.
-        arm_kind = EMBODIMENT_ARM.get(embodiment, embodiment)
         arms = manifest.get("embodiment", {}).get("arm", [])
         if arms and arm_kind not in arms:
             errors.append(
@@ -443,8 +521,10 @@ def _validate_edge(
                 "ORACLE_LEAK",
                 edge,
                 f"oracle_state consumed by non-verifier node {node_id!r} (VAL-6)",
-                "only verifier-* nodes may read ground truth; use object_pose "
-                "providers (oracle-pose, pose-estimator) for perception",
+                # PR #34 red-team: naming pose-estimator here sent agents to
+                # an uninstalled pip node — the next compile's INSTALL_MISSING
+                "only verifier-* nodes may read ground truth; use an installed "
+                "object_pose provider (e.g. oracle-pose) for perception",
             )
         )
 

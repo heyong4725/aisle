@@ -1,12 +1,17 @@
+# partial manifest-input wiring is legal (ADR 5): oracle-pose wires poses
+# and reset_done, leaves target_request unwired; genesis fans out to spare
+# outputs. Installed nodes only (VAL-2 INSTALL_MISSING rewrite).
 nodes:
-- id: camera-source
-  outputs:
-  - rgb_overhead
-- id: detector-openvocab
+- id: dora-genesis
   inputs:
-    rgb:
-      source: camera-source/rgb_overhead
-      queue_size: 1
+    tick: dora/timer/millis/10
   outputs:
-  - boxes
-  - labels
+  - poses
+  - reset_done
+  - rgb_overhead
+- id: oracle-pose
+  inputs:
+    poses: dora-genesis/poses
+    reset_done: dora-genesis/reset_done
+  outputs:
+  - target_pose

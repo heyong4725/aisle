@@ -1,7 +1,10 @@
+# warning-only fixture on a LAUNCHABLE node (PR #34 review: keeping the
+# detector here lost the corpus's only codes=[] entries, killing coverage
+# of "warnings alone still exit 0"): genesis tick declares 100 Hz, a 1 Hz
+# timer is far below the TC-4 band
 nodes:
-- id: detector-openvocab
+- id: dora-genesis
   inputs:
-    rgb: dora/timer/millis/1000
+    tick: dora/timer/millis/1000
   outputs:
-  - boxes
-  - labels
+  - poses

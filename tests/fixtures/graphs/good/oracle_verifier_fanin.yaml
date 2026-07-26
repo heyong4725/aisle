@@ -1,0 +1,23 @@
+# multi-consumer fan-in on launchable nodes: genesis feeds both perception
+# and the verifier; oracle_state reaches ONLY verifier-* (VAL-6 legal use).
+# Replaces perception_ocr_pose.yaml, whose ocr/detector stack was never
+# launchable (VAL-2 INSTALL_MISSING, the H1-discovered class).
+nodes:
+- id: dora-genesis
+  inputs:
+    tick: dora/timer/millis/10
+  outputs:
+  - poses
+  - oracle_state
+  - joint_state
+- id: oracle-pose
+  inputs:
+    poses: dora-genesis/poses
+  outputs:
+  - target_pose
+- id: verifier-oracle
+  inputs:
+    oracle_state: dora-genesis/oracle_state
+    joint_state: dora-genesis/joint_state
+  outputs:
+  - episode_result

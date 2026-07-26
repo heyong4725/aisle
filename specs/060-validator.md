@@ -4,7 +4,7 @@ Status: DRAFT. Module: `src/aisle/harness/validate.py`. CLI: `harness validate <
 The most leveraged component: its error messages are the research agent's learning signal.
 
 - VAL-1: Loads a dora dataflow YAML + all manifests; resolves every node id to a manifest (unresolved id = error MANIFEST_MISSING).
-- VAL-2: Checks, each with a stable error `code`: NODE_ID_DUPLICATE, INPUT_NO_PRODUCER, SCHEMA_MISMATCH, RATE_INCOMPATIBLE (warning), EMBODIMENT_MISMATCH, ORACLE_LEAK, MOTION_UNGATED, EVAL_MISSING_FOR_MOTION.
+- VAL-2: Checks, each with a stable error `code`: NODE_ID_DUPLICATE, INPUT_NO_PRODUCER, SCHEMA_MISMATCH, RATE_INCOMPATIBLE (warning), EMBODIMENT_MISMATCH, ORACLE_LEAK, MOTION_UNGATED, EVAL_MISSING_FOR_MOTION, INSTALL_MISSING. INSTALL_MISSING: a node whose manifest `source` is `pip:<distribution>` and the distribution is not installed in the current environment — the graph is schema-valid but cannot launch (the dominant H1 composition failure, 24/40 attempts: analysis/h1/h1_findings.md). The hint MUST name an installed, embodiment-compatible registry alternative fully covering the missing node's `provides` when one exists — never an alternative that would fail the next compile.
 - VAL-3: Output JSON: `{ok, errors:[{code, edge|node, detail..., hint}], warnings:[...]}`. Every error MUST include a `hint` naming a registry capability or concrete fix. Exit 0 iff ok.
 - VAL-4: SCHEMA_MISMATCH uses the CAP-2 vocabulary; unknown schema names are their own error (SCHEMA_UNKNOWN), never silently passed.
 - VAL-5: MOTION_UNGATED: every path terminating in a bridge `joint_cmd`/`gripper_cmd` input MUST traverse the budget-guard node (SPEC 080). The validator REWRITES nothing; it only rejects (rewiring is the composer's job).

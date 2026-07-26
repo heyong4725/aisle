@@ -1,7 +1,8 @@
+# warning-only fixture on a LAUNCHABLE node (see slow_timer note): genesis
+# tick declares 100 Hz, a 500 Hz timer is far above the TC-4 band
 nodes:
-- id: detector-openvocab
+- id: dora-genesis
   inputs:
-    rgb: dora/timer/millis/10
+    tick: dora/timer/millis/2
   outputs:
-  - boxes
-  - labels
+  - poses

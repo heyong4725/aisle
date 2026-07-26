@@ -427,9 +427,7 @@ def test_verifier_feedback_loop_is_legal():
 def test_unwired_manifest_inputs_are_legal(tmp_path):
     """ADR 5: wiring none of a manifest's declared inputs is legal (dora
     permits subsets; source nodes have zero inputs by design)."""
-    graph = write_graph(
-        tmp_path, [{"id": "detector-openvocab", "inputs": {}, "outputs": ["boxes", "labels"]}]
-    )
+    graph = write_graph(tmp_path, [{"id": "oracle-pose", "inputs": {}, "outputs": ["target_pose"]}])
     code, report = run_validate(graph)
     assert code == 0, report
 
@@ -498,3 +496,127 @@ def test_good_graph_rejected_for_other_embodiment():
     code, report = run_validate(REPO_ROOT / "graphs" / "expert_t0.yaml", "--embodiment", "so101")
     assert code != 0
     assert "EMBODIMENT_MISMATCH" in codes(report, "errors")
+
+
+def test_install_missing_hint_names_installed_alternative():
+    """VAL-2 INSTALL_MISSING (H1-discovered class, PR #33 findings): a
+    pip:-sourced manifest whose distribution is absent errors rather than
+    validating a graph that cannot launch; per VAL-3 the hint MUST name an
+    installed registry alternative with the same capability when one
+    exists (oracle-pose provides object_pose alongside pose-estimator)."""
+    code, report = run_validate(BAD_DIR / "install_missing_detector.yaml")
+    assert code != 0
+    entries = [e for e in report["errors"] if e["code"] == "INSTALL_MISSING"]
+    assert {e["node"] for e in entries} == {"detector-openvocab", "pose-estimator"}
+    pose_hint = next(e["hint"] for e in entries if e["node"] == "pose-estimator")
+    assert "oracle-pose" in pose_hint
+    # the NO-alternative fallback branch (detector-openvocab is the sole
+    # object_detection provider) must stay actionable, not just non-empty
+    det_hint = next(e["hint"] for e in entries if e["node"] == "detector-openvocab")
+    assert "dora-yolo" in det_hint and "install" in det_hint
+
+
+def _pip_manifest(base_id: str, **overrides) -> dict:
+    manifest = yaml.safe_load(
+        (REPO_ROOT / "registry" / "manifests" / f"{base_id}.yaml").read_text()
+    )
+    manifest.update(overrides)
+    return manifest
+
+
+def _single_node_graph(root, manifest):
+    return write_graph(
+        root, [{"id": manifest["id"], "inputs": {}, "outputs": list(manifest["outputs"])}]
+    )
+
+
+def test_install_missing_corpus_env_assumption():
+    """PR #34 review (multi-source): 19 corpus expectations assume the
+    dora perception distributions are ABSENT from the ambient env. Pin the
+    assumption in ONE place so a future env-change PR that installs any of
+    them fails here with a pointer, not as 19 cryptic corpus diffs."""
+    from aisle.harness.validate import _pip_installed
+
+    for dist in ("dora-yolo", "dora-pose", "dora-ocr"):
+        assert not _pip_installed(dist), (
+            f"{dist!r} is now installed: update the INSTALL_MISSING entries in "
+            "tests/fixtures/graphs/bad/expected.toml and the good-corpus notes"
+        )
+
+
+def test_install_missing_installed_distribution_passes(tmp_path):
+    """VAL-2: the POSITIVE path — a pip: source whose distribution IS
+    installed (pytest, guaranteed in the test env) must not error; case
+    and PEP 503 name normalization are importlib.metadata's job (PyTest ==
+    pytest). Kills the `_pip_installed = lambda d: False` mutation the
+    corpus alone cannot catch (PR #34 review)."""
+    root = make_registry_root(tmp_path)
+    for source in ("pip:pytest", "pip:PyTest"):
+        write_manifest(root, _pip_manifest("oracle-pose", source=source))
+        graph = _single_node_graph(root, _pip_manifest("oracle-pose"))
+        code, report = run_validate(graph, "--root", str(root))
+        assert code == 0, (source, report)
+        assert "INSTALL_MISSING" not in codes(report, "errors")
+
+
+def test_install_missing_empty_and_decorated_dist_names(tmp_path):
+    """PR #34 adversarial review: `source: "pip:"` crashed the CLI with an
+    uncaught ValueError (no JSON, CON-8 broken), and extras/pins/whitespace
+    (`pip:pytest[x]`, `pip:pytest==1.0`, `pip: pytest`) probed the literal
+    string, falsely flagging INSTALLED dists and corrupting the hint. The
+    dist name is normalized (strip + cut at [=<>!~;@) before probing; an
+    empty name is a structured INSTALL_MISSING, never a traceback."""
+    root = make_registry_root(tmp_path)
+    write_manifest(root, _pip_manifest("oracle-pose", source="pip:"))
+    graph = _single_node_graph(root, _pip_manifest("oracle-pose"))
+    code, report = run_validate(graph, "--root", str(root))
+    assert code != 0
+    assert "INSTALL_MISSING" in codes(report, "errors")  # JSON report, no crash
+    empty_hint = next(e["hint"] for e in report["errors"] if e["code"] == "INSTALL_MISSING")
+    assert "install ''" not in empty_hint  # red-team: nonsense instruction
+    assert "no distribution name" in empty_hint
+    for source in ("pip:pytest[extra]", "pip:pytest==1.0", "pip: pytest", "PIP:pytest"):
+        write_manifest(root, _pip_manifest("oracle-pose", source=source))
+        code, report = run_validate(graph, "--root", str(root))
+        assert code == 0, (source, report)
+
+
+def test_install_missing_scheme_is_case_insensitive(tmp_path):
+    """PR #34 adversarial review: `PIP:absent-dist` dodged the check
+    entirely (exact-lowercase prefix match). The scheme match is
+    case-insensitive, so casing is not an evasion channel for an
+    agent-authored manifest."""
+    root = make_registry_root(tmp_path)
+    write_manifest(root, _pip_manifest("oracle-pose", source="PIP:aisle-review-absent-dist"))
+    graph = _single_node_graph(root, _pip_manifest("oracle-pose"))
+    code, report = run_validate(graph, "--root", str(root))
+    assert code != 0
+    assert "INSTALL_MISSING" in codes(report, "errors")
+
+
+def test_install_missing_alternatives_are_usable(tmp_path):
+    """PR #34 adversarial review: the hint must not send the agent to an
+    alternative that fails the NEXT compile — an uninstalled pip peer, an
+    embodiment-incompatible node, or a partial provider (covers only some
+    of the missing node's capabilities)."""
+    root = make_registry_root(tmp_path)
+    missing = _pip_manifest("pose-estimator", source="pip:aisle-review-absent-dist")
+    write_manifest(root, missing)
+    # uninstalled pip peer: same capability, also absent — must NOT appear
+    write_manifest(
+        root,
+        _pip_manifest("oracle-pose", id="pose-peer-pip", source="pip:aisle-review-absent-peer"),
+    )
+    # embodiment-incompatible peer: so101-only arm on a franka graph
+    so101_only = _pip_manifest("oracle-pose", id="pose-peer-so101")
+    so101_only["embodiment"] = {"arm": ["so101"], "gripper": "any"}
+    write_manifest(root, so101_only)
+    # the genuinely usable peer
+    write_manifest(root, _pip_manifest("oracle-pose"))
+    graph = _single_node_graph(root, missing)
+    code, report = run_validate(graph, "--root", str(root))
+    assert code != 0
+    hint = next(e["hint"] for e in report["errors"] if e["code"] == "INSTALL_MISSING")
+    assert "oracle-pose" in hint
+    assert "pose-peer-pip" not in hint
+    assert "pose-peer-so101" not in hint
