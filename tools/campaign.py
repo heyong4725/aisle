@@ -97,6 +97,20 @@ def parse_usage_codex(lines: list[str]) -> int:
 PARSE_USAGE = {"claude": parse_usage_claude, "codex": parse_usage_codex}
 
 
+class UsageCounter:
+    """Issue #42: the runner is the SOLE authority on token spend. Lines
+    are fed from the LIVE stdout pipe and accumulated in memory; the
+    on-disk log is a tee for post-hoc analysis, never the count's source
+    — an unconfined session rewriting its log cannot move the ceiling."""
+
+    def __init__(self, agent: str):
+        self._parse = PARSE_USAGE[agent]
+        self.total = 0
+
+    def feed(self, line: str) -> None:
+        self.total += self._parse([line])
+
+
 def budget_stop(
     tokens: int, token_ceiling: int, wall_s: float, wall_ceiling_s: float
 ) -> str | None:
@@ -278,33 +292,46 @@ def _default_budgets(root: Path) -> tuple[int, float]:
 
 
 def run_session(agent: str, cmd: list[str], wt: Path, out: Path, ceilings: dict) -> dict:
-    """Spawn the session, poll its stream for token spend, kill the process
-    group at a ceiling. Returns the session record."""
+    """Spawn the session, count token spend from the LIVE stdout pipe
+    (issue #42: the on-disk log is a tee, never the count's source), kill
+    the process group at a ceiling. Returns the session record."""
+    import threading
+
     log_path = out / "session.jsonl"
     stderr_path = out / "session.stderr"
     samples_path = out / "token_samples.jsonl"
     t0 = time.monotonic()
     stopped = "agent_done"
+    counter = UsageCounter(agent)
     with open(log_path, "w") as log, open(stderr_path, "w") as err:
         proc = subprocess.Popen(
             cmd,
             cwd=wt,
             stdin=subprocess.DEVNULL,
-            stdout=log,
+            stdout=subprocess.PIPE,
             stderr=err,
             text=True,
             start_new_session=True,
         )
-        tokens = 0
+
+        def tee() -> None:
+            for line in proc.stdout:
+                log.write(line)
+                log.flush()
+                counter.feed(line)
+
+        reader = threading.Thread(target=tee, daemon=True)
+        reader.start()
         with open(samples_path, "a") as samples:
             while proc.poll() is None:
                 time.sleep(POLL_S)
-                tokens = PARSE_USAGE[agent](log_path.read_text().splitlines())
                 wall_s = time.monotonic() - t0
-                samples.write(json.dumps({"wall_s": round(wall_s, 1), "tokens": tokens}) + "\n")
+                samples.write(
+                    json.dumps({"wall_s": round(wall_s, 1), "tokens": counter.total}) + "\n"
+                )
                 samples.flush()
                 reason = budget_stop(
-                    ceilings["prior_tokens"] + tokens,
+                    ceilings["prior_tokens"] + counter.total,
                     ceilings["token_ceiling"],
                     ceilings["prior_wall_s"] + wall_s,
                     ceilings["wall_ceiling_s"],
@@ -318,13 +345,13 @@ def run_session(agent: str, cmd: list[str], wt: Path, out: Path, ceilings: dict)
                     proc.wait(timeout=30)
                     break
         rc = proc.wait()
-    tokens = PARSE_USAGE[agent](log_path.read_text().splitlines())
+        reader.join(timeout=10)
     if stopped == "agent_done" and rc != 0:
         raise InfraError(f"{agent} CLI exited rc={rc} (not an agent outcome)")
     return {
         "stopped": stopped,
         "rc": rc,
-        "tokens": tokens,
+        "tokens": counter.total,
         "wall_s": round(time.monotonic() - t0, 1),
     }
 
