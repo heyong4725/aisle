@@ -115,6 +115,10 @@ def parse_codex_events(lines: list[str]) -> dict:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
+        # item.started carries the SAME item without output — counting it
+        # double-counted every call as [False, True] (PR #33 review P1)
+        if event.get("type") != "item.completed":
+            continue
         item = event.get("item") or {}
         if item.get("type") != "command_execution":
             continue
@@ -651,6 +655,20 @@ def treatment(agent: str, model: str, oid: str, sandbox: bool = True) -> dict:
         "argv": agent_cmd(agent, model)[:-1] if agent == "codex" else agent_cmd(agent, model)[3:],
         "episodes_per_attempt": ROLLOUT_EPISODES,
         "sandbox": sandbox,
+        # PR #33 review P1: pin the RUNNER code that produced the results
+        # and the effective session-spawn config that never appears in argv
+        "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "session_spawn": {
+            "stdin": "devnull",
+            "confinement": (
+                "codex native --sandbox workspace-write"
+                " + sandbox_workspace_write.writable_roots=[<attempt_dir>]"
+                if agent == "codex"
+                else "sandbox-exec SBPL (deny file-write* outside allowlist)"
+                if sandbox and sys.platform == "darwin"
+                else "none"
+            ),
+        },
         "env_baseline": "local (protocol spend, not campaign spend; per-manifest logged)",
     }
 

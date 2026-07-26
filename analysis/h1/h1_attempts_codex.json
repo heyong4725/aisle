@@ -1,0 +1,294 @@
+{
+ "treatment": {
+  "commit": "abd2e9d358f2565b417893bab0b2daed30bf2b2a",
+  "agent": "codex",
+  "agent_cli_version": "codex-cli 0.144.6",
+  "model": "gpt-5.6-sol",
+  "prompt_sha256": "ddfb8a5ff44ad78a380b69ada65c3c5a29489fb266782b0274e388cb91f6b4fb",
+  "session_wall_budget_s": 1200.0,
+  "claude_max_turns": null,
+  "argv": [
+   "codex",
+   "exec",
+   "--json",
+   "--model",
+   "gpt-5.6-sol",
+   "--skip-git-repo-check",
+   "--ignore-user-config",
+   "--sandbox",
+   "workspace-write",
+   "-c",
+   "approval_policy=never"
+  ],
+  "episodes_per_attempt": 8,
+  "sandbox": true,
+  "env_baseline": "local (protocol spend, not campaign spend; per-manifest logged)",
+  "runner_sha256": "e38cd05240fd5b918d2e402a50f2081cd4964902309939711eea1bb2770cbbdb",
+  "session_spawn": {
+   "stdin": "devnull",
+   "confinement": "codex native --sandbox workspace-write + sandbox_workspace_write.writable_roots=[<attempt_dir>]"
+  },
+  "provenance_note": "runner_sha256/session_spawn reconstructed post-hoc (PR #33 review P1): tree state during the arm == 3c5cd09:tools/h1_protocol.py"
+ },
+ "summary": {
+  "attempts": 20,
+  "zero_shot_valid": 20,
+  "zero_shot_valid_and_launching": 13,
+  "zero_shot_rate": 0.65,
+  "h1_zero_shot_target_80pct": false,
+  "final_valid": 20,
+  "final_launched": 13,
+  "working_within_3_cycles": 13,
+  "mean_validate_calls": 1.0,
+  "mean_final_pass1": 0.569,
+  "attempts_with_workspace_violations": 0,
+  "sessions_timed_out": 0
+ },
+ "attempts": [
+  {
+   "attempt": 0,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 95.7,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 1,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 75.4,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 2,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.875,
+   "cycles": 1,
+   "wall_s": 67.3,
+   "failures": {
+    "collision": 1
+   },
+   "violations": []
+  },
+  {
+   "attempt": 3,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 83.1,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 4,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.875,
+   "cycles": 1,
+   "wall_s": 62.9,
+   "failures": {
+    "collision": 1
+   },
+   "violations": []
+  },
+  {
+   "attempt": 5,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 53.0,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 6,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.75,
+   "cycles": 1,
+   "wall_s": 70.3,
+   "failures": {
+    "dropped": 1,
+    "collision": 1
+   },
+   "violations": []
+  },
+  {
+   "attempt": 7,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.875,
+   "cycles": 1,
+   "wall_s": 64.7,
+   "failures": {
+    "collision": 1
+   },
+   "violations": []
+  },
+  {
+   "attempt": 8,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.875,
+   "cycles": 1,
+   "wall_s": 54.8,
+   "failures": {
+    "collision": 1
+   },
+   "violations": []
+  },
+  {
+   "attempt": 9,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 82.1,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 10,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.875,
+   "cycles": 1,
+   "wall_s": 65.0,
+   "failures": {
+    "collision": 1
+   },
+   "violations": []
+  },
+  {
+   "attempt": 11,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.875,
+   "cycles": 1,
+   "wall_s": 51.4,
+   "failures": {
+    "collision": 1
+   },
+   "violations": []
+  },
+  {
+   "attempt": 12,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.875,
+   "cycles": 1,
+   "wall_s": 83.4,
+   "failures": {
+    "collision": 1
+   },
+   "violations": []
+  },
+  {
+   "attempt": 13,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 1.0,
+   "cycles": 1,
+   "wall_s": 63.4,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 14,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 51.3,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 15,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 85.8,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 16,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.875,
+   "cycles": 1,
+   "wall_s": 68.3,
+   "failures": {
+    "collision": 1
+   },
+   "violations": []
+  },
+  {
+   "attempt": 17,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.875,
+   "cycles": 1,
+   "wall_s": 63.0,
+   "failures": {
+    "collision": 1
+   },
+   "violations": []
+  },
+  {
+   "attempt": 18,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.875,
+   "cycles": 1,
+   "wall_s": 58.9,
+   "failures": {
+    "collision": 1
+   },
+   "violations": []
+  },
+  {
+   "attempt": 19,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.875,
+   "cycles": 1,
+   "wall_s": 67.2,
+   "failures": {
+    "collision": 1
+   },
+   "violations": []
+  }
+ ]
+}

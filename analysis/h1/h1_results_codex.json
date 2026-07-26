@@ -24,7 +24,13 @@
   ],
   "episodes_per_attempt": 8,
   "sandbox": true,
-  "env_baseline": "local (protocol spend, not campaign spend; per-manifest logged)"
+  "env_baseline": "local (protocol spend, not campaign spend; per-manifest logged)",
+  "runner_sha256": "e38cd05240fd5b918d2e402a50f2081cd4964902309939711eea1bb2770cbbdb",
+  "session_spawn": {
+   "stdin": "devnull",
+   "confinement": "codex native --sandbox workspace-write + sandbox_workspace_write.writable_roots=[<attempt_dir>]"
+  },
+  "provenance_note": "runner_sha256/session_spawn reconstructed post-hoc (PR #33 review P1): tree state during the arm == 3c5cd09:tools/h1_protocol.py"
  },
  "records": [
   {
@@ -767,12 +773,13 @@
   "final_valid": 20,
   "final_launched": 13,
   "working_within_3_cycles": 13,
-  "mean_validate_calls": 2.0,
+  "mean_validate_calls": 1.0,
   "mean_final_pass1": 0.569,
   "attempts_with_workspace_violations": 0,
   "sessions_timed_out": 0
  },
  "total_episodes_scored": 160,
  "runner_errors": [],
- "ok": true
+ "ok": true,
+ "reprocessed": "validate telemetry re-derived from raw session.jsonl after the item.started double-count parser fix (PR #33 review P1); 20/20 records updated, scoring untouched"
 }

@@ -55,33 +55,33 @@ Treatment: commit `abd2e9d358f2`, model `gpt-5.6-sol`.
 | Zero-shot valid AND launching | 13 |
 | Zero-shot rate (H1 target >=0.80) | 0.65 |
 | Working (<=3 cycles, pass@1 > 0) | 13 |
-| Mean validate calls | 2.0 |
+| Mean validate calls | 1.0 |
 | Mean final pass@1 | 0.569 |
 | Workspace violations | 0 |
 | Sessions timed out | 0 |
 
 | # | Perception choice | First-graph outcome | pass@1 | Cycles | Failures |
 |---|---|---|---|---|---|
-| 0 | detector-stack | no_episodes | 0.000 | 2 | - |
-| 1 | detector-stack | no_episodes | 0.000 | 2 | - |
-| 2 | oracle-pose | launched | 0.875 | 2 | collision:1 |
-| 3 | detector-stack | no_episodes | 0.000 | 2 | - |
-| 4 | oracle-pose | launched | 0.875 | 2 | collision:1 |
-| 5 | detector-stack | no_episodes | 0.000 | 2 | - |
-| 6 | oracle-pose | launched | 0.750 | 2 | dropped:1, collision:1 |
-| 7 | oracle-pose | launched | 0.875 | 2 | collision:1 |
-| 8 | oracle-pose | launched | 0.875 | 2 | collision:1 |
-| 9 | detector-stack | no_episodes | 0.000 | 2 | - |
-| 10 | oracle-pose | launched | 0.875 | 2 | collision:1 |
-| 11 | oracle-pose | launched | 0.875 | 2 | collision:1 |
-| 12 | oracle-pose | launched | 0.875 | 2 | collision:1 |
-| 13 | oracle-pose | launched | 1.000 | 2 | - |
-| 14 | detector-stack | no_episodes | 0.000 | 2 | - |
-| 15 | detector-stack | no_episodes | 0.000 | 2 | - |
-| 16 | oracle-pose | launched | 0.875 | 2 | collision:1 |
-| 17 | oracle-pose | launched | 0.875 | 2 | collision:1 |
-| 18 | oracle-pose | launched | 0.875 | 2 | collision:1 |
-| 19 | oracle-pose | launched | 0.875 | 2 | collision:1 |
+| 0 | detector-stack | no_episodes | 0.000 | 1 | - |
+| 1 | detector-stack | no_episodes | 0.000 | 1 | - |
+| 2 | oracle-pose | launched | 0.875 | 1 | collision:1 |
+| 3 | detector-stack | no_episodes | 0.000 | 1 | - |
+| 4 | oracle-pose | launched | 0.875 | 1 | collision:1 |
+| 5 | detector-stack | no_episodes | 0.000 | 1 | - |
+| 6 | oracle-pose | launched | 0.750 | 1 | dropped:1, collision:1 |
+| 7 | oracle-pose | launched | 0.875 | 1 | collision:1 |
+| 8 | oracle-pose | launched | 0.875 | 1 | collision:1 |
+| 9 | detector-stack | no_episodes | 0.000 | 1 | - |
+| 10 | oracle-pose | launched | 0.875 | 1 | collision:1 |
+| 11 | oracle-pose | launched | 0.875 | 1 | collision:1 |
+| 12 | oracle-pose | launched | 0.875 | 1 | collision:1 |
+| 13 | oracle-pose | launched | 1.000 | 1 | - |
+| 14 | detector-stack | no_episodes | 0.000 | 1 | - |
+| 15 | detector-stack | no_episodes | 0.000 | 1 | - |
+| 16 | oracle-pose | launched | 0.875 | 1 | collision:1 |
+| 17 | oracle-pose | launched | 0.875 | 1 | collision:1 |
+| 18 | oracle-pose | launched | 0.875 | 1 | collision:1 |
+| 19 | oracle-pose | launched | 0.875 | 1 | collision:1 |
 
 Mechanism split:
 

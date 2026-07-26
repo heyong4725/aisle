@@ -1,0 +1,275 @@
+{
+ "treatment": {
+  "commit": "abd2e9d358f2565b417893bab0b2daed30bf2b2a",
+  "agent": "claude",
+  "agent_cli_version": "2.1.214 (Claude Code)",
+  "model": "claude-fable-5",
+  "prompt_sha256": "ddfb8a5ff44ad78a380b69ada65c3c5a29489fb266782b0274e388cb91f6b4fb",
+  "session_wall_budget_s": 1200.0,
+  "claude_max_turns": 50,
+  "argv": [
+   "--model",
+   "claude-fable-5",
+   "--output-format",
+   "stream-json",
+   "--verbose",
+   "--max-turns",
+   "50",
+   "--allowedTools",
+   "Bash,Read,Write,Edit,Glob,Grep",
+   "--dangerously-skip-permissions"
+  ],
+  "episodes_per_attempt": 8,
+  "sandbox": true,
+  "env_baseline": "local (protocol spend, not campaign spend; per-manifest logged)",
+  "runner_sha256": "7a2f23672a241e7892161657a5d4761a51673b639f9f6fcb79c36e93a3b3c254",
+  "session_spawn": {
+   "stdin": "inherited (pre-fix runner; claude -p does not read stdin)",
+   "confinement": "sandbox-exec SBPL (deny file-write* outside allowlist)"
+  },
+  "provenance_note": "runner_sha256/session_spawn reconstructed post-hoc (PR #33 review P1): tree state during the arm == abd2e9d:tools/h1_protocol.py"
+ },
+ "summary": {
+  "attempts": 20,
+  "zero_shot_valid": 20,
+  "zero_shot_valid_and_launching": 3,
+  "zero_shot_rate": 0.15,
+  "h1_zero_shot_target_80pct": false,
+  "final_valid": 20,
+  "final_launched": 3,
+  "working_within_3_cycles": 3,
+  "mean_validate_calls": 1.0,
+  "mean_final_pass1": 0.125,
+  "attempts_with_workspace_violations": 0,
+  "sessions_timed_out": 0
+ },
+ "attempts": [
+  {
+   "attempt": 0,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.875,
+   "cycles": 1,
+   "wall_s": 143.2,
+   "failures": {
+    "collision": 1
+   },
+   "violations": []
+  },
+  {
+   "attempt": 1,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 149.2,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 2,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 164.9,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 3,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 141.5,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 4,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 137.9,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 5,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 200.4,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 6,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 115.9,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 7,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 175.9,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 8,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 139.8,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 9,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 148.5,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 10,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.875,
+   "cycles": 1,
+   "wall_s": 148.5,
+   "failures": {
+    "collision": 1
+   },
+   "violations": []
+  },
+  {
+   "attempt": 11,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 134.1,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 12,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 121.2,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 13,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 133.8,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 14,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 108.2,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 15,
+   "mechanism": "oracle-pose",
+   "valid": true,
+   "launch": "launched",
+   "pass1": 0.75,
+   "cycles": 1,
+   "wall_s": 80.4,
+   "failures": {
+    "dropped": 1,
+    "collision": 1
+   },
+   "violations": []
+  },
+  {
+   "attempt": 16,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 142.7,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 17,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 128.8,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 18,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 114.4,
+   "failures": {},
+   "violations": []
+  },
+  {
+   "attempt": 19,
+   "mechanism": "detector-stack",
+   "valid": true,
+   "launch": "no_episodes",
+   "pass1": 0.0,
+   "cycles": 1,
+   "wall_s": 122.7,
+   "failures": {},
+   "violations": []
+  }
+ ]
+}

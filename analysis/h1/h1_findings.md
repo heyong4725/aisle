@@ -16,7 +16,7 @@ raw summaries: `h1_results_claude.json`, `h1_results_codex.json`
 | Zero-shot valid (schema) | **20/20** | **20/20** |
 | Zero-shot valid AND launching | 3/20 (15%) | 13/20 (65%) |
 | H1 target (>=80%) | not met | not met |
-| Mean validate calls | 1.0 | 2.0 |
+| Mean validate calls | 1.0 | 1.0 |
 | Pass@1 of launched graphs | 0.75–0.875 | 0.75–1.0 (median 0.875) |
 | Workspace violations / timeouts / infra errors in results | 0 / 0 / 0 | 0 / 0 / 0 |
 
@@ -81,16 +81,24 @@ perception choice.
   (claude-fable-5 vs gpt-5.6-sol), not matched checkpoints; the
   account rejects explicit legacy codex model pins (400), so the
   served model is pinned and recorded instead.
-- Mean validate calls differ structurally (codex's CLI pattern issued
-  a validate after writing the final graph; claude validated once) —
-  cycles are comparable within-arm, not across.
+- Codex validate telemetry was REPROCESSED from the raw session logs
+  after a parser fix (the runner counted codex `item.started` events as
+  calls, double-counting every validate as `[false, true]`; PR #33
+  review). Corrected: both arms averaged exactly 1 in-session validate
+  call per attempt. Scoring was never affected — zero-shot validity is
+  the scorer's own validate of the shim snapshot, not session telemetry.
 - Single scene family (T1), single embodiment (franka), oracle
   verifier only.
 
 ## Protocol integrity
 
 No workspace violations, no session timeouts, no runner errors in the
-recorded results. Three codex-path infra defects were found and fixed
+recorded results. Each results file records `runner_sha256` and the
+effective `session_spawn` config (stdin policy, confinement); for these
+arms the values are reconstructed post-hoc from the verified tree state
+during each run and labeled as such in a `provenance_note` — the runner
+now records them natively at run time. Three codex-path infra defects
+were found and fixed
 BEFORE any recorded codex attempt (stdin inheritance under detached
 launch; dead model pin; native-sandbox blocking the shim's snapshot
 write — all attributed as InfraError by design, records discarded, arm

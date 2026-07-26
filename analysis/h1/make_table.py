@@ -1,10 +1,12 @@
 """H1 table generator (design doc §8.2.4; Phase 1 DoD "H1 table produced").
 
-Reads runs/h1/h1_results_<agent>.json plus per-attempt records and emits
-analysis/h1/h1_table.md: the summary table per arm and the per-attempt
-mechanism classification feeding the composition-failure taxonomy.
-CON-8: JSON to stdout, logs to stderr, exit 0 iff every requested arm
-was found and rendered.
+Two-stage so a CLEAN CHECKOUT can regenerate the table (PR #33 review):
+when gitignored runs/h1/ data is present, per-attempt rows (including the
+mechanism read from each attempt's first_graph.yaml) are EXTRACTED into
+committed analysis/h1/h1_attempts_<agent>.json bundles; rendering always
+consumes the bundles. Without runs/ the committed bundles alone rebuild
+h1_table.md byte-identically.
+CON-8: JSON to stdout, logs to stderr, exit 0 iff every arm rendered.
 """
 
 from __future__ import annotations
@@ -41,7 +43,8 @@ def mechanism(graph_path: Path) -> str:
     return "other"
 
 
-def load_arm(root: Path, agent: str) -> dict | None:
+def extract_arm(root: Path, agent: str) -> dict | None:
+    """Bundle from raw runs/ data (gitignored); None when absent."""
     results = root / "runs" / "h1" / f"h1_results_{agent}.json"
     if not results.exists():
         return None
@@ -64,6 +67,21 @@ def load_arm(root: Path, agent: str) -> dict | None:
             }
         )
     return {"treatment": data["treatment"], "summary": data["summary"], "attempts": attempts}
+
+
+def bundle_path(root: Path, agent: str) -> Path:
+    return root / "analysis" / "h1" / f"h1_attempts_{agent}.json"
+
+
+def load_bundle(root: Path, agent: str) -> dict | None:
+    """Fresh extraction when runs/ exists (also refreshes the committed
+    bundle); otherwise the committed bundle."""
+    bundle = extract_arm(root, agent)
+    if bundle is not None:
+        bundle_path(root, agent).write_text(json.dumps(bundle, indent=1))
+        return bundle
+    committed = bundle_path(root, agent)
+    return json.loads(committed.read_text()) if committed.exists() else None
 
 
 def render(arms: dict[str, dict]) -> str:
@@ -103,10 +121,10 @@ def render(arms: dict[str, dict]) -> str:
 
 def main() -> int:
     root = Path(__file__).resolve().parents[2]
-    arms = {agent: arm for agent in ARMS if (arm := load_arm(root, agent)) is not None}
+    arms = {agent: arm for agent in ARMS if (arm := load_bundle(root, agent)) is not None}
     missing = [a for a in ARMS if a not in arms]
     if not arms:
-        print(json.dumps({"ok": False, "error": "no arm results found"}))
+        print(json.dumps({"ok": False, "error": "no arm data (runs/ or committed bundles)"}))
         return 1
     table = root / "analysis" / "h1" / "h1_table.md"
     table.write_text(render(arms))

@@ -23,7 +23,13 @@
   ],
   "episodes_per_attempt": 8,
   "sandbox": true,
-  "env_baseline": "local (protocol spend, not campaign spend; per-manifest logged)"
+  "env_baseline": "local (protocol spend, not campaign spend; per-manifest logged)",
+  "runner_sha256": "7a2f23672a241e7892161657a5d4761a51673b639f9f6fcb79c36e93a3b3c254",
+  "session_spawn": {
+   "stdin": "inherited (pre-fix runner; claude -p does not read stdin)",
+   "confinement": "sandbox-exec SBPL (deny file-write* outside allowlist)"
+  },
+  "provenance_note": "runner_sha256/session_spawn reconstructed post-hoc (PR #33 review P1): tree state during the arm == abd2e9d:tools/h1_protocol.py"
  },
  "records": [
   {
