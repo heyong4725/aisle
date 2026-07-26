@@ -54,7 +54,9 @@ GRAPH_REL = "graphs/agent_h1.yaml"
 SESSION_TIMEOUT_S = 1200.0  # the shared wall budget, both arms
 CLAUDE_MAX_TURNS = 50  # secondary safety, claude only (recorded limitation)
 ROLLOUT_EPISODES = 8  # pass@1 over 8 seeds per attempt (protocol choice)
-DEFAULT_MODELS = {"claude": "claude-fable-5", "codex": "gpt-5.2-codex"}
+# codex: gpt-5.2-codex is refused for ChatGPT-account auth (400); the
+# account's served model, verified by explicit-pin probe, is gpt-5.6-sol
+DEFAULT_MODELS = {"claude": "claude-fable-5", "codex": "gpt-5.6-sol"}
 
 TASK_PROMPT = f"""You are the RESEARCH agent for the AISLE experiment.
 Read harness/CLAUDE.research.md — it is your contract — and follow it.
@@ -445,6 +447,16 @@ def run_session(
     snap = install_first_graph_shim(wt, attempt_dir)
     graph_path = wt / GRAPH_REL
     cmd = agent_cmd(agent, model)
+    if agent == "codex":
+        # parity with the claude SBPL profile: the shim's snapshot target
+        # (attempt_dir) lies OUTSIDE the session workspace, and codex's
+        # native workspace-write sandbox blocks it unless declared — without
+        # this the shim silently captures nothing (take-3 attempt 0)
+        cmd = cmd[:-1] + [
+            "-c",
+            f'sandbox_workspace_write.writable_roots=["{attempt_dir}"]',
+            cmd[-1],
+        ]
     if sandbox and agent == "claude" and sys.platform == "darwin":
         cmd = sandbox_wrap(cmd, wt, scratch, attempt_dir, out)
     sandbox_profile = Path(cmd[2]) if cmd[:2] == ["sandbox-exec", "-f"] else None
@@ -456,6 +468,10 @@ def run_session(
             proc = subprocess.Popen(
                 cmd,
                 cwd=wt,
+                # codex exec reads stdin when it is not a TTY ("Reading
+                # additional input from stdin..." then rc=1 under nohup);
+                # the session must not depend on how the RUNNER was launched
+                stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=stderr,
                 text=True,

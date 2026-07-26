@@ -1,0 +1,721 @@
+{
+ "experiment": "H1 (design doc 8.2.4)",
+ "task": "T1",
+ "treatment": {
+  "commit": "abd2e9d358f2565b417893bab0b2daed30bf2b2a",
+  "agent": "claude",
+  "agent_cli_version": "2.1.214 (Claude Code)",
+  "model": "claude-fable-5",
+  "prompt_sha256": "ddfb8a5ff44ad78a380b69ada65c3c5a29489fb266782b0274e388cb91f6b4fb",
+  "session_wall_budget_s": 1200.0,
+  "claude_max_turns": 50,
+  "argv": [
+   "--model",
+   "claude-fable-5",
+   "--output-format",
+   "stream-json",
+   "--verbose",
+   "--max-turns",
+   "50",
+   "--allowedTools",
+   "Bash,Read,Write,Edit,Glob,Grep",
+   "--dangerously-skip-permissions"
+  ],
+  "episodes_per_attempt": 8,
+  "sandbox": true,
+  "env_baseline": "local (protocol spend, not campaign spend; per-manifest logged)"
+ },
+ "records": [
+  {
+   "agent": "claude",
+   "attempt": 0,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 143.2,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": true,
+    "launch_outcome": "launched",
+    "pass1": 0.875,
+    "failures": {
+     "collision": 1
+    },
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": true,
+    "launch_outcome": "launched",
+    "pass1": 0.875,
+    "failures": {
+     "collision": 1
+    },
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 1,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 149.2,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 2,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 164.9,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 3,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 141.5,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 4,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 137.9,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 5,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 200.4,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 6,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 115.9,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 7,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 175.9,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 8,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 139.8,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 9,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 148.5,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 10,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 148.5,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": true,
+    "launch_outcome": "launched",
+    "pass1": 0.875,
+    "failures": {
+     "collision": 1
+    },
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": true,
+    "launch_outcome": "launched",
+    "pass1": 0.875,
+    "failures": {
+     "collision": 1
+    },
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 11,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 134.1,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 12,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 121.2,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 13,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 133.8,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 14,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 108.2,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 15,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 80.4,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": true,
+    "launch_outcome": "launched",
+    "pass1": 0.75,
+    "failures": {
+     "dropped": 1,
+     "collision": 1
+    },
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": true,
+    "launch_outcome": "launched",
+    "pass1": 0.75,
+    "failures": {
+     "dropped": 1,
+     "collision": 1
+    },
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 16,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 142.7,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 17,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 128.8,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 18,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 114.4,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  },
+  {
+   "agent": "claude",
+   "attempt": 19,
+   "validate_calls": 1,
+   "validate_results": [
+    true
+   ],
+   "session_wall_s": 122.7,
+   "session_timed_out": false,
+   "session_rc": 0,
+   "first_graph_captured": true,
+   "first_graph_via_shim": true,
+   "final_graph_exists": true,
+   "workspace_violations": [],
+   "first_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "final_same_as_first": true,
+   "final_graph": {
+    "valid": true,
+    "launched": false,
+    "launch_outcome": "no_episodes",
+    "pass1": 0.0,
+    "failures": {},
+    "refused": null
+   },
+   "valid_first_try": true
+  }
+ ],
+ "summary": {
+  "attempts": 20,
+  "zero_shot_valid": 20,
+  "zero_shot_valid_and_launching": 3,
+  "zero_shot_rate": 0.15,
+  "h1_zero_shot_target_80pct": false,
+  "final_valid": 20,
+  "final_launched": 3,
+  "working_within_3_cycles": 3,
+  "mean_validate_calls": 1.0,
+  "mean_final_pass1": 0.125,
+  "attempts_with_workspace_violations": 0,
+  "sessions_timed_out": 0
+ },
+ "total_episodes_scored": 160,
+ "runner_errors": [],
+ "ok": true
+}
