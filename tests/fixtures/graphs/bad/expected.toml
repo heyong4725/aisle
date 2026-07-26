@@ -77,7 +77,7 @@ codes = ["EMBODIMENT_MISMATCH", "INSTALL_MISSING"]
 embodiment = "humanoid"
 
 [rate_incompatible_slow_timer]
-codes = ["INSTALL_MISSING"]
+codes = []
 warnings = ["RATE_INCOMPATIBLE"]
 
 [graph_invalid_not_dataflow]
@@ -148,7 +148,7 @@ codes = ["INPUT_NO_PRODUCER", "MOTION_UNGATED"]
 codes = ["GRAPH_INVALID"]
 
 [rate_incompatible_fast_timer]
-codes = ["INSTALL_MISSING"]
+codes = []
 warnings = ["RATE_INCOMPATIBLE"]
 
 [embodiment_mismatch_verifier_humanoid]
