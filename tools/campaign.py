@@ -1,0 +1,453 @@
+"""Single-scenario research campaign runner (ADR-h2-campaign-protocol;
+design doc §8.3 item 6, hypothesis H2).
+
+One pinned worktree + one research session under harness/CLAUDE.research.md.
+Rollouts happen INSIDE the session through the trusted gate (frozen set,
+idea gate, episode/wall ledger — all harness-enforced); this runner
+enforces only what the harness cannot: the token ceiling (from the agent
+CLI's own stream telemetry, HAR-5) and the campaign wall ceiling. After
+the session it audits the frozen paths, scores the deliverable graph on
+HELD-OUT seeds in the session worktree, and computes the H2 metrics from
+the artifacts the harness already wrote. CON-8: JSON to stdout, logs to
+stderr, exit 0 iff the campaign record was written.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+import tomllib
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from env_hash import FROZEN_DIRS, FROZEN_FILES  # noqa: E402
+from h1_protocol import DEFAULT_MODELS, InfraError, make_worktree  # noqa: E402
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DELIVERABLE = "graphs/agent_campaign.yaml"
+HOLDOUT_EPISODES = 8
+POLL_S = 5.0
+
+
+# ---------------------------------------------------------------- telemetry
+
+
+def parse_usage_claude(lines: list[str]) -> int:
+    """Cumulative token spend from claude stream-json: every assistant
+    message's input+output tokens (HAR-5: the CLI's own accounting)."""
+    total = 0
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") != "assistant":
+            continue
+        usage = (event.get("message") or {}).get("usage") or {}
+        total += int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
+    return total
+
+
+def parse_usage_codex(lines: list[str]) -> int:
+    """Cumulative token spend from codex --json: turn.completed usage
+    only (item.started duplicates never carry usage — PR #33 lesson)."""
+    total = 0
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("type") != "turn.completed":
+            continue
+        usage = event.get("usage") or {}
+        total += int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
+    return total
+
+
+PARSE_USAGE = {"claude": parse_usage_claude, "codex": parse_usage_codex}
+
+
+def budget_stop(
+    tokens: int, token_ceiling: int, wall_s: float, wall_ceiling_s: float
+) -> str | None:
+    """The runner-enforced ceilings (ADR-h2 point 3); None = keep going."""
+    if tokens >= token_ceiling:
+        return "token_budget"
+    if wall_s >= wall_ceiling_s:
+        return "wall_budget"
+    return None
+
+
+# ---------------------------------------------------------------- protocol
+
+
+def _parse_seeds(spec: str) -> set[int]:
+    if ".." in spec:
+        a, b = spec.split("..", 1)
+        return set(range(int(a), int(b) + 1))
+    return {int(s) for s in spec.split(",")}
+
+
+def validate_seed_ranges(dev: str, holdout: str) -> str | None:
+    """ADR-h2 point 4: held-out seeds MUST be disjoint from the dev range
+    the agent may roll; overlap refuses the campaign."""
+    overlap = _parse_seeds(dev) & _parse_seeds(holdout)
+    if overlap:
+        return f"dev and holdout seed ranges must be disjoint; both contain {sorted(overlap)[:5]}"
+    return None
+
+
+def campaign_prompt(tier: str, token_ceiling: int, wall_h: float, dev_seeds: str) -> str:
+    return f"""You are the RESEARCH agent for an AISLE {tier} campaign.
+
+Read harness/CLAUDE.research.md FIRST — it is your entire contract
+(goal, hard rules, the copy-paste tool loop, failure taxonomy).
+
+Campaign parameters:
+- Tier: {tier}. Development seeds: {dev_seeds} (held-out scoring seeds are
+  withheld from you).
+- Budgets: {token_ceiling:,} tokens and {wall_h:g} h wall for this campaign;
+  episode and wall ceilings are also enforced by the harness ledger.
+- Your deliverable is {DELIVERABLE}: keep it pointed at your current best
+  system at ALL times — it is scored on held-out seeds after your session
+  ends, exactly as `harness rollout` would run it.
+
+Iterate: compose, validate, log the idea, roll out, read traces, close the
+idea, improve. Maximize verified success within budget; remember the 10x
+wrong-medicine penalty."""
+
+
+def campaign_treatment(
+    agent: str, model: str, oid: str, dev_seeds: str, holdout_seeds: str
+) -> dict:
+    version = subprocess.run(
+        [agent, "--version"], capture_output=True, text=True, timeout=30
+    ).stdout.strip()
+    prompt = campaign_prompt("T1", 0, 0.0, dev_seeds)  # sha over the TEMPLATE shape
+    return {
+        "commit": oid,
+        "agent": agent,
+        "agent_cli_version": version,
+        "model": model,
+        "prompt_template_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+        "dev_seeds": dev_seeds,
+        "holdout_seeds": holdout_seeds,
+        "holdout_episodes": HOLDOUT_EPISODES,
+        "claude_max_turns": None,  # campaigns are long-form (ADR-h2 point 1)
+        "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "session_spawn": {
+            "stdin": "devnull",
+            "confinement": "none (ADR-h2 point 5)",
+        },
+    }
+
+
+TREATMENT_IDENTITY = ("commit", "agent", "model", "dev_seeds", "holdout_seeds")
+
+
+def agent_cmd_campaign(agent: str, model: str, prompt: str) -> list[str]:
+    if agent == "claude":
+        return [
+            "claude",
+            "-p",
+            prompt,
+            "--model",
+            model,
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--dangerously-skip-permissions",
+        ]
+    return [
+        "codex",
+        "exec",
+        "--json",
+        "--model",
+        model,
+        "--skip-git-repo-check",
+        "--ignore-user-config",
+        # parity with the claude arm's v1 no-sandbox decision (ADR-h2 p5)
+        "--sandbox",
+        "danger-full-access",
+        "-c",
+        "approval_policy=never",
+        prompt,
+    ]
+
+
+# ---------------------------------------------------------------- artifacts
+
+
+def audit_frozen(wt: Path, oid: str) -> list[str]:
+    """ADR-h2 point 5: diff the frozen paths in the worktree against the
+    pinned OID; any drifted path is reported (the gate would have refused
+    rollouts under drift, but the audit makes tampering visible even
+    without a rollout)."""
+    paths = [*FROZEN_DIRS, *FROZEN_FILES]
+    diff = subprocess.run(
+        ["git", "diff", "--name-only", oid, "--", *paths],
+        cwd=wt,
+        capture_output=True,
+        text=True,
+    )
+    return [line for line in diff.stdout.splitlines() if line.strip()]
+
+
+def campaign_metrics(wt: Path, session_t0: float) -> dict:
+    """ADR-h2 point 7, from harness-written artifacts only: chronological
+    pass1 trajectory, wall time to the first verified success, wrong_object
+    total (H5), episode totals."""
+    rollouts = []
+    first_success: float | None = None
+    wrong_object = 0
+    episodes_total = 0
+    for manifest_path in sorted((wt / "runs").glob("*/manifest.json")):
+        episodes_path = manifest_path.parent / "episodes.jsonl"
+        if not episodes_path.exists():
+            continue
+        episodes = [
+            json.loads(line) for line in episodes_path.read_text().splitlines() if line.strip()
+        ]
+        mtime = episodes_path.stat().st_mtime
+        successes = sum(1 for e in episodes if e.get("status") == "success")
+        wrong_object += sum(1 for e in episodes if e.get("failure") == "wrong_object")
+        episodes_total += len(episodes)
+        if successes and (first_success is None or mtime < first_success):
+            first_success = mtime
+        rollouts.append(
+            {
+                "run_id": json.loads(manifest_path.read_text()).get("run_id"),
+                "mtime": mtime,
+                "episodes": len(episodes),
+                "pass1": round(successes / len(episodes), 3) if episodes else 0.0,
+            }
+        )
+    rollouts.sort(key=lambda r: r["mtime"])
+    return {
+        "rollouts": rollouts,
+        "episodes_total": episodes_total,
+        "wrong_object_total": wrong_object,
+        "first_success_wall_s": (
+            round(first_success - session_t0, 1) if first_success is not None else None
+        ),
+    }
+
+
+# ---------------------------------------------------------------- the run
+
+
+def _default_budgets(root: Path) -> tuple[int, float]:
+    with open(root / "harness" / "budget.toml", "rb") as f:
+        campaign = tomllib.load(f)["campaign"]
+    return int(campaign["tokens"]), float(campaign["wall_h"])
+
+
+def run_session(agent: str, cmd: list[str], wt: Path, out: Path, ceilings: dict) -> dict:
+    """Spawn the session, poll its stream for token spend, kill the process
+    group at a ceiling. Returns the session record."""
+    log_path = out / "session.jsonl"
+    stderr_path = out / "session.stderr"
+    samples_path = out / "token_samples.jsonl"
+    t0 = time.monotonic()
+    stopped = "agent_done"
+    with open(log_path, "w") as log, open(stderr_path, "w") as err:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=wt,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=err,
+            text=True,
+            start_new_session=True,
+        )
+        tokens = 0
+        with open(samples_path, "a") as samples:
+            while proc.poll() is None:
+                time.sleep(POLL_S)
+                tokens = PARSE_USAGE[agent](log_path.read_text().splitlines())
+                wall_s = time.monotonic() - t0
+                samples.write(json.dumps({"wall_s": round(wall_s, 1), "tokens": tokens}) + "\n")
+                samples.flush()
+                reason = budget_stop(
+                    ceilings["prior_tokens"] + tokens,
+                    ceilings["token_ceiling"],
+                    ceilings["prior_wall_s"] + wall_s,
+                    ceilings["wall_ceiling_s"],
+                )
+                if reason:
+                    stopped = reason
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    proc.wait(timeout=30)
+                    break
+        rc = proc.wait()
+    tokens = PARSE_USAGE[agent](log_path.read_text().splitlines())
+    if stopped == "agent_done" and rc != 0:
+        raise InfraError(f"{agent} CLI exited rc={rc} (not an agent outcome)")
+    return {
+        "stopped": stopped,
+        "rc": rc,
+        "tokens": tokens,
+        "wall_s": round(time.monotonic() - t0, 1),
+    }
+
+
+def score_holdout(wt: Path, holdout_seeds: str, session_index: int) -> dict:
+    """ADR-h2 point 4: the deliverable graph on held-out seeds, run by the
+    RUNNER in the session worktree through the standard pipeline."""
+    if not (wt / DELIVERABLE).exists():
+        return {"ok": False, "error": f"no deliverable at {DELIVERABLE}"}
+    cmd = [
+        "uv",
+        "run",
+        "harness",
+        "rollout",
+        "--graph",
+        DELIVERABLE,
+        "--tier",
+        "T1",
+        "--episodes",
+        str(HOLDOUT_EPISODES),
+        "--seeds",
+        holdout_seeds,
+        "--run-id",
+        f"campaign-holdout-{session_index:02d}",
+        # protocol spend, not agent spend: the logged local baseline (the
+        # worktree IS the pinned commit) and no idea gate (runner machinery)
+        "--env-baseline",
+        "local",
+        "--no-idea-gate",
+    ]
+    proc = subprocess.run(cmd, cwd=wt, capture_output=True, text=True, timeout=3600)
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {"ok": False, "error": f"holdout scoring produced no JSON (rc={proc.returncode})"}
+
+
+def load_existing(out: Path, current: dict) -> dict | None:
+    record_path = out / "campaign.json"
+    if not record_path.exists():
+        return None
+    existing = json.loads(record_path.read_text())
+    prior = existing.get("treatment") or {}
+    for key in TREATMENT_IDENTITY:
+        if prior.get(key) != current.get(key):
+            raise SystemExit(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": f"resume treatment mismatch on {key!r}: "
+                        f"existing={prior.get(key)!r} current={current.get(key)!r}",
+                    }
+                )
+            )
+    return existing
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--agent", choices=("claude", "codex"), default="claude")
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--tier", default="T1", choices=("T1",))  # T2 needs L2 (ADR-h2 p1)
+    parser.add_argument("--out", type=Path, default=REPO_ROOT / "runs" / "h2")
+    parser.add_argument("--budget-tokens", type=int, default=None)
+    parser.add_argument("--wall-h", type=float, default=None)
+    parser.add_argument("--dev-seeds", default="0..49")
+    parser.add_argument("--holdout-seeds", default="100..107")
+    parser.add_argument("--keep-worktree", action="store_true")
+    args = parser.parse_args()
+
+    error = validate_seed_ranges(args.dev_seeds, args.holdout_seeds)
+    if error:
+        print(json.dumps({"ok": False, "error": error}))
+        return 1
+    model = args.model or DEFAULT_MODELS[args.agent]
+    default_tokens, default_wall = _default_budgets(REPO_ROOT)
+    token_ceiling = args.budget_tokens or default_tokens
+    wall_h = args.wall_h or default_wall
+
+    args.out = args.out.resolve()
+    args.out.mkdir(parents=True, exist_ok=True)
+    oid = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True
+    ).stdout.strip()
+    treatment = campaign_treatment(args.agent, model, oid, args.dev_seeds, args.holdout_seeds)
+    treatment["token_ceiling"] = token_ceiling
+    treatment["wall_ceiling_h"] = wall_h
+    existing = load_existing(args.out, treatment)
+    sessions = (existing or {}).get("sessions", [])
+    prior_tokens = sum(s["tokens"] for s in sessions)
+    prior_wall_s = sum(s["wall_s"] for s in sessions)
+
+    wt = args.out / "worktree"
+    if not wt.exists():
+        print(f"[h2] creating worktree at {oid[:8]}", file=sys.stderr)
+        make_worktree(oid, wt)
+    session_index = len(sessions)
+    prompt = campaign_prompt(args.tier, token_ceiling, wall_h, args.dev_seeds)
+    cmd = agent_cmd_campaign(args.agent, model, prompt)
+    session_dir = args.out / f"session_{session_index:02d}"
+    session_dir.mkdir(exist_ok=True)
+    print(f"[h2] session {session_index} starting ({args.agent}/{model})", file=sys.stderr)
+    t0_epoch = time.time()
+    session = run_session(
+        args.agent,
+        cmd,
+        wt,
+        session_dir,
+        {
+            "prior_tokens": prior_tokens,
+            "prior_wall_s": prior_wall_s,
+            "token_ceiling": token_ceiling,
+            "wall_ceiling_s": wall_h * 3600.0,
+        },
+    )
+    session["t0_epoch"] = t0_epoch
+    sessions.append(session)
+
+    drift = audit_frozen(wt, oid)
+    holdout = score_holdout(wt, args.holdout_seeds, session_index)
+    metrics = campaign_metrics(wt, session_t0=sessions[0]["t0_epoch"])
+    record = {
+        "ok": not drift,
+        "treatment": treatment,
+        "sessions": sessions,
+        "tokens_spent": prior_tokens + session["tokens"],
+        "wall_spent_s": round(prior_wall_s + session["wall_s"], 1),
+        "frozen_drift": drift,
+        "holdout": {
+            k: holdout.get(k) for k in ("ok", "error", "pass1", "pass8", "failures", "run_id")
+        },
+        "metrics": metrics,
+    }
+    (args.out / "campaign.json").write_text(json.dumps(record, indent=1))
+    print(
+        json.dumps(
+            {
+                "ok": record["ok"],
+                "record": str(args.out / "campaign.json"),
+                **{
+                    "stopped": session["stopped"],
+                    "tokens_spent": record["tokens_spent"],
+                    "holdout_pass1": record["holdout"].get("pass1"),
+                    "first_success_wall_s": metrics["first_success_wall_s"],
+                    "wrong_object_total": metrics["wrong_object_total"],
+                    "frozen_drift": drift,
+                },
+            }
+        )
+    )
+    return 0 if record["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
