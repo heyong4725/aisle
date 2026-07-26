@@ -78,6 +78,9 @@ same runner is the per-scenario core the H3 orchestrator
   session (ceiling can never fire); face-value-with-cache-reads read
   5.49M for 18 minutes (the whole 5M budget buys one session).
   New-tokens-only read 202k — the 5M ceiling ≈ 25 such sessions,
-  matching the design-era budget intent.
+  matching the design-era budget intent. Corollary (PR #41 review): a
+  cache-read-heavy or idle session accrues ~0 new tokens, so for such
+  workloads the WALL ceiling is the operative limiter, not the token
+  ceiling — that is the accepted trade of this rule.
 - codex sessions get `--sandbox danger-full-access` for parity with
   point 5; both arms' confinement is recorded in `session_spawn`.
