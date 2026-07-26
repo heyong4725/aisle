@@ -126,9 +126,14 @@ wrong-medicine penalty."""
 def campaign_treatment(
     agent: str, model: str, oid: str, dev_seeds: str, holdout_seeds: str
 ) -> dict:
-    version = subprocess.run(
-        [agent, "--version"], capture_output=True, text=True, timeout=30
-    ).stdout.strip()
+    try:
+        version = subprocess.run(
+            [agent, "--version"], capture_output=True, text=True, timeout=30
+        ).stdout.strip()
+    except FileNotFoundError:
+        # CLI absent (e.g. CI): treatment stays constructible — a real
+        # campaign fails at spawn with a proper InfraError instead
+        version = "not-installed"
     prompt = campaign_prompt("T1", 0, 0.0, dev_seeds)  # sha over the TEMPLATE shape
     return {
         "commit": oid,
