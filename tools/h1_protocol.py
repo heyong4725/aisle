@@ -54,7 +54,9 @@ GRAPH_REL = "graphs/agent_h1.yaml"
 SESSION_TIMEOUT_S = 1200.0  # the shared wall budget, both arms
 CLAUDE_MAX_TURNS = 50  # secondary safety, claude only (recorded limitation)
 ROLLOUT_EPISODES = 8  # pass@1 over 8 seeds per attempt (protocol choice)
-DEFAULT_MODELS = {"claude": "claude-fable-5", "codex": "gpt-5.2-codex"}
+# codex: gpt-5.2-codex is refused for ChatGPT-account auth (400); the
+# account's served model, verified by explicit-pin probe, is gpt-5.6-sol
+DEFAULT_MODELS = {"claude": "claude-fable-5", "codex": "gpt-5.6-sol"}
 
 TASK_PROMPT = f"""You are the RESEARCH agent for the AISLE experiment.
 Read harness/CLAUDE.research.md — it is your contract — and follow it.
@@ -112,6 +114,10 @@ def parse_codex_events(lines: list[str]) -> dict:
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
+            continue
+        # item.started carries the SAME item without output — counting it
+        # double-counted every call as [False, True] (PR #33 review P1)
+        if event.get("type") != "item.completed":
             continue
         item = event.get("item") or {}
         if item.get("type") != "command_execution":
@@ -445,6 +451,16 @@ def run_session(
     snap = install_first_graph_shim(wt, attempt_dir)
     graph_path = wt / GRAPH_REL
     cmd = agent_cmd(agent, model)
+    if agent == "codex":
+        # parity with the claude SBPL profile: the shim's snapshot target
+        # (attempt_dir) lies OUTSIDE the session workspace, and codex's
+        # native workspace-write sandbox blocks it unless declared — without
+        # this the shim silently captures nothing (take-3 attempt 0)
+        cmd = cmd[:-1] + [
+            "-c",
+            f'sandbox_workspace_write.writable_roots=["{attempt_dir}"]',
+            cmd[-1],
+        ]
     if sandbox and agent == "claude" and sys.platform == "darwin":
         cmd = sandbox_wrap(cmd, wt, scratch, attempt_dir, out)
     sandbox_profile = Path(cmd[2]) if cmd[:2] == ["sandbox-exec", "-f"] else None
@@ -456,6 +472,10 @@ def run_session(
             proc = subprocess.Popen(
                 cmd,
                 cwd=wt,
+                # codex exec reads stdin when it is not a TTY ("Reading
+                # additional input from stdin..." then rc=1 under nohup);
+                # the session must not depend on how the RUNNER was launched
+                stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=stderr,
                 text=True,
@@ -635,6 +655,20 @@ def treatment(agent: str, model: str, oid: str, sandbox: bool = True) -> dict:
         "argv": agent_cmd(agent, model)[:-1] if agent == "codex" else agent_cmd(agent, model)[3:],
         "episodes_per_attempt": ROLLOUT_EPISODES,
         "sandbox": sandbox,
+        # PR #33 review P1: pin the RUNNER code that produced the results
+        # and the effective session-spawn config that never appears in argv
+        "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "session_spawn": {
+            "stdin": "devnull",
+            "confinement": (
+                "codex native --sandbox workspace-write"
+                " + sandbox_workspace_write.writable_roots=[<attempt_dir>]"
+                if agent == "codex"
+                else "sandbox-exec SBPL (deny file-write* outside allowlist)"
+                if sandbox and sys.platform == "darwin"
+                else "none"
+            ),
+        },
         "env_baseline": "local (protocol spend, not campaign spend; per-manifest logged)",
     }
 

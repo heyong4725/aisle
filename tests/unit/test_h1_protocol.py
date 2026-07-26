@@ -140,6 +140,29 @@ def test_codex_parser_reads_command_execution_items():
     assert t["validate_results"] == [False, True]
 
 
+def test_codex_parser_ignores_item_started_duplicates():
+    """PR #33 review P1: codex emits item.started AND item.completed for
+    the SAME command_execution item; counting both double-counted every
+    validate call as [False, True] (the started event has no output yet).
+    Only item.completed is telemetry."""
+    item = {
+        "type": "command_execution",
+        "command": "uv run harness validate graphs/agent_h1.yaml",
+    }
+    lines = [
+        json.dumps({"type": "item.started", "item": dict(item)}),
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {**item, "aggregated_output": '{"ok": true}', "exit_code": 0},
+            }
+        ),
+    ]
+    t = parse_codex_events(lines)
+    assert t["validate_calls"] == 1
+    assert t["validate_results"] == [True]
+
+
 def test_codex_parser_falls_back_to_exit_code():
     lines = [
         json.dumps(
