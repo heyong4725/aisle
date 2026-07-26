@@ -25,14 +25,26 @@ from campaign import (  # noqa: E402
 pytestmark = pytest.mark.unit
 
 
-def test_claude_usage_accumulates_per_assistant_message():
-    """ADR-h2 point 3 (HAR-5): the token ceiling is enforced from the
-    CLI's own stream telemetry — every assistant message's input+output
-    tokens count as spend."""
+def test_claude_usage_counts_new_tokens_only():
+    """ADR-h2 point 3 (HAR-5, dry-run decision): spend = NEW tokens only
+    (input + cache_creation + output, cache re-reads excluded). Counting
+    only `input_tokens` read 856 for a 91-message session; counting
+    cache reads read 5.49M for 18 minutes — either extreme breaks the
+    5M budget's design-era meaning."""
     lines = [
         json.dumps({"type": "system", "subtype": "init"}),
         json.dumps(
-            {"type": "assistant", "message": {"usage": {"input_tokens": 100, "output_tokens": 7}}}
+            {
+                "type": "assistant",
+                "message": {
+                    "usage": {
+                        "input_tokens": 2,
+                        "cache_creation_input_tokens": 16670,
+                        "cache_read_input_tokens": 15105,
+                        "output_tokens": 7,
+                    }
+                },
+            }
         ),
         json.dumps({"type": "user", "message": {"content": "tool result"}}),
         json.dumps(
@@ -40,21 +52,26 @@ def test_claude_usage_accumulates_per_assistant_message():
         ),
         "not json",
     ]
-    assert parse_usage_claude(lines) == 100 + 7 + 230 + 11
+    assert parse_usage_claude(lines) == (2 + 16670 + 7) + (230 + 11)  # cache reads excluded
 
 
 def test_codex_usage_accumulates_per_completed_turn():
     """Codex telemetry: turn.completed events carry the turn's usage;
     item.started duplicates must not double-count (the PR #33 parser
     lesson applies here too)."""
-    turn = {"type": "turn.completed", "usage": {"input_tokens": 500, "output_tokens": 20}}
+    turn = {
+        "type": "turn.completed",
+        "usage": {"input_tokens": 500, "cached_input_tokens": 300, "output_tokens": 20},
+    }
     lines = [
         json.dumps({"type": "turn.started"}),
         json.dumps(turn),
         json.dumps({"type": "item.completed", "item": {"type": "agent_message"}}),
         json.dumps({"type": "turn.completed", "usage": {"input_tokens": 800, "output_tokens": 5}}),
     ]
-    assert parse_usage_codex(lines) == 500 + 20 + 800 + 5
+    # codex's input_tokens INCLUDES the cached slice: new input = input
+    # minus cached, mirroring the claude new-tokens-only rule
+    assert parse_usage_codex(lines) == (500 - 300) + 20 + 800 + 5
 
 
 def test_budget_stop_reasons():

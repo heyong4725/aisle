@@ -39,8 +39,13 @@ POLL_S = 5.0
 
 
 def parse_usage_claude(lines: list[str]) -> int:
-    """Cumulative token spend from claude stream-json: every assistant
-    message's input+output tokens (HAR-5: the CLI's own accounting)."""
+    """Cumulative NEW-token spend from claude stream-json (HAR-5, budget
+    semantics decided at the dry run): input + cache_creation + output,
+    EXCLUDING cache re-reads — each token counts once when first
+    processed ("unique context throughput"). Counting only `input_tokens`
+    read 856 for a 91-message session (it is just the uncached slice);
+    counting cache reads too read 5.49M for 18 minutes — either extreme
+    breaks the 5M budget's design-era meaning."""
     total = 0
     for line in lines:
         try:
@@ -50,7 +55,11 @@ def parse_usage_claude(lines: list[str]) -> int:
         if event.get("type") != "assistant":
             continue
         usage = (event.get("message") or {}).get("usage") or {}
-        total += int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
+        total += (
+            int(usage.get("input_tokens") or 0)
+            + int(usage.get("cache_creation_input_tokens") or 0)
+            + int(usage.get("output_tokens") or 0)
+        )
     return total
 
 
@@ -66,7 +75,10 @@ def parse_usage_codex(lines: list[str]) -> int:
         if event.get("type") != "turn.completed":
             continue
         usage = event.get("usage") or {}
-        total += int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
+        # NEW tokens only, mirroring the claude rule: codex input_tokens
+        # INCLUDES the cached slice, so new input = input - cached
+        new_input = int(usage.get("input_tokens") or 0) - int(usage.get("cached_input_tokens") or 0)
+        total += max(0, new_input) + int(usage.get("output_tokens") or 0)
     return total
 
 

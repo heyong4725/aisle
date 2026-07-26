@@ -70,5 +70,14 @@ same runner is the per-scenario core the H3 orchestrator
   unattended fleet mode (§8.4 item 3).
 - Token counting reads the vendor CLI's self-reported usage events;
   HAR-5 already treats token accounting as external/best-effort.
+  **Budget semantics (decided at the dry run, human choice): NEW tokens
+  only** — each token counts once when first processed (claude: input +
+  cache_creation + output, cache re-reads excluded; codex: input minus
+  cached_input, plus output). The dry run showed the alternatives are
+  both absurd: uncached-input-only read 856 tokens for a 91-message
+  session (ceiling can never fire); face-value-with-cache-reads read
+  5.49M for 18 minutes (the whole 5M budget buys one session).
+  New-tokens-only read 202k — the 5M ceiling ≈ 25 such sessions,
+  matching the design-era budget intent.
 - codex sessions get `--sandbox danger-full-access` for parity with
   point 5; both arms' confinement is recorded in `session_spawn`.
