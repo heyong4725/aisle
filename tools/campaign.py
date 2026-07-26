@@ -38,9 +38,22 @@ POLL_S = 5.0
 # ---------------------------------------------------------------- telemetry
 
 
+def _tok(usage: dict, field: str) -> int:
+    """A usage component as a non-negative int; malformed or negative
+    vendor values count 0 instead of crashing the runner mid-session or
+    REDUCING cumulative spend (PR #41 review)."""
+    try:
+        return max(0, int(usage.get(field) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def parse_usage_claude(lines: list[str]) -> int:
-    """Cumulative token spend from claude stream-json: every assistant
-    message's input+output tokens (HAR-5: the CLI's own accounting)."""
+    """Cumulative NEW-token spend from claude stream-json (HAR-5, budget
+    semantics decided at the dry run — numbers in ADR-h2 limitations):
+    input + cache_creation + output, EXCLUDING cache re-reads — each
+    token counts once when first processed ("unique context
+    throughput")."""
     total = 0
     for line in lines:
         try:
@@ -50,13 +63,19 @@ def parse_usage_claude(lines: list[str]) -> int:
         if event.get("type") != "assistant":
             continue
         usage = (event.get("message") or {}).get("usage") or {}
-        total += int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
+        total += (
+            _tok(usage, "input_tokens")
+            + _tok(usage, "cache_creation_input_tokens")
+            + _tok(usage, "output_tokens")
+        )
     return total
 
 
 def parse_usage_codex(lines: list[str]) -> int:
-    """Cumulative token spend from codex --json: turn.completed usage
-    only (item.started duplicates never carry usage — PR #33 lesson)."""
+    """Cumulative NEW-token spend from codex --json, mirroring the claude
+    rule: codex `input_tokens` INCLUDES the cached slice, so new input =
+    input - cached, plus output. turn.completed events only (item.started
+    duplicates never carry usage — PR #33 lesson)."""
     total = 0
     for line in lines:
         try:
@@ -66,7 +85,12 @@ def parse_usage_codex(lines: list[str]) -> int:
         if event.get("type") != "turn.completed":
             continue
         usage = event.get("usage") or {}
-        total += int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
+        new_input = _tok(usage, "input_tokens") - _tok(usage, "cached_input_tokens")
+        if new_input < 0:
+            # cached > input means the vendor's accounting scales diverged;
+            # clamping silently would systematically undercount (PR #41)
+            print(f"[h2] WARNING codex usage anomaly: new_input={new_input}", file=sys.stderr)
+        total += max(0, new_input) + _tok(usage, "output_tokens")
     return total
 
 
@@ -130,9 +154,9 @@ def campaign_treatment(
         version = subprocess.run(
             [agent, "--version"], capture_output=True, text=True, timeout=30
         ).stdout.strip()
-    except FileNotFoundError:
-        # CLI absent (e.g. CI): treatment stays constructible — a real
-        # campaign fails at spawn with a proper InfraError instead
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        # CLI absent or hung (e.g. CI): treatment stays constructible — a
+        # real campaign fails at spawn with a proper InfraError instead
         version = "not-installed"
     prompt = campaign_prompt("T1", 0, 0.0, dev_seeds)  # sha over the TEMPLATE shape
     return {

@@ -25,36 +25,72 @@ from campaign import (  # noqa: E402
 pytestmark = pytest.mark.unit
 
 
-def test_claude_usage_accumulates_per_assistant_message():
-    """ADR-h2 point 3 (HAR-5): the token ceiling is enforced from the
-    CLI's own stream telemetry — every assistant message's input+output
-    tokens count as spend."""
+def test_claude_usage_counts_new_tokens_only():
+    """ADR-h2 point 3 (HAR-5, dry-run decision): spend = NEW tokens only
+    (input + cache_creation + output, cache re-reads excluded). Counting
+    only `input_tokens` read 856 for a 91-message session; counting
+    cache reads read 5.49M for 18 minutes — either extreme breaks the
+    5M budget's design-era meaning."""
     lines = [
         json.dumps({"type": "system", "subtype": "init"}),
         json.dumps(
-            {"type": "assistant", "message": {"usage": {"input_tokens": 100, "output_tokens": 7}}}
+            {
+                "type": "assistant",
+                "message": {
+                    "usage": {
+                        "input_tokens": 2,
+                        "cache_creation_input_tokens": 16670,
+                        "cache_read_input_tokens": 15105,
+                        "output_tokens": 7,
+                    }
+                },
+            }
         ),
         json.dumps({"type": "user", "message": {"content": "tool result"}}),
         json.dumps(
             {"type": "assistant", "message": {"usage": {"input_tokens": 230, "output_tokens": 11}}}
         ),
+        json.dumps({"type": "assistant"}),  # no message/usage: skipped
+        json.dumps({"type": "assistant", "message": {"usage": None}}),
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {"usage": {"input_tokens": "junk", "output_tokens": -5}},
+            }
+        ),  # malformed and negative components count 0, never crash/reduce
         "not json",
     ]
-    assert parse_usage_claude(lines) == 100 + 7 + 230 + 11
+    assert parse_usage_claude(lines) == (2 + 16670 + 7) + (230 + 11)  # cache reads excluded
 
 
-def test_codex_usage_accumulates_per_completed_turn():
-    """Codex telemetry: turn.completed events carry the turn's usage;
-    item.started duplicates must not double-count (the PR #33 parser
-    lesson applies here too)."""
-    turn = {"type": "turn.completed", "usage": {"input_tokens": 500, "output_tokens": 20}}
+def test_codex_usage_counts_new_tokens_only_per_completed_turn():
+    """Codex new-tokens-only: input INCLUDES the cached slice, so new
+    input = input - cached, plus output; turn.completed events only
+    (item.started duplicates never carry usage, PR #33); the anomalous
+    cached > input case clamps to output-only instead of going NEGATIVE
+    and offsetting real spend (PR #41 review); malformed lines and
+    usage-less events are skipped."""
     lines = [
         json.dumps({"type": "turn.started"}),
-        json.dumps(turn),
+        json.dumps(
+            {
+                "type": "turn.completed",
+                "usage": {"input_tokens": 500, "cached_input_tokens": 300, "output_tokens": 20},
+            }
+        ),
         json.dumps({"type": "item.completed", "item": {"type": "agent_message"}}),
         json.dumps({"type": "turn.completed", "usage": {"input_tokens": 800, "output_tokens": 5}}),
+        # cached > input: contributes only its output, never a negative
+        json.dumps(
+            {
+                "type": "turn.completed",
+                "usage": {"input_tokens": 100, "cached_input_tokens": 250, "output_tokens": 10},
+            }
+        ),
+        json.dumps({"type": "turn.completed"}),  # no usage at all
+        "not json",
     ]
-    assert parse_usage_codex(lines) == 500 + 20 + 800 + 5
+    assert parse_usage_codex(lines) == ((500 - 300) + 20) + (800 + 5) + 10
 
 
 def test_budget_stop_reasons():
@@ -93,6 +129,7 @@ def test_campaign_treatment_pins_seed_ranges_and_unsandboxed_spawn():
     no-sandbox decision; there is no claude turn cap (campaigns are
     long-form)."""
     t = campaign_treatment("claude", "claude-fable-5", "a" * 40, "0..49", "100..107")
+    assert t["agent_cli_version"]  # probed or "not-installed", never empty
     assert t["dev_seeds"] == "0..49" and t["holdout_seeds"] == "100..107"
     assert t["session_spawn"]["confinement"] == "none (ADR-h2 point 5)"
     assert t.get("claude_max_turns") is None
@@ -172,3 +209,11 @@ def test_audit_frozen_detects_drift(tmp_path):
     (frozen / "oracle.py").write_text("tampered\n")
     drift = audit_frozen(repo, oid)
     assert drift and "src/aisle/verifier/oracle.py" in drift[0]
+
+
+def test_campaign_treatment_survives_absent_cli():
+    """PR #41 review: the version probe must not require the agent CLI
+    (CI has none) — an absent binary records "not-installed" and a real
+    campaign fails later at spawn with a proper InfraError."""
+    t = campaign_treatment("definitely-not-a-cli", "m", "b" * 40, "0..9", "20..27")
+    assert t["agent_cli_version"] == "not-installed"
