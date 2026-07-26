@@ -177,6 +177,25 @@ def load_graph(path: Path) -> tuple[list | None, list[dict]]:
     return nodes, []
 
 
+def _pip_installed(dist: str) -> bool:
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        version(dist)
+    except PackageNotFoundError:
+        return False
+    return True
+
+
+def _manifest_launchable(manifest: dict) -> bool:
+    """A candidate INSTALL_MISSING alternative must itself be launchable:
+    either a source-tree node or an INSTALLED pip distribution."""
+    source = manifest.get("source")
+    if isinstance(source, str) and source.startswith("pip:"):
+        return _pip_installed(source.removeprefix("pip:"))
+    return True
+
+
 def validate_nodes(
     nodes: list[dict],
     manifests: dict[str, dict],
@@ -234,6 +253,38 @@ def validate_nodes(
                         )
                     )
             continue
+        # VAL-2 INSTALL_MISSING (H1-discovered): a pip:-sourced capability
+        # that is not installed validates into a graph that cannot launch —
+        # the agent's only signal is this error, so the hint must name an
+        # installed same-capability alternative when one exists
+        source = manifest.get("source")
+        if isinstance(source, str) and source.startswith("pip:"):
+            dist = source.removeprefix("pip:")
+            if not _pip_installed(dist):
+                provided = set(manifest.get("provides") or [])
+                alternatives = sorted(
+                    other_id
+                    for other_id, other in manifests.items()
+                    if other_id != node_id
+                    and provided & set(other.get("provides") or [])
+                    and _manifest_launchable(other)
+                )
+                hint = (
+                    f"use an installed provider of {sorted(provided)}: " + ", ".join(alternatives)
+                    if alternatives
+                    else f"install {dist!r} (env-change PR) or author a node "
+                    f"providing {sorted(provided)}"
+                )
+                errors.append(
+                    _entry(
+                        "INSTALL_MISSING",
+                        {"node": node_id},
+                        f"manifest source {source!r}: distribution {dist!r} is "
+                        "not installed in this environment — the graph would "
+                        "validate but never launch",
+                        hint,
+                    )
+                )
         # VAL-4: every schema name a graph node's manifest references must be
         # in the vocabulary — including unwired ports; never silently passed
         for direction in ("inputs", "outputs"):

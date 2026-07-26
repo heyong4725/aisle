@@ -1,10 +1,14 @@
+# minimal L0 perception wiring on LAUNCHABLE nodes (rewritten for VAL-2
+# INSTALL_MISSING: the previous detector-openvocab version was schema-valid
+# but could never launch — exactly the H1-discovered class)
 nodes:
-- id: camera-source
-  outputs:
-  - rgb_overhead
-- id: detector-openvocab
+- id: dora-genesis
   inputs:
-    rgb: camera-source/rgb_overhead
+    tick: dora/timer/millis/10
   outputs:
-  - boxes
-  - labels
+  - poses
+- id: oracle-pose
+  inputs:
+    poses: dora-genesis/poses
+  outputs:
+  - target_pose

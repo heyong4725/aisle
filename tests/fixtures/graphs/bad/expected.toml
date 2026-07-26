@@ -3,6 +3,12 @@
 # Every agent-discovered failure class MUST gain an entry here in the same
 # PR that handles it (VAL-7).
 
+# INSTALL_MISSING appears alongside many entries below: the corpus was
+# historically built on detector-openvocab/pose-estimator/ocr-label, whose
+# pip: distributions are not installed (the H1-discovered class,
+# analysis/h1/h1_findings.md) — the code is inherent to those fixtures,
+# not incidental.
+
 # both typo nodes consume oracle_state, and an unresolved consumer is never
 # an authorized verifier (VAL-6 strict rule), so the leak fires alongside
 [manifest_missing_typo_oracle_pos]
@@ -17,34 +23,34 @@ codes = ["MANIFEST_MISSING", "ORACLE_LEAK"]
 # duplicate ids also break edge resolution (the second camera-source wins),
 # so the detector edge loses its producer — both codes are inherent
 [node_id_duplicate_camera]
-codes = ["NODE_ID_DUPLICATE", "INPUT_NO_PRODUCER"]
+codes = ["NODE_ID_DUPLICATE", "INPUT_NO_PRODUCER", "INSTALL_MISSING"]
 
 [node_id_duplicate_detector]
-codes = ["NODE_ID_DUPLICATE"]
+codes = ["NODE_ID_DUPLICATE", "INSTALL_MISSING"]
 
 [input_no_producer_missing_node]
-codes = ["INPUT_NO_PRODUCER"]
+codes = ["INPUT_NO_PRODUCER", "INSTALL_MISSING"]
 
 [input_no_producer_typo_edge]
-codes = ["INPUT_NO_PRODUCER"]
+codes = ["INPUT_NO_PRODUCER", "INSTALL_MISSING"]
 
 [input_no_producer_wrong_output]
-codes = ["INPUT_NO_PRODUCER"]
+codes = ["INPUT_NO_PRODUCER", "INSTALL_MISSING"]
 
 [input_no_producer_undeclared_graph_output]
-codes = ["INPUT_NO_PRODUCER"]
+codes = ["INPUT_NO_PRODUCER", "INSTALL_MISSING"]
 
 [schema_mismatch_depth_to_rgb]
-codes = ["SCHEMA_MISMATCH"]
+codes = ["SCHEMA_MISMATCH", "INSTALL_MISSING"]
 
 [schema_mismatch_labels_to_boxes]
-codes = ["SCHEMA_MISMATCH"]
+codes = ["SCHEMA_MISMATCH", "INSTALL_MISSING"]
 
 [schema_mismatch_boxes_to_pose]
-codes = ["SCHEMA_MISMATCH"]
+codes = ["SCHEMA_MISMATCH", "INSTALL_MISSING"]
 
 [schema_mismatch_undeclared_port]
-codes = ["SCHEMA_MISMATCH"]
+codes = ["SCHEMA_MISMATCH", "INSTALL_MISSING"]
 
 [oracle_leak_oracle_pose]
 codes = ["ORACLE_LEAK"]
@@ -53,7 +59,7 @@ codes = ["ORACLE_LEAK"]
 codes = ["ORACLE_LEAK", "SCHEMA_MISMATCH"]
 
 [motion_ungated_arm]
-codes = ["MOTION_UNGATED"]
+codes = ["MOTION_UNGATED", "INSTALL_MISSING"]
 
 [motion_ungated_gripper]
 codes = ["MOTION_UNGATED"]
@@ -65,13 +71,13 @@ root = "tests/fixtures/roots/eval_null"
 codes = ["EVAL_MISSING_FOR_MOTION", "MOTION_UNGATED"]
 
 [embodiment_mismatch_humanoid]
-codes = ["EMBODIMENT_MISMATCH"]
+codes = ["EMBODIMENT_MISMATCH", "INSTALL_MISSING"]
 # humanoid: an arm profile no capability supports (MOB-4 made `mobile`
 # valid — it resolves to the franka arm — so it is no longer a mismatch)
 embodiment = "humanoid"
 
 [rate_incompatible_slow_timer]
-codes = []
+codes = ["INSTALL_MISSING"]
 warnings = ["RATE_INCOMPATIBLE"]
 
 [graph_invalid_not_dataflow]
@@ -87,10 +93,10 @@ codes = ["GRAPH_INVALID"]
 codes = ["MOTION_UNGATED"]
 
 [input_no_producer_bad_timer]
-codes = ["INPUT_NO_PRODUCER"]
+codes = ["INPUT_NO_PRODUCER", "INSTALL_MISSING"]
 
 [input_no_producer_timer_zero]
-codes = ["INPUT_NO_PRODUCER"]
+codes = ["INPUT_NO_PRODUCER", "INSTALL_MISSING"]
 
 [graph_invalid_list_inputs]
 codes = ["GRAPH_INVALID"]
@@ -108,12 +114,12 @@ codes = ["SCHEMA_UNKNOWN"]
 root = "tests/fixtures/roots/unknown_schema"
 
 [schema_mismatch_timer_undeclared_port]
-codes = ["SCHEMA_MISMATCH"]
+codes = ["SCHEMA_MISMATCH", "INSTALL_MISSING"]
 
 # the phantom output fires node-level SCHEMA_MISMATCH; consuming it also
 # fires edge-level INPUT_NO_PRODUCER
 [input_no_producer_undeclared_manifest_output]
-codes = ["INPUT_NO_PRODUCER", "SCHEMA_MISMATCH"]
+codes = ["INPUT_NO_PRODUCER", "SCHEMA_MISMATCH", "INSTALL_MISSING"]
 
 [graph_invalid_outputs_not_list]
 codes = ["GRAPH_INVALID"]
@@ -142,7 +148,7 @@ codes = ["INPUT_NO_PRODUCER", "MOTION_UNGATED"]
 codes = ["GRAPH_INVALID"]
 
 [rate_incompatible_fast_timer]
-codes = []
+codes = ["INSTALL_MISSING"]
 warnings = ["RATE_INCOMPATIBLE"]
 
 [embodiment_mismatch_verifier_humanoid]
@@ -175,3 +181,10 @@ root = "tests/fixtures/roots/with_guard"
 [motion_ungated_phantom_guard_output]
 codes = ["INPUT_NO_PRODUCER", "MOTION_UNGATED", "SCHEMA_MISMATCH"]
 root = "tests/fixtures/roots/with_guard"
+
+# H1-discovered class (analysis/h1/h1_findings.md; VAL-7 same-PR rule):
+# schema-valid graph whose detector-openvocab / pose-estimator manifests
+# declare pip: sources not installed in the frozen env -- valid, never
+# launches. The dominant zero-shot failure, 24/40 attempts across arms.
+[install_missing_detector]
+codes = ["INSTALL_MISSING"]

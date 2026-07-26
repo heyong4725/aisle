@@ -427,9 +427,7 @@ def test_verifier_feedback_loop_is_legal():
 def test_unwired_manifest_inputs_are_legal(tmp_path):
     """ADR 5: wiring none of a manifest's declared inputs is legal (dora
     permits subsets; source nodes have zero inputs by design)."""
-    graph = write_graph(
-        tmp_path, [{"id": "detector-openvocab", "inputs": {}, "outputs": ["boxes", "labels"]}]
-    )
+    graph = write_graph(tmp_path, [{"id": "oracle-pose", "inputs": {}, "outputs": ["target_pose"]}])
     code, report = run_validate(graph)
     assert code == 0, report
 
@@ -498,3 +496,17 @@ def test_good_graph_rejected_for_other_embodiment():
     code, report = run_validate(REPO_ROOT / "graphs" / "expert_t0.yaml", "--embodiment", "so101")
     assert code != 0
     assert "EMBODIMENT_MISMATCH" in codes(report, "errors")
+
+
+def test_install_missing_hint_names_installed_alternative():
+    """VAL-2 INSTALL_MISSING (H1-discovered class, PR #33 findings): a
+    pip:-sourced manifest whose distribution is absent errors rather than
+    validating a graph that cannot launch; per VAL-3 the hint MUST name an
+    installed registry alternative with the same capability when one
+    exists (oracle-pose provides object_pose alongside pose-estimator)."""
+    code, report = run_validate(BAD_DIR / "install_missing_detector.yaml")
+    assert code != 0
+    entries = [e for e in report["errors"] if e["code"] == "INSTALL_MISSING"]
+    assert {e["node"] for e in entries} == {"detector-openvocab", "pose-estimator"}
+    pose_hint = next(e["hint"] for e in entries if e["node"] == "pose-estimator")
+    assert "oracle-pose" in pose_hint
