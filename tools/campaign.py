@@ -243,6 +243,43 @@ def audit_frozen(wt: Path, oid: str) -> list[str]:
     return [line for line in diff.stdout.splitlines() if line.strip()]
 
 
+def resolve_commit(repo: Path, rev: str | None) -> str:
+    """The campaign's pinned OID: an explicit rev (clean-rerun support —
+    committed analysis of the SAME experiment is an experimental input, so
+    replication arms must pin a commit that predates it; the codex H2
+    contamination lesson) or HEAD. Unknown revs refuse (CON-8 JSON)."""
+    proc = subprocess.run(
+        ["git", "rev-parse", "--verify", f"{rev or 'HEAD'}^{{commit}}"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise SystemExit(json.dumps({"ok": False, "error": f"unknown --commit rev {rev!r}"}))
+    return proc.stdout.strip()
+
+
+def sweep_worktree(wt: Path) -> list[int]:
+    """Post-session orphan sweep (PR #44 follow-up; dora-rs/dora#2856):
+    kill any process whose command line references a script under the
+    worktree — campaign rollouts leak dora nodes that idle or spin
+    forever. Never touches bystanders."""
+    needle = str(wt)
+    killed: list[int] = []
+    ps = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True)
+    for line in ps.stdout.splitlines():
+        pid_str, _, command = line.strip().partition(" ")
+        if needle in command and pid_str.isdigit() and int(pid_str) != os.getpid():
+            try:
+                os.kill(int(pid_str), signal.SIGKILL)
+                killed.append(int(pid_str))
+            except (ProcessLookupError, PermissionError):
+                pass
+    if killed:
+        print(f"[h2] swept {len(killed)} leaked worktree process(es)", file=sys.stderr)
+    return killed
+
+
 def campaign_metrics(wt: Path, session_t0: float) -> dict:
     """ADR-h2 point 7, from harness-written artifacts only: chronological
     pass1 trajectory, wall time to the first verified success, wrong_object
@@ -444,6 +481,12 @@ def main() -> int:
     parser.add_argument("--model", default=None)
     parser.add_argument("--tier", default="T1", choices=("T1",))  # T2 needs L2 (ADR-h2 p1)
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "runs" / "h2")
+    parser.add_argument(
+        "--commit",
+        default=None,
+        help="pin the campaign worktree at this rev (default HEAD); replication "
+        "arms MUST predate any committed analysis of the same experiment",
+    )
     parser.add_argument("--budget-tokens", type=int, default=None)
     parser.add_argument("--wall-h", type=float, default=None)
     parser.add_argument("--dev-seeds", default="0..49")
@@ -462,9 +505,7 @@ def main() -> int:
 
     args.out = args.out.resolve()
     args.out.mkdir(parents=True, exist_ok=True)
-    oid = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True
-    ).stdout.strip()
+    oid = resolve_commit(REPO_ROOT, args.commit)
     treatment = campaign_treatment(args.agent, model, oid, args.dev_seeds, args.holdout_seeds)
     treatment["token_ceiling"] = token_ceiling
     treatment["wall_ceiling_h"] = wall_h
@@ -499,8 +540,10 @@ def main() -> int:
     session["t0_epoch"] = t0_epoch
     sessions.append(session)
 
+    sweep_worktree(wt)  # the session's rollouts may have leaked nodes
     drift = audit_frozen(wt, oid)
     holdout = score_holdout(wt, args.holdout_seeds, session_index)
+    sweep_worktree(wt)  # ...and so may the holdout rollout
     metrics = campaign_metrics(wt, session_t0=sessions[0]["t0_epoch"])
     record = {
         "ok": not drift,

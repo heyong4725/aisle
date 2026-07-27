@@ -461,3 +461,58 @@ def test_run_session_escaped_grandchild_join_timeout(tmp_path, monkeypatch, caps
     assert session["stopped"] == "agent_done"
     assert session["tokens"] == 12
     assert "drain incomplete" in capsys.readouterr().err
+
+
+def test_resolve_campaign_commit(tmp_path):
+    """Clean-rerun support: an explicit --commit pins the worktree at a
+    historical rev (an uncontaminated pre-analysis commit — the codex H2
+    lesson: committed findings of the same experiment are an experimental
+    input); default resolves HEAD; unknown revs refuse."""
+    from campaign import resolve_commit
+
+    repo = tmp_path / "r"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    (repo / "f").write_text("1")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    env = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+    subprocess.run([*env, "commit", "-qm", "one"], cwd=repo, check=True)
+    first = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True
+    ).stdout.strip()
+    (repo / "f").write_text("2")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run([*env, "commit", "-qm", "two"], cwd=repo, check=True)
+    assert resolve_commit(repo, None) != first  # default = HEAD
+    assert resolve_commit(repo, first[:8]) == first  # short rev resolves full
+    with pytest.raises(SystemExit):
+        resolve_commit(repo, "not-a-rev")
+
+
+def test_sweep_worktree_kills_only_worktree_processes(tmp_path):
+    """PR #44 follow-up: campaign rollouts leak dora nodes (the known
+    leak, twice from campaign worktrees); the post-session sweep kills
+    processes running scripts under the WORKTREE only — never bystanders."""
+    import time as _time
+
+    from campaign import sweep_worktree
+
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    inside = wt / "node_x.py"
+    inside.write_text("import time\ntime.sleep(60)\n")
+    outside = tmp_path / "bystander.py"
+    outside.write_text("import time\ntime.sleep(60)\n")
+    p_in = subprocess.Popen([sys.executable, str(inside)])
+    p_out = subprocess.Popen([sys.executable, str(outside)])
+    try:
+        _time.sleep(0.5)
+        killed = sweep_worktree(wt)
+        _time.sleep(0.5)
+        assert p_in.pid in killed
+        assert p_in.poll() is not None  # worktree process reaped
+        assert p_out.poll() is None  # bystander untouched
+    finally:
+        for p in (p_in, p_out):
+            if p.poll() is None:
+                p.kill()
