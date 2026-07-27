@@ -8,7 +8,8 @@ budget guard and anything executing from the frozen set) can never be
 swapped; staging happens in an unpredictable tmpdir with a byte-hash
 re-check before the runtime mutation (TOCTOU); a failed add restores the
 original node; a successful swap writes the graph file back so the NEXT
-swap validates against live reality; every attempt logs a HAR-12 event.
+swap validates against live reality; EVERY attempt — success, failure,
+or refusal — logs a HAR-12 event.
 
 The dora interaction is a thin injectable seam (`runner`) so unit tests
 never need a live dataflow; the default drives the `dora` CLI
@@ -34,11 +35,11 @@ from aisle.harness.validate import validate
 # premise (topology checks assume its CODE is the frozen one), and frozen
 # env nodes are CON-7's
 GUARD_ID = "budget-guard"
-FROZEN_PATH_PARTS = (
+FROZEN_ROOTS = (
     "src/aisle/scenes",
     "src/aisle/verifier",
     "src/aisle/reset",
-    "/env/",
+    "env",
     "src/aisle/nodes/budget_guard.py",
 )
 
@@ -47,12 +48,36 @@ def _default_runner(cmd: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(["dora", *cmd], capture_output=True, text=True, timeout=120)
 
 
-def _frozen_anchor(node: dict) -> bool:
-    path = str(node.get("path", ""))
-    return any(part in path for part in FROZEN_PATH_PARTS)
+def _under_frozen(root: Path, candidate: Path) -> bool:
+    resolved = candidate.resolve()
+    for frozen in FROZEN_ROOTS:
+        anchor = (root / frozen).resolve()
+        if resolved == anchor or anchor in resolved.parents:
+            return True
+    return False
 
 
-def swapped_graph_doc(graph_path: Path, node_id: str, replacement: dict) -> dict | str:
+def _frozen_anchor(root: Path, graph_path: Path, node_id: str, node: dict) -> bool:
+    """Trust-anchor test keyed on what dora actually receives (the node
+    ID): the id's MANIFEST source is the spoof-proof authority (a crafted
+    --graph with a benign path cannot dodge it), with the graph entry's
+    resolved path as a second belt. Resolution closes the //-, ..- and
+    relative-path dodges of a substring check (PR #50 re-review)."""
+    if node_id == GUARD_ID:
+        return True
+    manifest = root / "registry" / "manifests" / f"{node_id}.yaml"
+    if manifest.exists():
+        try:
+            source = (yaml.safe_load(manifest.read_text()) or {}).get("source")
+        except yaml.YAMLError:
+            source = None
+        if isinstance(source, str) and _under_frozen(root, root / source):
+            return True
+    graph_rel = str(node.get("path", ""))
+    return bool(graph_rel) and _under_frozen(root, graph_path.parent / graph_rel)
+
+
+def swapped_graph_doc(graph_path: Path, node_id: str, replacement: dict, root: Path) -> dict | str:
     """The POST-SWAP graph document with the named node replaced in place,
     or an error STRING (CON-8: refusals are JSON on stdout, never a
     SystemExit-to-stderr)."""
@@ -60,7 +85,7 @@ def swapped_graph_doc(graph_path: Path, node_id: str, replacement: dict) -> dict
     nodes = doc.get("nodes") or []
     for index, node in enumerate(nodes):
         if node.get("id") == node_id:
-            if node_id == GUARD_ID or _frozen_anchor(node):
+            if _frozen_anchor(root, graph_path, node_id, node):
                 return (
                     f"{node_id!r} is a trust anchor (budget guard / frozen set): "
                     "live swaps are refused — VAL-5's topology check assumes its "
@@ -98,16 +123,20 @@ def swap(
     BEFORE any runtime mutation; then remove old / add new with the
     original restored on add failure; on success the graph file is
     written back so the next validation sees live reality."""
+
+    def refused(error: str) -> dict:
+        swap_event(root, branch, {"action": "swap_refused", "dataflow": dataflow, "node": node_id})
+        return {"ok": False, "error": error}
+
     replacement = yaml.safe_load(with_yaml.read_text())
     if not isinstance(replacement, dict) or replacement.get("id") != node_id:
-        return {
-            "ok": False,
-            "error": "replacement yaml must be a single node doc with the SAME id "
-            "(edges are preserved by identity)",
-        }
-    doc = swapped_graph_doc(graph, node_id, replacement)
+        return refused(
+            "replacement yaml must be a single node doc with the SAME id "
+            "(edges are preserved by identity)"
+        )
+    doc = swapped_graph_doc(graph, node_id, replacement, root)
     if isinstance(doc, str):
-        return {"ok": False, "error": doc}
+        return refused(doc)
     original = next(n for n in yaml.safe_load(graph.read_text())["nodes"] if n["id"] == node_id)
 
     # unpredictable 0700 tmpdir OUTSIDE the session-writable graphs/ dir;
@@ -129,7 +158,7 @@ def swap(
             return {"ok": False, "refused": report}
 
         if hashlib.sha256(staged_node.read_bytes()).hexdigest() != node_sha:
-            return {"ok": False, "error": "staged node changed after validation (TOCTOU)"}
+            return refused("staged node changed after validation (TOCTOU)")
 
         removed = runner(["node", "remove", "-d", dataflow, node_id])
         if removed.returncode != 0:
@@ -179,10 +208,15 @@ def probe(
     window can never leak the probe silently. oracle_state is refused
     (VAL-6 has no probe exemption); probes have no outputs so they can
     never publish."""
+
+    def probe_refused(error: str) -> dict:
+        swap_event(root, branch, {"action": "probe_refused", "dataflow": dataflow, "topic": topic})
+        return {"ok": False, "error": error}
+
     if topic.endswith("/oracle_state"):
-        return {"ok": False, "error": "probes may not read ground truth (VAL-6)"}
+        return probe_refused("probes may not read ground truth (VAL-6)")
     if seconds < 0:
-        return {"ok": False, "error": "probe window must be >= 0 seconds"}
+        return probe_refused("probe window must be >= 0 seconds")
     probe_id = f"probe-{uuid.uuid4().hex[:8]}"
     node_doc = {
         "id": probe_id,
@@ -195,6 +229,7 @@ def probe(
     staged.write_text(yaml.safe_dump(node_doc, sort_keys=False))
     proc = runner(["node", "add", "-d", dataflow, "--from-yaml", str(staged)])
     if proc.returncode != 0:
+        swap_event(root, branch, {"action": "probe_failed", "dataflow": dataflow, "topic": topic})
         return {"ok": False, "error": f"attach failed: {(proc.stderr or '')[-200:]}"}
     try:
         time.sleep(seconds)

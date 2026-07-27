@@ -153,7 +153,7 @@ def test_swap_add_failure_restores_original(tmp_path, graph, monkeypatch):
 def test_swapped_graph_doc_errors_are_values_not_exits(graph):
     """PR #50 (CON-8): refusals are returned values for JSON-on-stdout,
     never SystemExit-to-stderr."""
-    out = swapped_graph_doc(graph, "no-such-node", {"id": "no-such-node"})
+    out = swapped_graph_doc(graph, "no-such-node", {"id": "no-such-node"}, REPO_ROOT)
     assert isinstance(out, str) and "not in" in out
 
 
@@ -219,3 +219,50 @@ def test_swap_event_records_open_idea(tmp_path):
     (ideas / "b.jsonl").write_text(json.dumps({"id": "I7", "ts": 1, "status": "open"}) + "\n")
     entry = swap_event(tmp_path, "b", {"action": "swap", "node": "x"})
     assert entry["open_idea"] == "I7"
+
+
+def test_anchor_refusal_survives_crafted_graph_paths(tmp_path):
+    """PR #50 re-review: the anchor check is keyed on the node ID's
+    MANIFEST source (root authority), so a crafted --graph giving `reset`
+    a benign path, an obfuscated path, or NO path cannot dodge it."""
+    crafted = tmp_path / "crafted.yaml"
+    for node in (
+        {"id": "reset", "path": "totally/benign.py", "outputs": ["bridge_reset"]},
+        {"id": "reset", "path": "../src/aisle//reset/service.py", "outputs": ["bridge_reset"]},
+        {"id": "reset", "outputs": ["bridge_reset"]},
+    ):
+        crafted.write_text(yaml.safe_dump({"nodes": [node]}))
+        out = swapped_graph_doc(crafted, "reset", {"id": "reset"}, REPO_ROOT)
+        assert isinstance(out, str) and "trust anchor" in out, node
+
+
+def test_every_refusal_logs_a_har12_event(tmp_path, graph):
+    """PR #50 re-review: HAR-12 says every ATTEMPT logs — including
+    refusals and failed mutations; the guard-swap attempt is the most
+    security-relevant event of all."""
+    log = tmp_path / "runs" / "swaps" / "b.jsonl"
+
+    def events():
+        return [json.loads(line)["action"] for line in log.read_text().splitlines()]
+
+    bad_id = tmp_path / "bad.yaml"
+    bad_id.write_text(yaml.safe_dump({"id": "other"}))
+    swap(tmp_path, graph, "df", "oracle-pose", bad_id, "franka", "b", runner=make_runner([]))
+    assert events()[-1] == "swap_refused"
+
+    guard = tmp_path / "guard.yaml"
+    guard.write_text(yaml.safe_dump({"id": "budget-guard"}))
+    swap(tmp_path, graph, "df", "budget-guard", guard, "franka", "b", runner=make_runner([]))
+    assert events()[-1] == "swap_refused"
+
+    probe(tmp_path, "df", "x/oracle_state", 0.0, "b", runner=make_runner([]))
+    assert events()[-1] == "probe_refused"
+    probe(
+        tmp_path,
+        "df",
+        "dora-genesis/poses",
+        0.0,
+        "b",
+        runner=make_runner([], fail_on=("node", "add")),
+    )
+    assert events()[-1] == "probe_failed"
