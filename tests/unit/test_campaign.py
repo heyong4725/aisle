@@ -217,3 +217,247 @@ def test_campaign_treatment_survives_absent_cli():
     campaign fails later at spawn with a proper InfraError."""
     t = campaign_treatment("definitely-not-a-cli", "m", "b" * 40, "0..9", "20..27")
     assert t["agent_cli_version"] == "not-installed"
+
+
+def test_usage_counter_is_incremental_and_tamper_immune(tmp_path):
+    """Issue #42: the runner is the SOLE authority on token spend — it
+    accumulates from the live stream in memory; the on-disk log is a tee.
+    Feeding lines incrementally equals batch parsing, and destroying the
+    log file afterwards does not change the count."""
+    from campaign import UsageCounter
+
+    lines = [
+        json.dumps(
+            {"type": "assistant", "message": {"usage": {"input_tokens": 10, "output_tokens": 2}}}
+        ),
+        "not json",
+        json.dumps(
+            {"type": "assistant", "message": {"usage": {"input_tokens": 30, "output_tokens": 4}}}
+        ),
+    ]
+    counter = UsageCounter("claude")
+    for line in lines:
+        counter.feed(line)
+    assert counter.total == parse_usage_claude(lines) == 46
+    log = tmp_path / "session.jsonl"
+    log.write_text("\n".join(lines))
+    log.write_text("")  # session truncates its own log: count unaffected
+    assert counter.total == 46
+
+
+def test_run_session_counts_from_pipe_and_kills_at_ceiling(tmp_path, monkeypatch):
+    """Issue #42 end-to-end with a FAKE agent process: the runner counts
+    usage from the live pipe (log file is a tee, still written), and the
+    token ceiling kills the session (stopped=token_budget) even though
+    the fake agent would otherwise sleep forever."""
+    import campaign as c
+
+    monkeypatch.setattr(c, "POLL_S", 0.1)
+    fake_agent = (
+        "import json,sys,time\n"
+        "print(json.dumps({'type':'assistant','message':{'usage':"
+        "{'input_tokens':5000,'output_tokens':100}}}), flush=True)\n"
+        "time.sleep(60)\n"
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+    session = c.run_session(
+        "claude",
+        [sys.executable, "-u", "-c", fake_agent],
+        tmp_path,
+        out,
+        {
+            "prior_tokens": 0,
+            "prior_wall_s": 0.0,
+            "token_ceiling": 1000,
+            "wall_ceiling_s": 3600.0,
+        },
+    )
+    assert session["stopped"] == "token_budget"
+    assert session["tokens"] == 5100
+    # the tee still captured the stream for post-hoc analysis
+    assert "input_tokens" in (out / "session.jsonl").read_text()
+
+
+def test_run_session_agent_done_on_clean_exit(tmp_path, monkeypatch):
+    """A session that finishes under budget records agent_done with the
+    pipe-accumulated total."""
+    import campaign as c
+
+    monkeypatch.setattr(c, "POLL_S", 0.1)
+    fake_agent = (
+        "import json\n"
+        "print(json.dumps({'type':'assistant','message':{'usage':"
+        "{'input_tokens':7,'output_tokens':3}}}), flush=True)\n"
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+    session = c.run_session(
+        "claude",
+        [sys.executable, "-u", "-c", fake_agent],
+        tmp_path,
+        out,
+        {
+            "prior_tokens": 0,
+            "prior_wall_s": 0.0,
+            "token_ceiling": 1000,
+            "wall_ceiling_s": 3600.0,
+        },
+    )
+    assert session["stopped"] == "agent_done"
+    assert session["tokens"] == 10
+
+
+def test_parsers_skip_non_dict_json_lines():
+    """PR #43 review: a line that is valid JSON but not an object (null,
+    123) must be skipped like non-JSON — an AttributeError here killed the
+    tee thread silently, freezing the counter and disabling the ceiling."""
+    lines = [
+        "null",
+        "123",
+        json.dumps(
+            {"type": "assistant", "message": {"usage": {"input_tokens": 5, "output_tokens": 1}}}
+        ),
+    ]
+    assert parse_usage_claude(lines) == 6
+    assert parse_usage_codex(["null", "[]"]) == 0
+
+
+def _run(tmp_path, monkeypatch, fake_agent, ceilings=None, join_s=None):
+    import campaign as c
+
+    monkeypatch.setattr(c, "POLL_S", 0.1)
+    if join_s is not None:
+        monkeypatch.setattr(c, "TEE_JOIN_S", join_s)
+    out = tmp_path / "out"
+    out.mkdir(exist_ok=True)
+    return c.run_session(
+        "claude",
+        [sys.executable, "-u", "-c", fake_agent],
+        tmp_path,
+        out,
+        ceilings
+        or {
+            "prior_tokens": 0,
+            "prior_wall_s": 0.0,
+            "token_ceiling": 1000,
+            "wall_ceiling_s": 3600.0,
+        },
+    )
+
+
+def test_run_session_true_tamper_scenario(tmp_path, monkeypatch):
+    """The ACTUAL issue #42 attack, end to end: the session truncates the
+    runner's own session.jsonl mid-run; the pipe-accumulated count is
+    unaffected (PR #43 review: the earlier unit test truncated a scratch
+    file the counter never read)."""
+    fake_agent = (
+        "import json,time\n"
+        "print(json.dumps({'type':'assistant','message':{'usage':"
+        "{'input_tokens':40,'output_tokens':2}}}), flush=True)\n"
+        "time.sleep(0.3)\n"
+        "open('out/session.jsonl','w').close()\n"  # the tamper
+        "print(json.dumps({'type':'assistant','message':{'usage':"
+        "{'input_tokens':7,'output_tokens':1}}}), flush=True)\n"
+    )
+    session = _run(tmp_path, monkeypatch, fake_agent)
+    assert session["stopped"] == "agent_done"
+    assert session["tokens"] == 50  # both events counted despite the wipe
+
+
+def test_run_session_infra_error_on_nonzero_rc(tmp_path, monkeypatch):
+    """PR #43 review: a session that dies rc!=0 without a budget stop is
+    an infrastructure failure, never an agent outcome."""
+    from campaign import InfraError
+
+    with pytest.raises(InfraError):
+        _run(tmp_path, monkeypatch, "import sys; sys.exit(3)")
+
+
+def test_run_session_wall_budget_stop(tmp_path, monkeypatch):
+    """PR #43 review: the wall ceiling's kill path, end to end."""
+    session = _run(
+        tmp_path,
+        monkeypatch,
+        "import time; time.sleep(60)",
+        ceilings={
+            "prior_tokens": 0,
+            "prior_wall_s": 0.0,
+            "token_ceiling": 10**9,
+            "wall_ceiling_s": 0.3,
+        },
+    )
+    assert session["stopped"] == "wall_budget"
+
+
+def test_run_session_empty_and_partial_output(tmp_path, monkeypatch):
+    """PR #43 review: a silent session records 0 tokens and agent_done; a
+    final unterminated line counts 0 without crashing the tee."""
+    session = _run(tmp_path, monkeypatch, "pass")
+    assert session["stopped"] == "agent_done" and session["tokens"] == 0
+    session = _run(
+        tmp_path,
+        monkeypatch,
+        'import sys; sys.stdout.write(\'{"type":"assist\')',  # partial, no newline
+    )
+    assert session["stopped"] == "agent_done" and session["tokens"] == 0
+
+
+def test_run_session_non_utf8_does_not_freeze_counter(tmp_path, monkeypatch):
+    """PR #43 review (fail-open regression): strict decoding of non-UTF8
+    session bytes killed the tee thread silently, freezing the counter and
+    disabling the token ceiling. With errors=replace the stream survives
+    and later usage still counts."""
+    fake_agent = (
+        "import json,sys\n"
+        "sys.stdout.buffer.write(b'\\xff\\xfe garbage \\xff\\n')\n"
+        "sys.stdout.buffer.flush()\n"
+        "print(json.dumps({'type':'assistant','message':{'usage':"
+        "{'input_tokens':9,'output_tokens':1}}}), flush=True)\n"
+    )
+    session = _run(tmp_path, monkeypatch, fake_agent)
+    assert session["stopped"] == "agent_done"
+    assert session["tokens"] == 10
+
+
+def test_run_session_prior_spend_counts_toward_ceiling(tmp_path, monkeypatch):
+    """ADR-h2 point 6: resumed sessions accumulate — prior spend plus this
+    session's live count trips the ceiling even though the session-local
+    total is far below it."""
+    fake_agent = (
+        "import json,time\n"
+        "print(json.dumps({'type':'assistant','message':{'usage':"
+        "{'input_tokens':90,'output_tokens':10}}}), flush=True)\n"
+        "time.sleep(60)\n"
+    )
+    session = _run(
+        tmp_path,
+        monkeypatch,
+        fake_agent,
+        ceilings={
+            "prior_tokens": 950,
+            "prior_wall_s": 0.0,
+            "token_ceiling": 1000,
+            "wall_ceiling_s": 3600.0,
+        },
+    )
+    assert session["stopped"] == "token_budget"
+    assert session["tokens"] == 100
+
+
+def test_run_session_escaped_grandchild_join_timeout(tmp_path, monkeypatch, capsys):
+    """PR #43 review: a grandchild that setsids out of the process group
+    holds the stdout pipe open past killpg — the drain join times out, a
+    warning is emitted, and run_session still returns the pre-kill total
+    instead of hanging."""
+    fake_agent = (
+        "import json,os,subprocess,sys\n"
+        "print(json.dumps({'type':'assistant','message':{'usage':"
+        "{'input_tokens':11,'output_tokens':1}}}), flush=True)\n"
+        "subprocess.Popen(['sleep','3'], start_new_session=True,"
+        " stdout=sys.stdout.fileno())\n"
+    )
+    session = _run(tmp_path, monkeypatch, fake_agent, join_s=0.3)
+    assert session["stopped"] == "agent_done"
+    assert session["tokens"] == 12
+    assert "drain incomplete" in capsys.readouterr().err

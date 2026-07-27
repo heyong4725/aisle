@@ -33,6 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DELIVERABLE = "graphs/agent_campaign.yaml"
 HOLDOUT_EPISODES = 8
 POLL_S = 5.0
+TEE_JOIN_S = 10.0  # stream-drain grace after the session exits
 
 
 # ---------------------------------------------------------------- telemetry
@@ -60,7 +61,7 @@ def parse_usage_claude(lines: list[str]) -> int:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if event.get("type") != "assistant":
+        if not isinstance(event, dict) or event.get("type") != "assistant":
             continue
         usage = (event.get("message") or {}).get("usage") or {}
         total += (
@@ -82,7 +83,7 @@ def parse_usage_codex(lines: list[str]) -> int:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if event.get("type") != "turn.completed":
+        if not isinstance(event, dict) or event.get("type") != "turn.completed":
             continue
         usage = event.get("usage") or {}
         new_input = _tok(usage, "input_tokens") - _tok(usage, "cached_input_tokens")
@@ -95,6 +96,20 @@ def parse_usage_codex(lines: list[str]) -> int:
 
 
 PARSE_USAGE = {"claude": parse_usage_claude, "codex": parse_usage_codex}
+
+
+class UsageCounter:
+    """Issue #42: the runner is the SOLE authority on token spend. Lines
+    are fed from the LIVE stdout pipe and accumulated in memory; the
+    on-disk log is a tee for post-hoc analysis, never the count's source
+    — an unconfined session rewriting its log cannot move the ceiling."""
+
+    def __init__(self, agent: str):
+        self._parse = PARSE_USAGE[agent]
+        self.total = 0
+
+    def feed(self, line: str) -> None:
+        self.total += self._parse([line])
 
 
 def budget_stop(
@@ -278,33 +293,60 @@ def _default_budgets(root: Path) -> tuple[int, float]:
 
 
 def run_session(agent: str, cmd: list[str], wt: Path, out: Path, ceilings: dict) -> dict:
-    """Spawn the session, poll its stream for token spend, kill the process
-    group at a ceiling. Returns the session record."""
+    """Spawn the session, count token spend from the LIVE stdout pipe
+    (issue #42: the on-disk log is a tee, never the count's source), kill
+    the process group at a ceiling. Returns the session record."""
+    import threading
+
     log_path = out / "session.jsonl"
     stderr_path = out / "session.stderr"
     samples_path = out / "token_samples.jsonl"
     t0 = time.monotonic()
     stopped = "agent_done"
+    counter = UsageCounter(agent)
+    tee_failure: list[str] = []
     with open(log_path, "w") as log, open(stderr_path, "w") as err:
         proc = subprocess.Popen(
             cmd,
             cwd=wt,
             stdin=subprocess.DEVNULL,
-            stdout=log,
+            stdout=subprocess.PIPE,
             stderr=err,
-            text=True,
+            # errors="replace": non-UTF8 session bytes must never kill the
+            # reader — strict decode was a silent fail-OPEN (PR #43 review)
+            encoding="utf-8",
+            errors="replace",
             start_new_session=True,
         )
-        tokens = 0
+
+        def tee() -> None:
+            # FAIL CLOSED (PR #43 review): if the tee dies (disk full,
+            # closed handle), the counter freezes and the token ceiling is
+            # silently disabled — so kill the session and record infra
+            try:
+                for line in proc.stdout:
+                    log.write(line)
+                    log.flush()
+                    counter.feed(line)
+            except Exception as exc:  # noqa: BLE001 — any tee death is infra
+                tee_failure.append(repr(exc))
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+        reader = threading.Thread(target=tee, daemon=True)
+        reader.start()
         with open(samples_path, "a") as samples:
             while proc.poll() is None:
                 time.sleep(POLL_S)
-                tokens = PARSE_USAGE[agent](log_path.read_text().splitlines())
                 wall_s = time.monotonic() - t0
-                samples.write(json.dumps({"wall_s": round(wall_s, 1), "tokens": tokens}) + "\n")
+                samples.write(
+                    json.dumps({"wall_s": round(wall_s, 1), "tokens": counter.total}) + "\n"
+                )
                 samples.flush()
                 reason = budget_stop(
-                    ceilings["prior_tokens"] + tokens,
+                    ceilings["prior_tokens"] + counter.total,
                     ceilings["token_ceiling"],
                     ceilings["prior_wall_s"] + wall_s,
                     ceilings["wall_ceiling_s"],
@@ -318,13 +360,27 @@ def run_session(agent: str, cmd: list[str], wt: Path, out: Path, ceilings: dict)
                     proc.wait(timeout=30)
                     break
         rc = proc.wait()
-    tokens = PARSE_USAGE[agent](log_path.read_text().splitlines())
+        reader.join(timeout=TEE_JOIN_S)
+        if reader.is_alive():
+            # an escaped grandchild holds the pipe open past killpg: the
+            # drain is incomplete — attribute a possibly-short count
+            print("[h2] WARNING stream drain incomplete after session exit", file=sys.stderr)
+        try:
+            proc.stdout.close()
+        except OSError:
+            pass
+        total = counter.total  # pinned before the log handle closes
+    if tee_failure:
+        raise InfraError(
+            f"telemetry tee failed ({tee_failure[0]}) — the token ceiling "
+            "could not be trusted; session killed (not an agent outcome)"
+        )
     if stopped == "agent_done" and rc != 0:
         raise InfraError(f"{agent} CLI exited rc={rc} (not an agent outcome)")
     return {
         "stopped": stopped,
         "rc": rc,
-        "tokens": tokens,
+        "tokens": total,
         "wall_s": round(time.monotonic() - t0, 1),
     }
 

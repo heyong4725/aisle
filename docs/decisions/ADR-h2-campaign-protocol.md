@@ -66,8 +66,11 @@ same runner is the per-scenario core the H3 orchestrator
 
 - Unsandboxed sessions (point 5): a hostile agent could write outside
   the worktree; the audit detects frozen-path drift but not arbitrary
-  host writes. Acceptable for supervised runs; revisit before
-  unattended fleet mode (§8.4 item 3).
+  host writes. A worker that `setsid`s out of the session's process
+  group also survives the budget kill and spends outside the counted
+  pipe (PR #43 review) — neither ceiling truly bounds an escaped
+  process. Acceptable for supervised runs; revisit before unattended
+  fleet mode (§8.4 item 3).
 - Token counting reads the vendor CLI's self-reported usage events;
   HAR-5 already treats token accounting as external/best-effort.
   **Budget semantics (decided at the dry run, human choice): NEW tokens
