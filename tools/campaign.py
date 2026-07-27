@@ -33,6 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DELIVERABLE = "graphs/agent_campaign.yaml"
 HOLDOUT_EPISODES = 8
 POLL_S = 5.0
+TEE_JOIN_S = 10.0  # stream-drain grace after the session exits
 
 
 # ---------------------------------------------------------------- telemetry
@@ -60,7 +61,7 @@ def parse_usage_claude(lines: list[str]) -> int:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if event.get("type") != "assistant":
+        if not isinstance(event, dict) or event.get("type") != "assistant":
             continue
         usage = (event.get("message") or {}).get("usage") or {}
         total += (
@@ -82,7 +83,7 @@ def parse_usage_codex(lines: list[str]) -> int:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if event.get("type") != "turn.completed":
+        if not isinstance(event, dict) or event.get("type") != "turn.completed":
             continue
         usage = event.get("usage") or {}
         new_input = _tok(usage, "input_tokens") - _tok(usage, "cached_input_tokens")
@@ -303,6 +304,7 @@ def run_session(agent: str, cmd: list[str], wt: Path, out: Path, ceilings: dict)
     t0 = time.monotonic()
     stopped = "agent_done"
     counter = UsageCounter(agent)
+    tee_failure: list[str] = []
     with open(log_path, "w") as log, open(stderr_path, "w") as err:
         proc = subprocess.Popen(
             cmd,
@@ -310,15 +312,28 @@ def run_session(agent: str, cmd: list[str], wt: Path, out: Path, ceilings: dict)
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=err,
-            text=True,
+            # errors="replace": non-UTF8 session bytes must never kill the
+            # reader — strict decode was a silent fail-OPEN (PR #43 review)
+            encoding="utf-8",
+            errors="replace",
             start_new_session=True,
         )
 
         def tee() -> None:
-            for line in proc.stdout:
-                log.write(line)
-                log.flush()
-                counter.feed(line)
+            # FAIL CLOSED (PR #43 review): if the tee dies (disk full,
+            # closed handle), the counter freezes and the token ceiling is
+            # silently disabled — so kill the session and record infra
+            try:
+                for line in proc.stdout:
+                    log.write(line)
+                    log.flush()
+                    counter.feed(line)
+            except Exception as exc:  # noqa: BLE001 — any tee death is infra
+                tee_failure.append(repr(exc))
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
         reader = threading.Thread(target=tee, daemon=True)
         reader.start()
@@ -345,13 +360,27 @@ def run_session(agent: str, cmd: list[str], wt: Path, out: Path, ceilings: dict)
                     proc.wait(timeout=30)
                     break
         rc = proc.wait()
-        reader.join(timeout=10)
+        reader.join(timeout=TEE_JOIN_S)
+        if reader.is_alive():
+            # an escaped grandchild holds the pipe open past killpg: the
+            # drain is incomplete — attribute a possibly-short count
+            print("[h2] WARNING stream drain incomplete after session exit", file=sys.stderr)
+        try:
+            proc.stdout.close()
+        except OSError:
+            pass
+        total = counter.total  # pinned before the log handle closes
+    if tee_failure:
+        raise InfraError(
+            f"telemetry tee failed ({tee_failure[0]}) — the token ceiling "
+            "could not be trusted; session killed (not an agent outcome)"
+        )
     if stopped == "agent_done" and rc != 0:
         raise InfraError(f"{agent} CLI exited rc={rc} (not an agent outcome)")
     return {
         "stopped": stopped,
         "rc": rc,
-        "tokens": counter.total,
+        "tokens": total,
         "wall_s": round(time.monotonic() - t0, 1),
     }
 
