@@ -1,0 +1,72 @@
+{
+ "ok": true,
+ "treatment": {
+  "commit": "8eab2ca9b0047e32a3b12e759d421a490ef5345b",
+  "agent": "codex",
+  "agent_cli_version": "codex-cli 0.144.6",
+  "model": "gpt-5.6-sol",
+  "prompt_template_sha256": "27819bf2bf20ad70aa168de9fc1c45271a7cfb366f49b35c88d41128288a87b1",
+  "dev_seeds": "0..49",
+  "holdout_seeds": "100..107",
+  "holdout_episodes": 8,
+  "claude_max_turns": null,
+  "runner_sha256": "718e105a4143b6cd911fdeb84d4b5ccc5752750a08513285bbc25622c8ca74ac",
+  "session_spawn": {
+   "stdin": "devnull",
+   "confinement": "none (ADR-h2 point 5)"
+  },
+  "token_ceiling": 5000000,
+  "wall_ceiling_h": 40.0
+ },
+ "sessions": [
+  {
+   "stopped": "agent_done",
+   "rc": 0,
+   "tokens": 164968,
+   "wall_s": 1967.3,
+   "t0_epoch": 1785153902.2015529
+  }
+ ],
+ "tokens_spent": 164968,
+ "wall_spent_s": 1967.3,
+ "frozen_drift": [],
+ "holdout": {
+  "ok": true,
+  "error": null,
+  "pass1": 1.0,
+  "pass8": 1.0,
+  "failures": {},
+  "run_id": "campaign-holdout-00"
+ },
+ "metrics": {
+  "rollouts": [
+   {
+    "run_id": "20260727-120929-ab5f0f",
+    "mtime": 1785154545.6380563,
+    "episodes": 10,
+    "pass1": 1.0
+   },
+   {
+    "run_id": "20260727-121603-4a99ab",
+    "mtime": 1785155163.4044118,
+    "episodes": 20,
+    "pass1": 1.0
+   },
+   {
+    "run_id": "20260727-122621-2e18af",
+    "mtime": 1785155820.0443034,
+    "episodes": 20,
+    "pass1": 1.0
+   },
+   {
+    "run_id": "campaign-holdout-00",
+    "mtime": 1785156133.0536587,
+    "episodes": 8,
+    "pass1": 1.0
+   }
+  ],
+  "episodes_total": 58,
+  "wrong_object_total": 0,
+  "first_success_wall_s": 643.4
+ }
+}

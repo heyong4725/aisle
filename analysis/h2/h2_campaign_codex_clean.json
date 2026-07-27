@@ -1,0 +1,92 @@
+{
+ "ok": true,
+ "treatment": {
+  "commit": "e8f163ab2e6d92c50f1fea579cd921c40dac3093",
+  "agent": "codex",
+  "agent_cli_version": "codex-cli 0.144.6",
+  "model": "gpt-5.6-sol",
+  "prompt_template_sha256": "27819bf2bf20ad70aa168de9fc1c45271a7cfb366f49b35c88d41128288a87b1",
+  "dev_seeds": "0..49",
+  "holdout_seeds": "100..107",
+  "holdout_episodes": 8,
+  "claude_max_turns": null,
+  "runner_sha256": "b14953c1349692c8eb8190d58dc6cf25caba709391864bb6307e54fe8f91d328",
+  "session_spawn": {
+   "stdin": "devnull",
+   "confinement": "none (ADR-h2 point 5)"
+  },
+  "token_ceiling": 5000000,
+  "wall_ceiling_h": 40.0
+ },
+ "sessions": [
+  {
+   "stopped": "agent_done",
+   "rc": 0,
+   "tokens": 241151,
+   "wall_s": 2959.1,
+   "t0_epoch": 1785165046.9928162
+  }
+ ],
+ "tokens_spent": 241151,
+ "wall_spent_s": 2959.1,
+ "frozen_drift": [],
+ "holdout": {
+  "ok": true,
+  "error": null,
+  "pass1": 0.875,
+  "pass8": 0.875,
+  "failures": {
+   "dropped": 1
+  },
+  "run_id": "campaign-holdout-00"
+ },
+ "metrics": {
+  "rollouts": [
+   {
+    "run_id": "20260727-151215-488e80",
+    "mtime": 1785165562.2423382,
+    "episodes": 10,
+    "pass1": 0.9
+   },
+   {
+    "run_id": "skill-stable-narrow-t1-0-9",
+    "mtime": 1785165954.3804877,
+    "episodes": 10,
+    "pass1": 0.9
+   },
+   {
+    "run_id": "skill-hybrid-aperture-t1-0-9",
+    "mtime": 1785166268.2828476,
+    "episodes": 10,
+    "pass1": 0.9
+   },
+   {
+    "run_id": "20260727-153132-b8fa75",
+    "mtime": 1785166605.710571,
+    "episodes": 10,
+    "pass1": 1.0
+   },
+   {
+    "run_id": "20260727-153702-b89301",
+    "mtime": 1785167571.9396954,
+    "episodes": 30,
+    "pass1": 0.967
+   },
+   {
+    "run_id": "skill-low-omeprazole-eval-0-9",
+    "mtime": 1785167961.7451396,
+    "episodes": 10,
+    "pass1": 0.8
+   },
+   {
+    "run_id": "campaign-holdout-00",
+    "mtime": 1785168214.418155,
+    "episodes": 8,
+    "pass1": 0.875
+   }
+  ],
+  "episodes_total": 88,
+  "wrong_object_total": 0,
+  "first_success_wall_s": 515.2
+ }
+}
