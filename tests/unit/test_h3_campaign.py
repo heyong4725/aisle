@@ -249,3 +249,28 @@ def test_selection_typos_refuse():
     )
     assert proc.returncode != 0
     assert '"ok": false' in proc.stdout.lower()
+
+
+def test_holdout_timeout_scales_and_records(tmp_path, monkeypatch):
+    """H3 dry-run finding: S-tier scoring needs ~5h, and a timeout is a
+    recorded outcome, never a campaign abort."""
+    import campaign as c
+
+    seen = {}
+
+    def fake_run(cmd, timeout=None, **kw):
+        seen["timeout"] = timeout
+        raise c.subprocess.TimeoutExpired(cmd, timeout)
+
+    monkeypatch.setattr(c.subprocess, "run", fake_run)
+    (tmp_path / "graphs").mkdir()
+    (tmp_path / "graphs" / "agent_campaign.yaml").write_text("nodes: []\n")
+    out = c.score_holdout(tmp_path, "100..107", "W-S1", "S1")
+    assert seen["timeout"] > 17000
+    assert out["ok"] is False and "exceeded" in out["error"]
+
+
+def test_s_tier_prompt_warns_about_slow_rollouts():
+    from campaign import campaign_prompt
+
+    assert "TENS OF MINUTES" in campaign_prompt("S1", 1000, 1.0, "0..9")
