@@ -142,8 +142,14 @@ def validate_seed_ranges(dev: str, holdout: str) -> str | None:
     return None
 
 
-def campaign_prompt(tier: str, token_ceiling: int, wall_h: float, dev_seeds: str) -> str:
-    return f"""You are the RESEARCH agent for an AISLE {tier} campaign.
+TIER_EMBODIMENT = {"T1": "franka", "S1": "mobile", "S2": "mobile", "S3": "mobile"}
+
+
+def campaign_prompt(
+    tier: str, token_ceiling: int, wall_h: float, dev_seeds: str, note: str = ""
+) -> str:
+    extra = f"\n{note}" if note else ""
+    return f"""You are the RESEARCH agent for an AISLE {tier} campaign.{extra}
 
 Read harness/CLAUDE.research.md FIRST — it is your entire contract
 (goal, hard rules, the copy-paste tool loop, failure taxonomy).
@@ -422,7 +428,7 @@ def run_session(agent: str, cmd: list[str], wt: Path, out: Path, ceilings: dict)
     }
 
 
-def score_holdout(wt: Path, holdout_seeds: str, session_index: int) -> dict:
+def score_holdout(wt: Path, holdout_seeds: str, session_index: int, tier: str = "T1") -> dict:
     """ADR-h2 point 4: the deliverable graph on held-out seeds, run by the
     RUNNER in the session worktree through the standard pipeline."""
     if not (wt / DELIVERABLE).exists():
@@ -435,7 +441,9 @@ def score_holdout(wt: Path, holdout_seeds: str, session_index: int) -> dict:
         "--graph",
         DELIVERABLE,
         "--tier",
-        "T1",
+        tier,
+        "--embodiment",
+        TIER_EMBODIMENT[tier],
         "--episodes",
         str(HOLDOUT_EPISODES),
         "--seeds",
@@ -479,7 +487,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--agent", choices=("claude", "codex"), default="claude")
     parser.add_argument("--model", default=None)
-    parser.add_argument("--tier", default="T1", choices=("T1",))  # T2 needs L2 (ADR-h2 p1)
+    parser.add_argument("--tier", default="T1", choices=tuple(TIER_EMBODIMENT))
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "runs" / "h2")
     parser.add_argument(
         "--commit",
@@ -542,7 +550,7 @@ def main() -> int:
 
     sweep_worktree(wt)  # the session's rollouts may have leaked nodes
     drift = audit_frozen(wt, oid)
-    holdout = score_holdout(wt, args.holdout_seeds, session_index)
+    holdout = score_holdout(wt, args.holdout_seeds, session_index, args.tier)
     sweep_worktree(wt)  # ...and so may the holdout rollout
     metrics = campaign_metrics(wt, session_t0=sessions[0]["t0_epoch"])
     record = {
