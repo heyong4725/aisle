@@ -17,6 +17,9 @@ Idea tree:
 - HAR-8: An idea is OPEN if logged and not closed. Rollout gate per HAR-2.
 
 Traceability:
+- HAR-10: `harness swap --dataflow <name|uuid> --replace <node-id> --with <node.yaml>` hot-swaps a node on a LIVE dataflow (design doc §9.1): it MUST validate the full POST-SWAP graph (every SPEC 060 check, including motion gating and INSTALL_MISSING) and refuse on any error BEFORE any runtime mutation; only then drive `dora node add/connect/remove`. CON-8 JSON with the swap timestamp.
+- HAR-11: `harness probe --dataflow <name|uuid> --topic <producer/topic> --for <seconds>` attaches a TEMPORARY read-only inspector node to a live topic and detaches after the window; probes MUST never publish onto existing topics and MUST be excluded from oracle-isolation exemptions (a probe consuming oracle_state is refused, VAL-6 applies).
+- HAR-12: Every swap and probe MUST append a JSONL event (ts, dataflow, node, action, open idea id if any) to `runs/swaps/<branch>.jsonl` — the raw material of the H4 iteration-latency metric (idea-open ts → first episode result after the change, relaunch vs hot-swap).
 - HAR-9: `tools/trace_check.py` scans specs for MUST requirement IDs and tests for docstring citations; exits nonzero listing uncovered MUSTs. CI runs it (CON: CON-2 note — marker unit).
 
 Acceptance: `tests/accept/test_rollout_m0.py::test_expert_t0_50eps` (HAR-1..4 end-to-end; also M0-1), `tests/unit/test_idea_gate.py` (HAR-2,7,8), `tests/unit/test_trace_check_selfhost.py` (HAR-9 — run trace_check on this repo; it must pass).

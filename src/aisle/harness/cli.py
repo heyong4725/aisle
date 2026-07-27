@@ -100,6 +100,20 @@ def build_parser() -> argparse.ArgumentParser:
     skr = sk_sub.add_parser("register", help="validate + eval + evalcard + install")
     skr.add_argument("skill_dir", type=Path, help="skills/<name>/ directory")
     skr.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+
+    sw = subparsers.add_parser("swap", help="hot-swap a node on a live dataflow (HAR-10)")
+    sw.add_argument("--graph", type=Path, required=True)
+    sw.add_argument("--dataflow", required=True)
+    sw.add_argument("--replace", required=True, dest="node_id")
+    sw.add_argument("--with", type=Path, required=True, dest="with_yaml")
+    sw.add_argument("--embodiment", default="franka")
+    sw.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+
+    pr = subparsers.add_parser("probe", help="attach a temporary topic inspector (HAR-11)")
+    pr.add_argument("--dataflow", required=True)
+    pr.add_argument("--topic", required=True)
+    pr.add_argument("--for", type=float, default=30.0, dest="seconds")
+    pr.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     skr.add_argument("--run-id", default=None, help="override the eval run id (CON-5)")
     return parser
 
@@ -141,6 +155,24 @@ def main() -> int:
         )
         return emit_report(report, lambda level, e: f"rollout {level}: {e}")
 
+    if args.command == "swap":
+        from aisle.harness.swap import swap
+
+        report = swap(
+            args.root,
+            args.graph,
+            args.dataflow,
+            args.node_id,
+            args.with_yaml,
+            args.embodiment,
+            _branch(args.root),
+        )
+        return emit_report(report, lambda level, e: f"swap {level}: {e}")
+    if args.command == "probe":
+        from aisle.harness.swap import probe
+
+        report = probe(args.root, args.dataflow, args.topic, args.seconds, _branch(args.root))
+        return emit_report(report, lambda level, e: f"probe {level}: {e}")
     if args.command == "skill":
         from aisle.harness.rollout import rollout
         from aisle.harness.skill import RegistrationError, register_skill
