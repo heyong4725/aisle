@@ -11,14 +11,20 @@ stdout, logs to stderr, exit 0 iff the campaign record was written.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+import yaml
+
 sys.path.insert(0, str(Path(__file__).parent))
 from campaign import (  # noqa: E402
+    DEV_SEEDS,
+    HOLDOUT_SEEDS,
     agent_cmd_campaign,
     audit_frozen,
     campaign_metrics,
@@ -43,8 +49,6 @@ SCENARIOS = (
 )
 # D5: identical in both arms — a nudge, not a treatment
 NUDGE = "Distill what works into registered skills — they may pay off later."
-DEV_SEEDS = "0..49"
-HOLDOUT_SEEDS = "100..107"
 
 
 def wipe_library(wt: Path, oid: str) -> dict:
@@ -52,43 +56,53 @@ def wipe_library(wt: Path, oid: str) -> dict:
     skills/ byte-exact at the pinned OID, agent graphs and the idea tree
     removed; the ledger and run artifacts persist (global budget
     continuity)."""
-    subprocess.run(["git", "checkout", oid, "--", "registry/manifests"], cwd=wt, check=True)
-    removed = []
+    # restore EVERY tracked file to the pin (a modified tracked file
+    # anywhere — an expert graph, a src helper — is surviving agent state;
+    # PR #48 adversarial review), then remove ALL untracked residue except
+    # runs/ (ledger + artifacts persist for budget continuity)
+    subprocess.run(["git", "checkout", oid, "--", "."], cwd=wt, check=True)
     clean = subprocess.run(
-        ["git", "clean", "-fdx", "--", "registry/manifests", "skills", "graphs"],
+        ["git", "clean", "-fdx", "-e", "runs"],
         cwd=wt,
         capture_output=True,
         text=True,
         check=True,
     )
-    removed += [line.removeprefix("Removing ") for line in clean.stdout.splitlines()]
-    for idea_file in (wt / "runs" / "ideas").glob("*"):
-        removed.append(str(idea_file.relative_to(wt)))
-        idea_file.unlink()
+    removed = [line.removeprefix("Removing ") for line in clean.stdout.splitlines()]
+    ideas = wt / "runs" / "ideas"
+    if ideas.exists():
+        removed.append("runs/ideas/")
+        shutil.rmtree(ideas)
     return {"removed": removed}
 
 
-def skill_reuse(wt: Path, deliverable: Path, prior_skill_ids: set[str]) -> list[str]:
+def skill_reuse(deliverable: Path, prior_skill_ids: set[str]) -> list[str]:
     """The transfer signal (protocol point 5): nodes of the scored graph
-    whose evalcarded manifest was registered in an EARLIER scenario."""
-    import yaml
-
+    whose evalcarded manifest was registered in an EARLIER scenario.
+    Agent-authored input: malformed YAML is no reuse, never a crash
+    (PR #48 review)."""
     if not deliverable.exists():
         return []
-    doc = yaml.safe_load(deliverable.read_text()) or {}
-    node_ids = {n.get("id") for n in doc.get("nodes") or []}
+    try:
+        doc = yaml.safe_load(deliverable.read_text())
+    except yaml.YAMLError:
+        return []
+    if not isinstance(doc, dict):
+        return []
+    node_ids = {n.get("id") for n in doc.get("nodes") or [] if isinstance(n, dict)}
     return sorted(node_ids & prior_skill_ids)
 
 
 def registered_skill_ids(wt: Path) -> set[str]:
     """Agent-authored manifests with an evalcard, installed in the arm's
     registry (the library's current contents)."""
-    import yaml
-
     ids = set()
     for path in (wt / "registry" / "manifests").glob("*.yaml"):
-        m = yaml.safe_load(path.read_text()) or {}
-        if m.get("origin") == "agent-authored" and m.get("eval"):
+        try:
+            m = yaml.safe_load(path.read_text())
+        except yaml.YAMLError:
+            continue  # agent-authored garbage is not a skill, not a crash
+        if isinstance(m, dict) and m.get("origin") == "agent-authored" and m.get("eval"):
             ids.add(m.get("id"))
     return ids
 
@@ -116,12 +130,12 @@ def run_scenario(
     )
     sweep_worktree(wt)
     drift = audit_frozen(wt, oid)
-    holdout = score_holdout(wt, HOLDOUT_SEEDS, 0, tier)
+    holdout = score_holdout(wt, HOLDOUT_SEEDS, f"{arm}-{tier}", tier)
     sweep_worktree(wt)
-    metrics = campaign_metrics(wt, session_t0=t0)
-    # scope the trajectory to THIS scenario's rollouts
-    metrics["rollouts"] = [r for r in metrics["rollouts"] if r["mtime"] >= t0]
-    reuse = skill_reuse(wt, wt / "graphs" / "agent_campaign.yaml", prior_skills)
+    # since=t0 scopes EVERY aggregate to this scenario (PR #48 review:
+    # unscoped first_success/wrong_object contaminated the H3 headline)
+    metrics = campaign_metrics(wt, session_t0=t0, since=t0)
+    reuse = skill_reuse(wt / "graphs" / "agent_campaign.yaml", prior_skills)
     record = {
         "arm": arm,
         "tier": tier,
@@ -159,9 +173,17 @@ def main() -> int:
     oid = resolve_commit(REPO_ROOT, args.commit)
     treatment = campaign_treatment(agent, model, oid, DEV_SEEDS, HOLDOUT_SEEDS)
     treatment["protocol"] = "ADR-h3-campaign-protocol"
+    treatment["nudge_sha256"] = hashlib.sha256(NUDGE.encode()).hexdigest()
     treatment["budget_scale"] = args.budget_scale
     arms = [a for a in ARMS if a in args.arms.split(",")]
-    tiers = args.scenarios.split(",")
+    tiers = [s["tier"] for s in SCENARIOS if s["tier"] in args.scenarios.split(",")]
+    unknown = (set(args.arms.split(",")) - set(ARMS)) | (
+        set(args.scenarios.split(",")) - {s["tier"] for s in SCENARIOS}
+    )
+    if unknown or not arms or not tiers:
+        # a typo must refuse, not exit 0 with an empty "campaign" (PR #48)
+        print(json.dumps({"ok": False, "error": f"bad selection: {sorted(unknown)}"}))
+        return 1
     records = []
     for arm in arms:
         wt = args.out / f"worktree_{arm}"
@@ -180,8 +202,17 @@ def main() -> int:
                 "wall_h": scenario["wall_h"] * args.budget_scale,
             }
             print(f"[h3] arm {arm} {scenario['tier']} starting", file=sys.stderr)
-            records.append(run_scenario(wt, oid, arm, scaled, args.out, agent, model))
-    ok = all(not r["frozen_drift"] for r in records)
+            try:
+                records.append(run_scenario(wt, oid, arm, scaled, args.out, agent, model))
+            except Exception as exc:  # noqa: BLE001 — protocol point 8
+                # infra abort: keep prior records, attribute, stop the run
+                records.append({"arm": arm, "tier": scenario["tier"], "infra_error": repr(exc)})
+                (args.out / "h3_results.json").write_text(
+                    json.dumps({"ok": False, "treatment": treatment, "records": records}, indent=1)
+                )
+                print(json.dumps({"ok": False, "error": f"infra abort: {exc!r}"}))
+                return 1
+    ok = all(not r.get("frozen_drift") for r in records)
     (args.out / "h3_results.json").write_text(
         json.dumps({"ok": ok, "treatment": treatment, "records": records}, indent=1)
     )

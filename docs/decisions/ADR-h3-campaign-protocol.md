@@ -122,7 +122,7 @@ L (D6 rationale).
 - **D6 — RESOLVED as proposed:** W-first (point 9's bias-against-H3
   rationale).
 
-## Prerequisites before accepting
+## Prerequisites (first two verified at acceptance; dry run pending)
 
 - H1 protocol results landed (same session machinery is reused; H1 is
   the shakedown).

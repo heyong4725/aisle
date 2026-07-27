@@ -33,6 +33,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DELIVERABLE = "graphs/agent_campaign.yaml"
 HOLDOUT_EPISODES = 8
 POLL_S = 5.0
+DEV_SEEDS = "0..49"
+HOLDOUT_SEEDS = "100..107"
 TEE_JOIN_S = 10.0  # stream-drain grace after the session exits
 
 
@@ -90,7 +92,7 @@ def parse_usage_codex(lines: list[str]) -> int:
         if new_input < 0:
             # cached > input means the vendor's accounting scales diverged;
             # clamping silently would systematically undercount (PR #41)
-            print(f"[h2] WARNING codex usage anomaly: new_input={new_input}", file=sys.stderr)
+            print(f"[campaign] WARNING codex usage anomaly: new_input={new_input}", file=sys.stderr)
         total += max(0, new_input) + _tok(usage, "output_tokens")
     return total
 
@@ -239,7 +241,8 @@ def audit_frozen(wt: Path, oid: str) -> list[str]:
     pinned OID; any drifted path is reported (the gate would have refused
     rollouts under drift, but the audit makes tampering visible even
     without a rollout)."""
-    paths = [*FROZEN_DIRS, *FROZEN_FILES]
+    # expert graphs are part of the env-hashed frozen set (env_hash.py)
+    paths = [*FROZEN_DIRS, *FROZEN_FILES, "graphs/expert_*.yaml"]
     diff = subprocess.run(
         ["git", "diff", "--name-only", oid, "--", *paths],
         cwd=wt,
@@ -282,11 +285,11 @@ def sweep_worktree(wt: Path) -> list[int]:
             except (ProcessLookupError, PermissionError):
                 pass
     if killed:
-        print(f"[h2] swept {len(killed)} leaked worktree process(es)", file=sys.stderr)
+        print(f"[campaign] swept {len(killed)} leaked worktree process(es)", file=sys.stderr)
     return killed
 
 
-def campaign_metrics(wt: Path, session_t0: float) -> dict:
+def campaign_metrics(wt: Path, session_t0: float, since: float | None = None) -> dict:
     """ADR-h2 point 7, from harness-written artifacts only: chronological
     pass1 trajectory, wall time to the first verified success, wrong_object
     total (H5), episode totals."""
@@ -297,6 +300,11 @@ def campaign_metrics(wt: Path, session_t0: float) -> dict:
     for manifest_path in sorted((wt / "runs").glob("*/manifest.json")):
         episodes_path = manifest_path.parent / "episodes.jsonl"
         if not episodes_path.exists():
+            continue
+        # `since` scopes EVERY aggregate (first_success, wrong_object,
+        # totals) to one scenario in a persistent worktree — filtering
+        # only the trajectory contaminated the H3 headline (PR #48 review)
+        if since is not None and episodes_path.stat().st_mtime < since:
             continue
         episodes = [
             json.loads(line) for line in episodes_path.read_text().splitlines() if line.strip()
@@ -407,7 +415,7 @@ def run_session(agent: str, cmd: list[str], wt: Path, out: Path, ceilings: dict)
         if reader.is_alive():
             # an escaped grandchild holds the pipe open past killpg: the
             # drain is incomplete — attribute a possibly-short count
-            print("[h2] WARNING stream drain incomplete after session exit", file=sys.stderr)
+            print("[campaign] WARNING stream drain incomplete after session exit", file=sys.stderr)
         try:
             proc.stdout.close()
         except OSError:
@@ -428,7 +436,7 @@ def run_session(agent: str, cmd: list[str], wt: Path, out: Path, ceilings: dict)
     }
 
 
-def score_holdout(wt: Path, holdout_seeds: str, session_index: int, tier: str = "T1") -> dict:
+def score_holdout(wt: Path, holdout_seeds: str, run_tag: str, tier: str = "T1") -> dict:
     """ADR-h2 point 4: the deliverable graph on held-out seeds, run by the
     RUNNER in the session worktree through the standard pipeline."""
     if not (wt / DELIVERABLE).exists():
@@ -449,7 +457,7 @@ def score_holdout(wt: Path, holdout_seeds: str, session_index: int, tier: str = 
         "--seeds",
         holdout_seeds,
         "--run-id",
-        f"campaign-holdout-{session_index:02d}",
+        f"campaign-holdout-{run_tag}",
         # protocol spend, not agent spend: the logged local baseline (the
         # worktree IS the pinned commit) and no idea gate (runner machinery)
         "--env-baseline",
@@ -497,8 +505,8 @@ def main() -> int:
     )
     parser.add_argument("--budget-tokens", type=int, default=None)
     parser.add_argument("--wall-h", type=float, default=None)
-    parser.add_argument("--dev-seeds", default="0..49")
-    parser.add_argument("--holdout-seeds", default="100..107")
+    parser.add_argument("--dev-seeds", default=DEV_SEEDS)
+    parser.add_argument("--holdout-seeds", default=HOLDOUT_SEEDS)
     parser.add_argument("--keep-worktree", action="store_true")
     args = parser.parse_args()
 
@@ -550,7 +558,7 @@ def main() -> int:
 
     sweep_worktree(wt)  # the session's rollouts may have leaked nodes
     drift = audit_frozen(wt, oid)
-    holdout = score_holdout(wt, args.holdout_seeds, session_index, args.tier)
+    holdout = score_holdout(wt, args.holdout_seeds, f"{session_index:02d}", args.tier)
     sweep_worktree(wt)  # ...and so may the holdout rollout
     metrics = campaign_metrics(wt, session_t0=sessions[0]["t0_epoch"])
     record = {

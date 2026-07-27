@@ -18,7 +18,7 @@ from h3_campaign import (  # noqa: E402
     registered_skill_ids,
     skill_reuse,
     wipe_library,
-)
+)  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -120,8 +120,8 @@ def test_skill_reuse_counts_only_prior_evalcarded_skills(tmp_path):
     )
     assert registered_skill_ids(wt) == {"nav-helper", "new-this-scenario"}
     prior = {"nav-helper"}  # snapshot taken BEFORE the scenario
-    assert skill_reuse(wt, deliverable, prior) == ["nav-helper"]
-    assert skill_reuse(wt, wt / "missing.yaml", prior) == []
+    assert skill_reuse(deliverable, prior) == ["nav-helper"]
+    assert skill_reuse(wt / "missing.yaml", prior) == []
 
 
 def test_scenario_tiers_are_mobile_scored():
@@ -131,3 +131,121 @@ def test_scenario_tiers_are_mobile_scored():
 
     assert TIER_EMBODIMENT["S1"] == TIER_EMBODIMENT["S2"] == TIER_EMBODIMENT["S3"] == "mobile"
     assert TIER_EMBODIMENT["T1"] == "franka"
+
+
+def test_wipe_restores_tracked_files_repo_wide(tmp_path):
+    """PR #48 adversarial review: a MODIFIED tracked file anywhere (an
+    expert graph, a src helper) is surviving agent state — the wipe now
+    restores every tracked file and removes all untracked residue except
+    runs/."""
+    wt, oid = _mini_repo(tmp_path)
+    tracked_graph = wt / "graphs" / "expert_t0.yaml"
+    original = tracked_graph.read_text()
+    tracked_graph.write_text("nodes: [TAMPERED]\n")
+    stash = wt / "src_helper_stash.py"  # untracked, outside old pathspecs
+    stash.write_text("secret prior-scenario logic")
+    (wt / "runs").mkdir()
+    (wt / "runs" / "campaign_ledger.jsonl").write_text("{}\n")
+    wipe_library(wt, oid)
+    assert tracked_graph.read_text() == original
+    assert not stash.exists()
+    assert (wt / "runs" / "campaign_ledger.jsonl").exists()
+
+
+def test_wipe_survives_missing_surfaces(tmp_path):
+    """PR #48 review: no skills/, no runs/ideas — the wipe is a no-op for
+    absent surfaces, never an error."""
+    wt, oid = _mini_repo(tmp_path)
+    wipe_library(wt, oid)
+
+
+def test_malformed_agent_yaml_never_crashes(tmp_path):
+    """PR #48 adversarial review: manifests and the deliverable are
+    agent-controlled — malformed YAML must be skipped, not abort a
+    multi-hour campaign unattributed."""
+    (tmp_path / "registry" / "manifests").mkdir(parents=True)
+    (tmp_path / "registry" / "manifests" / "bad.yaml").write_text("{: [unclosed")
+    (tmp_path / "registry" / "manifests" / "list.yaml").write_text("- just\n- a list\n")
+    (tmp_path / "registry" / "manifests" / "good.yaml").write_text(
+        "id: ok-skill\norigin: agent-authored\neval: {pass_rate: 0.9}\n"
+    )
+    assert registered_skill_ids(tmp_path) == {"ok-skill"}
+    bad_deliverable = tmp_path / "g.yaml"
+    bad_deliverable.write_text("{: [unclosed")
+    assert skill_reuse(bad_deliverable, {"ok-skill"}) == []
+    bad_deliverable.write_text("- scalar\n- nodes\n")
+    assert skill_reuse(bad_deliverable, {"ok-skill"}) == []
+
+
+def test_campaign_metrics_since_scopes_all_aggregates(tmp_path):
+    """PR #48 review (the H3-headline bug): in a persistent worktree,
+    first_success and wrong_object from PRIOR scenarios must not leak
+    into this scenario's record."""
+    import os
+
+    from campaign import campaign_metrics
+
+    old_run = tmp_path / "runs" / "s1-old"
+    old_run.mkdir(parents=True)
+    (old_run / "manifest.json").write_text('{"run_id": "s1-old"}')
+    ep = old_run / "episodes.jsonl"
+    ep.write_text('{"episode": 0, "status": "success", "failure": null}\n')
+    os.utime(ep, (1_000_000, 1_000_000))
+    os.utime(old_run / "manifest.json", (1_000_000, 1_000_000))
+    metrics = campaign_metrics(tmp_path, session_t0=2_000_000.0, since=2_000_000.0)
+    assert metrics["rollouts"] == []
+    assert metrics["first_success_wall_s"] is None  # S1's success must not leak
+    assert metrics["wrong_object_total"] == 0
+    assert metrics["episodes_total"] == 0
+
+
+def test_holdout_run_tags_are_unique_per_scenario():
+    """PR #48 review: session_index=0 collided run-ids from S2 onward,
+    losing pass@1 for 4/6 scenarios; tags are now arm+tier strings."""
+    import inspect
+
+    import h3_campaign
+
+    src = inspect.getsource(h3_campaign.run_scenario)
+    assert 'f"{arm}-{tier}"' in src
+
+
+def test_holdout_scoring_argv_carries_tier_and_embodiment(tmp_path, monkeypatch):
+    """PR #48 review: assert the BUILT command, not just the mapping —
+    S-tier holdout scoring must pass --tier S1 --embodiment mobile and
+    the unique run tag."""
+    import campaign as c
+
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+
+        class R:
+            stdout = '{"ok": true}'
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr(c.subprocess, "run", fake_run)
+    (tmp_path / "graphs").mkdir()
+    (tmp_path / "graphs" / "agent_campaign.yaml").write_text("nodes: []\n")
+    c.score_holdout(tmp_path, "100..107", "W-S1", "S1")
+    cmd = captured["cmd"]
+    assert "--tier" in cmd and cmd[cmd.index("--tier") + 1] == "S1"
+    assert "--embodiment" in cmd and cmd[cmd.index("--embodiment") + 1] == "mobile"
+    assert "campaign-holdout-W-S1" in cmd
+
+
+def test_selection_typos_refuse():
+    """PR #48 review: a typo'd --arms/--scenarios must refuse (CON-8),
+    never exit 0 with an empty campaign record."""
+    import subprocess as sp
+
+    proc = sp.run(
+        [sys.executable, str(REPO_ROOT / "tools" / "h3_campaign.py"), "--arms", "w"],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode != 0
+    assert '"ok": false' in proc.stdout.lower()
