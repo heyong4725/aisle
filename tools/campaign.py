@@ -161,6 +161,9 @@ Campaign parameters:
   withheld from you).
 - Budgets: {token_ceiling:,} tokens and {wall_h:g} h wall for this campaign;
   episode and wall ceilings are also enforced by the harness ledger.
+- Store-scene (S-tier) rollouts take TENS OF MINUTES each: run them with
+  long command timeouts and wait for completion — a rollout is not failed
+  just because it is slow.
 - Your deliverable is {DELIVERABLE}: keep it pointed at your current best
   system at ALL times — it is scored on held-out seeds after your session
   ends, exactly as `harness rollout` would run it.
@@ -464,7 +467,14 @@ def score_holdout(wt: Path, holdout_seeds: str, run_tag: str, tier: str = "T1") 
         "local",
         "--no-idea-gate",
     ]
-    proc = subprocess.run(cmd, cwd=wt, capture_output=True, text=True, timeout=3600)
+    # S-tier episodes carry 2100 s wall budgets EACH (the dry run's 3600 s
+    # cap killed S1 scoring mid-run); a scoring timeout is a recorded
+    # outcome, never a campaign abort
+    timeout = 3600 if tier == "T1" else 420 + HOLDOUT_EPISODES * 2100 + 600
+    try:
+        proc = subprocess.run(cmd, cwd=wt, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": f"holdout scoring exceeded {timeout}s"}
     try:
         return json.loads(proc.stdout)
     except json.JSONDecodeError:
