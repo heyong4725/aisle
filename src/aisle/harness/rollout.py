@@ -479,6 +479,7 @@ def rollout(
     relaunches = 0
     last_size = -1
     last_growth = time.monotonic()
+    current_traces = traces_dir
     lines_at_launch = 0
     last_lines = 0
     last_line_t = time.monotonic()
@@ -498,7 +499,11 @@ def rollout(
             # data the genesis build is running (minutes, no traces yet),
             # so the pre-data grace is much longer (an early fire killed
             # the building bridge at 180 s)
-            size = sum(f.stat().st_size for f in traces_dir.rglob("*") if f.is_file())
+            # the stall signal watches the CURRENT launch's dir only:
+            # keyed on the whole tree, a relaunch build inherits the prior
+            # launch's nonzero total and gets the short post-data grace —
+            # falsely stall-killed mid-build (PR #58 self-review)
+            size = sum(f.stat().st_size for f in current_traces.glob("*") if f.is_file())
             if size != last_size:
                 last_size = size
                 last_growth = time.monotonic()
@@ -548,6 +553,7 @@ def rollout(
                 # on open, and prior evidence must survive (HAR-4)
                 relaunch_traces = traces_dir / f"relaunch-{relaunches}"
                 relaunch_traces.mkdir(parents=True, exist_ok=True)
+                current_traces = relaunch_traces
                 exec_graph = instrumented_graph(
                     graph,
                     root,

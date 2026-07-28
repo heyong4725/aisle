@@ -336,6 +336,7 @@ def test_relaunch_reaps_orphans_and_isolates_trace_dirs(tmp_path, monkeypatch):
 
     class FakeClock:
         t = 0.0
+        grow = None  # trace file the live launch keeps appending to
 
         def monotonic(self):
             return self.t
@@ -345,6 +346,12 @@ def test_relaunch_reaps_orphans_and_isolates_trace_dirs(tmp_path, monkeypatch):
 
         def sleep(self, s):
             self.t += s
+            if self.grow is not None:
+                # the W/S2 signature: traces GROW while the episode wedges
+                with open(self.grow, "ab") as f:
+                    f.write(b"x")
+
+    clock = FakeClock()
 
     class FakeProc:
         pid = 2**22
@@ -379,6 +386,17 @@ def test_relaunch_reaps_orphans_and_isolates_trace_dirs(tmp_path, monkeypatch):
         recorder = next(n for n in graph_doc["nodes"] if n["id"] == "trace-recorder")
         events.append(("spawn", env["AISLE_SEEDS"], recorder["env"]["AISLE_TRACE_DIR"]))
         launches = len([e for e in events if e[0] == "spawn"])
+        if launches == 1:
+            # launch 1's traces grow while it wedges (the whole reason the
+            # stall detector cannot catch a wedged episode) and its bytes
+            # REMAIN after the kill: the stall watcher must key its
+            # pre-data grace on the CURRENT launch's dir, or the relaunch
+            # build (no new bytes for >STALL_S while the prior total sits
+            # nonzero) is falsely stall-killed (PR #58 self-review)
+            tdir = Path(recorder["env"]["AISLE_TRACE_DIR"])
+            tdir.mkdir(parents=True, exist_ok=True)
+            (tdir / "topic.arrow").write_bytes(b"x" * 64)
+            clock.grow = tdir / "topic.arrow"
         if launches == 3:  # third launch: the remaining seed lands
             with open(env["AISLE_RESULTS"], "a") as f:
                 f.write('{"episode": 0, "seed": 2, "status": "success", "success": true}\n')
@@ -386,10 +404,15 @@ def test_relaunch_reaps_orphans_and_isolates_trace_dirs(tmp_path, monkeypatch):
         proc.args = cmd
         return proc
 
-    monkeypatch.setattr(ro, "time", FakeClock())
+    monkeypatch.setattr(ro, "time", clock)
     monkeypatch.setattr(ro.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(ro, "run_gates", lambda *a, **k: {"ok": True, "env_hash": "x"})
-    monkeypatch.setattr(ro, "reap_orphans", lambda *a, **k: events.append(("reap",)))
+
+    def fake_reap(*a, **k):
+        events.append(("reap",))
+        clock.grow = None  # the killed launch's writers stop with the reap
+
+    monkeypatch.setattr(ro, "reap_orphans", fake_reap)
     report = ro.rollout(
         root=root,
         graph=root / "graphs" / "g.yaml",
