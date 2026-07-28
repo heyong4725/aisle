@@ -127,6 +127,26 @@ def test_load_and_cli_shape(tmp_path):
     assert "| W " in text and "| L " in text
 
 
+def test_verdict_excludes_leaked_cells_and_prefers_rerun():
+    """PR #57 review: contaminated (wipe_leak) cells never enter the
+    verdict — with only leaked W cells the verdict stays None (pending
+    the rerun); once an unflagged rerun record (higher attempt) exists,
+    the verdict uses IT, not the flagged original."""
+    leaked_w2 = cell(record("W", "S2", first_success=100.0, prior=["s1-driver-v2"]))
+    leaked_w3 = cell(record("W", "S3", first_success=100.0, prior=["s1-driver-v2"]))
+    l2 = cell(record("L", "S2", first_success=400.0))
+    l3 = cell(record("L", "S3", first_success=400.0))
+    pending = h3_verdict([leaked_w2, leaked_w3, l2, l3])
+    assert pending["met"] is None  # leaked cells are NOT usable W data
+
+    rerun_w2 = cell({**record("W", "S2", first_success=1000.0), "attempt": 2})
+    rerun_w3 = cell({**record("W", "S3", first_success=1000.0), "attempt": 2})
+    verdict = h3_verdict([leaked_w2, leaked_w3, rerun_w2, rerun_w3, l2, l3])
+    assert verdict["ratios"]["S2"] == pytest.approx(0.4)  # rerun's 1000, not leaked 100
+    assert verdict["met"] is True
+    assert any("wipe_leak" in c for c in verdict["caveats"])  # history stays visible
+
+
 def test_markdown_marks_leak_and_stop_reason():
     cells = [
         cell(record("W", "S2", prior=["s1-driver-v2"], holdout_ok=False)),

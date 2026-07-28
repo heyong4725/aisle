@@ -39,6 +39,7 @@ def cell(rec: dict) -> dict:
     return {
         "arm": rec.get("arm"),
         "tier": rec.get("tier"),
+        "attempt": rec.get("attempt", 1),
         "holdout_pass1": holdout.get("pass1"),
         "holdout_failures": holdout.get("failures"),
         "stopped": session.get("stopped"),
@@ -53,11 +54,17 @@ def cell(rec: dict) -> dict:
 
 
 def _first_success(cells: list[dict], arm: str, tier: str) -> tuple[bool, float | None]:
-    """(cell_exists, first_success_wall_s)."""
-    for c in cells:
-        if c["arm"] == arm and c["tier"] == tier:
-            return True, c["first_success_wall_s"]
-    return False, None
+    """(eligible_cell_exists, first_success_wall_s). PR #57 review:
+    wipe_leak cells are contaminated and EXCLUDED from the verdict —
+    they stay in the table as history; the verdict uses the
+    highest-attempt unflagged cell (the rerun once it lands)."""
+    eligible = [
+        c for c in cells if c["arm"] == arm and c["tier"] == tier and "wipe_leak" not in c["flags"]
+    ]
+    if not eligible:
+        return False, None
+    best = max(eligible, key=lambda c: c["attempt"])
+    return True, best["first_success_wall_s"]
 
 
 def h3_verdict(cells: list[dict]) -> dict:
