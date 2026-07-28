@@ -20,7 +20,7 @@ New to the repo? Start with `docs/getting-started.md`.
 | H2 — iteration to ≥90% | claude arm **met** held-out (1.0 pass@1); codex arm 0.875 held-out at N=8 (one `dropped`), with dev-side evidence of a ≥0.9 system — see `analysis/h2/` for the full verdict |
 | H3 — skill accumulation (S1→S3 transfer) | measured campaign in flight (`docs/decisions/ADR-h3-campaign-protocol.md`) |
 | H4 — hot-swap vs relaunch iteration | machinery landed (`harness swap` / `harness probe`, SPEC 070 HAR-10..12); experiment queued |
-| H5 — zero wrong-object under free iteration | holding: 0 wrong-object in 224/224 episodes across the three H2 campaign runs (`analysis/h2/`); H3 scenario records to date also report 0 |
+| H5 — zero wrong-object under free iteration | holding on committed evidence: 0 wrong-object in 224/224 episodes across the three H2 campaign runs (`analysis/h2/`) |
 | Retail suite S1–S3 (mobile, long-horizon) | implemented: store scene, planogram verifier, mobility contract, S1 expert graph |
 | Realistic verifier | decision brief at `docs/decisions/ADR-realistic-verifier.md`; implementation pending |
 
