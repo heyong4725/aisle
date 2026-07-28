@@ -27,11 +27,24 @@ first episode of a launch). Past that:
 3. the run RELAUNCHES with the remaining seeds, so one wedged episode
    costs exactly its budget instead of every seed after it.
 
-The manifest records `wall_clamped` (seeds) and `relaunches`. The
-overall run deadline is unchanged (ADR-21's campaign wall cap still
-binds); relaunch build time comes out of the same budget.
+The manifest records `wall_clamped` (seeds) and `relaunches`.
 `rollout_client` now opens the results file in append mode — after a
 relaunch it is the second writer to the same file.
+
+Hardened per the PR #58 review:
+
+- **Reap before relaunch.** Stale nodes from the killed launch are
+  concurrent writers to results/traces (dora-rs/dora#2856); orphans are
+  reaped between terminate and respawn, not only in the `finally`.
+- **Per-launch trace dirs.** The recorder truncates its Arrow/video
+  files on open, so each relaunch gets its own instrumented graph
+  (`graph-rN.yaml`) pointing at `traces/relaunch-N/` — the prior
+  launch's evidence survives (HAR-4). The stall watcher and video
+  listing scan recursively.
+- **Deadline grows with relaunches.** Each relaunch pays a fresh
+  Genesis build, so the deadline extends by the build grace per
+  relaunch — still bounded by ADR-21's campaign wall cap — else
+  consecutive wedges cut the tail seeds out of the original budget.
 
 ## Consequences
 

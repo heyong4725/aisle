@@ -330,10 +330,15 @@ def run_gates(
     return {"ok": True, **gates, "idea": ideas[-1]["id"], "no_idea_gate": False}
 
 
-def instrumented_graph(graph: Path, root: Path, run_dir: Path) -> Path:
+def instrumented_graph(
+    graph: Path, root: Path, run_dir: Path, trace_dir: Path | None = None, name: str = "graph.yaml"
+) -> Path:
     """The input graph plus a trace-recorder node (HAR-4) with absolutized
     node paths, written under the run dir (dora's cwd becomes the run dir,
-    which also scopes orphan cleanup)."""
+    which also scopes orphan cleanup). trace_dir/name vary per wall-clamp
+    relaunch (ADR-23): the recorder opens its Arrow/video files in write
+    mode, so a relaunch pointed at the SAME dir would truncate the prior
+    launch's evidence (PR #58 review)."""
     doc = yaml.safe_load(graph.read_text())
     for node in doc["nodes"]:
         node["path"] = str((graph.parent / node["path"]).resolve())
@@ -352,10 +357,10 @@ def instrumented_graph(graph: Path, root: Path, run_dir: Path) -> Path:
             # run dir otherwise kills the dataflow at startup, zero episodes
             "path": str((root / "src" / "aisle" / "harness" / "trace_recorder.py").resolve()),
             "inputs": inputs,
-            "env": {"AISLE_TRACE_DIR": str(run_dir / "traces")},
+            "env": {"AISLE_TRACE_DIR": str(trace_dir if trace_dir else run_dir / "traces")},
         }
     )
-    out_path = run_dir / "graph.yaml"
+    out_path = run_dir / name
     out_path.write_text(yaml.safe_dump(doc, sort_keys=False))
     return out_path
 
@@ -464,6 +469,8 @@ def rollout(
         # wall budget — a single long rollout cannot blow through the
         # ceiling it passed at the gate
         run_budget_s = min(run_budget_s, gates["budget"]["wall_h_left"] * 3600.0)
+    # the campaign wall cap also bounds relaunch deadline extensions
+    hard_cap_s = gates["budget"]["wall_h_left"] * 3600.0 if env_baseline != "local" else None
     deadline = started + run_budget_s
     proc = _spawn_dora(exec_graph, run_dir, env)
     episode_records: list[dict] = []
@@ -491,7 +498,7 @@ def rollout(
             # data the genesis build is running (minutes, no traces yet),
             # so the pre-data grace is much longer (an early fire killed
             # the building bridge at 180 s)
-            size = sum(f.stat().st_size for f in traces_dir.glob("*") if f.is_file())
+            size = sum(f.stat().st_size for f in traces_dir.rglob("*") if f.is_file())
             if size != last_size:
                 last_size = size
                 last_growth = time.monotonic()
@@ -511,6 +518,10 @@ def rollout(
             )
             if time.monotonic() - last_line_t > grace:
                 _terminate(proc)
+                # stale nodes from the killed launch are CONCURRENT WRITERS
+                # to results/traces (dora-rs/dora#2856) — reap before any
+                # relaunch, not only in the finally (PR #58 review)
+                reap_orphans(run_dir)
                 seed = seeds[lines] if lines < len(seeds) else None
                 with open(results_path, "a") as f:
                     f.write(
@@ -533,6 +544,23 @@ def rollout(
                     break
                 relaunches += 1
                 env = {**env, "AISLE_SEEDS": ",".join(str(s) for s in remaining)}
+                # fresh trace dir + graph per launch: the recorder truncates
+                # on open, and prior evidence must survive (HAR-4)
+                relaunch_traces = traces_dir / f"relaunch-{relaunches}"
+                relaunch_traces.mkdir(parents=True, exist_ok=True)
+                exec_graph = instrumented_graph(
+                    graph,
+                    root,
+                    run_dir,
+                    trace_dir=relaunch_traces,
+                    name=f"graph-r{relaunches}.yaml",
+                )
+                # each relaunch pays a fresh build: extend the deadline by
+                # the build grace (still bounded by the campaign wall cap),
+                # else consecutive wedges cut the tail seeds (PR #58 review)
+                deadline += GENESIS_BUILD_BUDGET_S
+                if hard_cap_s is not None:
+                    deadline = min(deadline, started + hard_cap_s)
                 proc = _spawn_dora(exec_graph, run_dir, env)
                 lines_at_launch = last_lines = lines + 1
                 last_line_t = time.monotonic()
@@ -554,7 +582,7 @@ def rollout(
         ]
     wall_s = time.monotonic() - started
     metrics = compute_metrics(episode_records)
-    videos = sorted(str(p.relative_to(root)) for p in traces_dir.glob("*.mp4"))
+    videos = sorted(str(p.relative_to(root)) for p in traces_dir.rglob("*.mp4"))
     manifest = {
         "run_id": run_id,
         "git_sha": git_sha,

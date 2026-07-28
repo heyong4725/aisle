@@ -312,3 +312,105 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
     assert report["pass1"] == pytest.approx(2 / 3)  # remaining seeds still scored
     manifest = json.loads((root / "runs" / "clamp" / "manifest.json").read_text())
     assert manifest["wall_clamped"] == [1] and manifest["relaunches"] == 1
+
+
+def test_relaunch_reaps_orphans_and_isolates_trace_dirs(tmp_path, monkeypatch):
+    """PR #58 review P1s: (a) stale dora nodes from the killed launch are
+    CONCURRENT WRITERS (dora-rs/dora#2856) — orphans must be reaped
+    between terminate and respawn; (b) the relaunch recorder truncates
+    the first launch's Arrow/video files (pa.ipc.new_stream / imageio
+    open write-mode) — each relaunch gets its own instrumented graph
+    pointing at a fresh relaunch-N trace dir (HAR-4: prior evidence
+    survives); (c) consecutive wedges each add build grace to the
+    deadline, so every seed still gets a record instead of the tail
+    being cut by the original budget."""
+    from aisle.harness import rollout as ro
+
+    root = tmp_path / "proj"
+    (root / "graphs").mkdir(parents=True)
+    (root / "graphs" / "g.yaml").write_text("nodes:\n- id: n\n  path: n.py\n  outputs: [t]\n")
+    (root / "harness").mkdir()
+    (root / "harness" / "budget.toml").write_text(
+        "[campaign]\ntokens = 1\nepisodes = 100\nwall_h = 100\n"
+    )
+
+    class FakeClock:
+        t = 0.0
+
+        def monotonic(self):
+            return self.t
+
+        def time(self):
+            return self.t
+
+        def sleep(self, s):
+            self.t += s
+
+    class FakeProc:
+        pid = 2**22
+        returncode = 0
+
+        def __init__(self, alive=False):
+            self._alive = alive
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def poll(self):
+            return None if self._alive else 0
+
+        def wait(self, timeout=None):
+            return 0
+
+        def communicate(self, input=None, timeout=None):
+            return ("", "")
+
+    events = []
+
+    def fake_popen(cmd, cwd=None, env=None, **kwargs):
+        if cmd[0] != "dora":
+            proc = FakeProc()
+            proc.args = cmd
+            return proc
+        graph_doc = yaml.safe_load(Path(cmd[2]).read_text())
+        recorder = next(n for n in graph_doc["nodes"] if n["id"] == "trace-recorder")
+        events.append(("spawn", env["AISLE_SEEDS"], recorder["env"]["AISLE_TRACE_DIR"]))
+        launches = len([e for e in events if e[0] == "spawn"])
+        if launches == 3:  # third launch: the remaining seed lands
+            with open(env["AISLE_RESULTS"], "a") as f:
+                f.write('{"episode": 0, "seed": 2, "status": "success", "success": true}\n')
+        proc = FakeProc(alive=launches < 3)  # first two launches wedge
+        proc.args = cmd
+        return proc
+
+    monkeypatch.setattr(ro, "time", FakeClock())
+    monkeypatch.setattr(ro.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(ro, "run_gates", lambda *a, **k: {"ok": True, "env_hash": "x"})
+    monkeypatch.setattr(ro, "reap_orphans", lambda *a, **k: events.append(("reap",)))
+    report = ro.rollout(
+        root=root,
+        graph=root / "graphs" / "g.yaml",
+        tier="T0",
+        episodes=3,
+        seeds=[0, 1, 2],
+        reset_mode="teleport",
+        verifier="oracle",
+        run_id="wedges",
+        branch="test",
+        no_idea_gate=True,
+        env_baseline="local",
+    )
+    spawn_dirs = [e[2] for e in events if e[0] == "spawn"]
+    assert [e[1] for e in events if e[0] == "spawn"] == ["0,1,2", "1,2", "2"]
+    assert len(set(spawn_dirs)) == 3  # per-launch trace dirs: no truncation
+    assert "relaunch-1" in spawn_dirs[1] and "relaunch-2" in spawn_dirs[2]
+    # a reap sits between every terminate and the next spawn
+    kinds = [e[0] for e in events]
+    assert kinds[:5] == ["spawn", "reap", "spawn", "reap", "spawn"]
+    # every seed recorded despite two consecutive wedges (deadline grew)
+    assert report["ok"] is True
+    assert report["failures"] == {"wall_clamp": 2}
+    assert sorted(e["seed"] for e in report["episodes"]) == [0, 1, 2]
