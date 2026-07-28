@@ -66,7 +66,7 @@ it first; raw topic dumps are large and mostly noise.
 ```bash
 uv run harness report log --idea "descend at 0.4x speed near shelf" \
     --parent I3 --expect "+10pp pass@1"
-uv run harness report close --idea I7 --observed "+12pp" --verdict up
+uv run harness report close --id I7 --observed "+12pp" --verdict up
 ```
 
 Appends to the per-branch idea-tree JSONL. For research agents this is

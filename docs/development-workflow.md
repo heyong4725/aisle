@@ -25,6 +25,11 @@ contradicts a test? Stop and open a `spec-conflict` issue (CON-13).
 
 ## Quality gates (before every commit)
 
+First, a review pass on the diff and a simplification pass (in Claude
+Code: `/review` then `/simplify`; solo humans: self-review the full
+diff with the same intent). Findings are gate failures, not
+suggestions. Then the mechanical gates:
+
 ```bash
 uv run ruff format --check .
 uv run ruff check .
@@ -50,20 +55,24 @@ step cannot be scrolled past.
   heredocs — backticks in inline messages get shell-executed.
 - CI must be green before merge, no exceptions.
 
-## Change classes and protected paths
+## Risk classes and the frozen set
 
-- **Class A** — tools/, analysis/, docs/ (non-spec): normal PR.
-- **Class B** — src/, tests/, graphs/, registry/: normal PR + gates.
-- **Class C** — protected (CODEOWNERS): `specs/` (only via a
-  `spec-change` PR, CON-14), the frozen set (`env/`,
-  `src/aisle/{scenes,verifier,reset}/`, budget guard — only via an
-  `env-change` PR with human review, CON-7; the env hash baseline moves
-  with it), and CI/governance files.
+Risk classes per CON-10:
 
-The frozen set is the experiment's integrity: rollouts refuse to start
-if its hashes drift from the trusted baseline. If you legitimately need
-to change it, that is an `env-change` PR and a human decision, never a
-side effect.
+- **Class A** — docs, tests, tools: baseline gates.
+- **Class B** — nodes, harness: baseline gates + the affected
+  acceptance tests.
+- **Class C** — anything in the frozen set, and contract changes:
+  human review REQUIRED before merge (CODEOWNERS enforces). Spec edits
+  additionally go through a `spec-change` PR (CON-14).
+
+The **frozen set** (CON-7) is exactly: `src/aisle/scenes`,
+`src/aisle/verifier`, `src/aisle/reset`, and `graphs/expert_*.yaml`.
+After M0 sign-off, changing any of it requires a human-merged PR
+labeled `env-change`, with the new `tools/env_hash.py` output committed
+alongside. This is the experiment's integrity: rollouts refuse to
+start if the hashes drift from the trusted baseline, so a frozen-set
+change is always an explicit human decision, never a side effect.
 
 ## Rules that bite (learned the hard way)
 
@@ -84,8 +93,7 @@ side effect.
 
 ## Review
 
-Run a self-review on the diff before every PR (the project treats
-review findings as gate failures, not suggestions). Class C changes
-need the code owner. Campaign-affecting changes (`tools/campaign.py`,
+Beyond the per-commit review gate above, Class C changes need the code
+owner. Campaign-affecting changes (`tools/campaign.py`,
 `tools/h3_campaign.py`, harness) deserve an adversarial pass: the
 reviewer's job is to break the integrity story, not admire it.

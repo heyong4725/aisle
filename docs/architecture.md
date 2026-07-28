@@ -39,11 +39,12 @@ agent's compile loop.
 
 ## The frozen set (the no-cheating rule)
 
-Environment, verifier, and reset code — `src/aisle/scenes/`,
-`src/aisle/verifier/`, `src/aisle/reset/`, `env/`, and the budget
-guard — are hash-manifested (`tools/env_hash.py`, CON-7). The rollout
-runner refuses to start if hashes drift from the trusted baseline.
-Agents can read this code; they cannot change what judges them.
+The frozen set (CON-7) is `src/aisle/scenes`, `src/aisle/verifier`,
+`src/aisle/reset`, and the expert graphs `graphs/expert_*.yaml` —
+hash-manifested by `tools/env_hash.py`, with changes only via
+human-merged `env-change` PRs. The rollout runner refuses to start if
+hashes drift from the trusted baseline. Agents can read this code;
+they cannot change what judges them.
 
 Safety is structural, not behavioral (H5):
 
@@ -55,8 +56,9 @@ Safety is structural, not behavioral (H5):
   workspace limits and enforces episode timeouts. Only
   `safety_class: motion` nodes may command the arm, and motion nodes
   without an evalcard are refused.
-- **Trust anchors** — the guard and frozen-set nodes can never be
-  hot-swapped on a live dataflow (`harness swap` refuses, HAR-10).
+- **Trust anchors** — the budget guard, frozen-set nodes, and `env/`
+  code can never be hot-swapped on a live dataflow (`harness swap`
+  refuses, HAR-10).
 
 ## The world (Genesis)
 
@@ -82,9 +84,11 @@ success plus a failure taxonomy (`wrong_object`, `dropped`, `timeout`,
 `never_grasped`, retail adds `misplaced`, `misaligned`, `overhang`).
 The asymmetric goal makes `wrong_object` the metric that must stay at
 zero. A **realistic verifier** (camera-based, portable to hardware) is
-specified (VER-6) with its design brief at
+specified (VER-5) with its design brief at
 `decisions/ADR-realistic-verifier.md`; fidelity against the oracle is a
-first-class result. Reset is a service node: `teleport` (state reset)
+first-class result. The realistic verifier is VER-5; the fidelity job
+that measures agreement plus false-success/false-fail rates against
+the oracle is VER-6. Reset is a service node: `teleport` (state reset)
 now, `behavioral` (robot re-shelves the box) later.
 
 ## The capability registry
@@ -101,8 +105,10 @@ failure; see `analysis/h1/`).
 
 Skills are the registry's growth path: an agent-authored node or
 subgraph + manifest + evalcard, registered via `harness skill register`
-(runs the skill's eval suite first). Subgraph skills nest as single
-named nodes, so trace attribution survives reuse.
+(runs the skill's eval suite first). The design intent is for subgraph
+skills to nest as single named nodes with trace attribution preserved;
+today registered skills are used as single nodes — subgraph NESTING in
+the validator/graphs is deliberately deferred (ADR-22 item 6).
 
 ## The harness
 

@@ -13,7 +13,7 @@ Committed findings live in `analysis/`; raw run data in `runs/`
 | H2 | EN-loop iteration to ≥90% pass@1 | Claude arm **met** held-out (1.0); codex arm 0.875 held-out at N=8 (one `dropped`), with dev-side evidence of a ≥0.9 system (30-episode dev run at 0.967). Both at commit `e8f163ab`. → `analysis/h2/` for the full verdict |
 | H3 | Persistent skill library ≥2x faster on later tasks | **Campaign in flight** (S1→S2→S3, arms with/without library). Protocol: `decisions/ADR-h3-campaign-protocol.md`; records land in `runs/h3/`, analysis in `analysis/h3/` when complete. |
 | H4 | Hot-swap iteration beats relaunch | Machinery landed (`harness swap`/`probe`, HAR-10..12 event log); measured comparison queued behind H3. |
-| H5 | wrong-object stays 0 under free iteration | **Holding** — 0 wrong-object in 224/224 episodes across the three H2 runs (the committed denominator, `analysis/h2/`); every H3 scenario record to date also reports `wrong_object_total: 0`. |
+| H5 | wrong-object stays 0 under free iteration | **Holding** on committed evidence: 0 wrong-object in 224/224 episodes across the three H2 runs (`analysis/h2/`). The in-flight H3 campaign extends the denominator when its records are committed to `analysis/h3/`. |
 
 Ablation A1 (agent-composed vs expert graphs) has a provenance-explicit
 data inventory at `analysis/a1/a1_table.md` — read its "what the
