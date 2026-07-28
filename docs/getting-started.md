@@ -3,7 +3,7 @@
 Target platform: macOS arm64 (M-series). Linux works for the non-sim
 test suite; the measured experiments to date ran on an M3 MacBook.
 Python >= 3.11, managed exclusively through
-[uv](https://docs.astral.sh/uv/) — never bare pip/conda (CON-1).
+[uv](https://docs.astral.sh/uv/) — never bare pip/conda (CON-2).
 
 ## 1. Install
 
@@ -39,7 +39,7 @@ culprit.
 ## 2. Verify the install
 
 ```bash
-uv run pytest -m unit          # ~547 tests, no simulator, under a minute
+uv run pytest -m unit          # ~547 tests, no simulator, about 90 seconds
 uv run pytest -m "sim or graph"   # brings up Genesis; several minutes
 ```
 

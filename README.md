@@ -17,10 +17,10 @@ New to the repo? Start with `docs/getting-started.md`.
 |---|---|
 | M0 — verified pharmacy-pick loop (SPEC 090) | signed off; expert graph 0.98 pass@1 over 50 seeds, deterministic replicate |
 | H1 — zero-shot composition | measured, target not met: 40/40 schema-valid graphs, but 15% (claude) / 65% (codex) launch zero-shot; single dominant failure is uninstalled hub packages (`analysis/h1/`) |
-| H2 — iteration to ≥90% | **met** by two independent arms: claude 1.0, codex 0.875 held-out pass@1 (`analysis/h2/`) |
+| H2 — iteration to ≥90% | claude arm **met** held-out (1.0 pass@1); codex arm 0.875 held-out at N=8 (one `dropped`), with dev-side evidence of a ≥0.9 system — see `analysis/h2/` for the full verdict |
 | H3 — skill accumulation (S1→S3 transfer) | measured campaign in flight (`docs/decisions/ADR-h3-campaign-protocol.md`) |
 | H4 — hot-swap vs relaunch iteration | machinery landed (`harness swap` / `harness probe`, SPEC 070 HAR-10..12); experiment queued |
-| H5 — zero wrong-object under free iteration | holding: 0 wrong-object across every campaign episode to date |
+| H5 — zero wrong-object under free iteration | holding: 0 wrong-object in 224/224 episodes across the three H2 campaign runs (`analysis/h2/`); H3 scenario records to date also report 0 |
 | Retail suite S1–S3 (mobile, long-horizon) | implemented: store scene, planogram verifier, mobility contract, S1 expert graph |
 | Realistic verifier | decision brief at `docs/decisions/ADR-realistic-verifier.md`; implementation pending |
 
