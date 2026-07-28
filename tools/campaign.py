@@ -161,9 +161,12 @@ Campaign parameters:
   withheld from you).
 - Budgets: {token_ceiling:,} tokens and {wall_h:g} h wall for this campaign;
   episode and wall ceilings are also enforced by the harness ledger.
-- Store-scene (S-tier) rollouts take TENS OF MINUTES each: run them with
-  long command timeouts and wait for completion — a rollout is not failed
-  just because it is slow.
+- You are a NON-INTERACTIVE session: the moment you end your turn the
+  session is OVER, permanently — nothing re-invokes you. NEVER background
+  a rollout or "wait for results": run `harness rollout` as ONE
+  synchronous command with a long tool timeout (S-tier rollouts take
+  TENS OF MINUTES; e.g. Bash timeout 2400000 ms) and block until its
+  JSON returns. A rollout is not failed just because it is slow.
 - Your deliverable is {DELIVERABLE}: keep it pointed at your current best
   system at ALL times — it is scored on held-out seeds after your session
   ends, exactly as `harness rollout` would run it.

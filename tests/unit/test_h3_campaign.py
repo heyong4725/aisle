@@ -273,4 +273,8 @@ def test_holdout_timeout_scales_and_records(tmp_path, monkeypatch):
 def test_s_tier_prompt_warns_about_slow_rollouts():
     from campaign import campaign_prompt
 
-    assert "TENS OF MINUTES" in campaign_prompt("S1", 1000, 1.0, "0..9")
+    prompt = campaign_prompt("S1", 1000, 1.0, "0..9")
+    assert "TENS OF MINUTES" in prompt
+    # measured-campaign S1 failure: the agent backgrounded its rollout and
+    # "waited" — fatal in -p mode; the prompt must forbid it explicitly
+    assert "NON-INTERACTIVE" in prompt and "NEVER background" in prompt
