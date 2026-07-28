@@ -1,6 +1,7 @@
 """SPEC 070 rollout metrics and instrumentation (HAR-1, HAR-3, HAR-4) —
 pure pieces, no dora, no sim (CON-12)."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -210,3 +211,104 @@ def test_tier_budgets_scale_for_retail_tiers():
     # (ADR-18) — the retail budgets must clear both with headroom
     assert RETAIL_EPISODE_TIMEOUT_S > 102
     assert RETAIL_PER_EPISODE_BUDGET_S > 25 * 60
+
+
+def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
+    """W/S2 holdout wedge (H3 campaign 2): one episode ran 4 h with
+    traces still GROWING (ffmpeg), so the stall detector never fired and
+    the wedged episode ate the whole scoring window, masking the
+    remaining seeds. rollout() must clamp an episode whose WALL time
+    exceeds the tier's per-episode budget: kill the graph, record a
+    synthetic wall_clamp failure for that seed, and relaunch for the
+    remaining seeds so they still get scored (HAR-1; ADR-23)."""
+    from aisle.harness import rollout as ro
+
+    root = tmp_path / "proj"
+    (root / "graphs").mkdir(parents=True)
+    (root / "graphs" / "g.yaml").write_text("nodes:\n- id: n\n  path: n.py\n  outputs: [t]\n")
+    (root / "harness").mkdir()
+    (root / "harness" / "budget.toml").write_text(
+        "[campaign]\ntokens = 1\nepisodes = 100\nwall_h = 100\n"
+    )
+
+    class FakeClock:
+        t = 0.0
+
+        def monotonic(self):
+            return self.t
+
+        def time(self):
+            return self.t
+
+        def sleep(self, s):
+            self.t += s
+
+    class FakeProc:
+        pid = 2**22  # nonexistent pgid: kill paths raise ProcessLookupError
+        returncode = 0
+
+        def __init__(self, alive=False):
+            self._alive = alive
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def poll(self):
+            return None if self._alive else 0
+
+        def wait(self, timeout=None):
+            return 0
+
+        def communicate(self, input=None, timeout=None):
+            return ("", "")
+
+    spawns = []
+
+    def fake_popen(cmd, cwd=None, env=None, **kwargs):
+        # subprocess.run (the git calls) rides the same Popen; only the
+        # dora spawns are under test
+        if cmd[0] != "dora":
+            proc = FakeProc()
+            proc.args = cmd
+            return proc
+        spawns.append(env["AISLE_SEEDS"])
+        results = Path(env["AISLE_RESULTS"])
+        with open(results, "a") as f:
+            if len(spawns) == 1:  # first launch: seed 0 lands, then wedges
+                f.write('{"episode": 0, "seed": 0, "status": "success", "success": true}\n')
+            else:  # relaunch: every remaining seed lands
+                for i, s in enumerate(env["AISLE_SEEDS"].split(",")):
+                    f.write(
+                        f'{{"episode": {i}, "seed": {s}, "status": "success", "success": true}}\n'
+                    )
+        proc = FakeProc(alive=len(spawns) == 1)
+        proc.args = cmd
+        return proc
+
+    monkeypatch.setattr(ro, "time", FakeClock())
+    monkeypatch.setattr(ro.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(ro, "run_gates", lambda *a, **k: {"ok": True, "env_hash": "x"})
+    monkeypatch.setattr(ro, "reap_orphans", lambda *a, **k: None)
+    report = ro.rollout(
+        root=root,
+        graph=root / "graphs" / "g.yaml",
+        tier="T0",
+        episodes=3,
+        seeds=[0, 1, 2],
+        reset_mode="teleport",
+        verifier="oracle",
+        run_id="clamp",
+        branch="test",
+        no_idea_gate=True,
+        env_baseline="local",
+    )
+    assert spawns == ["0,1,2", "2"]  # relaunched with only the remaining seed
+    assert report["failures"] == {"wall_clamp": 1}
+    clamped = [e for e in report["episodes"] if e.get("failure") == "wall_clamp"]
+    assert [e["seed"] for e in clamped] == [1]  # the wedged seed, recorded
+    assert report["pass1"] == pytest.approx(2 / 3)  # remaining seeds still scored
+    manifest = json.loads((root / "runs" / "clamp" / "manifest.json").read_text())
+    assert manifest["wall_clamped"] == [1] and manifest["relaunches"] == 1

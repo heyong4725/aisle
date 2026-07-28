@@ -58,7 +58,11 @@ def main() -> None:
     send = make_sender(node)
     episode = 0
     phase = "reset_pending"  # -> awaiting_reset -> running -> (next)
-    out = open(results_path, "w", buffering=1) if results_path else None
+    # append, not truncate: after a wall-clamp relaunch (ADR-23) this
+    # process is the SECOND writer to the same run's results file — a
+    # truncate would erase the episodes and synthetic clamp records the
+    # earlier launch already produced
+    out = open(results_path, "a", buffering=1) if results_path else None
 
     for event in node:
         if event["type"] != "INPUT":
