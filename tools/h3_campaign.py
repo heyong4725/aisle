@@ -51,12 +51,21 @@ SCENARIOS = (
 NUDGE = "Distill what works into registered skills — they may pay off later."
 
 
-def wipe_library(wt: Path, oid: str) -> dict:
+def scenario_slot(tier: str, attempt: int) -> str:
+    """Attempt 1 keeps the plain tier name; reruns (PR #57 review:
+    contaminated cells rerun under NEW ids) get their own dir and holdout
+    tag suffix, never overwriting the flagged originals."""
+    return tier if attempt == 1 else f"{tier}-r{attempt}"
+
+
+def wipe_library(wt: Path, oid: str, keep_ref: str | None = None) -> dict:
     """Arm W between scenarios (ADR amendment): the working tree ends
     byte-exact at the pinned OID (detached HEAD) — including removal of
     files the agent COMMITTED on its branch — with agent graphs and the
     idea tree gone; the ledger and run artifacts persist (global budget
-    continuity), and the agent's branches keep their commits for audit."""
+    continuity). The pre-wipe HEAD is pinned under keep_ref and recorded
+    (PR #57 review: a detached-HEAD scenario's commits must stay durably
+    reachable, not reflog-only), so agent history survives every wipe."""
     # detach the worktree AT the pin: `checkout <oid> -- .` only restores
     # paths present in the pin's tree, so files the agent COMMITTED on its
     # branch (tracked, absent from the pin) survived it AND `git clean` —
@@ -68,6 +77,8 @@ def wipe_library(wt: Path, oid: str) -> dict:
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True, text=True, check=True
     ).stdout.strip()
+    if keep_ref:
+        subprocess.run(["git", "branch", "-f", keep_ref, "HEAD"], cwd=wt, check=True)
     subprocess.run(
         ["git", "checkout", "-f", "--detach", oid],
         cwd=wt,
@@ -87,7 +98,7 @@ def wipe_library(wt: Path, oid: str) -> dict:
     if ideas.exists():
         removed.append("runs/ideas/")
         shutil.rmtree(ideas)
-    return {"removed": removed, "detached_from": head}
+    return {"removed": removed, "detached_from": head, "kept_ref": keep_ref}
 
 
 def skill_reuse(deliverable: Path, prior_skill_ids: set[str]) -> list[str]:
@@ -122,10 +133,18 @@ def registered_skill_ids(wt: Path) -> set[str]:
 
 
 def run_scenario(
-    wt: Path, oid: str, arm: str, scenario: dict, out: Path, agent: str, model: str
+    wt: Path,
+    oid: str,
+    arm: str,
+    scenario: dict,
+    out: Path,
+    agent: str,
+    model: str,
+    attempt: int = 1,
 ) -> dict:
     tier = scenario["tier"]
-    session_dir = out / f"arm_{arm}" / tier
+    slot = scenario_slot(tier, attempt)
+    session_dir = out / f"arm_{arm}" / slot
     session_dir.mkdir(parents=True, exist_ok=True)
     prior_skills = registered_skill_ids(wt)
     prompt = campaign_prompt(tier, scenario["tokens"], scenario["wall_h"], DEV_SEEDS, note=NUDGE)
@@ -144,15 +163,22 @@ def run_scenario(
     )
     sweep_worktree(wt)
     drift = audit_frozen(wt, oid)
-    holdout = score_holdout(wt, HOLDOUT_SEEDS, f"{arm}-{tier}", tier)
+    holdout = score_holdout(wt, HOLDOUT_SEEDS, f"{arm}-{slot}", tier)
     sweep_worktree(wt)
     # since=t0 scopes EVERY aggregate to this scenario (PR #48 review:
     # unscoped first_success/wrong_object contaminated the H3 headline)
     metrics = campaign_metrics(wt, session_t0=t0, since=t0)
     reuse = skill_reuse(wt / "graphs" / "agent_campaign.yaml", prior_skills)
+    worktree_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True, text=True
+    ).stdout.strip()
     record = {
         "arm": arm,
         "tier": tier,
+        "attempt": attempt,
+        # the scenario's final worktree state, durably recorded (PR #57
+        # review: scenario HEADs need recorded hashes, wipe pins the ref)
+        "worktree_head": worktree_head,
         "budgets": scenario,
         "session": session,
         "frozen_drift": drift,
@@ -175,6 +201,13 @@ def main() -> int:
     parser.add_argument("--arms", default="W,L", help="subset, e.g. W (dry runs)")
     parser.add_argument("--scenarios", default="S1,S2,S3", help="subset, e.g. S1")
     parser.add_argument("--budget-scale", type=float, default=1.0, help="dry-run scaling")
+    parser.add_argument(
+        "--attempt",
+        type=int,
+        default=1,
+        help="rerun counter: >1 writes S<t>-rN scenario dirs and holdout "
+        "run ids, leaving flagged originals in place (PR #57 review)",
+    )
     args = parser.parse_args()
 
     error = validate_seed_ranges(DEV_SEEDS, HOLDOUT_SEEDS)
@@ -199,16 +232,19 @@ def main() -> int:
         print(json.dumps({"ok": False, "error": f"bad selection: {sorted(unknown)}"}))
         return 1
     records = []
+    wipes = []
     for arm in arms:
         wt = args.out / f"worktree_{arm}"
         if not wt.exists():
             print(f"[h3] arm {arm}: worktree at {oid[:8]}", file=sys.stderr)
             make_worktree(oid, wt)
-        for scenario in SCENARIOS:
+        for index, scenario in enumerate(SCENARIOS):
             if scenario["tier"] not in tiers:
                 continue
-            if arm == "W" and scenario["tier"] != "S1":
-                wiped = wipe_library(wt, oid)
+            if arm == "W" and (index > 0 or args.attempt > 1):
+                slot = scenario_slot(scenario["tier"], args.attempt)
+                wiped = wipe_library(wt, oid, keep_ref=f"h3/keep-{arm}-pre-{slot}")
+                wipes.append({"arm": arm, "before": slot, **wiped})
                 print(f"[h3] arm W wiped {len(wiped['removed'])} path(s)", file=sys.stderr)
             scaled = {
                 **scenario,
@@ -217,18 +253,23 @@ def main() -> int:
             }
             print(f"[h3] arm {arm} {scenario['tier']} starting", file=sys.stderr)
             try:
-                records.append(run_scenario(wt, oid, arm, scaled, args.out, agent, model))
+                records.append(
+                    run_scenario(wt, oid, arm, scaled, args.out, agent, model, args.attempt)
+                )
             except Exception as exc:  # noqa: BLE001 — protocol point 8
                 # infra abort: keep prior records, attribute, stop the run
                 records.append({"arm": arm, "tier": scenario["tier"], "infra_error": repr(exc)})
                 (args.out / "h3_results.json").write_text(
-                    json.dumps({"ok": False, "treatment": treatment, "records": records}, indent=1)
+                    json.dumps(
+                        {"ok": False, "treatment": treatment, "records": records, "wipes": wipes},
+                        indent=1,
+                    )
                 )
                 print(json.dumps({"ok": False, "error": f"infra abort: {exc!r}"}))
                 return 1
     ok = all(not r.get("frozen_drift") for r in records)
     (args.out / "h3_results.json").write_text(
-        json.dumps({"ok": ok, "treatment": treatment, "records": records}, indent=1)
+        json.dumps({"ok": ok, "treatment": treatment, "records": records, "wipes": wipes}, indent=1)
     )
     print(
         json.dumps(

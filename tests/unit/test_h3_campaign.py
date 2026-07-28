@@ -133,6 +133,44 @@ def test_wipe_removes_agent_committed_files(tmp_path):
     assert branch_head.returncode == 0  # audit trail: agent branch survives
 
 
+def test_wipe_keep_ref_preserves_detached_commits(tmp_path):
+    """PR #57 review P1: detaching during wipes can orphan commits made
+    on a detached HEAD in the PREVIOUS scenario — the wipe must first pin
+    the pre-wipe HEAD under a durable ref and record its hash, so every
+    scenario's final state stays reachable for audit."""
+    wt, oid = _mini_repo(tmp_path)
+    subprocess.run(["git", "checkout", "-q", "--detach", oid], cwd=wt, check=True)
+    (wt / "detached_work.md").write_text("scenario state committed on detached HEAD\n")
+    subprocess.run(["git", "add", "-A"], cwd=wt, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "detached"],
+        cwd=wt,
+        check=True,
+    )
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True, text=True
+    ).stdout.strip()
+
+    report = wipe_library(wt, oid, keep_ref="h3/keep-W-pre-S2")
+
+    assert report["detached_from"] == head and report["kept_ref"] == "h3/keep-W-pre-S2"
+    kept = subprocess.run(
+        ["git", "rev-parse", "h3/keep-W-pre-S2"], cwd=wt, capture_output=True, text=True
+    )
+    assert kept.stdout.strip() == head  # durable, not reflog-only
+    assert not (wt / "detached_work.md").exists()  # ...and still wiped
+
+
+def test_scenario_slot_names_reruns_with_new_ids():
+    """PR #57 review P1: contaminated cells are rerun under NEW ids —
+    attempt 2 gets its own scenario dir and holdout run tag, never
+    overwriting the flagged originals."""
+    from h3_campaign import scenario_slot
+
+    assert scenario_slot("S2", 1) == "S2"
+    assert scenario_slot("S2", 3) == "S2-r3"
+
+
 def test_skill_reuse_counts_only_prior_evalcarded_skills(tmp_path):
     """Protocol point 5: the transfer signal counts deliverable nodes
     whose evalcarded manifest predates the scenario — not curated nodes,
@@ -237,13 +275,14 @@ def test_campaign_metrics_since_scopes_all_aggregates(tmp_path):
 
 def test_holdout_run_tags_are_unique_per_scenario():
     """PR #48 review: session_index=0 collided run-ids from S2 onward,
-    losing pass@1 for 4/6 scenarios; tags are now arm+tier strings."""
+    losing pass@1 for 4/6 scenarios; tags are arm+slot strings, where the
+    slot carries the rerun suffix (PR #57 review: reruns get NEW ids)."""
     import inspect
 
     import h3_campaign
 
     src = inspect.getsource(h3_campaign.run_scenario)
-    assert 'f"{arm}-{tier}"' in src
+    assert 'f"{arm}-{slot}"' in src
 
 
 def test_holdout_scoring_argv_carries_tier_and_embodiment(tmp_path, monkeypatch):

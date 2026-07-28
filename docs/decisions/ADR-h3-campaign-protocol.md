@@ -149,3 +149,32 @@ L (D6 rationale).
   the GLOBAL episode/wall ceilings; per-scenario episode caps are
   recorded targets, enforced only via the per-scenario token/wall kills.
 - **Post-session orphan sweep** (PR #46) runs between scenarios.
+
+## Amendment (campaign 2, PR #57): wipe leak, keep-refs, reruns
+
+Campaign 2 (2026-07-28) exposed a wipe leak: the S1 agent COMMITTED its
+skill (s1-driver-v2) and research notes on its worktree branch, and both
+`git checkout <pin> -- .` and `git clean` skip committed-but-not-in-pin
+files — the wiped arm ran S2 and S3 with prior-scenario memory (their
+records show `prior_skills: ["s1-driver-v2"]`). Amendments:
+
+1. **Wipe = detach at the pin.** `wipe_library` now runs
+   `git checkout -f --detach <pin>` before the clean, so the working
+   tree ends byte-exact at the pin including agent-committed files.
+2. **Scenario HEADs stay durably reachable.** Before detaching, the
+   pre-wipe HEAD is pinned under `h3/keep-<arm>-pre-<slot>` and its hash
+   recorded in the wipe report (`detached_from`, `kept_ref`, persisted
+   in h3_results.json `wipes`); every scenario record now carries its
+   final `worktree_head`. Detached-HEAD commits can never be orphaned
+   to the reflog.
+3. **Contaminated cells are excluded and rerun.** W/S2 and W/S3 of
+   campaign 2 carry the `wipe_leak` flag (derived from the records by
+   tools/h3_analysis.py) and are EXCLUDED from the H3 verdict; they
+   remain in the table as history. After the campaign completes, both
+   are rerun with the fixed wipe under NEW ids
+   (`--arms W --scenarios S2,S3 --attempt 2` → `S2-r2`/`S3-r2` scenario
+   dirs, `campaign-holdout-W-S2-r2`-style holdout run ids); the verdict
+   uses the highest-attempt unflagged cell per (arm, tier).
+4. **Bias statement.** The leak's direction is conservative for H3 (a
+   leaky wipe makes the wiped arm look MORE capable, shrinking the W–L
+   gap); stated here so the rerun's purpose is on the record.
