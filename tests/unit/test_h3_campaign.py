@@ -353,3 +353,15 @@ def test_s_tier_prompt_warns_about_slow_rollouts():
     # measured-campaign S1 failure: the agent backgrounded its rollout and
     # "waited" — fatal in -p mode; the prompt must forbid it explicitly
     assert "NON-INTERACTIVE" in prompt and "NEVER background" in prompt
+
+
+def test_rerun_results_file_never_clobbers_the_campaign_record():
+    """PR #57 self-review: --attempt 2 must write h3_results-r2.json —
+    overwriting h3_results.json would destroy the primary campaign
+    record the rerun exists to repair."""
+    import inspect
+
+    import h3_campaign
+
+    src = inspect.getsource(h3_campaign.main)
+    assert "h3_results{'' if args.attempt == 1 else f'-r{args.attempt}'}" in src

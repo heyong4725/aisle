@@ -231,6 +231,10 @@ def main() -> int:
         # a typo must refuse, not exit 0 with an empty "campaign" (PR #48)
         print(json.dumps({"ok": False, "error": f"bad selection: {sorted(unknown)}"}))
         return 1
+    # a RERUN must never clobber the campaign's primary record
+    # (self-review of PR #57: --attempt 2 would have overwritten
+    # h3_results.json with the 2-record rerun output)
+    results_path = args.out / f"h3_results{'' if args.attempt == 1 else f'-r{args.attempt}'}.json"
     records = []
     wipes = []
     for arm in arms:
@@ -259,7 +263,7 @@ def main() -> int:
             except Exception as exc:  # noqa: BLE001 — protocol point 8
                 # infra abort: keep prior records, attribute, stop the run
                 records.append({"arm": arm, "tier": scenario["tier"], "infra_error": repr(exc)})
-                (args.out / "h3_results.json").write_text(
+                results_path.write_text(
                     json.dumps(
                         {"ok": False, "treatment": treatment, "records": records, "wipes": wipes},
                         indent=1,
@@ -268,14 +272,14 @@ def main() -> int:
                 print(json.dumps({"ok": False, "error": f"infra abort: {exc!r}"}))
                 return 1
     ok = all(not r.get("frozen_drift") for r in records)
-    (args.out / "h3_results.json").write_text(
+    results_path.write_text(
         json.dumps({"ok": ok, "treatment": treatment, "records": records, "wipes": wipes}, indent=1)
     )
     print(
         json.dumps(
             {
                 "ok": ok,
-                "record": str(args.out / "h3_results.json"),
+                "record": str(results_path),
                 "scenarios_run": [f"{r['arm']}/{r['tier']}" for r in records],
                 "holdout_pass1": {
                     f"{r['arm']}/{r['tier']}": r["holdout"].get("pass1") for r in records
