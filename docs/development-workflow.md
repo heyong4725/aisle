@@ -72,8 +72,8 @@ side effect.
 - **CON-5**: determinism is a feature. Inject RNG and time; same seed ⇒
   same result. No `Date.now()`-style ambient state in result paths.
   (See `determinism.md` for the sim-side story.)
-- **CON-1**: uv only, no bare pip/conda; CUDA-only deps are forbidden
-  in default extras.
+- **CON-2**: uv only, no bare pip/conda. **CON-1**: CUDA-only deps are
+  forbidden in default extras (Metal/MPS is the primary platform).
 - Sim runs are machine-exclusive, and a killed run can leak simulator
   processes — see `troubleshooting.md` before debugging any "slow" or
   flaky sim result.
