@@ -1,0 +1,12 @@
+# The skill's shipped eval suite (design doc §3 rule 3, CAP-6): the S1
+# retail rollout on two dev seeds the campaign measured end-to-end
+# (both succeeded in run 20260728-031402-a575b1). min_pass_rate 0.5
+# tolerates one sim flake without overclaiming; the evalcard records
+# the measured rate either way.
+suite: retail
+graph: graphs/eval_s1_driver_v2.yaml
+tier: S1
+embodiment: mobile
+episodes: 2
+seeds: 0..1
+min_pass_rate: 0.5
