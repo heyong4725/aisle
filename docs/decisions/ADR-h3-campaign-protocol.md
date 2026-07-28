@@ -175,6 +175,9 @@ records show `prior_skills: ["s1-driver-v2"]`). Amendments:
    (`--arms W --scenarios S2,S3 --attempt 2` → `S2-r2`/`S3-r2` scenario
    dirs, `campaign-holdout-W-S2-r2`-style holdout run ids); the verdict
    uses the highest-attempt unflagged cell per (arm, tier).
-4. **Bias statement.** The leak's direction is conservative for H3 (a
-   leaky wipe makes the wiped arm look MORE capable, shrinking the W–L
-   gap); stated here so the rerun's purpose is on the record.
+4. **Bias statement (corrected, PR #59 review).** The leak's DIRECTION
+   is not causally established: leaked prior-scenario state could help
+   arm W (extra capability) or hurt it (misleading notes/skills for a
+   different scenario), and no counterfactual run exists to sign it.
+   The remedy is therefore exclusion from the verdict plus a clean
+   rerun — never a direction assumption.

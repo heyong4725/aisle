@@ -1,5 +1,5 @@
-"""Unit tests for tools/h3_analysis.py (design doc §11.5 transfer curve;
-ADR-h3-campaign-protocol §7 verdict). Pure record assembly — no sim."""
+"""Unit tests for tools/h3_analysis.py (design doc §11.5, §8.4;
+ADR-h3 §7 verdict). Pure record assembly — no sim."""
 
 import json
 import subprocess
@@ -11,18 +11,40 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-from h3_analysis import cell, h3_verdict, load_scenarios, results_markdown  # noqa: E402
+from h3_analysis import (  # noqa: E402
+    cell,
+    h3_verdict,
+    load_campaign,
+    results_markdown,
+)
 
 pytestmark = pytest.mark.unit
 
+TREATMENT = {
+    "commit": "abc123",
+    "agent": "claude",
+    "model": "m",
+    "dev_seeds": "0..49",
+    "holdout_seeds": "100..107",
+}
 
-def record(arm, tier, first_success=100.0, prior=(), holdout_ok=True, pass1=0.5):
+
+def record(
+    arm,
+    tier,
+    first_success=100.0,
+    prior=(),
+    holdout_ok=True,
+    pass1=0.5,
+    drift=(),
+    samples=(),
+):
     return {
         "arm": arm,
         "tier": tier,
         "budgets": {"tier": tier, "tokens": 1000, "episodes": 8, "wall_h": 1.0},
         "session": {"stopped": "agent_done", "rc": 0, "tokens": 900, "wall_s": 1800.0},
-        "frozen_drift": [],
+        "frozen_drift": list(drift),
         "holdout": {
             "ok": holdout_ok,
             "error": None if holdout_ok else "scoring window expired",
@@ -36,39 +58,60 @@ def record(arm, tier, first_success=100.0, prior=(), holdout_ok=True, pass1=0.5)
         "prior_skills": list(prior),
         "skills_after": list(prior),
         "skill_reuse_in_deliverable": [],
+        "_token_samples": list(samples),
     }
 
 
-def test_cell_flags_wipe_leak_and_partial_holdout():
-    """The wiped arm (W) must start every scenario with an empty library:
-    a non-empty prior_skills on a W record is direct evidence of the
-    campaign-2 wipe leak and must surface as a flag, not vanish into the
-    table. A holdout with ok=false is a partial cell, never a clean 0."""
+def test_cell_flags_are_derived_from_the_record():
+    """wipe_leak (prior skills on the WIPED arm), frozen_drift (non-empty
+    audit), and holdout_partial (expired window) each flag the cell —
+    PR #59 review: a drifted or partial cell must never read as clean."""
     leaked = cell(record("W", "S2", prior=["s1-driver-v2"], holdout_ok=False))
     assert "wipe_leak" in leaked["flags"] and "holdout_partial" in leaked["flags"]
-    clean_w = cell(record("W", "S1"))
-    assert clean_w["flags"] == []
+    drifted = cell(record("L", "S2", drift=["src/aisle/verifier/oracle.py"]))
+    assert drifted["flags"] == ["frozen_drift"]
+    assert cell(record("W", "S1"))["flags"] == []
     library_arm = cell(record("L", "S2", prior=["s1-driver-v2"]))
     assert "wipe_leak" not in library_arm["flags"]  # L is SUPPOSED to carry skills
 
 
+def test_tokens_to_first_success_from_samples():
+    """Design doc §8.4: TOKENS-to-success is a first-class metric — read
+    from the session's live token samples at the first-success wall time."""
+    samples = [
+        {"wall_s": 5.0, "tokens": 0},
+        {"wall_s": 100.0, "tokens": 40_000},
+        {"wall_s": 200.0, "tokens": 90_000},
+    ]
+    c = cell(record("W", "S1", first_success=150.0, samples=samples))
+    assert c["tokens_to_first_success"] == 90_000  # first sample at/after 150 s
+    none_first = cell(record("W", "S1", first_success=None, samples=samples))
+    assert none_first["tokens_to_first_success"] is None
+    late = cell(record("W", "S1", first_success=999.0, samples=samples))
+    assert late["tokens_to_first_success"] == 90_000  # beyond samples: last known
+
+
 def test_verdict_ratio_semantics():
     """ADR §7: met iff arm L's S2 AND S3 time-to-first-success <= 0.5x
-    arm W's, per tier. A tier where L never succeeded is not-met; a tier
-    where only W never succeeded is met (L transferred, W could not)."""
+    arm W's, per tier; token ratios reported alongside (§8.4). A tier
+    where L never succeeded is not-met; where only W never succeeded,
+    met (L transferred, W could not)."""
+    w_samples = [{"wall_s": 0, "tokens": 0}, {"wall_s": 2000, "tokens": 800_000}]
+    l_samples = [{"wall_s": 0, "tokens": 0}, {"wall_s": 2000, "tokens": 200_000}]
     cells = [
         cell(r)
         for r in (
             record("W", "S1", first_success=1000),
-            record("W", "S2", first_success=1000),
+            record("W", "S2", first_success=1000, samples=w_samples),
             record("W", "S3", first_success=1000),
             record("L", "S1", first_success=900),
-            record("L", "S2", first_success=400),
+            record("L", "S2", first_success=400, samples=l_samples),
             record("L", "S3", first_success=600),
         )
     ]
     verdict = h3_verdict(cells)
     assert verdict["ratios"]["S2"] == pytest.approx(0.4)
+    assert verdict["token_ratios"]["S2"] == pytest.approx(0.25)
     assert verdict["per_tier"] == {"S2": True, "S3": False}  # 0.6 > 0.5
     assert verdict["met"] is False
 
@@ -81,29 +124,44 @@ def test_verdict_ratio_semantics():
     assert h3_verdict(no_w)["per_tier"] == {"S2": True, "S3": True}
 
 
-def test_verdict_incomplete_campaign_is_none_with_caveats():
-    """Half a campaign never yields a verdict — met stays None until both
-    arms' S2/S3 cells exist; wipe-leak flags surface as verdict caveats
-    with the bias direction stated."""
-    cells = [
-        cell(record("W", "S1")),
-        cell(record("W", "S2", prior=["s1-driver-v2"])),
-        cell(record("W", "S3", prior=["s1-driver-v2"])),
-    ]
-    verdict = h3_verdict(cells)
-    assert verdict["met"] is None
+def test_verdict_uses_only_clean_cells():
+    """PR #57/#59 reviews: wipe_leak, frozen_drift, and holdout_partial
+    cells are ALL ineligible — flagged pairs leave the verdict pending
+    (None); once a clean higher-attempt rerun exists the verdict uses IT
+    while the flagged history stays in the caveats."""
+    leaked_w2 = cell(record("W", "S2", first_success=100.0, prior=["s1-driver-v2"]))
+    drifted_w3 = cell(record("W", "S3", first_success=100.0, drift=["env/x"]))
+    partial_l2 = cell(record("L", "S2", first_success=400.0, holdout_ok=False))
+    l3 = cell(record("L", "S3", first_success=400.0))
+    assert h3_verdict([leaked_w2, drifted_w3, partial_l2, l3])["met"] is None
+
+    rerun_w2 = cell({**record("W", "S2", first_success=1000.0), "attempt": 2})
+    rerun_w3 = cell({**record("W", "S3", first_success=1000.0), "attempt": 2})
+    clean_l2 = cell(record("L", "S2", first_success=400.0))
+    verdict = h3_verdict([leaked_w2, drifted_w3, rerun_w2, rerun_w3, clean_l2, l3])
+    assert verdict["ratios"]["S2"] == pytest.approx(0.4)  # rerun's 1000, not leaked 100
+    assert verdict["met"] is True
     assert any("wipe_leak" in c for c in verdict["caveats"])
+    assert any("frozen_drift" in c for c in verdict["caveats"])
+
+
+def _write_campaign(tmp_path, treatment=TREATMENT, arms=(("W", "S1"), ("L", "S1"))):
+    (tmp_path / "h3_results.json").write_text(
+        json.dumps({"ok": True, "treatment": treatment, "records": []})
+    )
+    for arm, tier in arms:
+        d = tmp_path / f"arm_{arm}" / tier
+        d.mkdir(parents=True)
+        (d / "scenario.json").write_text(json.dumps(record(arm, tier, holdout_ok=(arm == "L"))))
+        (d / "token_samples.jsonl").write_text('{"wall_s": 5.0, "tokens": 1000}\n')
 
 
 def test_load_and_cli_shape(tmp_path):
     """CON-8: single JSON object on stdout, exit 0; --markdown writes the
-    table with partial cells marked."""
-    for arm, tier in (("W", "S1"), ("L", "S1")):
-        d = tmp_path / f"arm_{arm}" / tier
-        d.mkdir(parents=True)
-        r = record(arm, tier, holdout_ok=(arm == "L"))
-        (d / "scenario.json").write_text(json.dumps(r))
-    assert len(load_scenarios(tmp_path)) == 2
+    table with partial cells marked and the treatment echoed."""
+    _write_campaign(tmp_path)
+    campaign = load_campaign(tmp_path)
+    assert len(campaign["records"]) == 2 and campaign["treatment"]["commit"] == "abc123"
 
     md = tmp_path / "table.md"
     proc = subprocess.run(
@@ -121,30 +179,47 @@ def test_load_and_cli_shape(tmp_path):
     assert proc.returncode == 0
     out = json.loads(proc.stdout)
     assert out["ok"] is True and len(out["cells"]) == 2
+    assert out["treatment"]["commit"] == "abc123"
     assert out["verdict"]["met"] is None  # S2/S3 cells absent
     text = md.read_text()
-    assert "partial" in text  # the W cell's expired holdout is marked
-    assert "| W " in text and "| L " in text
+    assert "partial" in text and "| W " in text and "| L " in text
 
 
-def test_verdict_excludes_leaked_cells_and_prefers_rerun():
-    """PR #57 review: contaminated (wipe_leak) cells never enter the
-    verdict — with only leaked W cells the verdict stays None (pending
-    the rerun); once an unflagged rerun record (higher attempt) exists,
-    the verdict uses IT, not the flagged original."""
-    leaked_w2 = cell(record("W", "S2", first_success=100.0, prior=["s1-driver-v2"]))
-    leaked_w3 = cell(record("W", "S3", first_success=100.0, prior=["s1-driver-v2"]))
-    l2 = cell(record("L", "S2", first_success=400.0))
-    l3 = cell(record("L", "S3", first_success=400.0))
-    pending = h3_verdict([leaked_w2, leaked_w3, l2, l3])
-    assert pending["met"] is None  # leaked cells are NOT usable W data
+def test_cli_fails_closed_on_missing_or_malformed_input(tmp_path):
+    """PR #59 review (CON-8): an empty dir, a malformed scenario file,
+    and a treatment mismatch must each refuse with a JSON error and exit
+    1 — never an empty ok:true or a traceback."""
 
-    rerun_w2 = cell({**record("W", "S2", first_success=1000.0), "attempt": 2})
-    rerun_w3 = cell({**record("W", "S3", first_success=1000.0), "attempt": 2})
-    verdict = h3_verdict([leaked_w2, leaked_w3, rerun_w2, rerun_w3, l2, l3])
-    assert verdict["ratios"]["S2"] == pytest.approx(0.4)  # rerun's 1000, not leaked 100
-    assert verdict["met"] is True
-    assert any("wipe_leak" in c for c in verdict["caveats"])  # history stays visible
+    def run(d):
+        return subprocess.run(
+            [sys.executable, str(REPO_ROOT / "tools" / "h3_analysis.py"), "--dir", str(d)],
+            capture_output=True,
+            text=True,
+        )
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    proc = run(empty)
+    out = json.loads(proc.stdout)
+    assert proc.returncode == 1 and out["ok"] is False and "h3_results" in out["error"]
+
+    bad = tmp_path / "bad"
+    bad.mkdir()
+    _write_campaign(bad)
+    (bad / "arm_W" / "S1" / "scenario.json").write_text("{not json")
+    proc = run(bad)
+    out = json.loads(proc.stdout)
+    assert proc.returncode == 1 and out["ok"] is False and "malformed" in out["error"]
+
+    mixed = tmp_path / "mixed"
+    mixed.mkdir()
+    _write_campaign(mixed)
+    (mixed / "h3_results-r2.json").write_text(
+        json.dumps({"ok": True, "treatment": {**TREATMENT, "commit": "OTHER"}, "records": []})
+    )
+    proc = run(mixed)
+    out = json.loads(proc.stdout)
+    assert proc.returncode == 1 and out["ok"] is False and "mismatch" in out["error"]
 
 
 def test_markdown_marks_leak_and_stop_reason():
