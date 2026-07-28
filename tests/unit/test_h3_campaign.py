@@ -97,6 +97,80 @@ def test_wipe_restores_curated_state_and_preserves_ledger(tmp_path):
     assert ledger.read_text() == '{"entry": 1}\n'  # budget continuity
 
 
+def test_wipe_removes_agent_committed_files(tmp_path):
+    """Campaign-2 leak (arm W): files the agent COMMITS on its worktree
+    branch are tracked and absent from the pin, so `checkout <pin> -- .`
+    skipped them and `git clean` skipped them — s1-driver-v2 plus the S1
+    research notes rode through BOTH arm-W wipes (recorded as
+    prior_skills in the W/S2 and W/S3 scenario records). The wipe must
+    remove committed-but-not-in-pin files while preserving runs/ and the
+    agent's branch history for audit (ADR-h3 arm-W wipe surface)."""
+    wt, oid = _mini_repo(tmp_path)
+    subprocess.run(["git", "checkout", "-qb", "campaign/h3-s1-research"], cwd=wt, check=True)
+    committed_skill = wt / "registry" / "manifests" / "s1-driver-v2.yaml"
+    committed_skill.write_text("id: s1-driver-v2\norigin: agent-authored\neval: {pass_rate: 1}\n")
+    (wt / "docs").mkdir()
+    (wt / "docs" / "campaign-notes.md").write_text("what worked in S1\n")
+    subprocess.run(["git", "add", "registry", "docs"], cwd=wt, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "register skill"],
+        cwd=wt,
+        check=True,
+    )
+    ledger = wt / "runs" / "campaign_ledger.jsonl"
+    ledger.parent.mkdir()
+    ledger.write_text('{"entry": 1}\n')
+
+    wipe_library(wt, oid)
+
+    assert not committed_skill.exists()  # the campaign-2 leak, closed
+    assert not (wt / "docs" / "campaign-notes.md").exists()
+    assert (wt / "graphs" / "expert_t0.yaml").exists()  # pin tree intact
+    assert ledger.read_text() == '{"entry": 1}\n'  # budget continuity
+    branch_head = subprocess.run(
+        ["git", "rev-parse", "campaign/h3-s1-research"], cwd=wt, capture_output=True, text=True
+    )
+    assert branch_head.returncode == 0  # audit trail: agent branch survives
+
+
+def test_wipe_keep_ref_preserves_detached_commits(tmp_path):
+    """PR #57 review P1: detaching during wipes can orphan commits made
+    on a detached HEAD in the PREVIOUS scenario — the wipe must first pin
+    the pre-wipe HEAD under a durable ref and record its hash, so every
+    scenario's final state stays reachable for audit."""
+    wt, oid = _mini_repo(tmp_path)
+    subprocess.run(["git", "checkout", "-q", "--detach", oid], cwd=wt, check=True)
+    (wt / "detached_work.md").write_text("scenario state committed on detached HEAD\n")
+    subprocess.run(["git", "add", "-A"], cwd=wt, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "detached"],
+        cwd=wt,
+        check=True,
+    )
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True, text=True
+    ).stdout.strip()
+
+    report = wipe_library(wt, oid, keep_ref="h3/keep-W-pre-S2")
+
+    assert report["detached_from"] == head and report["kept_ref"] == "h3/keep-W-pre-S2"
+    kept = subprocess.run(
+        ["git", "rev-parse", "h3/keep-W-pre-S2"], cwd=wt, capture_output=True, text=True
+    )
+    assert kept.stdout.strip() == head  # durable, not reflog-only
+    assert not (wt / "detached_work.md").exists()  # ...and still wiped
+
+
+def test_scenario_slot_names_reruns_with_new_ids():
+    """PR #57 review P1: contaminated cells are rerun under NEW ids —
+    attempt 2 gets its own scenario dir and holdout run tag, never
+    overwriting the flagged originals."""
+    from h3_campaign import scenario_slot
+
+    assert scenario_slot("S2", 1) == "S2"
+    assert scenario_slot("S2", 3) == "S2-r3"
+
+
 def test_skill_reuse_counts_only_prior_evalcarded_skills(tmp_path):
     """Protocol point 5: the transfer signal counts deliverable nodes
     whose evalcarded manifest predates the scenario — not curated nodes,
@@ -201,13 +275,14 @@ def test_campaign_metrics_since_scopes_all_aggregates(tmp_path):
 
 def test_holdout_run_tags_are_unique_per_scenario():
     """PR #48 review: session_index=0 collided run-ids from S2 onward,
-    losing pass@1 for 4/6 scenarios; tags are now arm+tier strings."""
+    losing pass@1 for 4/6 scenarios; tags are arm+slot strings, where the
+    slot carries the rerun suffix (PR #57 review: reruns get NEW ids)."""
     import inspect
 
     import h3_campaign
 
     src = inspect.getsource(h3_campaign.run_scenario)
-    assert 'f"{arm}-{tier}"' in src
+    assert 'f"{arm}-{slot}"' in src
 
 
 def test_holdout_scoring_argv_carries_tier_and_embodiment(tmp_path, monkeypatch):
@@ -278,3 +353,15 @@ def test_s_tier_prompt_warns_about_slow_rollouts():
     # measured-campaign S1 failure: the agent backgrounded its rollout and
     # "waited" — fatal in -p mode; the prompt must forbid it explicitly
     assert "NON-INTERACTIVE" in prompt and "NEVER background" in prompt
+
+
+def test_rerun_results_file_never_clobbers_the_campaign_record():
+    """PR #57 self-review: --attempt 2 must write h3_results-r2.json —
+    overwriting h3_results.json would destroy the primary campaign
+    record the rerun exists to repair."""
+    import inspect
+
+    import h3_campaign
+
+    src = inspect.getsource(h3_campaign.main)
+    assert "h3_results{'' if args.attempt == 1 else f'-r{args.attempt}'}" in src
