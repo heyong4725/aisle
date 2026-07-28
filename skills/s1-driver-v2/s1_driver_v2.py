@@ -61,6 +61,38 @@ PLACE_PARK_YS = (0.0, 0.15, -0.15, 0.30, -0.30, 0.075)
 GRASP_CRITICAL = frozenset({"pregrasp", "advance", "close"})
 
 
+class PickStreamGate:
+    """Grasp-critical bail firewall around a pick StageStreamer (PR #54
+    review): the MOMENT pregrasp/advance/close bails, all further stream
+    output is suppressed — including the bailed tick's own command.
+    Without it the streamer marches on and issues every later
+    close/lift/retract/carry command with tracking already declared
+    unsafe, preserving the blind-close/neighbour-snag failure mode this
+    skill exists to remove."""
+
+    def __init__(self, streamer) -> None:
+        self.streamer = streamer
+        self.bails: set[str] = set()
+        self.critical_bail: str | None = None
+
+    @property
+    def done(self) -> bool:
+        return self.critical_bail is not None or self.streamer.done
+
+    def step(self, qpos):
+        if self.critical_bail is not None:
+            return None, None, []
+        full_cmd, grip_out, logs = self.streamer.step(qpos)
+        for line in logs:
+            if " bailed at joint " in line:
+                stage = line.split()[1]
+                self.bails.add(stage)
+                if stage in GRASP_CRITICAL:
+                    self.critical_bail = stage
+                    return None, None, logs
+        return full_cmd, grip_out, logs
+
+
 def park_pose_for_slot(plano: dict, slot_id: str) -> list[float]:
     """Store-frame [x, y, yaw] parking the base PARK_STANDOFF_M in front
     of the slot, facing the unit (yaw = unit facing + pi)."""
@@ -310,7 +342,9 @@ def main() -> None:
             print(f"pick {item_id} failed: {err}", file=sys.stderr)
             skip_pick_pair()
             return
-        streamer = StageStreamer(stages, home, dt, 1.0, integ_cap=0.30)
+        # pick streams run behind the bail firewall (PR #54 review): a
+        # grasp-critical bail must stop the stream THAT tick
+        streamer = PickStreamGate(StageStreamer(stages, home, dt, 1.0, integ_cap=0.30))
         stream_bails = set()
         carry_q = q_carry
         carry_place_z = place_z
@@ -509,11 +543,19 @@ def main() -> None:
                 print(line, file=sys.stderr)
                 if " bailed at joint " in line:
                     stream_bails.add(line.split()[1])
-            if streamer.done:
+            if isinstance(streamer, PickStreamGate) and streamer.critical_bail:
+                # PR #54 review: abort NOW — the gate already suppressed
+                # this tick's command, and waiting for the stream to run
+                # dry would issue every later close/lift/retract/carry
+                # command with tracking declared unsafe
+                streamer = None
+                after_stream = None
+                abort_pick()
+            elif streamer.done:
                 ctx, streamer = after_stream, None
                 after_stream = None
                 if ctx and ctx["kind"] == "pick" and stream_bails & GRASP_CRITICAL:
-                    abort_pick()
+                    abort_pick()  # belt: non-gated path (should be unreachable)
                 elif ctx and ctx["kind"] == "abort":
                     skip_pick_pair()
                 else:

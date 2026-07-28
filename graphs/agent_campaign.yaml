@@ -62,10 +62,10 @@ nodes:
       tick: dora/timer/millis/5000
       base_watchdog: dora/timer/millis/50
       joint_cmd:
-        source: s1-expert/joint_cmd
+        source: s1-driver-v2/joint_cmd
         queue_size: 100
       gripper_cmd:
-        source: s1-expert/gripper_cmd
+        source: s1-driver-v2/gripper_cmd
         queue_size: 100
       base_cmd:
         source: waypoint-nav/base_cmd
@@ -90,7 +90,7 @@ nodes:
     inputs:
       tick: dora/timer/millis/20
       nav_goal:
-        source: s1-expert/nav_goal
+        source: s1-driver-v2/nav_goal
         queue_size: 100
       base_pose:
         source: dora-genesis/base_pose
@@ -118,7 +118,7 @@ nodes:
     outputs:
       - subtask_plan
 
-  - id: s1-expert
+  - id: s1-driver-v2
     path: ../skills/s1-driver-v2/s1_driver_v2.py
     inputs:
       episode_goal:

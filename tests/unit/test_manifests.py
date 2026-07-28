@@ -91,7 +91,12 @@ def test_all_lint(repo_lint):
     report = json.loads(repo_lint.stdout)
     assert repo_lint.returncode == 0, report
     assert report["ok"] is True
-    assert report["checked"] == len(EXPECTED_IDS)
+    # every file on disk is linted: the curated core (EXPECTED_IDS,
+    # pinned exactly by test_curated_core_and_agent_extras) plus any
+    # registered CAP-7 agent skills — a hardcoded 26 went stale the
+    # moment s1-driver-v2 landed (PR #54 review)
+    assert report["checked"] == len(list(MANIFESTS_DIR.glob("*.yaml")))
+    assert report["checked"] >= len(EXPECTED_IDS)
     assert report["errors"] == []
 
 
