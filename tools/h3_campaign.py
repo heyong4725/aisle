@@ -52,15 +52,29 @@ NUDGE = "Distill what works into registered skills — they may pay off later."
 
 
 def wipe_library(wt: Path, oid: str) -> dict:
-    """Arm W between scenarios (ADR amendment): registry/manifests and
-    skills/ byte-exact at the pinned OID, agent graphs and the idea tree
-    removed; the ledger and run artifacts persist (global budget
-    continuity)."""
-    # restore EVERY tracked file to the pin (a modified tracked file
-    # anywhere — an expert graph, a src helper — is surviving agent state;
-    # PR #48 adversarial review), then remove ALL untracked residue except
-    # runs/ (ledger + artifacts persist for budget continuity)
-    subprocess.run(["git", "checkout", oid, "--", "."], cwd=wt, check=True)
+    """Arm W between scenarios (ADR amendment): the working tree ends
+    byte-exact at the pinned OID (detached HEAD) — including removal of
+    files the agent COMMITTED on its branch — with agent graphs and the
+    idea tree gone; the ledger and run artifacts persist (global budget
+    continuity), and the agent's branches keep their commits for audit."""
+    # detach the worktree AT the pin: `checkout <oid> -- .` only restores
+    # paths present in the pin's tree, so files the agent COMMITTED on its
+    # branch (tracked, absent from the pin) survived it AND `git clean` —
+    # campaign-2 leak: s1-driver-v2 + research notes rode through both
+    # arm-W wipes. Detaching makes the working tree exactly the pin's;
+    # the agent's branches keep their commits for audit. Then remove ALL
+    # untracked residue except runs/ (ledger + artifacts persist for
+    # budget continuity).
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "checkout", "-f", "--detach", oid],
+        cwd=wt,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     clean = subprocess.run(
         ["git", "clean", "-fdx", "-e", "runs"],
         cwd=wt,
@@ -73,7 +87,7 @@ def wipe_library(wt: Path, oid: str) -> dict:
     if ideas.exists():
         removed.append("runs/ideas/")
         shutil.rmtree(ideas)
-    return {"removed": removed}
+    return {"removed": removed, "detached_from": head}
 
 
 def skill_reuse(deliverable: Path, prior_skill_ids: set[str]) -> list[str]:

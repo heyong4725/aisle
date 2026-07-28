@@ -97,6 +97,42 @@ def test_wipe_restores_curated_state_and_preserves_ledger(tmp_path):
     assert ledger.read_text() == '{"entry": 1}\n'  # budget continuity
 
 
+def test_wipe_removes_agent_committed_files(tmp_path):
+    """Campaign-2 leak (arm W): files the agent COMMITS on its worktree
+    branch are tracked and absent from the pin, so `checkout <pin> -- .`
+    skipped them and `git clean` skipped them — s1-driver-v2 plus the S1
+    research notes rode through BOTH arm-W wipes (recorded as
+    prior_skills in the W/S2 and W/S3 scenario records). The wipe must
+    remove committed-but-not-in-pin files while preserving runs/ and the
+    agent's branch history for audit (ADR-h3 arm-W wipe surface)."""
+    wt, oid = _mini_repo(tmp_path)
+    subprocess.run(["git", "checkout", "-qb", "campaign/h3-s1-research"], cwd=wt, check=True)
+    committed_skill = wt / "registry" / "manifests" / "s1-driver-v2.yaml"
+    committed_skill.write_text("id: s1-driver-v2\norigin: agent-authored\neval: {pass_rate: 1}\n")
+    (wt / "docs").mkdir()
+    (wt / "docs" / "campaign-notes.md").write_text("what worked in S1\n")
+    subprocess.run(["git", "add", "registry", "docs"], cwd=wt, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "register skill"],
+        cwd=wt,
+        check=True,
+    )
+    ledger = wt / "runs" / "campaign_ledger.jsonl"
+    ledger.parent.mkdir()
+    ledger.write_text('{"entry": 1}\n')
+
+    wipe_library(wt, oid)
+
+    assert not committed_skill.exists()  # the campaign-2 leak, closed
+    assert not (wt / "docs" / "campaign-notes.md").exists()
+    assert (wt / "graphs" / "expert_t0.yaml").exists()  # pin tree intact
+    assert ledger.read_text() == '{"entry": 1}\n'  # budget continuity
+    branch_head = subprocess.run(
+        ["git", "rev-parse", "campaign/h3-s1-research"], cwd=wt, capture_output=True, text=True
+    )
+    assert branch_head.returncode == 0  # audit trail: agent branch survives
+
+
 def test_skill_reuse_counts_only_prior_evalcarded_skills(tmp_path):
     """Protocol point 5: the transfer signal counts deliverable nodes
     whose evalcarded manifest predates the scenario — not curated nodes,
