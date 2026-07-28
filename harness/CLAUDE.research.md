@@ -64,6 +64,8 @@ uv run harness rollout --graph graphs/agent_x.yaml --tier S1 --embodiment mobile
 uv run harness traces query --run r_2026_x --topic joint_state --episode 3 --summarize
 uv run harness report close --id I12 --observed "pass1 0.62 -> 0.75" --verdict up
 uv run harness skill register skills/my-skill
+uv run harness swap --graph graphs/agent_x.yaml --dataflow <name> --replace grasp-planner-topdown --with skills/grasp_v2/node-def.yaml
+uv run harness probe --dataflow <name> --topic dora-genesis/joint_state --for 30
 ```
 
 Notes that save you tokens:
