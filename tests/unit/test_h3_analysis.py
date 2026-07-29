@@ -38,6 +38,7 @@ def record(
     pass1=0.5,
     drift=(),
     samples=(),
+    failures=None,
 ):
     return {
         "arm": arm,
@@ -50,7 +51,7 @@ def record(
             "error": None if holdout_ok else "scoring window expired",
             "pass1": pass1,
             "pass8": pass1,
-            "failures": {},
+            "failures": dict(failures or {}),
         },
         "first_success_wall_s": first_success,
         "wrong_object_total": 0,
@@ -220,6 +221,42 @@ def test_cli_fails_closed_on_missing_or_malformed_input(tmp_path):
     proc = run(mixed)
     out = json.loads(proc.stdout)
     assert proc.returncode == 1 and out["ok"] is False and "mismatch" in out["error"]
+
+
+def test_precision_failures_score_retail_classes_not_wrong_object():
+    """PR #60 review: H5 in retail is scored on extra_item/misplaced/
+    wrong_slot (RS-7), NOT the desk-only wrong_object (which never fires
+    in retail — a vacuous 0). The cell tallies the held-out precision
+    classes; the CLI totals them per class so a nonzero count is never
+    hidden behind wrong_object_total: 0."""
+    c = cell(record("W", "S3", failures={"wrong_slot": 7, "missing_item": 1}))
+    assert c["precision_failures"] == {"wrong_slot": 7}  # missing_item is not precision
+    assert c["precision_failures_total"] == 7
+    assert c["wrong_object_total"] == 0  # the vacuous desk metric, still reported
+
+    clean = cell(record("L", "S1", failures={"timeout": 4}))
+    assert clean["precision_failures"] == {} and clean["precision_failures_total"] == 0
+
+
+def test_cli_totals_precision_failures_by_class(tmp_path):
+    """The CLI surfaces holdout_precision_failures_total + by_class so the
+    H5 signal is visible at the top level (PR #60 review)."""
+    (tmp_path / "h3_results.json").write_text(
+        json.dumps({"ok": True, "treatment": TREATMENT, "records": []})
+    )
+    for arm, tier, fails in (("W", "S3", {"wrong_slot": 7}), ("W", "S2", {"misplaced": 1})):
+        d = tmp_path / f"arm_{arm}" / tier
+        d.mkdir(parents=True)
+        (d / "scenario.json").write_text(json.dumps(record(arm, tier, failures=fails)))
+        (d / "token_samples.jsonl").write_text('{"wall_s": 5.0, "tokens": 1000}\n')
+    proc = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "tools" / "h3_analysis.py"), "--dir", str(tmp_path)],
+        capture_output=True,
+        text=True,
+    )
+    out = json.loads(proc.stdout)
+    assert out["holdout_precision_failures_total"] == 8
+    assert out["holdout_precision_failures_by_class"] == {"wrong_slot": 7, "misplaced": 1}
 
 
 def test_markdown_marks_leak_and_stop_reason():
