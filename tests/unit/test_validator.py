@@ -569,12 +569,15 @@ def test_install_missing_empty_and_decorated_dist_names(tmp_path):
     at [=<>!~;@) before probing, so INSTALLED dists are never falsely
     flagged."""
     root = make_registry_root(tmp_path)
-    write_manifest(root, _pip_manifest("oracle-pose", source="pip:"))
     graph = _single_node_graph(root, _pip_manifest("oracle-pose"))
-    code, report = run_validate(graph, "--root", str(root))
-    assert code != 0
-    assert "GRAPH_INVALID" in codes(report, "errors")  # JSON report, no crash
-    assert any("does not match" in e["detail"] for e in report["errors"])
+    # PR #63 review P2: whitespace-only dists normalize to empty and must
+    # die at the SAME schema layer as the bare `pip:`
+    for source in ("pip:", "pip:  ", "pip:\t"):
+        write_manifest(root, _pip_manifest("oracle-pose", source=source))
+        code, report = run_validate(graph, "--root", str(root))
+        assert code != 0, source
+        assert "GRAPH_INVALID" in codes(report, "errors"), source  # JSON, no crash
+        assert any("does not match" in e["detail"] for e in report["errors"]), source
     for source in ("pip:pytest[extra]", "pip:pytest==1.0", "pip: pytest"):
         write_manifest(root, _pip_manifest("oracle-pose", source=source))
         code, report = run_validate(graph, "--root", str(root))
@@ -738,3 +741,69 @@ def test_path_check_has_no_second_base_bypass(tmp_path):
         [absolute], manifests, set(), "franka", True, graph_dir=staged_dir, root=REPO_ROOT
     )
     assert "PATH_MANIFEST_MISMATCH" not in {e["code"] for e in errors}
+
+
+def _path_manifest(mid, source):
+    return {
+        "id": mid,
+        "kind": "node",
+        "provides": ["object_pose"],
+        "requires": [],
+        "inputs": {},
+        "outputs": {},
+        "embodiment": {"arm": ["franka"], "gripper": "any"},
+        "safety_class": "perception",
+        "eval": None,
+        "origin": "hub",
+        "source": source,
+    }
+
+
+def test_source_invalid_requires_contained_regular_file(tmp_path):
+    """PR #63 review P1: `root / source` is NOT containment — an absolute
+    source (`/etc/hosts`) survives the join, `../` escapes the root, a
+    symlink can resolve outside it, and exists() accepts directories.
+    The source must be a REGULAR FILE resolved UNDER the root."""
+    from aisle.harness.validate import validate_nodes
+
+    root = tmp_path / "root"
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "real.py").write_text("ok")
+    outside = tmp_path / "outside.py"
+    outside.write_text("external mutable code")
+    (root / "src" / "link.py").symlink_to(outside)
+
+    def codes_for(source):
+        manifests = {"n": _path_manifest("n", source)}
+        errors, _ = validate_nodes(
+            [{"id": "n"}], manifests, set(), "franka", True, graph_dir=root, root=root
+        )
+        return {e["code"] for e in errors}
+
+    assert "SOURCE_INVALID" not in codes_for("src/real.py")  # the honest case
+    assert "SOURCE_INVALID" in codes_for(str(outside.resolve()))  # absolute
+    assert "SOURCE_INVALID" in codes_for("../outside.py")  # traversal
+    assert "SOURCE_INVALID" in codes_for("src")  # directory, not a file
+    assert "SOURCE_INVALID" in codes_for("src/link.py")  # symlink escaping root
+
+
+def test_install_missing_alternatives_exclude_invalid_sources(tmp_path):
+    """PR #63 review P2: the INSTALL_MISSING hint MUST never name an
+    alternative that fails the NEXT compile (VAL-2) — a same-capability
+    manifest whose path source names no file is exactly such an
+    alternative and must not be recommended."""
+    root = make_registry_root(tmp_path)
+    write_manifest(root, _pip_manifest("pose-estimator", source="pip:aisle-review-absent-dist"))
+    ghost = _path_manifest("ghost-pose", "src/aisle/nodes/does_not_exist.py")
+    ghost["provides"] = ["object_pose"]
+    path = root / "registry" / "manifests" / "ghost-pose.yaml"
+    path.write_text(yaml.safe_dump(ghost, sort_keys=False))  # NO auto-stub: stays ghost
+    real = _path_manifest("real-pose", "src/aisle/nodes/real_pose.py")
+    real["provides"] = ["object_pose"]
+    write_manifest(root, real)  # helper stubs the source file: launchable
+    graph = _single_node_graph(root, _pip_manifest("pose-estimator"))
+    code, report = run_validate(graph, "--root", str(root))
+    assert code != 0
+    hint = next(e["hint"] for e in report["errors"] if e["code"] == "INSTALL_MISSING")
+    assert "real-pose" in hint
+    assert "ghost-pose" not in hint  # would fail the next compile (SOURCE_INVALID)

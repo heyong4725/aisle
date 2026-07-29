@@ -206,13 +206,37 @@ def _pip_installed(dist: str) -> bool:
     return True
 
 
-def _manifest_launchable(manifest: dict, arm_kind: str) -> bool:
+def _path_source_valid(source: str, root: Path) -> bool:
+    """A path-form source is launchable iff it is a root-relative
+    reference resolving to a REGULAR FILE contained by the root
+    (PR #63 review P1: `root / source` is not containment — absolute
+    sources survive the join, `../` and symlinks escape, and exists()
+    accepts directories)."""
+    if Path(source).is_absolute():
+        return False
+    target = (root / source).resolve()
+    resolved_root = root.resolve()
+    return target.is_file() and target.is_relative_to(resolved_root)
+
+
+def _manifest_launchable(manifest: dict, arm_kind: str, root: Path | None = None) -> bool:
     """A candidate INSTALL_MISSING alternative must itself survive the NEXT
-    compile: an installed distribution (or source-tree node) AND compatible
-    with the graph's embodiment — an so101-only suggestion on a franka
-    graph just trades INSTALL_MISSING for EMBODIMENT_MISMATCH."""
+    compile: an installed distribution — or a path source that is a real
+    file under the root (PR #63 review P2: a ghost-path alternative just
+    trades INSTALL_MISSING for SOURCE_INVALID) — AND compatible with the
+    graph's embodiment (an so101-only suggestion on a franka graph trades
+    it for EMBODIMENT_MISMATCH)."""
     dist = _pip_dist(manifest)
     if dist is not None and not _pip_installed(dist):
+        return False
+    source = manifest.get("source")
+    if (
+        dist is None
+        and root is not None
+        and isinstance(source, str)
+        and ":" not in source
+        and not _path_source_valid(source, root)
+    ):
         return False
     arms = manifest.get("embodiment", {}).get("arm", [])
     return not arms or arm_kind in arms
@@ -290,14 +314,16 @@ def validate_nodes(
         source_val = manifest.get("source")
         source_invalid = False
         if isinstance(source_val, str) and root is not None:
-            if ":" not in source_val and not (root / source_val).exists():
+            if ":" not in source_val and not _path_source_valid(source_val, root):
                 source_invalid = True
                 errors.append(
                     _entry(
                         "SOURCE_INVALID",
                         {"node": node_id},
-                        f"manifest source {source_val!r} names no file under "
-                        "the root — the graph would validate but never launch",
+                        f"manifest source {source_val!r} is not a regular "
+                        "file contained by the root — the graph would "
+                        "validate but never launch (or launch code outside "
+                        "the vetted tree)",
                         "point the manifest source at the node's real file "
                         "(or register the node with harness skill register)",
                     )
@@ -316,7 +342,7 @@ def validate_nodes(
                 for other_id, other in manifests.items()
                 if other_id != node_id
                 and provided <= set(other.get("provides") or [])
-                and _manifest_launchable(other, arm_kind)
+                and _manifest_launchable(other, arm_kind, root)
             )
             if alternatives:
                 hint = f"use an installed provider of {sorted(provided)}: " + ", ".join(

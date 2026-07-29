@@ -193,8 +193,8 @@
     },
     "source": {
       "type": "string",
-      "pattern": "^(pip:[^:]+|[^:]+)$",
-      "description": "pip:<distribution> or a root-relative path (issue #35: unknown schemes and empty dists are lint errors, not silent passes)"
+      "pattern": "^(pip:\\s*[^:\\s][^:]*|[^:]+)$",
+      "description": "pip:<distribution> (padding allowed, but at least one non-whitespace distribution character \u2014 issue #35/PR #63: whitespace-only dists are schema errors) or a root-relative path"
     }
   }
 }

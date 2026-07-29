@@ -2,6 +2,7 @@
 no sim (CON-12)."""
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -60,10 +61,20 @@ def _fake_root(
     and the idea gate is what decides. Carries a campaign budget.toml
     (ADR-21) with configurable ceilings."""
     (tmp_path / "registry").symlink_to(REPO_ROOT / "registry")
-    # PATH_MANIFEST_MISMATCH (#62) resolves manifest sources under the
-    # root: the real src/ rides along so path identity (and later, source
-    # existence, #35) hold in this repo-shaped fake root
-    (tmp_path / "src").symlink_to(REPO_ROOT / "src")
+    # PATH_MANIFEST_MISMATCH (#62) + SOURCE_INVALID containment (#35/PR
+    # #63) resolve manifest sources under the root — a symlinked src/
+    # RESOLVES OUTSIDE the fake root and is now (correctly) refused, so
+    # the fixture carries a real copy
+    shutil.copytree(
+        REPO_ROOT / "src",
+        tmp_path / "src",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    # ...and its own graphs/: PATH_MANIFEST_MISMATCH is an IDENTITY check
+    # (graph path file == root source file), so a repo graph can never
+    # validate against a foreign root — the gate tests validate the fake
+    # root's own copy
+    shutil.copytree(REPO_ROOT / "graphs", tmp_path / "graphs")
     (tmp_path / "tools").mkdir(parents=True)
     (tmp_path / "tools" / "env_hash.py").write_text(
         'import json, sys\nprint(json.dumps({"ok": '
@@ -84,7 +95,7 @@ def test_gate_refuses_on_env_hash_mismatch(tmp_path):
     (CON-7 frozen-set drift)."""
     root = _fake_root(tmp_path, hash_ok=False)
     result = run_gates(
-        root, REPO_ROOT / "graphs" / "expert_t0.yaml", "b", no_idea_gate=True, env_baseline="local"
+        root, root / "graphs" / "expert_t0.yaml", "b", no_idea_gate=True, env_baseline="local"
     )
     assert result["ok"] is False and result["gate"] == "env_hash"
 
@@ -95,8 +106,8 @@ def test_gate_refuses_without_open_idea_and_bypass_is_recorded(tmp_path):
     from aisle.harness.validate import validate
 
     root = _fake_root(tmp_path, hash_ok=True)
-    graph = REPO_ROOT / "graphs" / "expert_t0.yaml"
-    if not validate(graph, REPO_ROOT, "franka", allow_unproven=False)["ok"]:
+    graph = root / "graphs" / "expert_t0.yaml"
+    if not validate(graph, root, "franka", allow_unproven=False)["ok"]:
         pytest.skip("expert graph does not validate in this environment")
     refused = run_gates(root, graph, "b", no_idea_gate=False, env_baseline="local")
     assert refused["ok"] is False and refused["gate"] == "idea"
@@ -208,7 +219,7 @@ def test_local_override_is_exempt_from_budget_refusal(tmp_path):
     root = _fake_root(tmp_path, hash_ok=True, episodes_ceiling=1)
     reserve_budget(root, "r1", episodes=1)
     settle_budget(root, "r1", episodes=1, wall_s=10.0)
-    graph = REPO_ROOT / "graphs" / "expert_t0.yaml"
+    graph = root / "graphs" / "expert_t0.yaml"
     result = run_gates(root, graph, "b", no_idea_gate=True, env_baseline="local", episodes=5)
     assert result["ok"] is True  # exhausted campaign, local run still allowed
     assert result["budget"]["episodes_left"] == 0  # ...and remaining is reported
@@ -219,7 +230,7 @@ def test_unknown_baseline_is_refused(tmp_path):
     the logged 'local' override are accepted — an agent cannot point the
     gate at HEAD or any ref it controls."""
     root = _fake_root(tmp_path, hash_ok=True)
-    graph = REPO_ROOT / "graphs" / "expert_t0.yaml"
+    graph = root / "graphs" / "expert_t0.yaml"
     for ref in ("HEAD", "main", "refs/heads/feature", "origin/other"):
         result = run_gates(root, graph, "b", no_idea_gate=True, env_baseline=ref)
         assert result["ok"] is False and result["gate"] == "env_hash", ref
@@ -230,7 +241,7 @@ def test_gates_record_the_env_baseline(tmp_path):
     """ADR-21: every gate result names the frozen-set baseline that
     validated it — 'local' (the dev override) is auditable in manifests."""
     root = _fake_root(tmp_path, hash_ok=True)
-    graph = REPO_ROOT / "graphs" / "expert_t0.yaml"
+    graph = root / "graphs" / "expert_t0.yaml"
     result = run_gates(root, graph, "b", no_idea_gate=True, env_baseline="local")
     assert result["ok"] is True and result["env_baseline"] == "local"
     assert result["env_baseline_oid"] is None  # no immutable identity claimed
