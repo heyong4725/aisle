@@ -1,0 +1,63 @@
+{
+ "arm": "W",
+ "tier": "S3",
+ "budgets": {
+  "tier": "S3",
+  "tokens": 750000,
+  "episodes": 60,
+  "wall_h": 5.0
+ },
+ "session": {
+  "stopped": "token_budget",
+  "rc": -9,
+  "tokens": 750074,
+  "wall_s": 7484.1
+ },
+ "frozen_drift": [],
+ "holdout": {
+  "ok": true,
+  "error": null,
+  "pass1": 0.0,
+  "pass8": 0.0,
+  "failures": {
+   "wrong_slot": 7,
+   "missing_item": 1
+  }
+ },
+ "first_success_wall_s": 2935.6,
+ "wrong_object_total": 0,
+ "rollouts": [
+  {
+   "run_id": "skill-s3-driver-v1-2026-07-28-138e3a",
+   "mtime": 1785250914.4017096,
+   "episodes": 2,
+   "pass1": 0.5
+  },
+  {
+   "run_id": "20260728-151338-df0952",
+   "mtime": 1785253971.0791101,
+   "episodes": 4,
+   "pass1": 0.75
+  },
+  {
+   "run_id": "20260728-155334-27e0f6",
+   "mtime": 1785254924.2917197,
+   "episodes": 2,
+   "pass1": 1.0
+  },
+  {
+   "run_id": "campaign-holdout-W-S3",
+   "mtime": 1785266366.6937833,
+   "episodes": 8,
+   "pass1": 0.0
+  }
+ ],
+ "prior_skills": [
+  "s1-driver-v2"
+ ],
+ "skills_after": [
+  "s1-driver-v2",
+  "s3-driver-v1"
+ ],
+ "skill_reuse_in_deliverable": []
+}
