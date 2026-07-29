@@ -560,38 +560,40 @@ def test_install_missing_installed_distribution_passes(tmp_path):
 
 
 def test_install_missing_empty_and_decorated_dist_names(tmp_path):
-    """PR #34 adversarial review: `source: "pip:"` crashed the CLI with an
-    uncaught ValueError (no JSON, CON-8 broken), and extras/pins/whitespace
-    (`pip:pytest[x]`, `pip:pytest==1.0`, `pip: pytest`) probed the literal
-    string, falsely flagging INSTALLED dists and corrupting the hint. The
-    dist name is normalized (strip + cut at [=<>!~;@) before probing; an
-    empty name is a structured INSTALL_MISSING, never a traceback."""
+    """PR #34 adversarial review (as evolved by issue #35): `source:
+    "pip:"` once crashed the CLI with an uncaught ValueError — the CAP-1
+    source pattern now rejects an empty distribution at the schema layer
+    (structured GRAPH_INVALID naming the manifest, still no traceback,
+    CON-8). Decorations (`pip:pytest[x]`, `pip:pytest==1.0`,
+    `pip: pytest`) stay valid: the dist name is normalized (strip + cut
+    at [=<>!~;@) before probing, so INSTALLED dists are never falsely
+    flagged."""
     root = make_registry_root(tmp_path)
     write_manifest(root, _pip_manifest("oracle-pose", source="pip:"))
     graph = _single_node_graph(root, _pip_manifest("oracle-pose"))
     code, report = run_validate(graph, "--root", str(root))
     assert code != 0
-    assert "INSTALL_MISSING" in codes(report, "errors")  # JSON report, no crash
-    empty_hint = next(e["hint"] for e in report["errors"] if e["code"] == "INSTALL_MISSING")
-    assert "install ''" not in empty_hint  # red-team: nonsense instruction
-    assert "no distribution name" in empty_hint
-    for source in ("pip:pytest[extra]", "pip:pytest==1.0", "pip: pytest", "PIP:pytest"):
+    assert "GRAPH_INVALID" in codes(report, "errors")  # JSON report, no crash
+    assert any("does not match" in e["detail"] for e in report["errors"])
+    for source in ("pip:pytest[extra]", "pip:pytest==1.0", "pip: pytest"):
         write_manifest(root, _pip_manifest("oracle-pose", source=source))
         code, report = run_validate(graph, "--root", str(root))
         assert code == 0, (source, report)
 
 
-def test_install_missing_scheme_is_case_insensitive(tmp_path):
-    """PR #34 adversarial review: `PIP:absent-dist` dodged the check
-    entirely (exact-lowercase prefix match). The scheme match is
-    case-insensitive, so casing is not an evasion channel for an
-    agent-authored manifest."""
+def test_pip_scheme_casing_is_a_schema_violation(tmp_path):
+    """PR #34 adversarial review (as evolved by issue #35): `PIP:x` once
+    dodged INSTALL_MISSING via exact-lowercase matching. The CAP-1 source
+    pattern now rejects any colon-bearing source that is not lowercase
+    `pip:` at the SCHEMA layer — casing (and every unknown scheme) is
+    closed off before validation, not merely normalized."""
     root = make_registry_root(tmp_path)
     write_manifest(root, _pip_manifest("oracle-pose", source="PIP:aisle-review-absent-dist"))
     graph = _single_node_graph(root, _pip_manifest("oracle-pose"))
     code, report = run_validate(graph, "--root", str(root))
     assert code != 0
-    assert "INSTALL_MISSING" in codes(report, "errors")
+    assert "GRAPH_INVALID" in codes(report, "errors")
+    assert any("oracle-pose" in e["detail"] for e in report["errors"])  # names the manifest
 
 
 def test_install_missing_alternatives_are_usable(tmp_path):

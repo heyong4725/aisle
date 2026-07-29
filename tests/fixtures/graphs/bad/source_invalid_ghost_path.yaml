@@ -1,0 +1,9 @@
+# VAL-2 SOURCE_INVALID (issue #35): the manifest's path-form source names
+# no file under the root — schema-valid, but the graph would validate and
+# never launch (the dodge channel a schema pattern cannot close).
+nodes:
+  - id: oracle-pose
+    path: ../src/aisle/nodes/ghost_oracle.py
+    inputs: {}
+    outputs:
+      - object_pose
