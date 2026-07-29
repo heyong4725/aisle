@@ -5,7 +5,7 @@
 # that executes unvetted code under a vetted identity.
 nodes:
 - id: dora-genesis
-  path: ../src/aisle/nodes/dora_genesis.py
+  path: ../../../../src/aisle/nodes/dora_genesis.py
   inputs:
     tick: dora/timer/millis/10
     joint_cmd:
@@ -28,7 +28,7 @@ nodes:
   - depth_overhead
   - reset_done
 - id: reset
-  path: ../src/aisle/reset/service.py
+  path: ../../../../src/aisle/reset/service.py
   inputs:
     reset:
       source: rollout-client/reset
@@ -40,7 +40,7 @@ nodes:
   - bridge_reset
   - reset_done
 - id: budget-guard
-  path: ../src/aisle/nodes/budget_guard.py
+  path: ../../../../src/aisle/nodes/budget_guard.py
   inputs:
     tick: dora/timer/millis/5000
     joint_cmd:
@@ -58,7 +58,7 @@ nodes:
   - violation
   - guard_stats
 - id: oracle-pose
-  path: ../src/aisle/nodes/grasp_topdown.py
+  path: ../../../../src/aisle/nodes/grasp_topdown.py
   inputs:
     poses:
       source: dora-genesis/poses
@@ -72,7 +72,7 @@ nodes:
   outputs:
   - target_pose
 - id: grasp-planner-topdown
-  path: ../src/aisle/nodes/grasp_topdown.py
+  path: ../../../../src/aisle/nodes/grasp_topdown.py
   inputs:
     target_pose:
       source: oracle-pose/target_pose
@@ -80,7 +80,7 @@ nodes:
   outputs:
   - grasp_pose
 - id: ik-trajectory
-  path: ../src/aisle/nodes/ik_trajectory.py
+  path: ../../../../src/aisle/nodes/ik_trajectory.py
   inputs:
     grasp_pose:
       source: grasp-planner-topdown/grasp_pose
@@ -95,7 +95,7 @@ nodes:
   - joint_cmd
   - gripper_cmd
 - id: verifier-oracle
-  path: ../src/aisle/verifier/oracle.py
+  path: ../../../../src/aisle/verifier/oracle.py
   inputs:
     oracle_state:
       source: dora-genesis/oracle_state
@@ -109,7 +109,7 @@ nodes:
   outputs:
   - episode_result
 - id: task-state-machine
-  path: ../src/aisle/nodes/task_state_machine.py
+  path: ../../../../src/aisle/nodes/task_state_machine.py
   inputs:
     tick: dora/timer/millis/1000
     episode_goal:
@@ -125,7 +125,7 @@ nodes:
   - target_request
   - episode_feedback
 - id: rollout-client
-  path: ../src/aisle/harness/rollout_client.py
+  path: ../../../../src/aisle/harness/rollout_client.py
   inputs:
     tick: dora/timer/millis/1000
     reset_done:

@@ -330,20 +330,21 @@ def validate_nodes(
             and graph_dir is not None
             and root is not None
         ):
-            if source.startswith("pip:"):
-                # graphs reference pip nodes as `pip:<dist>` or the bare
-                # distribution name — anything else launches other code
-                matches = node_path in (source, source[len("pip:") :])
+            pip_name = _pip_dist(manifest)
+            if pip_name is not None:
+                # graphs reference pip nodes as the manifest source
+                # verbatim or the bare NORMALIZED distribution name (PR
+                # #62 review P2: reuse _pip_dist so decorated/case-varied
+                # sources match the INSTALL_MISSING contract) — anything
+                # else launches other code
+                matches = node_path in (source, pip_name)
             else:
-                # a graph may be validated from outside graphs/ (fixtures,
-                # staged copies) while written in the canonical
-                # graphs-dir-relative form — accept EITHER composition;
-                # a path naming different CODE mismatches under both
-                target = (root / source).resolve()
-                matches = target in (
-                    (graph_dir / node_path).resolve(),
-                    (root / "graphs" / node_path).resolve(),
-                )
+                # exactly ONE base: the graph's own directory — the base
+                # dora resolves against. A graphs-dir fallback approved
+                # tmpdir-staged graphs whose paths resolve elsewhere at
+                # runtime (PR #62 review P1: the live-swap bypass);
+                # staged copies must carry absolute paths instead.
+                matches = (graph_dir / node_path).resolve() == (root / source).resolve()
             if not matches:
                 errors.append(
                     _entry(
