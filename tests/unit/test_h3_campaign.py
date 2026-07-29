@@ -155,9 +155,11 @@ def test_wipe_keep_ref_preserves_detached_commits(tmp_path):
 
     assert report["detached_from"] == head and report["kept_ref"] == "h3/keep-W-pre-S2"
     kept = subprocess.run(
-        ["git", "rev-parse", "h3/keep-W-pre-S2"], cwd=wt, capture_output=True, text=True
+        ["git", "rev-parse", "h3/keep-W-pre-S2^"], cwd=wt, capture_output=True, text=True
     )
-    assert kept.stdout.strip() == head  # durable, not reflog-only
+    # keep_ref is a SNAPSHOT commit (PR #61: untracked state included);
+    # its parent is the pre-wipe HEAD — durable, not reflog-only
+    assert kept.stdout.strip() == head
     assert not (wt / "detached_work.md").exists()  # ...and still wiped
 
 
@@ -365,3 +367,190 @@ def test_rerun_results_file_never_clobbers_the_campaign_record():
 
     src = inspect.getsource(h3_campaign.main)
     assert "h3_results{'' if args.attempt == 1 else f'-r{args.attempt}'}" in src
+
+
+def test_arm_l_residue_guard_keeps_only_the_defined_library(tmp_path):
+    """PR #60 review: arm L's persistence surface is the DEFINED library
+    (registered skills + idea tree + ledger), not whatever working
+    residue the previous session left. The L/S1 session left an
+    unregistered skills/ dir and a working graph in worktree_L; a naive
+    resume would carry them into S2 as untreated state. The guard must
+    remove stray untracked files, agent-COMMITTED files, and tracked
+    modifications, while preserving registered skills (manifest + code),
+    runs/ (ledger + idea tree), and the agent's branch history."""
+    from h3_campaign import clear_nonlibrary_residue
+
+    wt, oid = _mini_repo(tmp_path)
+    subprocess.run(["git", "checkout", "-qb", "campaign/l-s1"], cwd=wt, check=True)
+    # 1. a REGISTERED skill (evalcarded manifest + code dir): the library
+    (wt / "registry" / "manifests" / "nav-helper.yaml").write_text(
+        "id: nav-helper\norigin: agent-authored\neval: {pass_rate: 0.9}\n"
+    )
+    (wt / "skills" / "nav-helper").mkdir(parents=True)
+    (wt / "skills" / "nav-helper" / "node.py").write_text("the registered code")
+    # 2. UNREGISTERED residue: working graph + no-evalcard skill dir
+    (wt / "graphs" / "agent_campaign.yaml").write_text("nodes: []\n")
+    (wt / "skills" / "wip-skill").mkdir(parents=True)
+    (wt / "skills" / "wip-skill" / "draft.py").write_text("unregistered")
+    # 3. agent-COMMITTED non-library file + tracked modification
+    (wt / "notes.md").write_text("cross-scenario notes")
+    subprocess.run(["git", "add", "notes.md"], cwd=wt, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "notes"],
+        cwd=wt,
+        check=True,
+    )
+    (wt / "graphs" / "expert_t0.yaml").write_text("nodes: [TAMPERED]\n")
+    # 4. runs/ = ledger + idea tree
+    (wt / "runs" / "ideas").mkdir(parents=True)
+    (wt / "runs" / "ideas" / "l.jsonl").write_text('{"id": "I1"}\n')
+    (wt / "runs" / "campaign_ledger.jsonl").write_text('{"entry": 1}\n')
+
+    report = clear_nonlibrary_residue(wt, oid, keep_ref="h3/keep-L-pre-S2")
+
+    # library preserved
+    assert (wt / "registry" / "manifests" / "nav-helper.yaml").exists()
+    assert (wt / "skills" / "nav-helper" / "node.py").read_text() == "the registered code"
+    # residue gone: unregistered, committed, and tracked-modified
+    assert not (wt / "graphs" / "agent_campaign.yaml").exists()
+    assert not (wt / "skills" / "wip-skill").exists()
+    assert not (wt / "notes.md").exists()
+    assert "TAMPERED" not in (wt / "graphs" / "expert_t0.yaml").read_text()
+    # runs/ intact
+    assert (wt / "runs" / "ideas" / "l.jsonl").exists()
+    assert (wt / "runs" / "campaign_ledger.jsonl").exists()
+    # audit: pre-guard HEAD durable, kept skills reported
+    assert report["kept_skills"] == ["nav-helper"]
+    kept = subprocess.run(
+        ["git", "rev-parse", "h3/keep-L-pre-S2^"], cwd=wt, capture_output=True, text=True
+    )
+    # snapshot-commit semantics (PR #61): parent = pre-guard HEAD
+    assert kept.returncode == 0 and kept.stdout.strip() == report["detached_from"]
+
+
+def test_results_backup_stacks_behaviorally(tmp_path):
+    """PR #61 review: test the BEHAVIOR, not the source text. An existing
+    aggregate is copied to h3_results-prev1.json; a second invocation
+    stacks to -prev2; a missing file is a no-op returning None."""
+    from h3_campaign import backup_existing_results
+
+    results = tmp_path / "h3_results.json"
+    assert backup_existing_results(results) is None  # nothing to back up
+    results.write_text('{"leg": 1}')
+    b1 = backup_existing_results(results)
+    assert b1.name == "h3_results-prev1.json" and b1.read_text() == '{"leg": 1}'
+    results.write_text('{"leg": 2}')
+    b2 = backup_existing_results(results)
+    assert b2.name == "h3_results-prev2.json" and b2.read_text() == '{"leg": 2}'
+    assert b1.read_text() == '{"leg": 1}'  # prev1 untouched
+
+
+def test_rerun_guard_carries_only_the_pre_tier_library(tmp_path):
+    """PR #61 review: a skill registered DURING a failed attempt of tier
+    T must not ride into T's rerun and be counted as prior-tier reuse —
+    the rerun replays the scenario as it originally started. The guard
+    takes an explicit keep_skills allowlist (main derives it from the
+    attempt-1 record's prior_skills); evalcarded skills outside the
+    allowlist are removed like any residue."""
+    from h3_campaign import clear_nonlibrary_residue
+
+    wt, oid = _mini_repo(tmp_path)
+    for sid in ("from-s1", "from-failed-s2"):
+        (wt / "registry" / "manifests" / f"{sid}.yaml").write_text(
+            f"id: {sid}\norigin: agent-authored\neval: {{pass_rate: 1.0}}\n"
+        )
+        (wt / "skills" / sid).mkdir(parents=True)
+        (wt / "skills" / sid / "node.py").write_text(sid)
+
+    report = clear_nonlibrary_residue(wt, oid, keep_skills=["from-s1"])
+
+    assert (wt / "skills" / "from-s1" / "node.py").exists()
+    assert not (wt / "skills" / "from-failed-s2").exists()
+    assert not (wt / "registry" / "manifests" / "from-failed-s2.yaml").exists()
+    assert report["kept_skills"] == ["from-s1"]
+
+
+def test_guard_refuses_hostile_skill_ids(tmp_path):
+    """PR #61 review: manifest ids are AGENT-CONTROLLED and used as path
+    components — a traversal-shaped id must be skipped (and reported),
+    never joined into a filesystem path."""
+    from h3_campaign import clear_nonlibrary_residue
+
+    wt, oid = _mini_repo(tmp_path)
+    (wt / "registry" / "manifests" / "evil.yaml").write_text(
+        'id: "../../escape"\norigin: agent-authored\neval: {pass_rate: 1.0}\n'
+    )
+    (wt / "registry" / "manifests" / "ok-skill.yaml").write_text(
+        "id: ok-skill\norigin: agent-authored\neval: {pass_rate: 1.0}\n"
+    )
+    (wt / "skills" / "ok-skill").mkdir(parents=True)
+    (wt / "skills" / "ok-skill" / "node.py").write_text("x")
+
+    report = clear_nonlibrary_residue(wt, oid)
+
+    assert report["kept_skills"] == ["ok-skill"]
+    assert report["skipped_ids"] == ["../../escape"]
+    assert not (tmp_path / "escape").exists()  # nothing written outside the worktree
+    assert (wt / "skills" / "ok-skill" / "node.py").exists()
+
+
+def test_occupied_scenario_slot_is_rotated_aside(tmp_path):
+    """PR #61 review: reusing an occupied scenario dir corrupts token
+    telemetry (token_samples.jsonl appends -> a new session lands after
+    the aborted prefix; session.jsonl opens 'w' -> the aborted transcript
+    is destroyed). A non-empty slot is rotated to <slot>-supersededN,
+    preserving the prior attempt's artifacts; rotations stack."""
+    from h3_campaign import rotate_occupied_slot
+
+    slot = tmp_path / "S2"
+    assert rotate_occupied_slot(slot) is None  # absent: no-op
+    slot.mkdir()
+    assert rotate_occupied_slot(slot) is None  # empty: no-op
+    (slot / "token_samples.jsonl").write_text('{"wall_s": 5.0, "tokens": 0}\n')
+    moved = rotate_occupied_slot(slot)
+    assert moved.name == "S2-superseded1" and not slot.exists()
+    assert (moved / "token_samples.jsonl").exists()  # aborted telemetry preserved
+    slot.mkdir()
+    (slot / "session.jsonl").write_text("{}\n")
+    assert rotate_occupied_slot(slot).name == "S2-superseded2"
+
+
+def test_keep_ref_snapshot_preserves_untracked_residue(tmp_path):
+    """PR #61 review: the keep-ref pinned only the pre-wipe HEAD, which
+    cannot contain UNTRACKED residue — the audit could not show what was
+    removed. The keep-ref now points at a snapshot COMMIT (parent =
+    pre-wipe HEAD) whose tree includes the untracked state, so removed
+    files are recoverable via `git show <keep_ref>:<path>`."""
+    wt, oid = _mini_repo(tmp_path)
+    (wt / "graphs" / "agent_campaign.yaml").write_text("nodes: [the removed residue]\n")
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True, text=True
+    ).stdout.strip()
+
+    report = wipe_library(wt, oid, keep_ref="h3/keep-W-pre-S2")
+
+    assert not (wt / "graphs" / "agent_campaign.yaml").exists()  # still wiped
+    parent = subprocess.run(
+        ["git", "rev-parse", "h3/keep-W-pre-S2^"], cwd=wt, capture_output=True, text=True
+    ).stdout.strip()
+    assert parent == head == report["detached_from"]
+    recovered = subprocess.run(
+        ["git", "show", "h3/keep-W-pre-S2:graphs/agent_campaign.yaml"],
+        cwd=wt,
+        capture_output=True,
+        text=True,
+    )
+    assert recovered.returncode == 0 and "the removed residue" in recovered.stdout
+
+
+def test_h3_runner_identity_is_the_orchestrator_hash():
+    """PR #61 review: campaign.py's runner_sha256 does not cover
+    h3_campaign.py, so treatment-policy changes (like the arm-L residue
+    guard) were invisible in recorded identity. h3_runner_identity()
+    hashes the orchestrator itself; main records it in the treatment."""
+    import hashlib as _hashlib
+
+    from h3_campaign import h3_runner_identity
+
+    expected = _hashlib.sha256((REPO_ROOT / "tools" / "h3_campaign.py").read_bytes()).hexdigest()
+    assert h3_runner_identity() == expected
