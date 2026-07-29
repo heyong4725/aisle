@@ -620,3 +620,119 @@ def test_install_missing_alternatives_are_usable(tmp_path):
     assert "oracle-pose" in hint
     assert "pose-peer-pip" not in hint
     assert "pose-peer-so101" not in hint
+
+
+def test_path_manifest_mismatch_rule_edges(tmp_path):
+    """VAL-2 PATH_MANIFEST_MISMATCH (issue #36): pip sources accept the
+    manifest source verbatim or the bare distribution name — anything
+    else is a mismatch; path-less nodes are dora's launch problem, not
+    this check's; absolute paths resolving to the manifest source (the
+    instrumented/staged-copy form) match."""
+    from aisle.harness.validate import validate_nodes
+
+    manifests = {
+        "detector-openvocab": {
+            "id": "detector-openvocab",
+            "provides": [],
+            "source": "pip:dora-yolo",
+            "safety_class": "perception",
+            "embodiment": {"arm": ["franka"]},
+        },
+        "oracle-pose": {
+            "id": "oracle-pose",
+            "provides": [],
+            "source": "src/aisle/nodes/oracle_pose.py",
+            "safety_class": "perception",
+            "embodiment": {"arm": ["franka"]},
+        },
+    }
+
+    def codes_for(node):
+        errors, _ = validate_nodes(
+            [node],
+            manifests,
+            set(),
+            "franka",
+            True,
+            graph_dir=REPO_ROOT / "graphs",
+            root=REPO_ROOT,
+        )
+        return {e["code"] for e in errors}
+
+    ok_verbatim = {"id": "detector-openvocab", "path": "pip:dora-yolo"}
+    ok_bare = {"id": "detector-openvocab", "path": "dora-yolo"}
+    spoofed_pip = {"id": "detector-openvocab", "path": "../skills/evil.py"}
+    pathless = {"id": "detector-openvocab"}
+    # PR #62 review P2: decorated/case-varied pip sources must accept the
+    # NORMALIZED bare dist (reuse _pip_dist), matching the INSTALL_MISSING
+    # normalization contract — not the unparsed suffix
+    manifests["detector-decorated"] = {
+        "id": "detector-decorated",
+        "provides": [],
+        "source": "pip:dora-yolo[gpu]",
+        "safety_class": "perception",
+        "embodiment": {"arm": ["franka"]},
+    }
+    manifests["detector-pinned"] = {
+        "id": "detector-pinned",
+        "provides": [],
+        "source": "PIP:dora-yolo==1.0",
+        "safety_class": "perception",
+        "embodiment": {"arm": ["franka"]},
+    }
+    ok_decorated_bare = {"id": "detector-decorated", "path": "dora-yolo"}
+    ok_decorated_verbatim = {"id": "detector-decorated", "path": "pip:dora-yolo[gpu]"}
+    ok_cased_bare = {"id": "detector-pinned", "path": "dora-yolo"}
+    spoofed_decorated = {"id": "detector-decorated", "path": "dora-yolo-evil"}
+    ok_absolute = {
+        "id": "oracle-pose",
+        "path": str((REPO_ROOT / "src" / "aisle" / "nodes" / "oracle_pose.py").resolve()),
+    }
+    spoofed_path = {"id": "oracle-pose", "path": "../src/aisle/nodes/grasp_topdown.py"}
+
+    assert "PATH_MANIFEST_MISMATCH" not in codes_for(ok_verbatim)
+    assert "PATH_MANIFEST_MISMATCH" not in codes_for(ok_bare)
+    assert "PATH_MANIFEST_MISMATCH" in codes_for(spoofed_pip)
+    assert "PATH_MANIFEST_MISMATCH" not in codes_for(pathless)
+    assert "PATH_MANIFEST_MISMATCH" not in codes_for(ok_absolute)
+    assert "PATH_MANIFEST_MISMATCH" in codes_for(spoofed_path)
+    assert "PATH_MANIFEST_MISMATCH" not in codes_for(ok_decorated_bare)
+    assert "PATH_MANIFEST_MISMATCH" not in codes_for(ok_decorated_verbatim)
+    assert "PATH_MANIFEST_MISMATCH" not in codes_for(ok_cased_bare)
+    assert "PATH_MANIFEST_MISMATCH" in codes_for(spoofed_decorated)
+
+
+def test_path_check_has_no_second_base_bypass(tmp_path):
+    """PR #62 review P1: the graphs-dir fallback approved any path that
+    WOULD match if the graph lived in graphs/ — but a staged graph (the
+    live-swap tmpdir) lives elsewhere, and dora resolves against ITS
+    base, so validator and runtime could resolve different code under an
+    approved id. There is exactly ONE base: the graph's own directory. A
+    relative path in a tmpdir-staged graph that only matches via the
+    graphs/ composition is a MISMATCH."""
+    from aisle.harness.validate import validate_nodes
+
+    manifests = {
+        "oracle-pose": {
+            "id": "oracle-pose",
+            "provides": [],
+            "source": "src/aisle/nodes/oracle_pose.py",
+            "safety_class": "perception",
+            "embodiment": {"arm": ["franka"]},
+        }
+    }
+    staged_dir = tmp_path / "aisle-swap-adversary"
+    staged_dir.mkdir()
+    node = {"id": "oracle-pose", "path": "../src/aisle/nodes/oracle_pose.py"}
+    errors, _ = validate_nodes(
+        [node], manifests, set(), "franka", True, graph_dir=staged_dir, root=REPO_ROOT
+    )
+    assert "PATH_MANIFEST_MISMATCH" in {e["code"] for e in errors}
+    absolute = {
+        "id": "oracle-pose",
+        "path": str((REPO_ROOT / "src/aisle/nodes/oracle_pose.py").resolve()),
+    }
+    errors, _ = validate_nodes(
+        [absolute], manifests, set(), "franka", True, graph_dir=staged_dir, root=REPO_ROOT
+    )
+    assert "PATH_MANIFEST_MISMATCH" not in {e["code"] for e in errors}

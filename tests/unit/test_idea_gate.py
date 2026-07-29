@@ -60,6 +60,10 @@ def _fake_root(
     and the idea gate is what decides. Carries a campaign budget.toml
     (ADR-21) with configurable ceilings."""
     (tmp_path / "registry").symlink_to(REPO_ROOT / "registry")
+    # PATH_MANIFEST_MISMATCH (#62) resolves manifest sources under the
+    # root: the real src/ rides along so path identity (and later, source
+    # existence, #35) hold in this repo-shaped fake root
+    (tmp_path / "src").symlink_to(REPO_ROOT / "src")
     (tmp_path / "tools").mkdir(parents=True)
     (tmp_path / "tools" / "env_hash.py").write_text(
         'import json, sys\nprint(json.dumps({"ok": '

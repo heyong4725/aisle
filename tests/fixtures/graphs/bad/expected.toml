@@ -188,3 +188,8 @@ root = "tests/fixtures/roots/with_guard"
 # launches. The dominant zero-shot failure, 24/40 attempts across arms.
 [install_missing_detector]
 codes = ["INSTALL_MISSING"]
+
+# issue #36 (H3 campaign 2 live case): approved id, divergent path — the
+# "validates but launches something else" class
+[path_manifest_mismatch_spoof]
+codes = ["PATH_MANIFEST_MISMATCH"]

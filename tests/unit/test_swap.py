@@ -3,7 +3,6 @@ design doc §9.1; hardened per the PR #50 adversarial review). The dora
 seam is injected — no live dataflow."""
 
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -33,9 +32,18 @@ def make_runner(calls, fail_on=None):
 @pytest.fixture
 def graph(tmp_path):
     """A tmp COPY of the expert graph: swaps write the file back on
-    success, and the checked-in (env-hashed) original must never mutate."""
+    success, and the checked-in (env-hashed) original must never mutate.
+    Node paths are absolutized like the RUN graphs swap actually targets
+    (instrumented copies, HAR-4) — post-#62 there is one authoritative
+    path base, and a relocated copy with relative paths would rightly
+    fail PATH_MANIFEST_MISMATCH."""
     copy = tmp_path / "graph.yaml"
-    shutil.copy(REAL_GRAPH, copy)
+    doc = yaml.safe_load(REAL_GRAPH.read_text())
+    for node in doc["nodes"]:
+        path = node.get("path")
+        if isinstance(path, str) and path and not path.startswith("pip:"):
+            node["path"] = str((REAL_GRAPH.parent / path).resolve())
+    copy.write_text(yaml.safe_dump(doc, sort_keys=False))
     return copy
 
 
@@ -266,3 +274,47 @@ def test_every_refusal_logs_a_har12_event(tmp_path, graph):
         runner=make_runner([], fail_on=("node", "add")),
     )
     assert events()[-1] == "probe_failed"
+
+
+def test_swap_stages_absolute_paths_one_authoritative_base(tmp_path, graph, monkeypatch):
+    """PR #62 review P1: staging must preserve ONE authoritative runtime
+    base — every path-form node path in the staged post-swap graph AND
+    the staged node doc is absolutized from the ORIGINAL graph's
+    directory before validation and `dora node add`, so the validator
+    and the runtime can never resolve different code."""
+    import aisle.harness.swap as s
+
+    monkeypatch.setattr(s, "swap_event", lambda root, branch, e: {"ts": 1.0, **e})
+    calls = []
+    staged_docs = []
+    base_runner = make_runner(calls)
+
+    def capturing_runner(cmd):
+        # snapshot the staged node at `dora node add` time — the tmpdir is
+        # (correctly) cleaned before swap() returns
+        if cmd[:2] == ["node", "add"]:
+            staged_docs.append(yaml.safe_load(Path(cmd[cmd.index("--from-yaml") + 1]).read_text()))
+        return base_runner(cmd)
+
+    out = swap(
+        REPO_ROOT,
+        graph,
+        "df",
+        "oracle-pose",
+        identity_swap_file(tmp_path, graph),
+        "franka",
+        "b",
+        runner=capturing_runner,
+    )
+    assert out["ok"] is True
+    staged_node = staged_docs[0]
+    assert Path(staged_node["path"]).is_absolute()
+    assert (
+        Path(staged_node["path"]).resolve()
+        == (REPO_ROOT / "src" / "aisle" / "nodes" / "oracle_pose.py").resolve()
+    )
+    # the graph write-back keeps the runtime-truth (absolute) form too
+    doc = yaml.safe_load(graph.read_text())
+    for node in doc["nodes"]:
+        if isinstance(node.get("path"), str) and not node["path"].startswith("pip:"):
+            assert Path(node["path"]).is_absolute(), node["id"]
