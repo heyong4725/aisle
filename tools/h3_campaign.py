@@ -101,6 +101,50 @@ def wipe_library(wt: Path, oid: str, keep_ref: str | None = None) -> dict:
     return {"removed": removed, "detached_from": head, "kept_ref": keep_ref}
 
 
+def clear_nonlibrary_residue(wt: Path, oid: str, keep_ref: str | None = None) -> dict:
+    """Arm L between scenarios (PR #60 review): arm L's persistence
+    surface is the DEFINED library — registered skills (evalcarded
+    manifest + skills/<id>/ code) + runs/ (idea tree, ledger) — not
+    whatever working residue the previous session left. L/S1 left an
+    unregistered skills/ dir and a working graph in worktree_L; carrying
+    them into S2 would be untreated cross-scenario state. Mechanics:
+    stash the registered library aside, detach byte-exact at the pin
+    (removing stray untracked files, agent-COMMITTED files, and tracked
+    modifications alike — same leak class as the arm-W wipe), clean
+    everything but runs/, then restore the library. The pre-guard HEAD
+    is pinned under keep_ref for audit, like the wipe."""
+    import tempfile
+
+    kept_skills = sorted(registered_skill_ids(wt))
+    stash = Path(tempfile.mkdtemp(prefix="h3-library-"))
+    for skill_id in kept_skills:
+        manifest = wt / "registry" / "manifests" / f"{skill_id}.yaml"
+        if manifest.exists():
+            (stash / "manifests").mkdir(parents=True, exist_ok=True)
+            shutil.copy2(manifest, stash / "manifests" / manifest.name)
+        code_dir = wt / "skills" / skill_id
+        if code_dir.exists():
+            shutil.copytree(code_dir, stash / "skills" / skill_id)
+    # the idea tree persists for arm L (D3: read-only lab notebook) —
+    # wipe_library removes runs/ideas, so it rides the stash too
+    ideas = wt / "runs" / "ideas"
+    if ideas.exists():
+        shutil.copytree(ideas, stash / "ideas")
+    report = wipe_library(wt, oid, keep_ref=keep_ref)
+    if (stash / "ideas").exists():
+        shutil.copytree(stash / "ideas", wt / "runs" / "ideas")
+    for skill_id in kept_skills:
+        staged = stash / "manifests" / f"{skill_id}.yaml"
+        if staged.exists():
+            (wt / "registry" / "manifests").mkdir(parents=True, exist_ok=True)
+            shutil.copy2(staged, wt / "registry" / "manifests" / f"{skill_id}.yaml")
+        staged_dir = stash / "skills" / skill_id
+        if staged_dir.exists():
+            shutil.copytree(staged_dir, wt / "skills" / skill_id)
+    shutil.rmtree(stash)
+    return {**report, "kept_skills": kept_skills}
+
+
 def skill_reuse(deliverable: Path, prior_skill_ids: set[str]) -> list[str]:
     """The transfer signal (protocol point 5): nodes of the scored graph
     whose evalcarded manifest was registered in an EARLIER scenario.
@@ -235,6 +279,15 @@ def main() -> int:
     # (self-review of PR #57: --attempt 2 would have overwritten
     # h3_results.json with the 2-record rerun output)
     results_path = args.out / f"h3_results{'' if args.attempt == 1 else f'-r{args.attempt}'}.json"
+    if results_path.exists():
+        # PR #60 review (resume path): a partial-arm invocation must not
+        # CLOBBER the prior legs' aggregate — back it up first (numbered,
+        # so successive resumes stack instead of overwriting each other)
+        n = 1
+        while (backup := args.out / f"h3_results-prev{n}.json").exists():
+            n += 1
+        shutil.copy2(results_path, backup)
+        print(f"[h3] prior aggregate backed up to {backup.name}", file=sys.stderr)
     records = []
     wipes = []
     for arm in arms:
@@ -245,11 +298,21 @@ def main() -> int:
         for index, scenario in enumerate(SCENARIOS):
             if scenario["tier"] not in tiers:
                 continue
-            if arm == "W" and (index > 0 or args.attempt > 1):
+            if index > 0 or args.attempt > 1:
                 slot = scenario_slot(scenario["tier"], args.attempt)
-                wiped = wipe_library(wt, oid, keep_ref=f"h3/keep-{arm}-pre-{slot}")
+                if arm == "W":
+                    wiped = wipe_library(wt, oid, keep_ref=f"h3/keep-{arm}-pre-{slot}")
+                    print(f"[h3] arm W wiped {len(wiped['removed'])} path(s)", file=sys.stderr)
+                else:
+                    # PR #60 review: arm L carries ONLY its defined library
+                    # forward — stray working residue is untreated state
+                    wiped = clear_nonlibrary_residue(wt, oid, keep_ref=f"h3/keep-{arm}-pre-{slot}")
+                    print(
+                        f"[h3] arm L residue cleared ({len(wiped['removed'])} path(s), "
+                        f"library kept: {wiped['kept_skills'] or 'none'})",
+                        file=sys.stderr,
+                    )
                 wipes.append({"arm": arm, "before": slot, **wiped})
-                print(f"[h3] arm W wiped {len(wiped['removed'])} path(s)", file=sys.stderr)
             scaled = {
                 **scenario,
                 "tokens": int(scenario["tokens"] * args.budget_scale),

@@ -365,3 +365,73 @@ def test_rerun_results_file_never_clobbers_the_campaign_record():
 
     src = inspect.getsource(h3_campaign.main)
     assert "h3_results{'' if args.attempt == 1 else f'-r{args.attempt}'}" in src
+
+
+def test_arm_l_residue_guard_keeps_only_the_defined_library(tmp_path):
+    """PR #60 review: arm L's persistence surface is the DEFINED library
+    (registered skills + idea tree + ledger), not whatever working
+    residue the previous session left. The L/S1 session left an
+    unregistered skills/ dir and a working graph in worktree_L; a naive
+    resume would carry them into S2 as untreated state. The guard must
+    remove stray untracked files, agent-COMMITTED files, and tracked
+    modifications, while preserving registered skills (manifest + code),
+    runs/ (ledger + idea tree), and the agent's branch history."""
+    from h3_campaign import clear_nonlibrary_residue
+
+    wt, oid = _mini_repo(tmp_path)
+    subprocess.run(["git", "checkout", "-qb", "campaign/l-s1"], cwd=wt, check=True)
+    # 1. a REGISTERED skill (evalcarded manifest + code dir): the library
+    (wt / "registry" / "manifests" / "nav-helper.yaml").write_text(
+        "id: nav-helper\norigin: agent-authored\neval: {pass_rate: 0.9}\n"
+    )
+    (wt / "skills" / "nav-helper").mkdir(parents=True)
+    (wt / "skills" / "nav-helper" / "node.py").write_text("the registered code")
+    # 2. UNREGISTERED residue: working graph + no-evalcard skill dir
+    (wt / "graphs" / "agent_campaign.yaml").write_text("nodes: []\n")
+    (wt / "skills" / "wip-skill").mkdir(parents=True)
+    (wt / "skills" / "wip-skill" / "draft.py").write_text("unregistered")
+    # 3. agent-COMMITTED non-library file + tracked modification
+    (wt / "notes.md").write_text("cross-scenario notes")
+    subprocess.run(["git", "add", "notes.md"], cwd=wt, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "notes"],
+        cwd=wt,
+        check=True,
+    )
+    (wt / "graphs" / "expert_t0.yaml").write_text("nodes: [TAMPERED]\n")
+    # 4. runs/ = ledger + idea tree
+    (wt / "runs" / "ideas").mkdir(parents=True)
+    (wt / "runs" / "ideas" / "l.jsonl").write_text('{"id": "I1"}\n')
+    (wt / "runs" / "campaign_ledger.jsonl").write_text('{"entry": 1}\n')
+
+    report = clear_nonlibrary_residue(wt, oid, keep_ref="h3/keep-L-pre-S2")
+
+    # library preserved
+    assert (wt / "registry" / "manifests" / "nav-helper.yaml").exists()
+    assert (wt / "skills" / "nav-helper" / "node.py").read_text() == "the registered code"
+    # residue gone: unregistered, committed, and tracked-modified
+    assert not (wt / "graphs" / "agent_campaign.yaml").exists()
+    assert not (wt / "skills" / "wip-skill").exists()
+    assert not (wt / "notes.md").exists()
+    assert "TAMPERED" not in (wt / "graphs" / "expert_t0.yaml").read_text()
+    # runs/ intact
+    assert (wt / "runs" / "ideas" / "l.jsonl").exists()
+    assert (wt / "runs" / "campaign_ledger.jsonl").exists()
+    # audit: pre-guard HEAD durable, kept skills reported
+    assert report["kept_skills"] == ["nav-helper"]
+    kept = subprocess.run(
+        ["git", "rev-parse", "h3/keep-L-pre-S2"], cwd=wt, capture_output=True, text=True
+    )
+    assert kept.returncode == 0 and kept.stdout.strip() == report["detached_from"]
+
+
+def test_results_file_never_clobbers_a_prior_aggregate():
+    """PR #60 review (resume path): a partial-arm resume invocation
+    writes h3_results.json and would CLOBBER the prior legs' aggregate;
+    main() must back up an existing results file before overwriting."""
+    import inspect
+
+    import h3_campaign
+
+    src = inspect.getsource(h3_campaign.main)
+    assert "h3_results-prev" in src
