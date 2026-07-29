@@ -45,3 +45,12 @@ def make_registry_root(tmp_path: Path) -> Path:
 def write_manifest(root: Path, manifest: dict) -> None:
     path = root / "registry" / "manifests" / f"{manifest['id']}.yaml"
     path.write_text(yaml.safe_dump(manifest, sort_keys=False))
+    # SOURCE_INVALID (issue #35): path-form sources must exist under the
+    # root — fixture manifests get their source stubbed automatically so
+    # tests exercise their OWN failure mode, not a missing stub
+    source = manifest.get("source")
+    if isinstance(source, str) and source and ":" not in source:
+        target = root / source
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("# fixture stub (issue #35)\n")

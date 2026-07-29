@@ -193,3 +193,10 @@ codes = ["INSTALL_MISSING"]
 # "validates but launches something else" class
 [path_manifest_mismatch_spoof]
 codes = ["PATH_MANIFEST_MISMATCH"]
+
+# issue #35: path-form source naming no file under the root; the fixture
+# root's schema copies are the real ones (unknown schemes / empty pip
+# dists are CAP-1 pattern violations and surface as GRAPH_INVALID)
+[source_invalid_ghost_path]
+codes = ["SOURCE_INVALID"]
+root = "tests/fixtures/roots/source_invalid"

@@ -281,11 +281,32 @@ def validate_nodes(
                         )
                     )
             continue
+        # VAL-2 SOURCE_INVALID (issue #35): unknown schemes and empty pip
+        # dists are CAP-1 pattern violations (schema/lint + the registry
+        # screen above), so the remaining dodge channel a schema cannot
+        # check is a path-form source naming NO FILE under the root — the
+        # manifest's launch claim is unverifiable: error out and skip the
+        # source-derived checks for this node.
+        source_val = manifest.get("source")
+        source_invalid = False
+        if isinstance(source_val, str) and root is not None:
+            if ":" not in source_val and not (root / source_val).exists():
+                source_invalid = True
+                errors.append(
+                    _entry(
+                        "SOURCE_INVALID",
+                        {"node": node_id},
+                        f"manifest source {source_val!r} names no file under "
+                        "the root — the graph would validate but never launch",
+                        "point the manifest source at the node's real file "
+                        "(or register the node with harness skill register)",
+                    )
+                )
         # VAL-2 INSTALL_MISSING (H1-discovered): a pip:-sourced capability
         # that is not installed validates into a graph that cannot launch —
         # the agent's only signal is this error, so the hint must name an
         # installed same-capability alternative when one exists
-        dist = _pip_dist(manifest)
+        dist = None if source_invalid else _pip_dist(manifest)
         if dist is not None and not _pip_installed(dist):
             provided = set(manifest.get("provides") or [])
             # a usable alternative must FULLY cover the missing node's
@@ -327,6 +348,7 @@ def validate_nodes(
         if (
             isinstance(node_path, str)
             and isinstance(source, str)
+            and not source_invalid
             and graph_dir is not None
             and root is not None
         ):
