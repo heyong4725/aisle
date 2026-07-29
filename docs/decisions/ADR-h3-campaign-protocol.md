@@ -181,3 +181,37 @@ records show `prior_skills: ["s1-driver-v2"]`). Amendments:
    different scenario), and no counterfactual run exists to sign it.
    The remedy is therefore exclusion from the verdict plus a clean
    rerun — never a direction assumption.
+
+## Amendment (resume, PR #61): arm-L residue policy, slot rotation, audit snapshots
+
+The L/S2 resume after the Fable 5 quota abort exposed four runner gaps
+(PR #60/#61 reviews); the policy changes are recorded here because they
+alter arm-L treatment semantics and the audit surface:
+
+1. **Arm L's persistence surface is the DEFINED library, enforced.**
+   "Keeps everything" (D3) is narrowed to: registered skills (evalcarded
+   manifest + `skills/<id>/` code), the read-only idea tree, and `runs/`
+   (ledger + artifacts). Before every arm-L scenario after the first,
+   `clear_nonlibrary_residue` removes stray untracked files,
+   agent-committed files, and tracked modifications — the same leak
+   classes as the arm-W wipe. Rationale: L/S1 left an unregistered
+   `skills/s1-driver-v2/` and a working graph; carrying those into S2
+   would be untreated cross-scenario state.
+2. **Reruns carry only the tier's ORIGINAL library.** On `--attempt N>1`
+   the guard is limited to the attempt-1 record's `prior_skills`, so a
+   skill registered during a failed attempt cannot ride into its own
+   rerun and read as prior-tier reuse.
+3. **Occupied scenario slots rotate aside** (`<slot>-supersededN`)
+   instead of being reused: `token_samples.jsonl` appends (an aborted
+   prefix poisons tokens-to-first-success — observed live on the L/S2
+   resume and repaired by splitting the file) and `session.jsonl` opens
+   `w` (the aborted transcript would be destroyed).
+4. **Keep-refs are snapshot commits.** `h3/keep-<arm>-pre-<slot>` now
+   points at a commit (parent = pre-wipe HEAD) whose tree includes the
+   UNTRACKED working state, so every removed file is recoverable via
+   `git show <keep_ref>:<path>`. Agent-controlled manifest ids are
+   validated (`^[a-z0-9][a-z0-9_-]*$`) before being used as path
+   components. The treatment records `h3_runner_sha256` (this
+   orchestrator's own hash) so these policy changes are visible in every
+   campaign record; existing aggregates are backed up (`-prevN`) before
+   a partial-arm invocation writes.
