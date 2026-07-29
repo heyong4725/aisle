@@ -330,10 +330,15 @@ def run_gates(
     return {"ok": True, **gates, "idea": ideas[-1]["id"], "no_idea_gate": False}
 
 
-def instrumented_graph(graph: Path, root: Path, run_dir: Path) -> Path:
+def instrumented_graph(
+    graph: Path, root: Path, run_dir: Path, trace_dir: Path | None = None, name: str = "graph.yaml"
+) -> Path:
     """The input graph plus a trace-recorder node (HAR-4) with absolutized
     node paths, written under the run dir (dora's cwd becomes the run dir,
-    which also scopes orphan cleanup)."""
+    which also scopes orphan cleanup). trace_dir/name vary per wall-clamp
+    relaunch (ADR-23): the recorder opens its Arrow/video files in write
+    mode, so a relaunch pointed at the SAME dir would truncate the prior
+    launch's evidence (PR #58 review)."""
     doc = yaml.safe_load(graph.read_text())
     for node in doc["nodes"]:
         node["path"] = str((graph.parent / node["path"]).resolve())
@@ -352,12 +357,38 @@ def instrumented_graph(graph: Path, root: Path, run_dir: Path) -> Path:
             # run dir otherwise kills the dataflow at startup, zero episodes
             "path": str((root / "src" / "aisle" / "harness" / "trace_recorder.py").resolve()),
             "inputs": inputs,
-            "env": {"AISLE_TRACE_DIR": str(run_dir / "traces")},
+            "env": {"AISLE_TRACE_DIR": str(trace_dir if trace_dir else run_dir / "traces")},
         }
     )
-    out_path = run_dir / "graph.yaml"
+    out_path = run_dir / name
     out_path.write_text(yaml.safe_dump(doc, sort_keys=False))
     return out_path
+
+
+def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict) -> subprocess.Popen:
+    return subprocess.Popen(
+        ["dora", "run", str(exec_graph), "--uv"],
+        # cwd = the run dir: dora spawns nodes with this cwd, which is what
+        # the orphan reaper filters on — with cwd=root the filter matched
+        # nothing and leaked nodes raced the cleanup (T09 smoke)
+        cwd=run_dir,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+
+
+def _terminate(proc: subprocess.Popen) -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+        proc.wait(timeout=20)
+    except (subprocess.TimeoutExpired, ProcessLookupError):
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
 
 def _graph_hash(graph: Path) -> str:
@@ -438,27 +469,28 @@ def rollout(
         # wall budget — a single long rollout cannot blow through the
         # ceiling it passed at the gate
         run_budget_s = min(run_budget_s, gates["budget"]["wall_h_left"] * 3600.0)
+    # the campaign wall cap also bounds relaunch deadline extensions
+    hard_cap_s = gates["budget"]["wall_h_left"] * 3600.0 if env_baseline != "local" else None
     deadline = started + run_budget_s
-    proc = subprocess.Popen(
-        ["dora", "run", str(exec_graph), "--uv"],
-        # cwd = the run dir: dora spawns nodes with this cwd, which is what
-        # the orphan reaper filters on — with cwd=root the filter matched
-        # nothing and leaked nodes raced the cleanup (T09 smoke)
-        cwd=run_dir,
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=True,
-    )
+    proc = _spawn_dora(exec_graph, run_dir, env)
     episode_records: list[dict] = []
     stalled = False
+    clamped_seeds: list[int] = []
+    relaunches = 0
     last_size = -1
     last_growth = time.monotonic()
+    current_traces = traces_dir
+    lines_at_launch = 0
+    last_lines = 0
+    last_line_t = time.monotonic()
     try:
         while time.monotonic() < deadline:
-            if results_path.exists() and results_path.read_bytes().count(b"\n") >= episodes:
+            lines = results_path.read_bytes().count(b"\n") if results_path.exists() else 0
+            if lines >= episodes:
                 break
+            if lines != last_lines:
+                last_lines = lines
+                last_line_t = time.monotonic()
             if proc.poll() is not None:
                 break
             # liveness: a dead bridge leaves `dora run` alive but the trace
@@ -467,27 +499,87 @@ def rollout(
             # data the genesis build is running (minutes, no traces yet),
             # so the pre-data grace is much longer (an early fire killed
             # the building bridge at 180 s)
-            size = sum(f.stat().st_size for f in traces_dir.glob("*") if f.is_file())
+            # the stall signal watches the CURRENT launch's dir only:
+            # keyed on the whole tree, a relaunch build inherits the prior
+            # launch's nonzero total and gets the short post-data grace —
+            # falsely stall-killed mid-build (PR #58 self-review)
+            size = sum(f.stat().st_size for f in current_traces.glob("*") if f.is_file())
             if size != last_size:
                 last_size = size
                 last_growth = time.monotonic()
             elif time.monotonic() - last_growth > (PRE_DATA_STALL_S if last_size <= 0 else STALL_S):
                 stalled = True
                 break
+            # per-episode WALL clamp (ADR-23, W/S2 holdout wedge): traces
+            # kept GROWING while one episode ran 4 h, so the stall detector
+            # above never fired and the wedged episode ate the whole run
+            # window, masking every remaining seed. An episode gets the
+            # tier's per-episode wall budget (+ build grace when it is the
+            # first of a launch); past that it is killed, recorded as a
+            # synthetic wall_clamp failure, and the run RELAUNCHES with the
+            # remaining seeds so they still get scored.
+            grace = per_episode_budget_s + (
+                GENESIS_BUILD_BUDGET_S if lines == lines_at_launch else 0
+            )
+            if time.monotonic() - last_line_t > grace:
+                _terminate(proc)
+                # stale nodes from the killed launch are CONCURRENT WRITERS
+                # to results/traces (dora-rs/dora#2856) — reap before any
+                # relaunch, not only in the finally (PR #58 review)
+                reap_orphans(run_dir)
+                seed = seeds[lines] if lines < len(seeds) else None
+                with open(results_path, "a") as f:
+                    f.write(
+                        json.dumps(
+                            {
+                                "episode": lines,
+                                "seed": seed,
+                                "status": "fail",
+                                "failure": "wall_clamp",
+                                "success": False,
+                                "synthetic": True,
+                            }
+                        )
+                        + "\n"
+                    )
+                if seed is not None:
+                    clamped_seeds.append(seed)
+                remaining = seeds[lines + 1 :]
+                if not remaining:
+                    break
+                relaunches += 1
+                env = {**env, "AISLE_SEEDS": ",".join(str(s) for s in remaining)}
+                # fresh trace dir + graph per launch: the recorder truncates
+                # on open, and prior evidence must survive (HAR-4)
+                relaunch_traces = traces_dir / f"relaunch-{relaunches}"
+                relaunch_traces.mkdir(parents=True, exist_ok=True)
+                current_traces = relaunch_traces
+                exec_graph = instrumented_graph(
+                    graph,
+                    root,
+                    run_dir,
+                    trace_dir=relaunch_traces,
+                    name=f"graph-r{relaunches}.yaml",
+                )
+                # each relaunch pays a fresh build: extend the deadline by
+                # the build grace (still bounded by the campaign wall cap),
+                # else consecutive wedges cut the tail seeds (PR #58 review)
+                deadline += GENESIS_BUILD_BUDGET_S
+                if hard_cap_s is not None:
+                    deadline = min(deadline, started + hard_cap_s)
+                proc = _spawn_dora(exec_graph, run_dir, env)
+                lines_at_launch = last_lines = lines + 1
+                last_line_t = time.monotonic()
+                last_size = -1
+                last_growth = time.monotonic()
+                continue
             time.sleep(2.0)
     finally:
         # ADR-21 round 3: reconcile the reservation with actuals no matter
         # how the run ended — crash paths settle too
         if reservation is not None:
             settle_budget(root, run_id, len(episode_records), time.monotonic() - started)
-        try:
-            os.killpg(proc.pid, signal.SIGTERM)
-            proc.wait(timeout=20)
-        except (subprocess.TimeoutExpired, ProcessLookupError):
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+        _terminate(proc)
         reap_orphans(run_dir)
 
     if results_path.exists():
@@ -496,7 +588,7 @@ def rollout(
         ]
     wall_s = time.monotonic() - started
     metrics = compute_metrics(episode_records)
-    videos = sorted(str(p.relative_to(root)) for p in traces_dir.glob("*.mp4"))
+    videos = sorted(str(p.relative_to(root)) for p in traces_dir.rglob("*.mp4"))
     manifest = {
         "run_id": run_id,
         "git_sha": git_sha,
@@ -520,6 +612,10 @@ def rollout(
         "budget_reservation": (reservation or {}).get("entry"),
         # HAR-5: best-effort token accounting
         "tokens_log": os.environ.get("ANTHROPIC_TOKENS_LOG"),
+        # ADR-23: per-episode wall clamp — which seeds were cut and how
+        # many relaunches carried the remaining seeds
+        "wall_clamped": clamped_seeds,
+        "relaunches": relaunches,
     }
     (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=1))
     return {
