@@ -620,3 +620,58 @@ def test_install_missing_alternatives_are_usable(tmp_path):
     assert "oracle-pose" in hint
     assert "pose-peer-pip" not in hint
     assert "pose-peer-so101" not in hint
+
+
+def test_path_manifest_mismatch_rule_edges(tmp_path):
+    """VAL-2 PATH_MANIFEST_MISMATCH (issue #36): pip sources accept the
+    manifest source verbatim or the bare distribution name — anything
+    else is a mismatch; path-less nodes are dora's launch problem, not
+    this check's; absolute paths resolving to the manifest source (the
+    instrumented/staged-copy form) match."""
+    from aisle.harness.validate import validate_nodes
+
+    manifests = {
+        "detector-openvocab": {
+            "id": "detector-openvocab",
+            "provides": [],
+            "source": "pip:dora-yolo",
+            "safety_class": "perception",
+            "embodiment": {"arm": ["franka"]},
+        },
+        "oracle-pose": {
+            "id": "oracle-pose",
+            "provides": [],
+            "source": "src/aisle/nodes/oracle_pose.py",
+            "safety_class": "perception",
+            "embodiment": {"arm": ["franka"]},
+        },
+    }
+
+    def codes_for(node):
+        errors, _ = validate_nodes(
+            [node],
+            manifests,
+            set(),
+            "franka",
+            True,
+            graph_dir=REPO_ROOT / "graphs",
+            root=REPO_ROOT,
+        )
+        return {e["code"] for e in errors}
+
+    ok_verbatim = {"id": "detector-openvocab", "path": "pip:dora-yolo"}
+    ok_bare = {"id": "detector-openvocab", "path": "dora-yolo"}
+    spoofed_pip = {"id": "detector-openvocab", "path": "../skills/evil.py"}
+    pathless = {"id": "detector-openvocab"}
+    ok_absolute = {
+        "id": "oracle-pose",
+        "path": str((REPO_ROOT / "src" / "aisle" / "nodes" / "oracle_pose.py").resolve()),
+    }
+    spoofed_path = {"id": "oracle-pose", "path": "../src/aisle/nodes/grasp_topdown.py"}
+
+    assert "PATH_MANIFEST_MISMATCH" not in codes_for(ok_verbatim)
+    assert "PATH_MANIFEST_MISMATCH" not in codes_for(ok_bare)
+    assert "PATH_MANIFEST_MISMATCH" in codes_for(spoofed_pip)
+    assert "PATH_MANIFEST_MISMATCH" not in codes_for(pathless)
+    assert "PATH_MANIFEST_MISMATCH" not in codes_for(ok_absolute)
+    assert "PATH_MANIFEST_MISMATCH" in codes_for(spoofed_path)

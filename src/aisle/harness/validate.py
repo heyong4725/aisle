@@ -224,6 +224,8 @@ def validate_nodes(
     vocabulary: set[str],
     embodiment: str,
     allow_unproven: bool,
+    graph_dir: Path | None = None,
+    root: Path | None = None,
 ) -> tuple[list[dict], list[dict]]:
     errors: list[dict] = []
     warnings: list[dict] = []
@@ -316,6 +318,45 @@ def validate_nodes(
                 + " — the graph would validate but never launch"
             )
             errors.append(_entry("INSTALL_MISSING", {"node": node_id}, detail, hint))
+        # VAL-2 PATH_MANIFEST_MISMATCH (issue #36; H3 campaign 2 live case):
+        # dora launches the graph node's `path`, not the manifest's
+        # `source` — an approved id with a divergent path executes unvetted
+        # code under a vetted identity, and every topology check passes
+        node_path = node.get("path")
+        source = manifest.get("source")
+        if (
+            isinstance(node_path, str)
+            and isinstance(source, str)
+            and graph_dir is not None
+            and root is not None
+        ):
+            if source.startswith("pip:"):
+                # graphs reference pip nodes as `pip:<dist>` or the bare
+                # distribution name — anything else launches other code
+                matches = node_path in (source, source[len("pip:") :])
+            else:
+                # a graph may be validated from outside graphs/ (fixtures,
+                # staged copies) while written in the canonical
+                # graphs-dir-relative form — accept EITHER composition;
+                # a path naming different CODE mismatches under both
+                target = (root / source).resolve()
+                matches = target in (
+                    (graph_dir / node_path).resolve(),
+                    (root / "graphs" / node_path).resolve(),
+                )
+            if not matches:
+                errors.append(
+                    _entry(
+                        "PATH_MANIFEST_MISMATCH",
+                        {"node": node_id},
+                        f"path {node_path!r} does not resolve to the manifest "
+                        f"source {source!r} — dora would launch code the "
+                        f"registry never vetted under the id {node_id!r}",
+                        f"point path at the manifest source ({source!r}), or "
+                        "register a manifest for what path actually launches "
+                        "(harness skill register)",
+                    )
+                )
         # VAL-4: every schema name a graph node's manifest references must be
         # in the vocabulary — including unwired ports; never silently passed
         for direction in ("inputs", "outputs"):
@@ -617,7 +658,15 @@ def validate(graph_path: Path, root: Path, embodiment: str, allow_unproven: bool
         return report
     manifests = {m["id"]: m for _, m in manifest_list}
 
-    errors, warnings = validate_nodes(nodes, manifests, vocabulary, embodiment, allow_unproven)
+    errors, warnings = validate_nodes(
+        nodes,
+        manifests,
+        vocabulary,
+        embodiment,
+        allow_unproven,
+        graph_dir=graph_path.parent,
+        root=root,
+    )
     report["errors"] = errors
     report["warnings"] = warnings
     report["ok"] = not errors
