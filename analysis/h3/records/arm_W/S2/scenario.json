@@ -1,0 +1,57 @@
+{
+ "arm": "W",
+ "tier": "S2",
+ "budgets": {
+  "tier": "S2",
+  "tokens": 750000,
+  "episodes": 60,
+  "wall_h": 5.0
+ },
+ "session": {
+  "stopped": "token_budget",
+  "rc": -9,
+  "tokens": 757619,
+  "wall_s": 6329.0
+ },
+ "frozen_drift": [],
+ "holdout": {
+  "ok": false,
+  "error": null,
+  "pass1": 0.3333333333333333,
+  "pass8": 0.3333333333333333,
+  "failures": {
+   "misplaced": 1,
+   "missing_item": 1
+  }
+ },
+ "first_success_wall_s": 6084.6,
+ "wrong_object_total": 0,
+ "rollouts": [
+  {
+   "run_id": "skill-s2-driver-v1-2026-07-28-e6226f",
+   "mtime": 1785228972.281018,
+   "episodes": 2,
+   "pass1": 0.0
+  },
+  {
+   "run_id": "skill-s2-driver-v1-2026-07-28-a52ed4",
+   "mtime": 1785230496.5272381,
+   "episodes": 2,
+   "pass1": 0.5
+  },
+  {
+   "run_id": "campaign-holdout-W-S2",
+   "mtime": 1785233486.0043318,
+   "episodes": 3,
+   "pass1": 0.333
+  }
+ ],
+ "prior_skills": [
+  "s1-driver-v2"
+ ],
+ "skills_after": [
+  "s1-driver-v2",
+  "s2-driver-v1"
+ ],
+ "skill_reuse_in_deliverable": []
+}

@@ -1,0 +1,51 @@
+{
+ "arm": "L",
+ "tier": "S1",
+ "budgets": {
+  "tier": "S1",
+  "tokens": 1000000,
+  "episodes": 80,
+  "wall_h": 6.0
+ },
+ "session": {
+  "stopped": "token_budget",
+  "rc": -9,
+  "tokens": 1000075,
+  "wall_s": 13170.7
+ },
+ "frozen_drift": [],
+ "holdout": {
+  "ok": true,
+  "error": null,
+  "pass1": 0.5,
+  "pass8": 0.5,
+  "failures": {
+   "timeout": 4
+  }
+ },
+ "first_success_wall_s": 6050.1,
+ "wrong_object_total": 0,
+ "rollouts": [
+  {
+   "run_id": "20260728-202623-85f950",
+   "mtime": 1785272428.9582305,
+   "episodes": 3,
+   "pass1": 0.667
+  },
+  {
+   "run_id": "20260728-212818-120188",
+   "mtime": 1785279519.1815577,
+   "episodes": 6,
+   "pass1": 0.5
+  },
+  {
+   "run_id": "campaign-holdout-L-S1",
+   "mtime": 1785286792.9917197,
+   "episodes": 8,
+   "pass1": 0.5
+  }
+ ],
+ "prior_skills": [],
+ "skills_after": [],
+ "skill_reuse_in_deliverable": []
+}

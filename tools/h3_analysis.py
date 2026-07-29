@@ -23,6 +23,12 @@ CRITERION = "arm L S2+S3 time-to-first-success <= 0.5x arm W's (ADR-h3 §7)"
 # the campaign identity that must be single-valued across every combined
 # record (PR #59 review: no cross-commit/model/seed aggregation)
 IDENTITY_KEYS = ("commit", "agent", "model", "dev_seeds", "holdout_seeds")
+# H5 precision classes: the "wrong thing delivered/placed" failures
+# (design doc §1, 10x-asymmetric). `wrong_object` is the DESK label and
+# never fires in retail; the retail suite emits extra_item / misplaced /
+# wrong_slot (RS-7). Reporting only wrong_object_total reads a vacuous 0
+# for every retail scenario (PR #60 review) — score these instead.
+PRECISION_CLASSES = ("wrong_object", "extra_item", "misplaced", "wrong_slot")
 
 
 def load_campaign(campaign_dir: Path) -> dict:
@@ -98,12 +104,18 @@ def cell(rec: dict) -> dict:
     if not holdout.get("ok"):
         flags.append("holdout_partial")
     first = rec.get("first_success_wall_s")
+    # H5 scored on the HELD-OUT precision classes (what we score; dev-side
+    # failures are the agent's own and not in the committed record)
+    holdout_failures = holdout.get("failures") or {}
+    precision = {k: holdout_failures[k] for k in PRECISION_CLASSES if holdout_failures.get(k)}
     return {
         "arm": rec.get("arm"),
         "tier": rec.get("tier"),
         "attempt": rec.get("attempt", 1),
         "holdout_pass1": holdout.get("pass1"),
-        "holdout_failures": holdout.get("failures"),
+        "holdout_failures": holdout_failures,
+        "precision_failures": precision,
+        "precision_failures_total": sum(precision.values()),
         "stopped": session.get("stopped"),
         "tokens": session.get("tokens"),
         "wall_s": session.get("wall_s"),
@@ -167,9 +179,9 @@ def h3_verdict(cells: list[dict]) -> dict:
 def results_markdown(cells: list[dict], verdict: dict) -> str:
     header = (
         "| Arm | Tier | Held-out pass@1 | Session end | Tokens | Wall h "
-        "| First success (min) | Tokens@1st | Reuse | Flags |"
+        "| First success (min) | Tokens@1st | Precision fails (holdout) | Reuse | Flags |"
     )
-    lines = [header, "|---|---|---|---|---|---|---|---|---|---|"]
+    lines = [header, "|---|---|---|---|---|---|---|---|---|---|---|"]
     for c in cells:
         pass1 = c["holdout_pass1"]
         shown = "—" if pass1 is None else f"{pass1:.3f}"
@@ -177,11 +189,13 @@ def results_markdown(cells: list[dict], verdict: dict) -> str:
             shown += " (partial)"
         first = c["first_success_wall_s"]
         tok1 = c["tokens_to_first_success"]
+        prec = ", ".join(f"{k} {v}" for k, v in c["precision_failures"].items()) or "0"
         lines.append(
             f"| {c['arm']} | {c['tier']} | {shown} | {c['stopped']} "
             f"| {c['tokens']} | {(c['wall_s'] or 0) / 3600:.2f} "
             f"| {'—' if first is None else f'{first / 60:.1f}'} "
             f"| {'—' if tok1 is None else tok1} "
+            f"| {prec} "
             f"| {', '.join(c['skill_reuse_in_deliverable'] or []) or '—'} "
             f"| {', '.join(c['flags']) or '—'} |"
         )
@@ -210,6 +224,13 @@ def main() -> int:
     if args.markdown:
         args.markdown.write_text(results_markdown(cells, verdict))
     total_wrong = sum(c["wrong_object_total"] or 0 for c in cells)
+    # H5 scored on the retail precision classes (PR #60 review): the sum
+    # over holdouts, plus the per-class breakdown so a nonzero total is
+    # never hidden behind a vacuous wrong_object_total: 0
+    precision_by_class: dict[str, int] = {}
+    for c in cells:
+        for k, v in c["precision_failures"].items():
+            precision_by_class[k] = precision_by_class.get(k, 0) + v
     print(
         json.dumps(
             {
@@ -218,6 +239,8 @@ def main() -> int:
                 "cells": cells,
                 "verdict": verdict,
                 "wrong_object_total": total_wrong,
+                "holdout_precision_failures_total": sum(precision_by_class.values()),
+                "holdout_precision_failures_by_class": precision_by_class,
             },
             indent=1,
         )

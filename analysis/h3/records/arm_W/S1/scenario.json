@@ -1,0 +1,65 @@
+{
+ "arm": "W",
+ "tier": "S1",
+ "budgets": {
+  "tier": "S1",
+  "tokens": 1000000,
+  "episodes": 80,
+  "wall_h": 6.0
+ },
+ "session": {
+  "stopped": "agent_done",
+  "rc": 0,
+  "tokens": 470584,
+  "wall_s": 18861.3
+ },
+ "frozen_drift": [],
+ "holdout": {
+  "ok": true,
+  "error": null,
+  "pass1": 0.375,
+  "pass8": 0.375,
+  "failures": {
+   "timeout": 5
+  }
+ },
+ "first_success_wall_s": 8804.9,
+ "wrong_object_total": 0,
+ "rollouts": [
+  {
+   "run_id": "20260728-001009-b4d1fd",
+   "mtime": 1785206140.0482004,
+   "episodes": 8,
+   "pass1": 0.125
+  },
+  {
+   "run_id": "20260728-031402-a575b1",
+   "mtime": 1785212004.2352867,
+   "episodes": 5,
+   "pass1": 0.8
+  },
+  {
+   "run_id": "20260728-041509-45c125",
+   "mtime": 1785215025.5240965,
+   "episodes": 3,
+   "pass1": 0.667
+  },
+  {
+   "run_id": "skill-s1-driver-v2-2026-07-28-bef9a9",
+   "mtime": 1785216135.3098981,
+   "episodes": 2,
+   "pass1": 1.0
+  },
+  {
+   "run_id": "campaign-holdout-W-S1",
+   "mtime": 1785224395.1540546,
+   "episodes": 8,
+   "pass1": 0.375
+  }
+ ],
+ "prior_skills": [],
+ "skills_after": [
+  "s1-driver-v2"
+ ],
+ "skill_reuse_in_deliverable": []
+}
