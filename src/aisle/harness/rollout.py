@@ -279,6 +279,9 @@ def run_gates(
         }
     baseline_oid = None
     hash_cmd = [sys.executable, str(root / "tools" / "env_hash.py"), "--check", "--root", str(root)]
+    # ADR-24: rollouts need the sim extra — declare the selection so the
+    # trusted checker attests THIS environment shape (HAR-2)
+    hash_cmd += ["--extras", "sim"]
     if env_baseline != "local":
         baseline_oid, err = resolve_trusted_baseline(root)
         if err:
@@ -287,7 +290,25 @@ def run_gates(
     hash_proc = subprocess.run(hash_cmd, capture_output=True, text=True)
     if hash_proc.returncode != 0:
         return {"ok": False, "gate": "env_hash", "detail": hash_proc.stdout.strip()}
-    env_hash = json.loads(hash_proc.stdout)["env_hash"]
+    hash_report = json.loads(hash_proc.stdout)
+    env_hash = hash_report["env_hash"]
+    dist = hash_report.get("dist")
+    if env_baseline != "local":
+        # ADR-24 D2/D3: trusted runs REFUSE on missing or failed
+        # attestation — record-by-convention is not a gate
+        if not isinstance(dist, dict):
+            return {
+                "ok": False,
+                "gate": "dist",
+                "detail": "DIST_DRIFT: no attestation evidence from the trusted "
+                "checker (stale env_hash.py at the baseline?)",
+            }
+        if not dist.get("attested"):
+            return {
+                "ok": False,
+                "gate": "dist",
+                "detail": "DIST_DRIFT: " + "; ".join(dist.get("problems") or ["unattested"]),
+            }
     remaining = budget_remaining(root)
     if env_baseline != "local":
         if episodes > 0 and remaining["episodes_left"] < episodes:
@@ -315,6 +336,13 @@ def run_gates(
         # the resolved immutable identity (ADR-21 round 3): the audit
         # re-verifies blobs at this OID, not at whatever a ref says later
         "env_baseline_oid": baseline_oid,
+        # ADR-24: CON-5's fifth component + the attestation verdict (facts
+        # from the trusted checker; local runs record honestly, trusted
+        # runs were already refused above on failure)
+        "env_fingerprint": (dist or {}).get("env_fingerprint"),
+        "env_attested": bool((dist or {}).get("attested")),
+        "dist_problems": (dist or {}).get("problems") or [],
+        "dist_inventory": (dist or {}).get("inventory"),
         "budget": remaining,
     }
     if no_idea_gate:
@@ -586,6 +614,35 @@ def rollout(
         episode_records = [
             json.loads(line) for line in results_path.read_text().splitlines() if line.strip()
         ]
+    # ADR-24 D2 (PR #69 review F1): a trusted run is attested only if the
+    # environment ALSO verifies after execution — against the gate-time
+    # inventory, via the self-verified checker. Dev runs (local baseline)
+    # skip the ~2-min audit per D4 and record post_run_audit: null.
+    post_run_audit = None
+    env_attested = gates.get("env_attested")
+    if env_baseline != "local" and gates.get("dist_inventory"):
+        inventory_path = run_dir / "gate_inventory.json"
+        inventory_path.write_text(json.dumps(gates["dist_inventory"]))
+        audit_cmd = [
+            sys.executable,
+            str(root / "tools" / "env_hash.py"),
+            "--verify-records",
+            "--expected",
+            str(inventory_path),
+            "--root",
+            str(root),
+        ]
+        if gates.get("env_baseline_oid"):
+            audit_cmd += ["--baseline", gates["env_baseline_oid"]]
+        audit_proc = subprocess.run(audit_cmd, capture_output=True, text=True)
+        try:
+            post_run_audit = json.loads(audit_proc.stdout)
+        except json.JSONDecodeError:
+            post_run_audit = {"ok": False, "problems": ["audit produced no parseable report"]}
+        env_attested = bool(env_attested) and bool(post_run_audit.get("ok"))
+    elif env_baseline != "local":
+        # trusted run without an inventory: never mark attested
+        env_attested = False
     wall_s = time.monotonic() - started
     metrics = compute_metrics(episode_records)
     videos = sorted(str(p.relative_to(root)) for p in traces_dir.rglob("*.mp4"))
@@ -609,6 +666,11 @@ def rollout(
         # hash, so the audit can re-verify both
         "env_baseline": gates.get("env_baseline"),
         "env_baseline_oid": gates.get("env_baseline_oid"),
+        # ADR-24 (HAR-4): the CON-5 fifth component + attestation verdict
+        "env_fingerprint": gates.get("env_fingerprint"),
+        "env_attested": env_attested,
+        "dist_problems": gates.get("dist_problems"),
+        "post_run_audit": post_run_audit,
         "budget_reservation": (reservation or {}).get("entry"),
         # HAR-5: best-effort token accounting
         "tokens_log": os.environ.get("ANTHROPIC_TOKENS_LOG"),

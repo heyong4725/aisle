@@ -11,6 +11,7 @@ capability or a concrete fix. No genesis or dora imports (unit territory).
 
 import difflib
 import json
+import re
 import tomllib
 from collections import Counter
 from pathlib import Path
@@ -367,7 +368,8 @@ def validate_nodes(
                 # #62 review P2: reuse _pip_dist so decorated/case-varied
                 # sources match the INSTALL_MISSING contract) — anything
                 # else launches other code
-                matches = node_path in (source, pip_name)
+                canonical_path = re.sub(r"[-_.]+", "-", node_path.strip()).lower()
+                matches = node_path == source or canonical_path == pip_name
             else:
                 # exactly ONE base: the graph's own directory — the base
                 # dora resolves against. A graphs-dir fallback approved
@@ -638,7 +640,23 @@ def _validate_edge(
 
 
 def validate(graph_path: Path, root: Path, embodiment: str, allow_unproven: bool) -> dict:
-    report = {"ok": False, "graph": str(graph_path), "errors": [], "warnings": []}
+    report = {"ok": False, "graph": str(graph_path), "errors": [], "warnings": [], "dist_state": {}}
+    # ADR-24 D5 (PR #69 review F4): the diagnostic is computed from the
+    # REGISTRY alone, before any graph parsing — early graph errors still
+    # carry the three registry mappings
+    try:
+        import importlib.metadata as _md
+
+        for _, m_early in load_manifests(root)[0]:
+            dist_early = _pip_dist(m_early) if isinstance(m_early, dict) else None
+            if dist_early:
+                try:
+                    report["dist_state"][dist_early] = _md.version(dist_early)
+                except _md.PackageNotFoundError:
+                    report["dist_state"][dist_early] = None
+        report["dist_state"] = dict(sorted(report["dist_state"].items()))
+    except Exception:  # noqa: BLE001 — a broken registry surfaces via its own errors
+        pass
     nodes, errors = load_graph(graph_path)
     if nodes is None:
         report["errors"] = errors

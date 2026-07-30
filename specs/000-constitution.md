@@ -28,7 +28,12 @@ docstring. `tools/trace_check.py` (SPEC 070) enforces this in CI.
 - CON-4: All inter-node data is Apache Arrow. No pickle, no JSON blobs on
   hot topics (JSON allowed only in `*_result` / report topics).
 - CON-5: Determinism: any run is reproducible from
-  `(git_sha, env_hash, platform, seed)`. Nondeterministic APIs (time, RNG)
+  `(git_sha, env_hash, env_fingerprint, platform, seed)` (ADR-24: the
+  fingerprint is `sha256(uv.lock bytes ‖ resolved selection)` — python
+  version, platform tags, and the exact extras/groups — so two runs with
+  identical tuples hold identical environments; a run whose environment
+  cannot be verified against the lock records `attested: false` and
+  makes NO reproducibility claim). Nondeterministic APIs (time, RNG)
   MUST be injected, never called ad hoc inside env code.
 
 ## 4. Repository invariants

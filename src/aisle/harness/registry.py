@@ -11,6 +11,7 @@ import argparse
 import functools
 import importlib.metadata
 import json
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -78,7 +79,9 @@ def _pip_dist(manifest: dict) -> str | None:
     name = source[4:].strip()
     for cut in "[=<>!~;@":
         name = name.split(cut, 1)[0]
-    return name.strip()
+    # PEP 503 canonicalization (ADR-24 D5 / PR #68 review): every join
+    # against locks, metadata, or graph paths folds case and [-_.] runs
+    return re.sub(r"[-_.]+", "-", name.strip()).lower()
 
 
 @functools.cache

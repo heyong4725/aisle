@@ -114,19 +114,28 @@ artifacts.
 - H2/H3 records to date predate this and are not retroactively
   annotated.
 
-## Resolved questions (owner decision, 2026-07-30)
+## Resolved questions (owner decision, 2026-07-30; Q1 superseded same day)
 
-1. **RECORD re-verification scope: the attested set** —
-   registry-referenced dists + the named sim core (genesis, torch,
-   dora-rs, pyarrow). Matches the threat model (code that can affect
-   verdicts or physics) at seconds of audit I/O; full-environment
-   verification rejected as minutes of noise over incidental packages.
+1. **RECORD re-verification scope: the FULL environment** (v3, PR #69
+   review). The bounded attested-set resolution was overturned by
+   evidence: frozen execution code imports numpy (4 modules) and the
+   transitive closure — "identical tuples hold identical environments"
+   cannot exempt them. Mechanics: the trusted checker captures a
+   gate-time INVENTORY (every installed dist → version + RECORD content
+   hash); the post-session audit verifies fail-closed against it —
+   removal, addition, version change, a changed RECORD (self-blessing),
+   zero verifiable entries, and file mutation are each refusals.
+   Measured cost: ~2.5 min over 97 distributions, once per trusted run.
+   Trusted runs are `attested` ONLY after this audit passes; dev runs
+   skip it (D4) with `post_run_audit: null` recorded.
 2. **CON-5 wording: `env_fingerprint` is a FIFTH tuple component** —
    `(graph hash, env hash, env_fingerprint, platform, seed list)`.
    Drift attribution stays legible: env hash answers "did the frozen
    code move", the fingerprint answers "did the installed environment
    move". Folding into env hash rejected for muddying CON-7's clean
-   frozen-tree meaning.
+   frozen-tree meaning. The selection inside the fingerprint names the
+   full interpreter identity (version + ABI cache tag), the platform
+   tag set, extras AND dependency groups (PR #69 review).
 
 IDs: CON-5 (amended tuple), CON-7 (posture parity), ADR-21 (boundary +
 baseline surface), VAL-3, HAR-2/4, CAP-4; CON-14 (implementation via
