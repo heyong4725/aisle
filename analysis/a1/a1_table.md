@@ -3,13 +3,19 @@
 A1 asks whether *agent composition* carries a tax (or gain) versus the
 hand-written expert. The matched expert fill-runs landed 2026-07-29/30
 (held-out seeds 100..107, pin `87b1ff66`; evidence in `records/`).
-**These fill-runs predate the ADR-24 attestation implementation and are
-UNATTESTED** — their manifests carry `env_baseline: local` with no
-`env_fingerprint`/`env_attested`, so per amended CON-5 they make no
-reproducibility claim (the frozen-tree `env_hash` matches across rows,
-but that does not identify the installed environment). Attested reruns
-under the merged implementation are queued as an addendum. n=8 per cell
-keeps every conclusion coarse.
+**Attestation status (addendum 2026-07-30):** the original fill-runs
+predate the ADR-24 implementation and are UNATTESTED (no
+`env_fingerprint`/`env_attested`; per amended CON-5 they make no
+reproducibility claim). The T1 rerun under the merged implementation is
+now the cell of record: **ATTESTED** (`env_attested: true`, fingerprint
+`46f2ec83…`, `records/a1-expert-t0-T1-holdout-att/`) and it replicates
+the unattested run exactly — 0.875, one `dropped`. The S1 rerun is
+INVALID as an attested cell: it executed from the live repo tree after a
+branch switch (pre-ADR-24 code at `05f7598` — an operator error now
+avoided by running long jobs from pinned worktrees only) and is retained
+solely as a variance observation below. A clean attested S1 expert run
+is queued behind the H3 verdict reruns. n=8 per cell keeps every
+conclusion coarse.
 
 ## T1 (desk): the END-TO-END estimand shows a real composition tax
 
@@ -21,7 +27,7 @@ launches scoring 0.
 
 | System | T1 end-to-end pass@1 | Launch rate | pass@1 given launch |
 |---|---|---|---|
-| Expert `expert_t0` (fill-run, unattested) | **0.875** | 1/1 | 0.875 |
+| Expert `expert_t0` (ATTESTED rerun; unattested original identical) | **0.875** | 1/1 | 0.875 |
 | Agent zero-shot pooled (H1, `abd2e9d3`) | **0.347** (13.875/40) | 16/40 | median 0.875 |
 | — claude arm | 0.125 | 3/20 | mean 0.833 |
 | — codex arm | 0.569 | 13/20 | mean 0.875 |
@@ -56,7 +62,13 @@ intervals:
 
 The intervals overlap heavily: the 3–4x ratios are **point estimates
 from single sessions**, and A1/S1 is **inconclusive pending repeated,
-attested sessions**. What the records do support:
+attested sessions**. The expert's variance is now directly observed:
+three nominally-identical 8-seed runs scored 1/8 (dev seeds), 1/8
+(held-out), and 0/8 (held-out, the invalid-provenance rerun) with
+shifting failure mixes — and the two held-out runs used identical node
+code and seeds, which is a CON-5 determinism violation surface filed as
+issue #71 (S1 nondeterminism). Until #71 resolves, S1 pass rates carry
+run-to-run noise beyond seed choice. What the records do support:
 
 - The expert's held-out failure histogram (0.125; 5 timeout,
   2 extra_item) matches its dev-seed baseline run exactly (seeds 0..7,
