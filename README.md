@@ -9,7 +9,9 @@ auditable, and more reusable than script-level iteration — reproducible
 on a MacBook.
 
 Full experiment design: `docs/Project_AISLE_Experiment_Design.md`.
-New to the repo? Start with `docs/getting-started.md`.
+New to the repo? Start with `docs/getting-started.md` — and for the
+concepts behind it all (Physical AI, VLM/VLA/world models/WAMs,
+sim-to-real, agentic auto-research), `docs/physical-ai-primer.md`.
 
 ## Status (July 2026)
 
