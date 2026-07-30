@@ -63,6 +63,10 @@ class BridgeConfig:
     n_envs: int
     scene: str = "pharmacy"  # "pharmacy" (desk) | "store" (T15 retail)
     scenario: str = "S1"  # store episode scenario (RS-3)
+    # AISLE_HEADLESS=0 opens Genesis's interactive viewer — a DEBUGGING
+    # mode (per-frame rendering slows episodes; never for measured runs).
+    # Default stays headless: every recorded pipeline is unaffected.
+    headless: bool = True
 
 
 def parse_bridge_config(env: dict) -> BridgeConfig:
@@ -73,6 +77,7 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
         n_envs=int(env.get("AISLE_N_ENVS", "1")),
         scene=env.get("AISLE_SCENE", "pharmacy"),
         scenario=env.get("AISLE_SCENARIO", "S1"),
+        headless=env.get("AISLE_HEADLESS", "1") not in ("0", "false", "no"),
     )
 
 
@@ -275,11 +280,14 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         )
 
         handle = build_store(
-            seed=cfg.seed, scenario=cfg.scenario, embodiment=cfg.embodiment, headless=True
+            seed=cfg.seed,
+            scenario=cfg.scenario,
+            embodiment=cfg.embodiment,
+            headless=cfg.headless,
         )
     else:
         handle = build_scene(
-            seed=cfg.seed, embodiment=cfg.embodiment, n_envs=cfg.n_envs, headless=True
+            seed=cfg.seed, embodiment=cfg.embodiment, n_envs=cfg.n_envs, headless=cfg.headless
         )
     robot = handle.robot
     n_dof = robot.n_dofs

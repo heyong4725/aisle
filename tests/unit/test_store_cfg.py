@@ -382,3 +382,15 @@ def test_retail_cfg_roster_is_full_stock_for_every_scenario():
     for scenario in ("S1", "S2", "S3"):
         cfg = build_retail_cfg(plano, generate_episode(2, scenario))
         assert cfg.item_ids == full
+
+
+def test_headless_toggle_defaults_on_and_parses_off():
+    """AISLE_HEADLESS=0 opens Genesis's interactive viewer — a debugging
+    mode only; absent or any non-disabling value stays headless, so
+    every recorded pipeline is unaffected (BRG-1)."""
+    from aisle.nodes.dora_genesis import parse_bridge_config
+
+    assert parse_bridge_config({}).headless is True
+    assert parse_bridge_config({"AISLE_HEADLESS": "1"}).headless is True
+    for off in ("0", "false", "no"):
+        assert parse_bridge_config({"AISLE_HEADLESS": off}).headless is False
