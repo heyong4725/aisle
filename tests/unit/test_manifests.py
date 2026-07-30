@@ -391,3 +391,82 @@ def test_lint_rejects_duplicate_ids(tmp_path):
     code, report = run_registry("lint", "--root", str(root))
     assert code != 0
     assert report["ok"] is False
+
+
+def test_search_annotates_launchability_and_installed_filter(tmp_path):
+    """CAP-4 (issue #39): every search match carries `launchable` —
+    search advertised uninstalled pip: nodes with no flag, the exact
+    discovery-surface gap analysis/h1 documents — and --installed
+    narrows to what can actually launch. Fixture root: no ambient-env
+    coupling (issue #37 discipline)."""
+    root = make_registry_root(tmp_path)
+    absent = valid_manifest()
+    absent.update(
+        id="detector-absent",
+        provides=["fixture_ability"],
+        source="pip:aisle-search-reserved-absent",
+    )
+    write_manifest(root, absent)
+    ghost = valid_manifest()
+    ghost.update(
+        id="detector-ghost", provides=["fixture_ability"], source="src/aisle/nodes/ghost.py"
+    )
+    path = root / "registry" / "manifests" / "detector-ghost.yaml"
+    path.write_text(yaml.safe_dump(ghost, sort_keys=False))  # no auto-stub: stays ghost
+    real = valid_manifest()
+    real.update(id="detector-real", provides=["fixture_ability"])
+    write_manifest(root, real)  # helper stubs the path source: launchable
+    # PR #66 review: the installed-pip POSITIVE branch — an
+    # implementation returning False for every pip source must fail
+    # here, not survive on path-source cases alone (pytest is installed
+    # by construction: it is running this test)
+    installed_pip = valid_manifest()
+    installed_pip.update(
+        id="detector-pip-installed", provides=["fixture_ability"], source="pip:pytest"
+    )
+    write_manifest(root, installed_pip)
+
+    code, report = run_registry("search", "--provides", "fixture_ability", "--root", str(root))
+    assert code == 0
+    launchable = {m["id"]: m["launchable"] for m in report["matches"]}
+    assert launchable == {
+        "detector-absent": False,  # uninstalled pip dist
+        "detector-ghost": False,  # path source names no file
+        "detector-pip-installed": True,  # pip source installed => launchable
+        "detector-real": True,
+    }
+
+    code, report = run_registry(
+        "search", "--provides", "fixture_ability", "--root", str(root), "--installed"
+    )
+    assert code == 0
+    assert [m["id"] for m in report["matches"]] == ["detector-pip-installed", "detector-real"]
+
+
+def test_pip_installed_probe_is_cached():
+    """PR #66 review: a silent duplicate definition once overwrote the
+    @functools.cache probe — repeated metadata scans per validation and
+    the loss of one-snapshot consistency. Pin the cache: two calls for
+    the same dist perform ONE metadata scan, and cache_clear exists."""
+    import importlib.metadata as md
+
+    from aisle.harness import registry as reg
+
+    assert hasattr(reg._pip_installed, "cache_clear"), "probe lost its functools.cache"
+    calls = {"n": 0}
+    real = md.version
+
+    def counting(dist):
+        calls["n"] += 1
+        return real(dist)
+
+    reg._pip_installed.cache_clear()
+    original = md.version
+    md.version = counting
+    try:
+        assert reg._pip_installed("pytest") is True
+        assert reg._pip_installed("pytest") is True
+        assert calls["n"] == 1  # second call served from the cache
+    finally:
+        md.version = original
+        reg._pip_installed.cache_clear()

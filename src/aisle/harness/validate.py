@@ -10,8 +10,6 @@ capability or a concrete fix. No genesis or dora imports (unit territory).
 """
 
 import difflib
-import functools
-import importlib.metadata
 import json
 import tomllib
 from collections import Counter
@@ -20,6 +18,9 @@ from pathlib import Path
 import yaml
 
 from aisle.harness.registry import (
+    _path_source_valid,
+    _pip_dist,
+    _pip_installed,
     load_capability_schema,
     load_manifests,
     load_vocabulary,
@@ -180,45 +181,6 @@ def load_graph(path: Path) -> tuple[list | None, list[dict]]:
     return nodes, []
 
 
-def _pip_dist(manifest: dict) -> str | None:
-    """The normalized pip distribution name of a manifest's source, or None
-    for non-pip sources. Scheme match is case-insensitive (a lowercase-only
-    match let `PIP:x` dodge the check), the name is stripped and cut at the
-    first extras/specifier character (`pip:dora-yolo[gpu]`/`==1.2` probed
-    the literal string, falsely flagging installed dists). An empty name
-    maps to '' — a structured error, never a `version('')` ValueError
-    (PR #34 review)."""
-    source = manifest.get("source")
-    if not isinstance(source, str) or not source[:4].lower() == "pip:":
-        return None
-    name = source[4:].strip()
-    for cut in "[=<>!~;@":
-        name = name.split(cut, 1)[0]
-    return name.strip()
-
-
-@functools.cache
-def _pip_installed(dist: str) -> bool:
-    try:
-        importlib.metadata.version(dist)
-    except (importlib.metadata.PackageNotFoundError, ValueError):
-        return False
-    return True
-
-
-def _path_source_valid(source: str, root: Path) -> bool:
-    """A path-form source is launchable iff it is a root-relative
-    reference resolving to a REGULAR FILE contained by the root
-    (PR #63 review P1: `root / source` is not containment — absolute
-    sources survive the join, `../` and symlinks escape, and exists()
-    accepts directories)."""
-    if Path(source).is_absolute():
-        return False
-    target = (root / source).resolve()
-    resolved_root = root.resolve()
-    return target.is_file() and target.is_relative_to(resolved_root)
-
-
 def _manifest_launchable(
     manifest: dict,
     arm_kind: str,
@@ -297,7 +259,8 @@ def validate_nodes(
                 f"rename the node to {close!r}"
                 if close
                 else "no similar manifest id exists; find one with: "
-                "python -m aisle.harness.registry search --provides <capability>"
+                "python -m aisle.harness.registry search --provides <capability> "
+                "--installed (issue #39: only launchable nodes)"
             )
             errors.append(
                 _entry(
