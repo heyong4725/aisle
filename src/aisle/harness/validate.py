@@ -641,6 +641,22 @@ def _validate_edge(
 
 def validate(graph_path: Path, root: Path, embodiment: str, allow_unproven: bool) -> dict:
     report = {"ok": False, "graph": str(graph_path), "errors": [], "warnings": [], "dist_state": {}}
+    # ADR-24 D5 (PR #69 review F4): the diagnostic is computed from the
+    # REGISTRY alone, before any graph parsing — early graph errors still
+    # carry the three registry mappings
+    try:
+        import importlib.metadata as _md
+
+        for _, m_early in load_manifests(root)[0]:
+            dist_early = _pip_dist(m_early) if isinstance(m_early, dict) else None
+            if dist_early:
+                try:
+                    report["dist_state"][dist_early] = _md.version(dist_early)
+                except _md.PackageNotFoundError:
+                    report["dist_state"][dist_early] = None
+        report["dist_state"] = dict(sorted(report["dist_state"].items()))
+    except Exception:  # noqa: BLE001 — a broken registry surfaces via its own errors
+        pass
     nodes, errors = load_graph(graph_path)
     if nodes is None:
         report["errors"] = errors
@@ -690,21 +706,6 @@ def validate(graph_path: Path, root: Path, embodiment: str, allow_unproven: bool
         report["errors"] = malformed
         return report
     manifests = {m["id"]: m for _, m in manifest_list}
-
-    # ADR-24 D5 (VAL-3): a labeled NON-ATTESTING diagnostic — canonical
-    # registry pip dists -> installed version | null; explains
-    # INSTALL_MISSING/launchable verdicts. Attestation is env_hash's.
-    import importlib.metadata as _md
-
-    dist_state: dict[str, str | None] = {}
-    for _, m in manifest_list:
-        dist = _pip_dist(m) if isinstance(m, dict) else None
-        if dist:
-            try:
-                dist_state[dist] = _md.version(dist)
-            except _md.PackageNotFoundError:
-                dist_state[dist] = None
-    report["dist_state"] = dict(sorted(dist_state.items()))
 
     errors, warnings = validate_nodes(
         nodes,

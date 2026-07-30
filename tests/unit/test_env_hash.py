@@ -314,64 +314,167 @@ def test_adr24_registry_pip_dists_regex(tmp_path):
     assert registry_pip_dists(tmp_path) == ["dora-pose", "dora-yolo"]
 
 
-def test_adr24_verify_records_detects_mutation(tmp_path, monkeypatch):
-    """ADR-24 D2 audit: installed files are re-hashed against RECORD —
-    a mutated file is tamper evidence, an intact one verifies."""
-    import base64
-    import hashlib as _hashlib
-    import sys as _sys
-
-    _sys.path.insert(0, str(REPO_ROOT / "tools"))
+def _fake_md(monkeypatch, dists):
+    """Install a fake importlib.metadata.distributions/distribution pair."""
     import importlib.metadata as md
 
-    import env_hash as eh
+    monkeypatch.setattr(md, "distributions", lambda: list(dists.values()))
 
-    pkg = tmp_path / "fakepkg"
-    pkg.mkdir()
-    good = pkg / "good.py"
-    good.write_text("intact = True\n")
+    def one(name):
+        for d in dists.values():
+            if d.metadata.get("Name").lower().replace("_", "-") == name:
+                return d
+        raise md.PackageNotFoundError(name)
 
-    def h(path):
-        return (
+    monkeypatch.setattr(md, "distribution", one)
+
+
+class _FakeDist:
+    def __init__(self, name, version, files, record_text="rec"):
+        self.metadata = {"Name": name}
+        self.version = version
+        self.files = files
+        self._record = record_text
+
+    def read_text(self, fname):
+        return self._record if fname == "RECORD" else None
+
+
+def _hashed_file(tmp_path, name, content):
+    import base64
+    import hashlib as _hashlib
+
+    path = tmp_path / name
+    path.write_text(content)
+
+    class FakeHash:
+        mode = "sha256"
+        value = (
             base64.urlsafe_b64encode(_hashlib.sha256(path.read_bytes()).digest())
             .rstrip(b"=")
             .decode()
         )
 
-    class FakeHash:
-        def __init__(self, value):
-            self.mode, self.value = "sha256", value
-
     class FakeFile:
-        def __init__(self, path, value):
-            self._path, self.hash = path, FakeHash(value)
+        hash = FakeHash()
 
         def locate(self):
-            return self._path
+            return path
 
         def __str__(self):
-            return self._path.name
+            return name
 
-    class FakeDist:
-        def __init__(self, files):
-            self.files = files
+    return FakeFile()
 
-    intact_files = [FakeFile(good, h(good))]
 
-    def fake_distribution(name):
-        if name == "fake-intact":
-            return FakeDist(intact_files)
-        if name == "fake-mutated":
-            bad = pkg / "bad.py"
-            bad.write_text("mutated = True\n")
-            recorded = FakeFile(bad, h(bad))
-            bad.write_text("mutated = 'after install'\n")  # the tamper
-            return FakeDist([recorded])
-        raise md.PackageNotFoundError(name)
+def test_adr24_verify_records_fails_closed(tmp_path, monkeypatch):
+    """PR #69 review F1: the post-session audit verifies against the
+    GATE-TIME inventory — removal, addition, version change, a changed
+    RECORD (self-blessing), zero verifiable entries, and file mutation
+    are each problems; the intact environment verifies."""
+    import hashlib as _hashlib
+    import sys as _sys
 
-    monkeypatch.setattr(md, "distribution", fake_distribution)
-    report = eh.verify_records(["fake-intact", "fake-mutated", "fake-absent"])
-    assert report["verified"]["fake-intact"] == {"files": 1, "mismatched": 0}
-    assert report["verified"]["fake-mutated"]["mismatched"] == 1
-    assert report["ok"] is False
-    assert any("RECORD" in p for p in report["problems"])
+    _sys.path.insert(0, str(REPO_ROOT / "tools"))
+    import env_hash as eh
+
+    good = _FakeDist("alpha", "1.0", [_hashed_file(tmp_path, "a.py", "ok")])
+    expected = {
+        "alpha": {
+            "version": "1.0",
+            "record_sha256": _hashlib.sha256(b"rec").hexdigest(),
+        }
+    }
+    _fake_md(monkeypatch, {"alpha": good})
+    assert eh.verify_records(expected)["ok"] is True
+
+    # removed after the gate
+    _fake_md(monkeypatch, {})
+    report = eh.verify_records(expected)
+    assert report["ok"] is False and any("removed" in p for p in report["problems"])
+
+    # installed after the gate
+    extra = _FakeDist("beta", "2.0", [_hashed_file(tmp_path, "b.py", "new")])
+    _fake_md(monkeypatch, {"alpha": good, "beta": extra})
+    report = eh.verify_records(expected)
+    assert any("installed after the gate" in p for p in report["problems"])
+
+    # RECORD changed (self-blessing attempt)
+    blessed = _FakeDist("alpha", "1.0", [_hashed_file(tmp_path, "c.py", "evil")], "rec2")
+    _fake_md(monkeypatch, {"alpha": blessed})
+    report = eh.verify_records(expected)
+    assert any("RECORD changed" in p for p in report["problems"])
+
+    # zero verifiable entries
+    empty = _FakeDist("alpha", "1.0", [])
+    _fake_md(monkeypatch, {"alpha": empty})
+    report = eh.verify_records(expected)
+    assert any("zero hash-verifiable" in p for p in report["problems"])
+
+    # mutated file under an intact RECORD
+    mut_file = _hashed_file(tmp_path, "d.py", "before")
+    (tmp_path / "d.py").write_text("after")
+    mutated = _FakeDist("alpha", "1.0", [mut_file])
+    _fake_md(monkeypatch, {"alpha": mutated})
+    report = eh.verify_records(expected)
+    assert any("does not match its RECORD hash" in p for p in report["problems"])
+
+
+def test_adr24_pip_source_parser_parity():
+    """PR #69 review F2: the trusted scanner and the validator's
+    _pip_dist must be the SAME parser — decorated, pinned, case-varied,
+    quoted, and indented forms all land on the canonical name."""
+    import sys as _sys
+
+    _sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from env_hash import parse_pip_source
+
+    from aisle.harness.registry import _pip_dist
+
+    cases = [
+        "pip:dora-yolo",
+        "pip:Dora_YOLO[gpu]==1.2",
+        "PIP:dora.pose",
+        "pip: dora-ocr ",
+        "pip:torch>=2.0; python_version>'3.10'",
+    ]
+    for source in cases:
+        assert parse_pip_source(source) == _pip_dist({"source": source}), source
+    assert parse_pip_source("src/aisle/nodes/x.py") is None
+    assert _pip_dist({"source": "src/aisle/nodes/x.py"}) is None
+
+
+def test_adr24_scanner_handles_indented_and_decorated_manifests(tmp_path):
+    """PR #69 review F2 (the exact bypasses): indented `source:` lines and
+    decorated pip values must land as canonical base names."""
+    import sys as _sys
+
+    _sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from env_hash import registry_pip_dists
+
+    mdir = tmp_path / "registry" / "manifests"
+    mdir.mkdir(parents=True)
+    (mdir / "a.yaml").write_text("id: a\nsource: pip:Dora_YOLO[gpu]==1.2\n")
+    (mdir / "b.yaml").write_text("id: b\n  source: pip:dora_pose\n")
+    (mdir / "c.yaml").write_text("id: c\nsource: 'pip:dora-ocr'\n")
+    (mdir / "d.yaml").write_text("id: d\nsource: src/aisle/nodes/d.py\n")
+    assert registry_pip_dists(tmp_path) == ["dora-ocr", "dora-pose", "dora-yolo"]
+
+
+def test_adr24_selection_covers_abi_groups_and_tags():
+    """PR #69 review F4: the selection names the full interpreter identity
+    (version + ABI cache tag), the platform tag set, extras AND groups —
+    and each axis moves the fingerprint."""
+    import sys as _sys
+
+    _sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from env_hash import current_selection, env_fingerprint
+
+    sel = current_selection(["sim"])
+    assert set(sel) == {"python", "abi", "platform_tags", "extras", "groups"}
+    assert sel["groups"] == ["dev"]  # uv's default sync includes dev
+    assert sel["abi"].startswith("cpython-")
+    lock = b"lock"
+    base = env_fingerprint(lock, sel)
+    assert env_fingerprint(lock, current_selection(["sim"], groups=[])) != base
+    assert env_fingerprint(lock, current_selection([])) != base

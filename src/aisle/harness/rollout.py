@@ -342,6 +342,7 @@ def run_gates(
         "env_fingerprint": (dist or {}).get("env_fingerprint"),
         "env_attested": bool((dist or {}).get("attested")),
         "dist_problems": (dist or {}).get("problems") or [],
+        "dist_inventory": (dist or {}).get("inventory"),
         "budget": remaining,
     }
     if no_idea_gate:
@@ -613,6 +614,35 @@ def rollout(
         episode_records = [
             json.loads(line) for line in results_path.read_text().splitlines() if line.strip()
         ]
+    # ADR-24 D2 (PR #69 review F1): a trusted run is attested only if the
+    # environment ALSO verifies after execution — against the gate-time
+    # inventory, via the self-verified checker. Dev runs (local baseline)
+    # skip the ~2-min audit per D4 and record post_run_audit: null.
+    post_run_audit = None
+    env_attested = gates.get("env_attested")
+    if env_baseline != "local" and gates.get("dist_inventory"):
+        inventory_path = run_dir / "gate_inventory.json"
+        inventory_path.write_text(json.dumps(gates["dist_inventory"]))
+        audit_cmd = [
+            sys.executable,
+            str(root / "tools" / "env_hash.py"),
+            "--verify-records",
+            "--expected",
+            str(inventory_path),
+            "--root",
+            str(root),
+        ]
+        if gates.get("env_baseline_oid"):
+            audit_cmd += ["--baseline", gates["env_baseline_oid"]]
+        audit_proc = subprocess.run(audit_cmd, capture_output=True, text=True)
+        try:
+            post_run_audit = json.loads(audit_proc.stdout)
+        except json.JSONDecodeError:
+            post_run_audit = {"ok": False, "problems": ["audit produced no parseable report"]}
+        env_attested = bool(env_attested) and bool(post_run_audit.get("ok"))
+    elif env_baseline != "local":
+        # trusted run without an inventory: never mark attested
+        env_attested = False
     wall_s = time.monotonic() - started
     metrics = compute_metrics(episode_records)
     videos = sorted(str(p.relative_to(root)) for p in traces_dir.rglob("*.mp4"))
@@ -638,8 +668,9 @@ def rollout(
         "env_baseline_oid": gates.get("env_baseline_oid"),
         # ADR-24 (HAR-4): the CON-5 fifth component + attestation verdict
         "env_fingerprint": gates.get("env_fingerprint"),
-        "env_attested": gates.get("env_attested"),
+        "env_attested": env_attested,
         "dist_problems": gates.get("dist_problems"),
+        "post_run_audit": post_run_audit,
         "budget_reservation": (reservation or {}).get("entry"),
         # HAR-5: best-effort token accounting
         "tokens_log": os.environ.get("ANTHROPIC_TOKENS_LOG"),

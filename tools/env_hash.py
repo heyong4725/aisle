@@ -98,16 +98,22 @@ def canonical_name(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def current_selection(extras: list[str]) -> dict:
+def current_selection(extras: list[str], groups: list[str] | None = None) -> dict:
     """The resolved environment descriptor the fingerprint names: the
     lock alone is selection-ambiguous (multi-platform entries; extras
-    share one lock — the default-vs-`--extra sim` footgun)."""
+    and groups share one lock — the default-vs-`--extra sim` footgun).
+    PR #69 review F4: full interpreter identity (version + ABI cache
+    tag), the platform tag set, extras AND dependency groups (uv's
+    default sync includes the dev group)."""
+    import platform as _platform
     import sysconfig
 
     return {
-        "python": f"{sys.version_info.major}.{sys.version_info.minor}",
-        "platform": sysconfig.get_platform(),
+        "python": _platform.python_version(),
+        "abi": sys.implementation.cache_tag,
+        "platform_tags": sorted({sysconfig.get_platform(), _platform.machine(), sys.platform}),
         "extras": sorted(extras),
+        "groups": sorted(groups if groups is not None else ["dev"]),
     }
 
 
@@ -117,17 +123,35 @@ def env_fingerprint(lock_bytes: bytes, selection: dict) -> str:
     return hashlib.sha256(lock_bytes + b"\0" + canon).hexdigest()
 
 
+def parse_pip_source(value: str) -> str | None:
+    """The ONE pip-source parser (PR #69 review F2): mirrors
+    registry._pip_dist exactly — case-insensitive scheme, strip, cut at
+    the first extras/specifier character, PEP 503 canonicalize — and a
+    parity test pins the two implementations together. Returns the
+    canonical distribution name, or None for non-pip values."""
+    value = value.strip().strip("'\"")
+    if value[:4].lower() != "pip:":
+        return None
+    name = value[4:].strip()
+    for cut in "[=<>!~;@":
+        name = name.split(cut, 1)[0]
+    name = name.strip()
+    return canonical_name(name) if name else None
+
+
 def registry_pip_dists(root: Path) -> list[str]:
-    """Canonical names of every registry pip: source. Regex-parsed so the
-    trusted blob stays stdlib-only (manifest sources are simple scalars,
-    CAP-1-patterned)."""
+    """Canonical names of every registry pip: source, via the shared
+    parser. Line-scanned (indentation allowed, quotes allowed) so the
+    trusted blob stays stdlib-only; manifest sources are simple scalars
+    (CAP-1-patterned)."""
     dists = set()
     manifest_dir = root / "registry" / "manifests"
     if manifest_dir.is_dir():
         for m in sorted(manifest_dir.glob("*.yaml")):
-            match = re.search(r"^source:\s*['\"]?pip:([^'\"\s#]+)", m.read_text(), re.M)
-            if match:
-                dists.add(canonical_name(match.group(1)))
+            for match in re.finditer(r"^[ \t]*source:[ \t]*(.+)$", m.read_text(), re.M):
+                dist = parse_pip_source(match.group(1))
+                if dist:
+                    dists.add(dist)
     return sorted(dists)
 
 
@@ -153,10 +177,37 @@ def attested_set(root: Path) -> list[str]:
     return sorted(set(registry_pip_dists(root)) | set(map(canonical_name, ATTESTED_SIM_CORE)))
 
 
-def dist_attestation(root: Path, baseline_ref: str | None, extras: list[str]) -> dict:
-    """The ADR-24 D2 gate facts: fingerprint + problems (empty = attested).
-    Policy (refuse vs record) belongs to the caller; FACTS are computed
-    here, inside the trusted blob."""
+def environment_inventory() -> dict:
+    """Gate-time capture for the post-session audit (PR #69 review F1/F3):
+    EVERY installed distribution -> {version, record_sha256}. The RECORD
+    content hash taken NOW, inside the trusted checker, is what the
+    post-session verification trusts — a mid-session mutation of code
+    plus RECORD cannot self-bless, and a removed/added distribution is a
+    fail-closed mismatch. Full closure, not a bounded core: frozen code
+    imports numpy et al., so 'identical tuples hold identical
+    environments' requires the whole environment."""
+    import importlib.metadata
+
+    inventory: dict = {}
+    for dist in importlib.metadata.distributions():
+        name = canonical_name(dist.metadata.get("Name") or "")
+        if not name:
+            continue
+        record = dist.read_text("RECORD")
+        inventory[name] = {
+            "version": dist.version,
+            "record_sha256": hashlib.sha256(record.encode()).hexdigest() if record else None,
+        }
+    return dict(sorted(inventory.items()))
+
+
+def dist_attestation(
+    root: Path, baseline_ref: str | None, extras: list[str], groups: list[str] | None = None
+) -> dict:
+    """The ADR-24 D2 gate facts: fingerprint + problems (empty = attested)
+    + the full environment inventory the post-session audit verifies
+    against. Policy (refuse vs record) belongs to the caller; FACTS are
+    computed here, inside the trusted blob."""
     import importlib.metadata
 
     problems: list[str] = []
@@ -170,7 +221,7 @@ def dist_attestation(root: Path, baseline_ref: str | None, extras: list[str]) ->
             problems.append(f"{LOCK_FILE} unreadable at {baseline_ref!r}")
         elif base_lock != lock_bytes:
             problems.append(f"{LOCK_FILE} diverges from {baseline_ref} (DIST_DRIFT)")
-    selection = current_selection(extras)
+    selection = current_selection(extras, groups)
     fingerprint = env_fingerprint(lock_bytes, selection) if lock_bytes is not None else None
     if lock_bytes is not None:
         sync = subprocess.run(
@@ -202,21 +253,46 @@ def dist_attestation(root: Path, baseline_ref: str | None, extras: list[str]) ->
         "env_fingerprint": fingerprint,
         "selection": selection,
         "problems": problems,
+        "inventory": environment_inventory(),
     }
 
 
-def verify_records(dist_names: list[str]) -> dict:
-    """ADR-24 D2 post-session audit: hash installed files against their
-    wheel RECORD entries — mid-session mutation of installed code becomes
-    tamper evidence. Bounded to the attested set (resolved question 1)."""
+def verify_records(expected_inventory: dict) -> dict:
+    """ADR-24 D2 post-session audit, FAIL-CLOSED (PR #69 review F1):
+    against the GATE-TIME inventory — a distribution that disappeared,
+    appeared, changed version, changed its RECORD (self-blessing), has
+    no verifiable hashed entries, or whose installed files no longer
+    match that trusted RECORD, is each a problem. Full environment
+    (F3): frozen code executes numpy and the transitive closure, so the
+    identity claim covers everything installed."""
     import base64
     import importlib.metadata
 
     report: dict = {"ok": True, "verified": {}, "problems": []}
-    for dist_name in dist_names:
-        try:
-            dist = importlib.metadata.distribution(dist_name)
-        except importlib.metadata.PackageNotFoundError:
+    live: dict = {}
+    for dist in importlib.metadata.distributions():
+        name = canonical_name(dist.metadata.get("Name") or "")
+        if name:
+            live[name] = dist
+    for name in sorted(set(live) - set(expected_inventory)):
+        report["problems"].append(f"{name}: installed after the gate (not in inventory)")
+    for name, claim in sorted(expected_inventory.items()):
+        dist = live.get(name)
+        if dist is None:
+            report["problems"].append(f"{name}: removed after the gate")
+            continue
+        if dist.version != claim.get("version"):
+            report["problems"].append(
+                f"{name}: version changed after the gate ({claim.get('version')} -> {dist.version})"
+            )
+            continue
+        record = dist.read_text("RECORD")
+        record_hash = hashlib.sha256(record.encode()).hexdigest() if record else None
+        if record_hash != claim.get("record_sha256"):
+            report["problems"].append(
+                f"{name}: RECORD changed after the gate — a mutated RECORD "
+                "cannot bless mutated code"
+            )
             continue
         checked = mismatched = 0
         for f in dist.files or []:
@@ -226,14 +302,16 @@ def verify_records(dist_names: list[str]) -> dict:
             try:
                 data = f.locate().read_bytes()
             except OSError:
-                report["problems"].append(f"{dist_name}: {f} unreadable")
+                report["problems"].append(f"{name}: {f} unreadable")
                 continue
             digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=")
             checked += 1
             if digest.decode() != hash_spec.value:
                 mismatched += 1
-                report["problems"].append(f"{dist_name}: {f} does not match its RECORD hash")
-        report["verified"][dist_name] = {"files": checked, "mismatched": mismatched}
+                report["problems"].append(f"{name}: {f} does not match its RECORD hash")
+        if checked == 0:
+            report["problems"].append(f"{name}: zero hash-verifiable RECORD entries — unattestable")
+        report["verified"][name] = {"files": checked, "mismatched": mismatched}
     report["ok"] = not report["problems"]
     return report
 
@@ -255,6 +333,17 @@ def main() -> int:
         help="ADR-24 audit: hash installed files of the attested set vs RECORD",
     )
     parser.add_argument(
+        "--expected",
+        default=None,
+        help="with --verify-records: path to the gate-time inventory JSON",
+    )
+    parser.add_argument(
+        "--groups",
+        action="append",
+        default=None,
+        help="declared dependency groups for the attestation selection",
+    )
+    parser.add_argument(
         "--extras",
         action="append",
         default=None,
@@ -264,7 +353,23 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.verify_records:
-        report = verify_records(attested_set(args.root))
+        # PR #69 review F1: the audit self-verifies the checker first when
+        # a baseline is given, and verifies against the GATE-TIME
+        # inventory (fail-closed) — never against the live RECORDs alone
+        if args.baseline:
+            _, self_error = _baseline_hash(args.root, args.baseline)
+            if self_error:
+                print(json.dumps({"ok": False, "problems": [self_error]}))
+                return 1
+        if not args.expected:
+            print(json.dumps({"ok": False, "problems": ["--expected inventory required"]}))
+            return 1
+        try:
+            expected = json.loads(Path(args.expected).read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            print(json.dumps({"ok": False, "problems": [f"unreadable inventory: {exc}"]}))
+            return 1
+        report = verify_records(expected)
         print(json.dumps(report))
         return 0 if report["ok"] else 1
 
@@ -300,7 +405,8 @@ def main() -> int:
         if error is None and args.extras is not None:
             # ADR-24: attestation FACTS ride the same trusted-blob check;
             # refusal policy is the gate's (HAR-2)
-            report["dist"] = dist_attestation(args.root, args.baseline, args.extras)
+            groups = [g for g in (args.groups or []) if g] if args.groups is not None else None
+            report["dist"] = dist_attestation(args.root, args.baseline, args.extras, groups)
 
     print(json.dumps(report))
     if not report["ok"]:

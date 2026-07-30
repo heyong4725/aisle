@@ -358,3 +358,84 @@ def test_trusted_gate_refuses_on_dist_drift_and_missing_evidence(tmp_path, monke
     local = run_gates(root, graph, "b", no_idea_gate=True, env_baseline="local")
     assert local["ok"] is True
     assert local["env_attested"] is False and local["dist_problems"] == ["drift"]
+
+
+def test_trusted_run_attestation_is_final_only_after_post_run_audit(tmp_path, monkeypatch):
+    """ADR-24 D2 as hardened by the PR #69 review: rollout's manifest may
+    mark a trusted run attested ONLY if the post-run audit (gate-time
+    inventory, self-verified checker) also passes — a mid-session
+    mutation flips env_attested to false with the audit recorded."""
+    import json as _json
+
+    from aisle.harness import rollout as ro
+
+    root = _fake_root(tmp_path, hash_ok=True)
+    graph = root / "graphs" / "expert_t0.yaml"
+    monkeypatch.setattr(ro, "resolve_trusted_baseline", lambda r: ("deadbeef", None))
+    monkeypatch.setattr(ro, "reap_orphans", lambda *a, **k: None)
+
+    # fake trusted checker: gate PASSES with an inventory; the post-run
+    # audit mode reports a mutation
+    (root / "tools" / "env_hash.py").write_text(
+        """
+import json, sys
+if "--verify-records" in sys.argv:
+    print(json.dumps({"ok": False, "problems": ["numpy: f.py does not match its RECORD hash"]}))
+else:
+    print(json.dumps({
+        "ok": True, "env_hash": "h",
+        "dist": {"attested": True, "env_fingerprint": "fp", "problems": [],
+                 "inventory": {"numpy": {"version": "1", "record_sha256": "r"}}},
+    }))
+"""
+    )
+
+    class FakeProc:
+        pid = 2**22
+        returncode = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout=None):
+            return 0
+
+        def communicate(self, input=None, timeout=None):
+            return ("", "")
+
+    real_popen = ro.subprocess.Popen
+
+    def fake_popen(cmd, cwd=None, env=None, **kwargs):
+        if cmd and cmd[0] == "dora":
+            proc = FakeProc()
+            proc.args = cmd
+            return proc
+        # the stub env_hash.py (gate + post-run audit) runs for real
+        return real_popen(cmd, cwd=cwd, env=env, **kwargs)
+
+    monkeypatch.setattr(ro.subprocess, "Popen", fake_popen)
+    report = ro.rollout(
+        root=root,
+        graph=graph,
+        tier="T0",
+        episodes=1,
+        seeds=[0],
+        reset_mode="teleport",
+        verifier="oracle",
+        run_id="postaudit",
+        branch="test",
+        no_idea_gate=True,
+        env_baseline="origin/main",
+    )
+    manifest = _json.loads((root / "runs" / "postaudit" / "manifest.json").read_text())
+    assert manifest["env_attested"] is False  # gate passed, audit failed
+    assert manifest["post_run_audit"]["ok"] is False
+    assert any("RECORD" in p for p in manifest["post_run_audit"]["problems"])
+    assert (root / "runs" / "postaudit" / "gate_inventory.json").exists()  # evidence
+    assert report["ok"] is False  # fake dora ran zero episodes (unrelated)

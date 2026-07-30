@@ -893,3 +893,16 @@ def test_install_missing_alternatives_exclude_invalid_sources(tmp_path):
     assert "ghost-pose" not in hint  # would fail the next compile (SOURCE_INVALID)
     assert "mobile-pose" not in hint  # would fail it (EMBODIMENT_MISMATCH, base)
     assert "motion-pose" not in hint  # would fail it (EVAL_MISSING_FOR_MOTION)
+
+
+def test_dist_state_present_on_early_graph_errors(tmp_path):
+    """PR #69 review F4: a malformed GRAPH against a valid registry must
+    still carry the registry's dist_state mappings — the diagnostic is
+    computed from the registry, before graph parsing."""
+    root = make_registry_root(tmp_path)
+    write_manifest(root, _pip_manifest("oracle-pose", source="pip:aisle-review-absent-dist"))
+    bad_graph = tmp_path / "broken.yaml"
+    bad_graph.write_text("{not: [valid yaml")
+    code, report = run_validate(bad_graph, "--root", str(root))
+    assert code != 0
+    assert report["dist_state"] == {"aisle-review-absent-dist": None}
