@@ -219,13 +219,21 @@ def _path_source_valid(source: str, root: Path) -> bool:
     return target.is_file() and target.is_relative_to(resolved_root)
 
 
-def _manifest_launchable(manifest: dict, arm_kind: str, root: Path | None = None) -> bool:
-    """A candidate INSTALL_MISSING alternative must itself survive the NEXT
-    compile: an installed distribution — or a path source that is a real
-    file under the root (PR #63 review P2: a ghost-path alternative just
-    trades INSTALL_MISSING for SOURCE_INVALID) — AND compatible with the
-    graph's embodiment (an so101-only suggestion on a franka graph trades
-    it for EMBODIMENT_MISMATCH)."""
+def _manifest_launchable(
+    manifest: dict,
+    arm_kind: str,
+    root: Path | None = None,
+    embodiment: str | None = None,
+    allow_unproven: bool = False,
+) -> bool:
+    """A candidate INSTALL_MISSING alternative must survive EVERY
+    manifest-level check of the NEXT compile (VAL-2's never-fail-the-
+    next-compile MUST; PR #63/#64 reviews): an installed distribution —
+    or a path source that is a real file under the root (else
+    SOURCE_INVALID) — AND arm-compatible AND base-compatible (a
+    base-requiring peer on a fixed-base graph is EMBODIMENT_MISMATCH)
+    AND, for motion manifests, evalcarded unless the caller allows
+    unproven motion (else EVAL_MISSING_FOR_MOTION)."""
     dist = _pip_dist(manifest)
     if dist is not None and not _pip_installed(dist):
         return False
@@ -239,7 +247,18 @@ def _manifest_launchable(manifest: dict, arm_kind: str, root: Path | None = None
     ):
         return False
     arms = manifest.get("embodiment", {}).get("arm", [])
-    return not arms or arm_kind in arms
+    if arms and arm_kind not in arms:
+        return False
+    base = manifest.get("embodiment", {}).get("base", [])
+    if base and embodiment is not None and embodiment not in base:
+        return False
+    if (
+        manifest.get("safety_class") == "motion"
+        and manifest.get("eval") is None
+        and not allow_unproven
+    ):
+        return False
+    return True
 
 
 def validate_nodes(
@@ -342,7 +361,7 @@ def validate_nodes(
                 for other_id, other in manifests.items()
                 if other_id != node_id
                 and provided <= set(other.get("provides") or [])
-                and _manifest_launchable(other, arm_kind, root)
+                and _manifest_launchable(other, arm_kind, root, embodiment, allow_unproven)
             )
             if alternatives:
                 hint = f"use an installed provider of {sorted(provided)}: " + ", ".join(

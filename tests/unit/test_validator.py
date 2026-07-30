@@ -801,9 +801,23 @@ def test_install_missing_alternatives_exclude_invalid_sources(tmp_path):
     real = _path_manifest("real-pose", "src/aisle/nodes/real_pose.py")
     real["provides"] = ["object_pose"]
     write_manifest(root, real)  # helper stubs the source file: launchable
+    # PR #64 review P2: EVERY manifest-level next-compile check must be
+    # mirrored — a base-requiring peer on a fixed-base graph fails
+    # EMBODIMENT_MISMATCH, an eval-null MOTION peer fails
+    # EVAL_MISSING_FOR_MOTION; neither may be recommended
+    mobile_peer = _path_manifest("mobile-pose", "src/aisle/nodes/mobile_pose.py")
+    mobile_peer["provides"] = ["object_pose"]
+    mobile_peer["embodiment"] = {"arm": ["franka"], "gripper": "any", "base": ["mobile"]}
+    write_manifest(root, mobile_peer)
+    motion_peer = _path_manifest("motion-pose", "src/aisle/nodes/motion_pose.py")
+    motion_peer["provides"] = ["object_pose"]
+    motion_peer["safety_class"] = "motion"
+    write_manifest(root, motion_peer)  # eval stays null: unproven motion
     graph = _single_node_graph(root, _pip_manifest("pose-estimator"))
     code, report = run_validate(graph, "--root", str(root))
     assert code != 0
     hint = next(e["hint"] for e in report["errors"] if e["code"] == "INSTALL_MISSING")
     assert "real-pose" in hint
     assert "ghost-pose" not in hint  # would fail the next compile (SOURCE_INVALID)
+    assert "mobile-pose" not in hint  # would fail it (EMBODIMENT_MISMATCH, base)
+    assert "motion-pose" not in hint  # would fail it (EVAL_MISSING_FOR_MOTION)
