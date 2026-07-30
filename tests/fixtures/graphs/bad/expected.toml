@@ -4,13 +4,16 @@
 # PR that handles it (VAL-7).
 
 # INSTALL_MISSING appears alongside many entries below: the corpus was
-# historically built on detector-openvocab/pose-estimator/ocr-label, whose
-# pip: distributions are not installed (the H1-discovered class,
-# analysis/h1/h1_findings.md) — the code is inherent to those fixtures,
-# not incidental.
+# built on detector-openvocab/pose-estimator/ocr-label (the H1-discovered
+# class, analysis/h1/h1_findings.md). Those entries run against the
+# reserved_dists fixture root, whose perception manifests name RESERVED
+# never-published distributions (issue #37) — installing the real
+# dora-yolo/dora-pose/dora-ocr (exactly what the INSTALL_MISSING hint
+# invites) shifts nothing here.
 
 # both typo nodes consume oracle_state, and an unresolved consumer is never
 # an authorized verifier (VAL-6 strict rule), so the leak fires alongside
+
 [manifest_missing_typo_oracle_pos]
 codes = ["MANIFEST_MISSING", "ORACLE_LEAK"]
 
@@ -24,33 +27,43 @@ codes = ["MANIFEST_MISSING", "ORACLE_LEAK"]
 # so the detector edge loses its producer — both codes are inherent
 [node_id_duplicate_camera]
 codes = ["NODE_ID_DUPLICATE", "INPUT_NO_PRODUCER", "INSTALL_MISSING"]
+root = "tests/fixtures/roots/reserved_dists"
 
 [node_id_duplicate_detector]
 codes = ["NODE_ID_DUPLICATE", "INSTALL_MISSING"]
+root = "tests/fixtures/roots/reserved_dists"
 
 [input_no_producer_missing_node]
 codes = ["INPUT_NO_PRODUCER", "INSTALL_MISSING"]
+root = "tests/fixtures/roots/reserved_dists"
 
 [input_no_producer_typo_edge]
 codes = ["INPUT_NO_PRODUCER", "INSTALL_MISSING"]
+root = "tests/fixtures/roots/reserved_dists"
 
 [input_no_producer_wrong_output]
 codes = ["INPUT_NO_PRODUCER", "INSTALL_MISSING"]
+root = "tests/fixtures/roots/reserved_dists"
 
 [input_no_producer_undeclared_graph_output]
 codes = ["INPUT_NO_PRODUCER", "INSTALL_MISSING"]
+root = "tests/fixtures/roots/reserved_dists"
 
 [schema_mismatch_depth_to_rgb]
 codes = ["SCHEMA_MISMATCH", "INSTALL_MISSING"]
+root = "tests/fixtures/roots/reserved_dists"
 
 [schema_mismatch_labels_to_boxes]
 codes = ["SCHEMA_MISMATCH", "INSTALL_MISSING"]
+root = "tests/fixtures/roots/reserved_dists"
 
 [schema_mismatch_boxes_to_pose]
 codes = ["SCHEMA_MISMATCH", "INSTALL_MISSING"]
+root = "tests/fixtures/roots/reserved_dists"
 
 [schema_mismatch_undeclared_port]
 codes = ["SCHEMA_MISMATCH", "INSTALL_MISSING"]
+root = "tests/fixtures/roots/reserved_dists"
 
 [oracle_leak_oracle_pose]
 codes = ["ORACLE_LEAK"]
@@ -60,6 +73,7 @@ codes = ["ORACLE_LEAK", "SCHEMA_MISMATCH"]
 
 [motion_ungated_arm]
 codes = ["MOTION_UNGATED", "INSTALL_MISSING"]
+root = "tests/fixtures/roots/reserved_dists"
 
 [motion_ungated_gripper]
 codes = ["MOTION_UNGATED"]
@@ -75,6 +89,7 @@ codes = ["EMBODIMENT_MISMATCH", "INSTALL_MISSING"]
 # humanoid: an arm profile no capability supports (MOB-4 made `mobile`
 # valid — it resolves to the franka arm — so it is no longer a mismatch)
 embodiment = "humanoid"
+root = "tests/fixtures/roots/reserved_dists"
 
 [rate_incompatible_slow_timer]
 codes = []
@@ -94,9 +109,11 @@ codes = ["MOTION_UNGATED"]
 
 [input_no_producer_bad_timer]
 codes = ["INPUT_NO_PRODUCER", "INSTALL_MISSING"]
+root = "tests/fixtures/roots/reserved_dists"
 
 [input_no_producer_timer_zero]
 codes = ["INPUT_NO_PRODUCER", "INSTALL_MISSING"]
+root = "tests/fixtures/roots/reserved_dists"
 
 [graph_invalid_list_inputs]
 codes = ["GRAPH_INVALID"]
@@ -118,8 +135,11 @@ codes = ["SCHEMA_MISMATCH", "INSTALL_MISSING"]
 
 # the phantom output fires node-level SCHEMA_MISMATCH; consuming it also
 # fires edge-level INPUT_NO_PRODUCER
+root = "tests/fixtures/roots/reserved_dists"
+
 [input_no_producer_undeclared_manifest_output]
 codes = ["INPUT_NO_PRODUCER", "SCHEMA_MISMATCH", "INSTALL_MISSING"]
+root = "tests/fixtures/roots/reserved_dists"
 
 [graph_invalid_outputs_not_list]
 codes = ["GRAPH_INVALID"]
@@ -191,6 +211,8 @@ codes = ["INSTALL_MISSING"]
 
 # issue #36 (H3 campaign 2 live case): approved id, divergent path — the
 # "validates but launches something else" class
+root = "tests/fixtures/roots/reserved_dists"
+
 [path_manifest_mismatch_spoof]
 codes = ["PATH_MANIFEST_MISMATCH"]
 

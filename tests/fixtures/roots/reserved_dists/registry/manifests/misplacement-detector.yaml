@@ -1,0 +1,26 @@
+id: misplacement-detector
+kind: node
+provides:
+- misplacement_detection
+requires: []
+inputs:
+  poses:
+    schema: posearray7d_f32
+    rate_hz: 15
+  episode_goal:
+    schema: json_utf8
+    rate_hz: 1
+outputs:
+  misplacement_report:
+    schema: json_utf8
+    latency_class: best_effort
+embodiment:
+  arm:
+  - franka
+  gripper: any
+  base:
+  - mobile
+safety_class: perception
+eval: null
+origin: hub
+source: src/aisle/nodes/misplacement_detector.py
