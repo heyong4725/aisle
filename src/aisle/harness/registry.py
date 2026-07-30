@@ -90,14 +90,6 @@ def _pip_installed(dist: str) -> bool:
     return True
 
 
-def _pip_installed(dist: str) -> bool:
-    try:
-        importlib.metadata.version(dist)
-    except (importlib.metadata.PackageNotFoundError, ValueError):
-        return False
-    return True
-
-
 def _path_source_valid(source: str, root: Path) -> bool:
     """A path-form source is launchable iff it is a root-relative
     reference resolving to a REGULAR FILE contained by the root
