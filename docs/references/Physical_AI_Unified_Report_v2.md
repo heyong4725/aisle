@@ -1,3 +1,22 @@
+> **PROVENANCE (added 2026-07-31, PR #74 review).** This survey is an
+> owner-supplied synthesis (July 2026), committed as a teaching
+> reference — it is NOT an audited publication, carries no bibliography
+> of its own, and its time-sensitive claims (funding, shipments,
+> product status) should be checked against primary sources before
+> citation. Its independence from AISLE is not established. Known
+> corrections found by spot-checking primary sources:
+>
+> - **Cosmos 3 Edge** is a 4B model released 2026-07-15, not a future
+>   2B model ([NVIDIA announcement](https://nvidianews.nvidia.com/news/japans-robotics-and-manufacturing-leaders-build-on-nvidia-cosmos-to-advance-physical-ai-frontier)).
+> - **1X NEO** home units were still in internal home testing with
+>   customer delivery upcoming in 2026, not already delivering to US
+>   homes ([1X factory update](https://www.1x.tech/discover/neo-factory)).
+>
+> Primary sources for the core results the AISLE primer relies on:
+> ENPIRE (arXiv 2606.19980), DreamZero/WAM (arXiv 2602.15922), and the
+> DreamDojo, EgoScale, ASPIRE, and Cosmos 3 releases via
+> nvidia-cosmos on GitHub/Hugging Face and nvidianews.nvidia.com.
+
 # Physical AI: World Models, World Action Models, and the NVIDIA Stack
 
 **Unified technical architecture guide — v2, July 2026**
@@ -53,7 +72,7 @@ At GTC Taipei, NVIDIA released **Cosmos 3**, its first fully open *omnimodel*: a
 
 - **Cosmos 3 Nano** — 16B (8B reasoner + 8B generator), for real-time robotics inference.
 - **Cosmos 3 Super** — 64B (32B reasoner + 32B generator), for datacenter-scale synthetic data generation, physical-reasoning research, and post-training smaller robot models.
-- **Cosmos 3 Edge** (2B) announced for later release.
+- **Cosmos 3 Edge** (2B) announced for later release. *(Correction 2026-07-31: Edge shipped as a 4B model on July 15 — see provenance note.)*
 
 Architecturally, the reasoner+generator split absorbs the old Predict/Reason division into one model line and telegraphs the industry's likely endpoint: video-native dynamics fused with language-native reasoning. Domain verticals extend the family — **Cosmos-H** (healthcare/surgical world models, used by CMR Surgical and J&J MedTech) launched at GTC in March.
 
@@ -179,7 +198,7 @@ Edge: **Jetson AGX Thor** (2,070 FP4 TFLOPS, 128GB unified memory; 7.5x Orin's A
 
 **Figure AI** shipped **Helix 02 (January 2026)**: a ~10M-parameter network replaced ~109,000 lines of hand-engineered C++ balance code, and the system completed a 4-minute, 61-action dishwasher-loading task end-to-end without resets. Figure 03 (Oct 2025: 35-DoF hands, 2x frame rate, System 1/System 2 Helix at 7–9 Hz / 200 Hz) is in production at BotQ (~1 robot/hour; up to 12K/year capacity). The deployment-economics signal: the first BMW industrial use case took 12 months to stand up; the second paying customer took 30 days. Valuation ~$39B after an OpenAI-led round.
 
-**1X Technologies** moved from announcement to delivery: **NEO began shipping to US homes in 2026** at $20K or $499/month — the first consumer humanoid — with the honest caveat that unknown tasks may fall back to scheduled remote "Expert Mode" teleoperation (which doubles as the data flywheel). Their 1XWM world model (Jan 2026) and human-video-first training thesis are now the industry mainstream.
+**1X Technologies** moved from announcement to delivery: **NEO began shipping to US homes in 2026** *(correction 2026-07-31: per 1X's latest factory update, units were still in internal home testing with customer delivery upcoming — see provenance note)* at $20K or $499/month — the first consumer humanoid — with the honest caveat that unknown tasks may fall back to scheduled remote "Expert Mode" teleoperation (which doubles as the data flywheel). Their 1XWM world model (Jan 2026) and human-video-first training thesis are now the industry mainstream.
 
 **Agility Robotics** is the operational-evidence leader: 100K+ totes moved at GXO, Toyota and Mercado Libre added, **$300M+ in contracted Digit v5 orders**, and a **~$2.5B SPAC announced July 5, 2026**.
 

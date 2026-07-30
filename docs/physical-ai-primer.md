@@ -6,8 +6,9 @@ open infrastructure. This page explains the ideas a newcomer needs —
 what Physical AI is, the model families (VLM, VLA, world models, WAMs),
 sim-to-real — and, for each one, **where you can touch it in this
 repo**. Depth: `references/Physical_AI_Unified_Report_v2.md` (the field
-survey this page draws on), `Project_AISLE_Experiment_Design.md` (this
-project's design), and the numbered specs.
+survey this page draws on — read its PROVENANCE note first: it is an
+unaudited synthesis with known corrections), `Project_AISLE_Experiment_Design.md`
+(this project's design), and the numbered specs.
 
 ## 1. What Physical AI is, and where AISLE sits
 
@@ -34,7 +35,7 @@ replay, hot-swappable nodes, Git-mediated agent coordination — from
 plumbing to strategic infrastructure… runtimes designed for low-latency
 dataflow and replayability (e.g., dora-rs-class frameworks) map
 directly onto ENPIRE's EN/R modules." That sentence is this repo's
-thesis, stated independently.
+thesis (see the survey's provenance note for its sourcing status).
 
 **The ENPIRE↔AISLE map** (useful when reading either):
 
@@ -88,17 +89,26 @@ in AISLE's runs is the **agents** (claude-fable-5, gpt-5.6-sol),
 recorded in every campaign's treatment block; they write the pipelines
 between episodes and never execute inside one.
 
-**Where models will enter**, each behind the same typed topic contract
-(design doc §7.5, decision 3):
+**Where models will enter** — all PLANNED, none running today — each
+behind the same typed topic contract (design doc §7.5, decision 3):
 
-1. `vlm-verifier` nodes — the first arrival: the realistic verifier
-   (`decisions/ADR-realistic-verifier.md`, VER-5) puts OWLv2-class
-   detection + segmentation into *scoring*, with fidelity vs. the
-   oracle (VER-6) as a first-class result.
-2. `vla-policy` nodes — GR00T/π0-class policies as swappable graph
+1. **The realistic verifier** (Phase 2; PROPOSED — its ADR
+   `decisions/ADR-realistic-verifier.md` is DRAFT with decisions
+   D1–D6 open): a detector + segmentation + *rules* pipeline
+   (OWLv2-class detection, MobileSAM/depth-assisted judgment) scoring
+   episodes from camera pixels, with fidelity vs. the oracle (VER-6)
+   as a first-class result. Note this is NOT a VLM: the ADR itself
+   records that an open-vocabulary detector alone cannot judge the
+   task, hence the three-stage judgment pipeline.
+2. `vlm-verifier` nodes (later, optional) — a Cosmos-Reason-class
+   VLM as an ALTERNATIVE verifier alongside the detector+rules one
+   ("did the robot place amoxicillin in the tray? answer from these
+   two views"), the form that generalizes to T4's open-ended recovery
+   dialogue. The design doc keeps both and compares their fidelity.
+3. `vla-policy` nodes — GR00T/π0-class policies as swappable graph
    nodes, making "engineered pipeline vs. learned policy" an A/B the
    agent can run itself.
-3. `world-model-env` nodes — a DreamDojo-class neural sim as *just
+4. `world-model-env` nodes — a DreamDojo-class neural sim as *just
    another environment node* behind the obs/cmd contract (see §3).
 
 ## 3. Sim-to-real, real-to-sim, and the environment ladder
@@ -122,24 +132,33 @@ AISLE is sim-first and says so honestly (design doc §10.2 lists it as
 the top "con"). Its mitigations are structural, designed so nothing in
 the loop assumes sim privileges:
 
-- **The perception ladder** (L0 oracle poses → L1 ground-truth
-  segmentation → L2 real pixels): results are reported per rung, so
-  "solved with oracle perception" can never masquerade as "solved."
-- **The topic contract** (`SPEC 010`, CONTRACT.md discipline): the
-  bridge's obs/cmd topics are the *hardware driver interface* — Phase 4
-  sim-to-real is a driver-node swap, not a rewrite.
-- **Behavioral reset** (SPEC 040, phase 2): the robot physically
-  re-shelves the box — parity with what a real deployment must do;
-  ablation A6 measures what teleport-reset hides.
-- **Verifier fidelity** (VER-6): the camera-based realistic verifier is
-  scored against the oracle — the number that says whether this loop
-  ports to a physical desk.
-- **The three-tier environment ladder** (§7.5): neural sim (cheap
-  screening) → Genesis (physics-verified iteration) → hardware
-  (grounding), with *graph identity preserved* across tiers because the
-  environment is just a node. Tier-agreement (does neural-sim ranking
-  match Genesis match reality — DreamDojo's r=0.995 question) becomes
-  measurable inside one runtime.
+- **[implemented — in part] The perception ladder** (L0 oracle poses →
+  L1 ground-truth segmentation → L2 real pixels): every scored run to
+  date executes at the oracle rungs (L0/L1 via `oracle-pose`), which is
+  honestly labeled in the findings; the L2 rung (real pixels) and
+  formal per-rung runner configuration/reporting are NOT implemented
+  yet — they arrive with the realistic verifier.
+- **[implemented] The topic contract** (`SPEC 010`,
+  `src/aisle/topics.py`, CONTRACT discipline): the bridge's obs/cmd
+  topics are the *hardware driver interface* — Phase 4 sim-to-real is a
+  driver-node swap, not a rewrite.
+- **[planned — SPEC 040 phase 2] Behavioral reset**: the robot
+  physically re-shelves the box — parity with what a real deployment
+  must do; ablation A6 measures what teleport-reset hides. Today only
+  the teleport reset runs (`--reset behavioral` raises
+  NotImplementedError by design).
+- **[planned — VER-6, ADR DRAFT] Verifier fidelity**: the camera-based
+  realistic verifier scored against the oracle — the number that says
+  whether this loop ports to a physical desk. No `harness/fidelity.py`
+  exists yet; it lands with the realistic verifier.
+- **[planned — design doc §7.5] The three-tier environment ladder**:
+  neural sim (cheap screening) → Genesis (physics-verified iteration)
+  → hardware (grounding), with *graph identity preserved* across tiers
+  because the environment is just a node. No `world-model-env` node
+  exists yet; today the only environment is Genesis. Tier-agreement
+  (does neural-sim ranking match Genesis match reality — DreamDojo's
+  r=0.995 question) becomes measurable inside one runtime once it
+  does.
 
 ## 4. Why this repo is an education in auto-research method
 
