@@ -391,3 +391,43 @@ def test_lint_rejects_duplicate_ids(tmp_path):
     code, report = run_registry("lint", "--root", str(root))
     assert code != 0
     assert report["ok"] is False
+
+
+def test_search_annotates_launchability_and_installed_filter(tmp_path):
+    """CAP-4 (issue #39): every search match carries `launchable` —
+    search advertised uninstalled pip: nodes with no flag, the exact
+    discovery-surface gap analysis/h1 documents — and --installed
+    narrows to what can actually launch. Fixture root: no ambient-env
+    coupling (issue #37 discipline)."""
+    root = make_registry_root(tmp_path)
+    absent = valid_manifest()
+    absent.update(
+        id="detector-absent",
+        provides=["fixture_ability"],
+        source="pip:aisle-search-reserved-absent",
+    )
+    write_manifest(root, absent)
+    ghost = valid_manifest()
+    ghost.update(
+        id="detector-ghost", provides=["fixture_ability"], source="src/aisle/nodes/ghost.py"
+    )
+    path = root / "registry" / "manifests" / "detector-ghost.yaml"
+    path.write_text(yaml.safe_dump(ghost, sort_keys=False))  # no auto-stub: stays ghost
+    real = valid_manifest()
+    real.update(id="detector-real", provides=["fixture_ability"])
+    write_manifest(root, real)  # helper stubs the path source: launchable
+
+    code, report = run_registry("search", "--provides", "fixture_ability", "--root", str(root))
+    assert code == 0
+    launchable = {m["id"]: m["launchable"] for m in report["matches"]}
+    assert launchable == {
+        "detector-absent": False,  # uninstalled pip dist
+        "detector-ghost": False,  # path source names no file
+        "detector-real": True,
+    }
+
+    code, report = run_registry(
+        "search", "--provides", "fixture_ability", "--root", str(root), "--installed"
+    )
+    assert code == 0
+    assert [m["id"] for m in report["matches"]] == ["detector-real"]
