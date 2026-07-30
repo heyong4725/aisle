@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from cli_helpers import run_tool
+from cli_helpers import REPO_ROOT, run_tool
 
 pytestmark = pytest.mark.unit
 
@@ -249,3 +249,129 @@ class TestTrustedBaseline:
         proc = run_env_hash("--check", "--baseline", "origin/nope", "--root", str(root))
         assert proc.returncode == 1
         assert "origin/nope" in json.loads(proc.stdout)["error"]
+
+
+def test_adr24_fingerprint_names_the_selection():
+    """CON-5 as amended (ADR-24): the fingerprint hashes the lock AND the
+    resolved selection — default vs --extra sim produce DIFFERENT
+    identities from the same lock (the footgun the version map missed),
+    and the same inputs reproduce the same fingerprint."""
+    import sys as _sys
+
+    _sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from env_hash import current_selection, env_fingerprint
+
+    lock = b"fake lock bytes"
+    default = env_fingerprint(lock, current_selection([]))
+    sim = env_fingerprint(lock, current_selection(["sim"]))
+    assert default != sim
+    assert sim == env_fingerprint(lock, current_selection(["sim"]))  # deterministic
+    assert env_fingerprint(b"other lock", current_selection(["sim"])) != sim
+
+
+def test_adr24_canonical_name_pep503():
+    """PR #68 review (minor): every name join folds case and [-_.] runs."""
+    import sys as _sys
+
+    _sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from env_hash import canonical_name
+
+    assert canonical_name("Dora_YOLO") == "dora-yolo"
+    assert canonical_name("genesis.world") == "genesis-world"
+    assert canonical_name("torch") == "torch"
+
+
+def test_adr24_direct_url_classification():
+    """ADR-24 D2: editable/local-dir installs are unattestable; VCS needs
+    a commit id (dora-rs's pinned-rev git install is legitimate); archive
+    installs need a hash; index installs (no direct_url) are fine."""
+    import sys as _sys
+
+    _sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from env_hash import classify_direct_url
+
+    assert classify_direct_url({"vcs_info": {"vcs": "git", "commit_id": "abc"}}) is None
+    assert "commit id" in classify_direct_url({"vcs_info": {"vcs": "git"}})
+    assert "editable" in classify_direct_url({"dir_info": {"editable": True}})
+    assert "local-directory" in classify_direct_url({"dir_info": {}})
+    assert "hash" in classify_direct_url({"archive_info": {}})
+    assert classify_direct_url({"archive_info": {"hashes": {"sha256": "x"}}}) is None
+
+
+def test_adr24_registry_pip_dists_regex(tmp_path):
+    """The trusted blob parses pip: sources without a yaml dependency —
+    canonical names, quoted or bare, non-pip ignored."""
+    import sys as _sys
+
+    _sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from env_hash import registry_pip_dists
+
+    mdir = tmp_path / "registry" / "manifests"
+    mdir.mkdir(parents=True)
+    (mdir / "a.yaml").write_text("id: a\nsource: pip:Dora_YOLO\n")
+    (mdir / "b.yaml").write_text("id: b\nsource: 'pip:dora-pose'\n")
+    (mdir / "c.yaml").write_text("id: c\nsource: src/aisle/nodes/c.py\n")
+    assert registry_pip_dists(tmp_path) == ["dora-pose", "dora-yolo"]
+
+
+def test_adr24_verify_records_detects_mutation(tmp_path, monkeypatch):
+    """ADR-24 D2 audit: installed files are re-hashed against RECORD —
+    a mutated file is tamper evidence, an intact one verifies."""
+    import base64
+    import hashlib as _hashlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(REPO_ROOT / "tools"))
+    import importlib.metadata as md
+
+    import env_hash as eh
+
+    pkg = tmp_path / "fakepkg"
+    pkg.mkdir()
+    good = pkg / "good.py"
+    good.write_text("intact = True\n")
+
+    def h(path):
+        return (
+            base64.urlsafe_b64encode(_hashlib.sha256(path.read_bytes()).digest())
+            .rstrip(b"=")
+            .decode()
+        )
+
+    class FakeHash:
+        def __init__(self, value):
+            self.mode, self.value = "sha256", value
+
+    class FakeFile:
+        def __init__(self, path, value):
+            self._path, self.hash = path, FakeHash(value)
+
+        def locate(self):
+            return self._path
+
+        def __str__(self):
+            return self._path.name
+
+    class FakeDist:
+        def __init__(self, files):
+            self.files = files
+
+    intact_files = [FakeFile(good, h(good))]
+
+    def fake_distribution(name):
+        if name == "fake-intact":
+            return FakeDist(intact_files)
+        if name == "fake-mutated":
+            bad = pkg / "bad.py"
+            bad.write_text("mutated = True\n")
+            recorded = FakeFile(bad, h(bad))
+            bad.write_text("mutated = 'after install'\n")  # the tamper
+            return FakeDist([recorded])
+        raise md.PackageNotFoundError(name)
+
+    monkeypatch.setattr(md, "distribution", fake_distribution)
+    report = eh.verify_records(["fake-intact", "fake-mutated", "fake-absent"])
+    assert report["verified"]["fake-intact"] == {"files": 1, "mismatched": 0}
+    assert report["verified"]["fake-mutated"]["mismatched"] == 1
+    assert report["ok"] is False
+    assert any("RECORD" in p for p in report["problems"])

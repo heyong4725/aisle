@@ -295,7 +295,14 @@ def make_worktree(oid: str, dest: Path) -> Path:
         timeout=120,
         check_infra="worktree add",
     )
-    _run(["uv", "sync", "--extra", "sim"], cwd=dest, timeout=900, check_infra="uv sync")
+    # ADR-24 D2: worktree environments are MATERIALIZED from the lock --
+    # uv verifies artifact hashes at install, which is the provenance chain
+    _run(
+        ["uv", "sync", "--locked", "--extra", "sim"],
+        cwd=dest,
+        timeout=900,
+        check_infra="uv sync",
+    )
     return dest
 
 

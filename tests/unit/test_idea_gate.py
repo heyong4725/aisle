@@ -300,3 +300,61 @@ def test_trusted_baseline_resolves_from_the_server_not_local_refs(tmp_path):
     git(lonely, "init", "-q", "-b", "main")
     oid, err = resolve_trusted_baseline(lonely)
     assert oid is None and err is not None
+
+
+def test_trusted_gate_refuses_on_dist_drift_and_missing_evidence(tmp_path, monkeypatch):
+    """ADR-24 D2/D3 (HAR-2): trusted-baseline runs REFUSE when the
+    self-verified checker reports a failed attestation (DIST_DRIFT) or
+    emits no attestation evidence at all — record-by-convention is not a
+    gate. Local runs record `attested` honestly without refusing."""
+    from aisle.harness import rollout as ro
+
+    root = _fake_root(tmp_path, hash_ok=True)
+    graph = root / "graphs" / "expert_t0.yaml"
+    monkeypatch.setattr(ro, "resolve_trusted_baseline", lambda r: ("deadbeef", None))
+
+    def stub_env_hash(payload):
+        (root / "tools" / "env_hash.py").write_text(
+            f"import json\nprint(json.dumps({payload!r}))\n"
+        )
+
+    # failed attestation -> DIST_DRIFT refusal
+    stub_env_hash(
+        {
+            "ok": True,
+            "env_hash": "h",
+            "dist": {"attested": False, "env_fingerprint": "fp", "problems": ["uv.lock diverges"]},
+        }
+    )
+    refused = run_gates(root, graph, "b", no_idea_gate=True, env_baseline="origin/main")
+    assert refused["ok"] is False and refused["gate"] == "dist"
+    assert "DIST_DRIFT" in refused["detail"] and "uv.lock diverges" in refused["detail"]
+
+    # missing evidence entirely -> refusal too (stale checker at baseline)
+    stub_env_hash({"ok": True, "env_hash": "h"})
+    refused = run_gates(root, graph, "b", no_idea_gate=True, env_baseline="origin/main")
+    assert refused["ok"] is False and refused["gate"] == "dist"
+
+    # attested trusted run passes and carries the fingerprint
+    stub_env_hash(
+        {
+            "ok": True,
+            "env_hash": "h",
+            "dist": {"attested": True, "env_fingerprint": "fp123", "problems": []},
+        }
+    )
+    passed = run_gates(root, graph, "b", no_idea_gate=True, env_baseline="origin/main")
+    assert passed["ok"] is True
+    assert passed["env_fingerprint"] == "fp123" and passed["env_attested"] is True
+
+    # local run with a failed attestation: records honestly, no refusal
+    stub_env_hash(
+        {
+            "ok": True,
+            "env_hash": "h",
+            "dist": {"attested": False, "env_fingerprint": "fpX", "problems": ["drift"]},
+        }
+    )
+    local = run_gates(root, graph, "b", no_idea_gate=True, env_baseline="local")
+    assert local["ok"] is True
+    assert local["env_attested"] is False and local["dist_problems"] == ["drift"]

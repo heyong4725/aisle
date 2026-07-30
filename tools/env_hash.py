@@ -17,6 +17,7 @@ logs on stderr, exit 0 iff ok.
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -78,6 +79,165 @@ def _baseline_hash(root: Path, ref: str) -> tuple[str | None, str | None]:
         return None, f"{HASH_FILE} at {ref} is corrupted"
 
 
+# ---------------------------------------------------------------------------
+# ADR-24: installed-environment attestation. Lives HERE — inside the
+# self-verified checker blob — so an agent cannot rewrite the collector/
+# comparator without tripping the checker's own baseline verification
+# (PR #68 review D3). Identity comes from artifacts (the lock uv verified
+# at install time), never from version probes.
+
+# the attested set beyond registry pip: sources — the sim core whose code
+# decides physics and gate verdicts (ADR-24 resolved question 1)
+ATTESTED_SIM_CORE = ("genesis-world", "torch", "dora-rs", "pyarrow")
+LOCK_FILE = "uv.lock"
+
+
+def canonical_name(name: str) -> str:
+    """PEP 503 canonicalization — every name join (lock, metadata,
+    manifests) folds case and runs of [-_.] (PR #68 review, minor)."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def current_selection(extras: list[str]) -> dict:
+    """The resolved environment descriptor the fingerprint names: the
+    lock alone is selection-ambiguous (multi-platform entries; extras
+    share one lock — the default-vs-`--extra sim` footgun)."""
+    import sysconfig
+
+    return {
+        "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "platform": sysconfig.get_platform(),
+        "extras": sorted(extras),
+    }
+
+
+def env_fingerprint(lock_bytes: bytes, selection: dict) -> str:
+    """CON-5's fifth tuple component (ADR-24 resolved question 2)."""
+    canon = json.dumps(selection, sort_keys=True).encode()
+    return hashlib.sha256(lock_bytes + b"\0" + canon).hexdigest()
+
+
+def registry_pip_dists(root: Path) -> list[str]:
+    """Canonical names of every registry pip: source. Regex-parsed so the
+    trusted blob stays stdlib-only (manifest sources are simple scalars,
+    CAP-1-patterned)."""
+    dists = set()
+    manifest_dir = root / "registry" / "manifests"
+    if manifest_dir.is_dir():
+        for m in sorted(manifest_dir.glob("*.yaml")):
+            match = re.search(r"^source:\s*['\"]?pip:([^'\"\s#]+)", m.read_text(), re.M)
+            if match:
+                dists.add(canonical_name(match.group(1)))
+    return sorted(dists)
+
+
+def classify_direct_url(direct_url: dict) -> str | None:
+    """PEP 610 provenance verdict for an attested dist: None = ok,
+    else the problem. Editable/local-dir installs are unattestable;
+    VCS installs need a commit id (dora-rs is a legitimate pinned-rev
+    git dependency); archive installs need a hash."""
+    dir_info = direct_url.get("dir_info")
+    if dir_info is not None:
+        kind = "editable" if dir_info.get("editable") else "local-directory"
+        return f"{kind} install"
+    vcs = direct_url.get("vcs_info")
+    if vcs is not None:
+        return None if vcs.get("commit_id") else "VCS install without a commit id"
+    archive = direct_url.get("archive_info")
+    if archive is not None and not (archive.get("hashes") or archive.get("hash")):
+        return "archive install without a hash"
+    return None
+
+
+def attested_set(root: Path) -> list[str]:
+    return sorted(set(registry_pip_dists(root)) | set(map(canonical_name, ATTESTED_SIM_CORE)))
+
+
+def dist_attestation(root: Path, baseline_ref: str | None, extras: list[str]) -> dict:
+    """The ADR-24 D2 gate facts: fingerprint + problems (empty = attested).
+    Policy (refuse vs record) belongs to the caller; FACTS are computed
+    here, inside the trusted blob."""
+    import importlib.metadata
+
+    problems: list[str] = []
+    lock_path = root / LOCK_FILE
+    lock_bytes = lock_path.read_bytes() if lock_path.is_file() else None
+    if lock_bytes is None:
+        problems.append(f"{LOCK_FILE} missing — the environment is unattestable")
+    if baseline_ref and lock_bytes is not None:
+        base_lock = _git_blob(root, baseline_ref, LOCK_FILE)
+        if base_lock is None:
+            problems.append(f"{LOCK_FILE} unreadable at {baseline_ref!r}")
+        elif base_lock != lock_bytes:
+            problems.append(f"{LOCK_FILE} diverges from {baseline_ref} (DIST_DRIFT)")
+    selection = current_selection(extras)
+    fingerprint = env_fingerprint(lock_bytes, selection) if lock_bytes is not None else None
+    if lock_bytes is not None:
+        sync = subprocess.run(
+            ["uv", "sync", "--locked", "--check"] + [f"--extra={e}" for e in sorted(extras)],
+            capture_output=True,
+            text=True,
+            cwd=root,
+        )
+        if sync.returncode != 0:
+            problems.append(
+                "environment out of sync with the locked selection "
+                f"(uv sync --locked --check: {(sync.stderr or sync.stdout).strip()[-200:]})"
+            )
+    for dist_name in attested_set(root):
+        try:
+            dist = importlib.metadata.distribution(dist_name)
+        except importlib.metadata.PackageNotFoundError:
+            continue  # absence is INSTALL_MISSING's concern, not provenance's
+        raw = dist.read_text("direct_url.json")
+        if raw:
+            try:
+                verdict = classify_direct_url(json.loads(raw))
+            except json.JSONDecodeError:
+                verdict = "malformed direct_url.json"
+            if verdict:
+                problems.append(f"{dist_name}: {verdict}")
+    return {
+        "attested": not problems,
+        "env_fingerprint": fingerprint,
+        "selection": selection,
+        "problems": problems,
+    }
+
+
+def verify_records(dist_names: list[str]) -> dict:
+    """ADR-24 D2 post-session audit: hash installed files against their
+    wheel RECORD entries — mid-session mutation of installed code becomes
+    tamper evidence. Bounded to the attested set (resolved question 1)."""
+    import base64
+    import importlib.metadata
+
+    report: dict = {"ok": True, "verified": {}, "problems": []}
+    for dist_name in dist_names:
+        try:
+            dist = importlib.metadata.distribution(dist_name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+        checked = mismatched = 0
+        for f in dist.files or []:
+            hash_spec = getattr(f, "hash", None)
+            if hash_spec is None or hash_spec.mode != "sha256":
+                continue
+            try:
+                data = f.locate().read_bytes()
+            except OSError:
+                report["problems"].append(f"{dist_name}: {f} unreadable")
+                continue
+            digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=")
+            checked += 1
+            if digest.decode() != hash_spec.value:
+                mismatched += 1
+                report["problems"].append(f"{dist_name}: {f} does not match its RECORD hash")
+        report["verified"][dist_name] = {"files": checked, "mismatched": mismatched}
+    report["ok"] = not report["problems"]
+    return report
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
@@ -89,7 +249,24 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--write", action="store_true", help=f"write hash to {HASH_FILE}")
     mode.add_argument("--check", action="store_true", help=f"compare against {HASH_FILE}")
+    mode.add_argument(
+        "--verify-records",
+        action="store_true",
+        help="ADR-24 audit: hash installed files of the attested set vs RECORD",
+    )
+    parser.add_argument(
+        "--extras",
+        action="append",
+        default=None,
+        help="declared uv extras for the attestation selection (repeatable); "
+        "with --check, enables the ADR-24 dist attestation",
+    )
     args = parser.parse_args()
+
+    if args.verify_records:
+        report = verify_records(attested_set(args.root))
+        print(json.dumps(report))
+        return 0 if report["ok"] else 1
 
     env_hash, n_files = compute_env_hash(args.root)
     report: dict = {"ok": True, "env_hash": env_hash, "n_files": n_files}
@@ -119,6 +296,11 @@ def main() -> int:
             report = {"ok": False, "env_hash": env_hash, "committed": committed, "error": error}
         elif args.baseline:
             report["baseline"] = args.baseline
+        args.extras = [e for e in (args.extras or []) if e] if args.extras is not None else None
+        if error is None and args.extras is not None:
+            # ADR-24: attestation FACTS ride the same trusted-blob check;
+            # refusal policy is the gate's (HAR-2)
+            report["dist"] = dist_attestation(args.root, args.baseline, args.extras)
 
     print(json.dumps(report))
     if not report["ok"]:

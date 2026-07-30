@@ -279,6 +279,9 @@ def run_gates(
         }
     baseline_oid = None
     hash_cmd = [sys.executable, str(root / "tools" / "env_hash.py"), "--check", "--root", str(root)]
+    # ADR-24: rollouts need the sim extra — declare the selection so the
+    # trusted checker attests THIS environment shape (HAR-2)
+    hash_cmd += ["--extras", "sim"]
     if env_baseline != "local":
         baseline_oid, err = resolve_trusted_baseline(root)
         if err:
@@ -287,7 +290,25 @@ def run_gates(
     hash_proc = subprocess.run(hash_cmd, capture_output=True, text=True)
     if hash_proc.returncode != 0:
         return {"ok": False, "gate": "env_hash", "detail": hash_proc.stdout.strip()}
-    env_hash = json.loads(hash_proc.stdout)["env_hash"]
+    hash_report = json.loads(hash_proc.stdout)
+    env_hash = hash_report["env_hash"]
+    dist = hash_report.get("dist")
+    if env_baseline != "local":
+        # ADR-24 D2/D3: trusted runs REFUSE on missing or failed
+        # attestation — record-by-convention is not a gate
+        if not isinstance(dist, dict):
+            return {
+                "ok": False,
+                "gate": "dist",
+                "detail": "DIST_DRIFT: no attestation evidence from the trusted "
+                "checker (stale env_hash.py at the baseline?)",
+            }
+        if not dist.get("attested"):
+            return {
+                "ok": False,
+                "gate": "dist",
+                "detail": "DIST_DRIFT: " + "; ".join(dist.get("problems") or ["unattested"]),
+            }
     remaining = budget_remaining(root)
     if env_baseline != "local":
         if episodes > 0 and remaining["episodes_left"] < episodes:
@@ -315,6 +336,12 @@ def run_gates(
         # the resolved immutable identity (ADR-21 round 3): the audit
         # re-verifies blobs at this OID, not at whatever a ref says later
         "env_baseline_oid": baseline_oid,
+        # ADR-24: CON-5's fifth component + the attestation verdict (facts
+        # from the trusted checker; local runs record honestly, trusted
+        # runs were already refused above on failure)
+        "env_fingerprint": (dist or {}).get("env_fingerprint"),
+        "env_attested": bool((dist or {}).get("attested")),
+        "dist_problems": (dist or {}).get("problems") or [],
         "budget": remaining,
     }
     if no_idea_gate:
@@ -609,6 +636,10 @@ def rollout(
         # hash, so the audit can re-verify both
         "env_baseline": gates.get("env_baseline"),
         "env_baseline_oid": gates.get("env_baseline_oid"),
+        # ADR-24 (HAR-4): the CON-5 fifth component + attestation verdict
+        "env_fingerprint": gates.get("env_fingerprint"),
+        "env_attested": gates.get("env_attested"),
+        "dist_problems": gates.get("dist_problems"),
         "budget_reservation": (reservation or {}).get("entry"),
         # HAR-5: best-effort token accounting
         "tokens_log": os.environ.get("ANTHROPIC_TOKENS_LOG"),

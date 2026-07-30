@@ -112,7 +112,9 @@ def test_hints_nonempty():
     report is a single JSON object of the specified shape."""
     for stem in sorted(EXPECTED):
         _, report = corpus_report(stem)
-        assert set(report) == {"ok", "graph", "errors", "warnings"}
+        # VAL-3 as amended by ADR-24 D5: dist_state is the labeled
+        # non-attesting diagnostic
+        assert set(report) == {"ok", "graph", "errors", "warnings", "dist_state"}
         for entry in report["errors"] + report["warnings"]:
             assert entry["code"], (stem, entry)
             assert entry["hint"].strip(), (stem, entry)

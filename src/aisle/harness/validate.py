@@ -11,6 +11,7 @@ capability or a concrete fix. No genesis or dora imports (unit territory).
 
 import difflib
 import json
+import re
 import tomllib
 from collections import Counter
 from pathlib import Path
@@ -367,7 +368,8 @@ def validate_nodes(
                 # #62 review P2: reuse _pip_dist so decorated/case-varied
                 # sources match the INSTALL_MISSING contract) — anything
                 # else launches other code
-                matches = node_path in (source, pip_name)
+                canonical_path = re.sub(r"[-_.]+", "-", node_path.strip()).lower()
+                matches = node_path == source or canonical_path == pip_name
             else:
                 # exactly ONE base: the graph's own directory — the base
                 # dora resolves against. A graphs-dir fallback approved
@@ -638,7 +640,7 @@ def _validate_edge(
 
 
 def validate(graph_path: Path, root: Path, embodiment: str, allow_unproven: bool) -> dict:
-    report = {"ok": False, "graph": str(graph_path), "errors": [], "warnings": []}
+    report = {"ok": False, "graph": str(graph_path), "errors": [], "warnings": [], "dist_state": {}}
     nodes, errors = load_graph(graph_path)
     if nodes is None:
         report["errors"] = errors
@@ -688,6 +690,21 @@ def validate(graph_path: Path, root: Path, embodiment: str, allow_unproven: bool
         report["errors"] = malformed
         return report
     manifests = {m["id"]: m for _, m in manifest_list}
+
+    # ADR-24 D5 (VAL-3): a labeled NON-ATTESTING diagnostic — canonical
+    # registry pip dists -> installed version | null; explains
+    # INSTALL_MISSING/launchable verdicts. Attestation is env_hash's.
+    import importlib.metadata as _md
+
+    dist_state: dict[str, str | None] = {}
+    for _, m in manifest_list:
+        dist = _pip_dist(m) if isinstance(m, dict) else None
+        if dist:
+            try:
+                dist_state[dist] = _md.version(dist)
+            except _md.PackageNotFoundError:
+                dist_state[dist] = None
+    report["dist_state"] = dict(sorted(dist_state.items()))
 
     errors, warnings = validate_nodes(
         nodes,
