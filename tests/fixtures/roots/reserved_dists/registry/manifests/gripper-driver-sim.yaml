@@ -1,0 +1,25 @@
+id: gripper-driver-sim
+kind: node
+provides:
+- gripper_actuation
+requires: []
+inputs:
+  gripper_cmd:
+    schema: scalar_f32
+    rate_hz: 30
+outputs:
+  gripper_state:
+    schema: scalar_f32
+    latency_class: hard_rt
+embodiment:
+  arm:
+  - franka
+  - so101
+  gripper: parallel
+safety_class: motion
+eval:
+  suite: tests/accept/test_contract.py (TC-A1..A3)
+  pass_rate: 1.0
+  last_run: '2026-07-20'
+origin: hub
+source: src/aisle/nodes/dora_genesis.py

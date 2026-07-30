@@ -1,162 +1,145 @@
 # T1 named-medicine pipeline: the task state machine extracts target_med
 # from the episode goal; open-vocabulary detections and RGB-D pose estimation
 # ground that request before the guarded grasp-and-place pipeline executes.
+# (path keys dropped: under the reserved_dists fixture root, repo-relative
+# paths cannot satisfy PATH_MANIFEST_MISMATCH identity — issue #37)
 nodes:
-  - id: dora-genesis
-    path: ../src/aisle/nodes/dora_genesis.py
-    inputs:
-      tick: dora/timer/millis/10
-      joint_cmd:
-        source: budget-guard/joint_cmd_safe
-        queue_size: 100
-      gripper_cmd:
-        source: budget-guard/gripper_cmd_safe
-        queue_size: 100
-      reset:
-        source: reset/bridge_reset
-        queue_size: 100
-    outputs:
-      - bridge_info
-      - joint_state
-      - gripper_state
-      - oracle_state
-      - rgb_overhead
-      - rgb_wrist
-      - depth_overhead
-      - reset_done
-
-  - id: reset
-    path: ../src/aisle/reset/service.py
-    inputs:
-      reset:
-        source: rollout-client/reset
-        queue_size: 100
-      reset_done:
-        source: dora-genesis/reset_done
-        queue_size: 100
-    outputs:
-      - bridge_reset
-      - reset_done
-
-  - id: detector-openvocab
-    path: pip:dora-yolo
-    inputs:
-      rgb:
-        source: dora-genesis/rgb_overhead
-        queue_size: 1
-    outputs:
-      - boxes
-      - labels
-
-  - id: pose-estimator
-    path: pip:dora-pose
-    inputs:
-      rgb:
-        source: dora-genesis/rgb_overhead
-        queue_size: 1
-      depth:
-        source: dora-genesis/depth_overhead
-        queue_size: 1
-      boxes:
-        source: detector-openvocab/boxes
-        queue_size: 1
-      labels:
-        source: detector-openvocab/labels
-        queue_size: 1
-      target_request:
-        source: task-state-machine/target_request
-        queue_size: 100
-    outputs:
-      - target_pose
-
-  - id: grasp-planner-topdown
-    path: ../src/aisle/nodes/grasp_topdown.py
-    inputs:
-      target_pose:
-        source: pose-estimator/target_pose
-        queue_size: 100
-    outputs:
-      - grasp_pose
-
-  - id: ik-trajectory
-    path: ../src/aisle/nodes/ik_trajectory.py
-    inputs:
-      grasp_pose:
-        source: grasp-planner-topdown/grasp_pose
-        queue_size: 100
-      joint_state:
-        source: dora-genesis/joint_state
-        queue_size: 1
-      reset_done:
-        source: dora-genesis/reset_done
-        queue_size: 100
-    outputs:
-      - joint_cmd
-      - gripper_cmd
-
-  - id: budget-guard
-    path: ../src/aisle/nodes/budget_guard.py
-    inputs:
-      tick: dora/timer/millis/5000
-      joint_cmd:
-        source: ik-trajectory/joint_cmd
-        queue_size: 100
-      gripper_cmd:
-        source: ik-trajectory/gripper_cmd
-        queue_size: 100
-      reset_done:
-        source: dora-genesis/reset_done
-        queue_size: 100
-    outputs:
-      - joint_cmd_safe
-      - gripper_cmd_safe
-      - violation
-      - guard_stats
-
-  - id: verifier-oracle
-    path: ../src/aisle/verifier/oracle.py
-    inputs:
-      oracle_state:
-        source: dora-genesis/oracle_state
-        queue_size: 100
-      joint_state:
-        source: dora-genesis/joint_state
-        queue_size: 100
-      episode_goal:
-        source: rollout-client/episode_goal
-        queue_size: 100
-    outputs:
-      - episode_result
-
-  - id: task-state-machine
-    path: ../src/aisle/nodes/task_state_machine.py
-    inputs:
-      tick: dora/timer/millis/1000
-      episode_goal:
-        source: rollout-client/episode_goal
-        queue_size: 100
-      episode_result:
-        source: verifier-oracle/episode_result
-        queue_size: 100
-      violation:
-        source: budget-guard/violation
-        queue_size: 100
-    outputs:
-      - target_request
-      - episode_feedback
-
-  - id: rollout-client
-    path: ../src/aisle/harness/rollout_client.py
-    env:
-      AISLE_TIER: T1
-    inputs:
-      tick: dora/timer/millis/1000
-      reset_done:
-        source: reset/reset_done
-        queue_size: 100
-      episode_result:
-        source: verifier-oracle/episode_result
-        queue_size: 100
-    outputs:
-      - reset
-      - episode_goal
+- id: dora-genesis
+  inputs:
+    tick: dora/timer/millis/10
+    joint_cmd:
+      source: budget-guard/joint_cmd_safe
+      queue_size: 100
+    gripper_cmd:
+      source: budget-guard/gripper_cmd_safe
+      queue_size: 100
+    reset:
+      source: reset/bridge_reset
+      queue_size: 100
+  outputs:
+  - bridge_info
+  - joint_state
+  - gripper_state
+  - oracle_state
+  - rgb_overhead
+  - rgb_wrist
+  - depth_overhead
+  - reset_done
+- id: reset
+  inputs:
+    reset:
+      source: rollout-client/reset
+      queue_size: 100
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - bridge_reset
+  - reset_done
+- id: detector-openvocab
+  inputs:
+    rgb:
+      source: dora-genesis/rgb_overhead
+      queue_size: 1
+  outputs:
+  - boxes
+  - labels
+- id: pose-estimator
+  inputs:
+    rgb:
+      source: dora-genesis/rgb_overhead
+      queue_size: 1
+    depth:
+      source: dora-genesis/depth_overhead
+      queue_size: 1
+    boxes:
+      source: detector-openvocab/boxes
+      queue_size: 1
+    labels:
+      source: detector-openvocab/labels
+      queue_size: 1
+    target_request:
+      source: task-state-machine/target_request
+      queue_size: 100
+  outputs:
+  - target_pose
+- id: grasp-planner-topdown
+  inputs:
+    target_pose:
+      source: pose-estimator/target_pose
+      queue_size: 100
+  outputs:
+  - grasp_pose
+- id: ik-trajectory
+  inputs:
+    grasp_pose:
+      source: grasp-planner-topdown/grasp_pose
+      queue_size: 100
+    joint_state:
+      source: dora-genesis/joint_state
+      queue_size: 1
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - joint_cmd
+  - gripper_cmd
+- id: budget-guard
+  inputs:
+    tick: dora/timer/millis/5000
+    joint_cmd:
+      source: ik-trajectory/joint_cmd
+      queue_size: 100
+    gripper_cmd:
+      source: ik-trajectory/gripper_cmd
+      queue_size: 100
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - joint_cmd_safe
+  - gripper_cmd_safe
+  - violation
+  - guard_stats
+- id: verifier-oracle
+  inputs:
+    oracle_state:
+      source: dora-genesis/oracle_state
+      queue_size: 100
+    joint_state:
+      source: dora-genesis/joint_state
+      queue_size: 100
+    episode_goal:
+      source: rollout-client/episode_goal
+      queue_size: 100
+  outputs:
+  - episode_result
+- id: task-state-machine
+  inputs:
+    tick: dora/timer/millis/1000
+    episode_goal:
+      source: rollout-client/episode_goal
+      queue_size: 100
+    episode_result:
+      source: verifier-oracle/episode_result
+      queue_size: 100
+    violation:
+      source: budget-guard/violation
+      queue_size: 100
+  outputs:
+  - target_request
+  - episode_feedback
+- id: rollout-client
+  env:
+    AISLE_TIER: T1
+  inputs:
+    tick: dora/timer/millis/1000
+    reset_done:
+      source: reset/reset_done
+      queue_size: 100
+    episode_result:
+      source: verifier-oracle/episode_result
+      queue_size: 100
+  outputs:
+  - reset
+  - episode_goal

@@ -8,7 +8,10 @@ as JSON. Single JSON object on stdout, logs on stderr, exit 0 iff ok.
 """
 
 import argparse
+import functools
+import importlib.metadata
 import json
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -60,6 +63,47 @@ def load_vocabulary(root: Path) -> dict:
 def load_capability_schema(root: Path) -> dict:
     """The CAP-1 manifest JSON Schema; raises OSError/JSONDecodeError."""
     return json.loads((root / "registry" / "schema" / "capability.schema.json").read_text())
+
+
+def _pip_dist(manifest: dict) -> str | None:
+    """The normalized pip distribution name of a manifest's source, or None
+    for non-pip sources. Scheme match is case-insensitive (a lowercase-only
+    match let `PIP:x` dodge the check), the name is stripped and cut at the
+    first extras/specifier character (`pip:dora-yolo[gpu]`/`==1.2` probed
+    the literal string, falsely flagging installed dists). An empty name
+    maps to '' — a structured error, never a `version('')` ValueError
+    (PR #34 review)."""
+    source = manifest.get("source")
+    if not isinstance(source, str) or not source[:4].lower() == "pip:":
+        return None
+    name = source[4:].strip()
+    for cut in "[=<>!~;@":
+        name = name.split(cut, 1)[0]
+    # PEP 503 canonicalization (ADR-24 D5 / PR #68 review): every join
+    # against locks, metadata, or graph paths folds case and [-_.] runs
+    return re.sub(r"[-_.]+", "-", name.strip()).lower()
+
+
+@functools.cache
+def _pip_installed(dist: str) -> bool:
+    try:
+        importlib.metadata.version(dist)
+    except (importlib.metadata.PackageNotFoundError, ValueError):
+        return False
+    return True
+
+
+def _path_source_valid(source: str, root: Path) -> bool:
+    """A path-form source is launchable iff it is a root-relative
+    reference resolving to a REGULAR FILE contained by the root
+    (PR #63 review P1: `root / source` is not containment — absolute
+    sources survive the join, `../` and symlinks escape, and exists()
+    accepts directories)."""
+    if Path(source).is_absolute():
+        return False
+    target = (root / source).resolve()
+    resolved_root = root.resolve()
+    return target.is_file() and target.is_relative_to(resolved_root)
 
 
 def manifest_schema_errors(schema: dict, manifest: dict) -> list[str]:
@@ -146,7 +190,19 @@ def lint(root: Path) -> dict:
     }
 
 
-def search(root: Path, provides: str, embodiment: str | None) -> dict:
+def _source_launchable(manifest: dict, root: Path) -> bool:
+    """Source-level launchability (issue #39, the H1 discovery-surface
+    gap): pip sources must be installed; path sources must be a regular
+    file contained by the root. Graph-context checks (arm/base/eval) stay
+    with the validator — search has no graph."""
+    dist = _pip_dist(manifest)
+    if dist is not None:
+        return _pip_installed(dist)
+    source = manifest.get("source")
+    return isinstance(source, str) and ":" not in source and _path_source_valid(source, root)
+
+
+def search(root: Path, provides: str, embodiment: str | None, installed_only: bool = False) -> dict:
     manifests, errors = load_manifests(root)
     if errors:
         return {"ok": False, "matches": [], "errors": errors}
@@ -161,9 +217,20 @@ def search(root: Path, provides: str, embodiment: str | None) -> dict:
         arm_list = arms.get("arm") if isinstance(arms, dict) else None
         return isinstance(arm_list, list) and embodiment in arm_list
 
+    # every match carries its launchability (issue #39: search advertised
+    # uninstalled pip: nodes with no flag — the exact discovery-surface
+    # gap analysis/h1/h1_findings.md documents; validate only catches it
+    # one compile later); --installed narrows to what can actually launch
+    annotated = [
+        {**manifest, "launchable": _source_launchable(manifest, root)}
+        for _, manifest in manifests
+        if matches(manifest)
+    ]
+    if installed_only:
+        annotated = [m for m in annotated if m["launchable"]]
     # load_manifests iterates sorted filenames, and lint enforces id ==
     # filename stem, so this is already id order for any lint-clean registry
-    return {"ok": True, "matches": [manifest for _, manifest in manifests if matches(manifest)]}
+    return {"ok": True, "matches": annotated}
 
 
 def main() -> int:
@@ -175,12 +242,17 @@ def main() -> int:
     search_parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     search_parser.add_argument("--provides", required=True)
     search_parser.add_argument("--embodiment")
+    search_parser.add_argument(
+        "--installed",
+        action="store_true",
+        help="only manifests whose source can launch here (issue #39)",
+    )
     args = parser.parse_args()
 
     if args.command == "lint":
         report = lint(args.root)
     else:
-        report = search(args.root, args.provides, args.embodiment)
+        report = search(args.root, args.provides, args.embodiment, args.installed)
 
     return emit_report(
         report, lambda level, e: f"{args.command} {level}: {e['manifest']}: {e['message']}"

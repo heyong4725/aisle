@@ -149,3 +149,69 @@ L (D6 rationale).
   the GLOBAL episode/wall ceilings; per-scenario episode caps are
   recorded targets, enforced only via the per-scenario token/wall kills.
 - **Post-session orphan sweep** (PR #46) runs between scenarios.
+
+## Amendment (campaign 2, PR #57): wipe leak, keep-refs, reruns
+
+Campaign 2 (2026-07-28) exposed a wipe leak: the S1 agent COMMITTED its
+skill (s1-driver-v2) and research notes on its worktree branch, and both
+`git checkout <pin> -- .` and `git clean` skip committed-but-not-in-pin
+files — the wiped arm ran S2 and S3 with prior-scenario memory (their
+records show `prior_skills: ["s1-driver-v2"]`). Amendments:
+
+1. **Wipe = detach at the pin.** `wipe_library` now runs
+   `git checkout -f --detach <pin>` before the clean, so the working
+   tree ends byte-exact at the pin including agent-committed files.
+2. **Scenario HEADs stay durably reachable.** Before detaching, the
+   pre-wipe HEAD is pinned under `h3/keep-<arm>-pre-<slot>` and its hash
+   recorded in the wipe report (`detached_from`, `kept_ref`, persisted
+   in h3_results.json `wipes`); every scenario record now carries its
+   final `worktree_head`. Detached-HEAD commits can never be orphaned
+   to the reflog.
+3. **Contaminated cells are excluded and rerun.** W/S2 and W/S3 of
+   campaign 2 carry the `wipe_leak` flag (derived from the records by
+   tools/h3_analysis.py) and are EXCLUDED from the H3 verdict; they
+   remain in the table as history. After the campaign completes, both
+   are rerun with the fixed wipe under NEW ids
+   (`--arms W --scenarios S2,S3 --attempt 2` → `S2-r2`/`S3-r2` scenario
+   dirs, `campaign-holdout-W-S2-r2`-style holdout run ids); the verdict
+   uses the highest-attempt unflagged cell per (arm, tier).
+4. **Bias statement (corrected, PR #59 review).** The leak's DIRECTION
+   is not causally established: leaked prior-scenario state could help
+   arm W (extra capability) or hurt it (misleading notes/skills for a
+   different scenario), and no counterfactual run exists to sign it.
+   The remedy is therefore exclusion from the verdict plus a clean
+   rerun — never a direction assumption.
+
+## Amendment (resume, PR #61): arm-L residue policy, slot rotation, audit snapshots
+
+The L/S2 resume after the Fable 5 quota abort exposed four runner gaps
+(PR #60/#61 reviews); the policy changes are recorded here because they
+alter arm-L treatment semantics and the audit surface:
+
+1. **Arm L's persistence surface is the DEFINED library, enforced.**
+   "Keeps everything" (D3) is narrowed to: registered skills (evalcarded
+   manifest + `skills/<id>/` code), the read-only idea tree, and `runs/`
+   (ledger + artifacts). Before every arm-L scenario after the first,
+   `clear_nonlibrary_residue` removes stray untracked files,
+   agent-committed files, and tracked modifications — the same leak
+   classes as the arm-W wipe. Rationale: L/S1 left an unregistered
+   `skills/s1-driver-v2/` and a working graph; carrying those into S2
+   would be untreated cross-scenario state.
+2. **Reruns carry only the tier's ORIGINAL library.** On `--attempt N>1`
+   the guard is limited to the attempt-1 record's `prior_skills`, so a
+   skill registered during a failed attempt cannot ride into its own
+   rerun and read as prior-tier reuse.
+3. **Occupied scenario slots rotate aside** (`<slot>-supersededN`)
+   instead of being reused: `token_samples.jsonl` appends (an aborted
+   prefix poisons tokens-to-first-success — observed live on the L/S2
+   resume and repaired by splitting the file) and `session.jsonl` opens
+   `w` (the aborted transcript would be destroyed).
+4. **Keep-refs are snapshot commits.** `h3/keep-<arm>-pre-<slot>` now
+   points at a commit (parent = pre-wipe HEAD) whose tree includes the
+   UNTRACKED working state, so every removed file is recoverable via
+   `git show <keep_ref>:<path>`. Agent-controlled manifest ids are
+   validated (`^[a-z0-9][a-z0-9_-]*$`) before being used as path
+   components. The treatment records `h3_runner_sha256` (this
+   orchestrator's own hash) so these policy changes are visible in every
+   campaign record; existing aggregates are backed up (`-prevN`) before
+   a partial-arm invocation writes.

@@ -77,6 +77,19 @@ def _frozen_anchor(root: Path, graph_path: Path, node_id: str, node: dict) -> bo
     return bool(graph_rel) and _under_frozen(root, graph_path.parent / graph_rel)
 
 
+def _absolutize_paths(doc: dict, base: Path) -> None:
+    """Rewrite every path-form node `path` to an absolute path resolved
+    from the ORIGINAL graph's directory (PR #62 review P1: staged copies
+    live in an unpredictable tmpdir, and dora resolves paths against ITS
+    base — one authoritative base for validator and runtime, or a staged
+    replacement can retain an approved id while resolving different
+    code). pip: forms are names, not paths — untouched."""
+    for node in doc.get("nodes") or []:
+        path = node.get("path")
+        if isinstance(path, str) and path and not path.startswith("pip:"):
+            node["path"] = str((base / path).resolve()) if not Path(path).is_absolute() else path
+
+
 def swapped_graph_doc(graph_path: Path, node_id: str, replacement: dict, root: Path) -> dict | str:
     """The POST-SWAP graph document with the named node replaced in place,
     or an error STRING (CON-8: refusals are JSON on stdout, never a
@@ -137,7 +150,14 @@ def swap(
     doc = swapped_graph_doc(graph, node_id, replacement, root)
     if isinstance(doc, str):
         return refused(doc)
+    # ONE authoritative base (PR #62 review P1): absolutize before the
+    # staged validation AND the staged node handed to `dora node add` —
+    # the replacement's relative path is resolved from the original
+    # graph's directory, same as every other node
+    _absolutize_paths(doc, graph.parent)
+    replacement = next(n for n in doc["nodes"] if n["id"] == node_id)
     original = next(n for n in yaml.safe_load(graph.read_text())["nodes"] if n["id"] == node_id)
+    _absolutize_paths({"nodes": [original]}, graph.parent)
 
     # unpredictable 0700 tmpdir OUTSIDE the session-writable graphs/ dir;
     # byte-hash re-checked right before the mutation (TOCTOU, PR #50)

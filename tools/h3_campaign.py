@@ -13,9 +13,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -49,18 +52,100 @@ SCENARIOS = (
 )
 # D5: identical in both arms — a nudge, not a treatment
 NUDGE = "Distill what works into registered skills — they may pay off later."
+# agent-controlled manifest ids are used as PATH COMPONENTS by the
+# arm-L guard — only ids matching this survive (PR #61 review)
+SKILL_ID_SAFE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
-def wipe_library(wt: Path, oid: str) -> dict:
-    """Arm W between scenarios (ADR amendment): registry/manifests and
-    skills/ byte-exact at the pinned OID, agent graphs and the idea tree
-    removed; the ledger and run artifacts persist (global budget
-    continuity)."""
-    # restore EVERY tracked file to the pin (a modified tracked file
-    # anywhere — an expert graph, a src helper — is surviving agent state;
-    # PR #48 adversarial review), then remove ALL untracked residue except
-    # runs/ (ledger + artifacts persist for budget continuity)
-    subprocess.run(["git", "checkout", oid, "--", "."], cwd=wt, check=True)
+def h3_runner_identity() -> str:
+    """sha256 of THIS orchestrator: campaign.py's runner_sha256 does not
+    cover h3_campaign.py, so treatment-policy changes here (e.g. the
+    arm-L residue guard) must be recorded separately (PR #61 review)."""
+    return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+
+
+def backup_existing_results(results_path: Path) -> Path | None:
+    """PR #60/#61 reviews: a partial-arm invocation must not CLOBBER the
+    prior legs' aggregate — copy an existing results file to a numbered
+    -prevN sibling (successive resumes stack)."""
+    if not results_path.exists():
+        return None
+    n = 1
+    while (backup := results_path.parent / f"h3_results-prev{n}.json").exists():
+        n += 1
+    shutil.copy2(results_path, backup)
+    return backup
+
+
+def rotate_occupied_slot(session_dir: Path) -> Path | None:
+    """PR #61 review: reusing an occupied scenario dir corrupts telemetry
+    (token_samples.jsonl APPENDS -> a fresh session lands after the
+    aborted prefix and poisons tokens-to-first-success; session.jsonl
+    opens 'w' -> the aborted transcript is destroyed). A non-empty slot
+    is rotated aside, preserving the prior attempt's artifacts."""
+    if not session_dir.exists() or not any(session_dir.iterdir()):
+        return None
+    n = 1
+    while (dest := session_dir.parent / f"{session_dir.name}-superseded{n}").exists():
+        n += 1
+    session_dir.rename(dest)
+    return dest
+
+
+def scenario_slot(tier: str, attempt: int) -> str:
+    """Attempt 1 keeps the plain tier name; reruns (PR #57 review:
+    contaminated cells rerun under NEW ids) get their own dir and holdout
+    tag suffix, never overwriting the flagged originals."""
+    return tier if attempt == 1 else f"{tier}-r{attempt}"
+
+
+def wipe_library(wt: Path, oid: str, keep_ref: str | None = None) -> dict:
+    """Arm W between scenarios (ADR amendment): the working tree ends
+    byte-exact at the pinned OID (detached HEAD) — including removal of
+    files the agent COMMITTED on its branch — with agent graphs and the
+    idea tree gone; the ledger and run artifacts persist (global budget
+    continuity). The pre-wipe HEAD is pinned under keep_ref and recorded
+    (PR #57 review: a detached-HEAD scenario's commits must stay durably
+    reachable, not reflog-only), so agent history survives every wipe."""
+    # detach the worktree AT the pin: `checkout <oid> -- .` only restores
+    # paths present in the pin's tree, so files the agent COMMITTED on its
+    # branch (tracked, absent from the pin) survived it AND `git clean` —
+    # campaign-2 leak: s1-driver-v2 + research notes rode through both
+    # arm-W wipes. Detaching makes the working tree exactly the pin's;
+    # the agent's branches keep their commits for audit. Then remove ALL
+    # untracked residue except runs/ (ledger + artifacts persist for
+    # budget continuity).
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    if keep_ref:
+        # the audit ref must preserve UNTRACKED residue too (PR #61
+        # review): build a snapshot commit (parent = pre-wipe HEAD) from a
+        # throwaway index with the full working state, so every removed
+        # file is recoverable via `git show <keep_ref>:<path>`. runs/ is
+        # gitignored and stays out of the snapshot.
+        with tempfile.TemporaryDirectory() as td:
+            env = {**os.environ, "GIT_INDEX_FILE": str(Path(td) / "index")}
+            subprocess.run(["git", "add", "-A"], cwd=wt, env=env, check=True)
+            tree = subprocess.run(
+                ["git", "write-tree"], cwd=wt, env=env, capture_output=True, text=True, check=True
+            ).stdout.strip()
+            snap = subprocess.run(
+                ["git", "commit-tree", tree, "-p", head, "-m", f"pre-wipe snapshot ({keep_ref})"],
+                cwd=wt,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+        subprocess.run(["git", "branch", "-f", keep_ref, snap], cwd=wt, check=True)
+    subprocess.run(
+        ["git", "checkout", "-f", "--detach", oid],
+        cwd=wt,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
     clean = subprocess.run(
         ["git", "clean", "-fdx", "-e", "runs"],
         cwd=wt,
@@ -73,7 +158,64 @@ def wipe_library(wt: Path, oid: str) -> dict:
     if ideas.exists():
         removed.append("runs/ideas/")
         shutil.rmtree(ideas)
-    return {"removed": removed}
+    return {"removed": removed, "detached_from": head, "kept_ref": keep_ref}
+
+
+def clear_nonlibrary_residue(
+    wt: Path, oid: str, keep_ref: str | None = None, keep_skills: list[str] | None = None
+) -> dict:
+    """Arm L between scenarios (PR #60 review): arm L's persistence
+    surface is the DEFINED library — registered skills (evalcarded
+    manifest + skills/<id>/ code) + runs/ (idea tree, ledger) — not
+    whatever working residue the previous session left. L/S1 left an
+    unregistered skills/ dir and a working graph in worktree_L; carrying
+    them into S2 would be untreated cross-scenario state. Mechanics:
+    stash the registered library aside, detach byte-exact at the pin
+    (removing stray untracked files, agent-COMMITTED files, and tracked
+    modifications alike — same leak class as the arm-W wipe), clean
+    everything but runs/, then restore the library. The pre-guard HEAD
+    is pinned under keep_ref for audit, like the wipe."""
+    registered = registered_skill_ids(wt)
+    if keep_skills is not None:
+        # rerun allowlist (PR #61 review): a skill registered DURING a
+        # failed attempt of this tier must not ride into its rerun — the
+        # caller passes the tier's original prior_skills
+        registered &= set(keep_skills)
+    kept_skills, skipped_ids = [], []
+    for skill_id in sorted(registered, key=str):
+        # ids are AGENT-CONTROLLED and used as path components: refuse
+        # traversal-shaped ids outright (PR #61 review)
+        if isinstance(skill_id, str) and SKILL_ID_SAFE.fullmatch(skill_id):
+            kept_skills.append(skill_id)
+        else:
+            skipped_ids.append(skill_id)
+    stash = Path(tempfile.mkdtemp(prefix="h3-library-"))
+    for skill_id in kept_skills:
+        manifest = wt / "registry" / "manifests" / f"{skill_id}.yaml"
+        if manifest.exists():
+            (stash / "manifests").mkdir(parents=True, exist_ok=True)
+            shutil.copy2(manifest, stash / "manifests" / manifest.name)
+        code_dir = wt / "skills" / skill_id
+        if code_dir.exists():
+            shutil.copytree(code_dir, stash / "skills" / skill_id)
+    # the idea tree persists for arm L (D3: read-only lab notebook) —
+    # wipe_library removes runs/ideas, so it rides the stash too
+    ideas = wt / "runs" / "ideas"
+    if ideas.exists():
+        shutil.copytree(ideas, stash / "ideas")
+    report = wipe_library(wt, oid, keep_ref=keep_ref)
+    if (stash / "ideas").exists():
+        shutil.copytree(stash / "ideas", wt / "runs" / "ideas")
+    for skill_id in kept_skills:
+        staged = stash / "manifests" / f"{skill_id}.yaml"
+        if staged.exists():
+            (wt / "registry" / "manifests").mkdir(parents=True, exist_ok=True)
+            shutil.copy2(staged, wt / "registry" / "manifests" / f"{skill_id}.yaml")
+        staged_dir = stash / "skills" / skill_id
+        if staged_dir.exists():
+            shutil.copytree(staged_dir, wt / "skills" / skill_id)
+    shutil.rmtree(stash)
+    return {**report, "kept_skills": kept_skills, "skipped_ids": skipped_ids}
 
 
 def skill_reuse(deliverable: Path, prior_skill_ids: set[str]) -> list[str]:
@@ -108,10 +250,21 @@ def registered_skill_ids(wt: Path) -> set[str]:
 
 
 def run_scenario(
-    wt: Path, oid: str, arm: str, scenario: dict, out: Path, agent: str, model: str
+    wt: Path,
+    oid: str,
+    arm: str,
+    scenario: dict,
+    out: Path,
+    agent: str,
+    model: str,
+    attempt: int = 1,
 ) -> dict:
     tier = scenario["tier"]
-    session_dir = out / f"arm_{arm}" / tier
+    slot = scenario_slot(tier, attempt)
+    session_dir = out / f"arm_{arm}" / slot
+    rotated = rotate_occupied_slot(session_dir)
+    if rotated is not None:
+        print(f"[h3] occupied slot rotated to {rotated.name}", file=sys.stderr)
     session_dir.mkdir(parents=True, exist_ok=True)
     prior_skills = registered_skill_ids(wt)
     prompt = campaign_prompt(tier, scenario["tokens"], scenario["wall_h"], DEV_SEEDS, note=NUDGE)
@@ -130,15 +283,22 @@ def run_scenario(
     )
     sweep_worktree(wt)
     drift = audit_frozen(wt, oid)
-    holdout = score_holdout(wt, HOLDOUT_SEEDS, f"{arm}-{tier}", tier)
+    holdout = score_holdout(wt, HOLDOUT_SEEDS, f"{arm}-{slot}", tier)
     sweep_worktree(wt)
     # since=t0 scopes EVERY aggregate to this scenario (PR #48 review:
     # unscoped first_success/wrong_object contaminated the H3 headline)
     metrics = campaign_metrics(wt, session_t0=t0, since=t0)
     reuse = skill_reuse(wt / "graphs" / "agent_campaign.yaml", prior_skills)
+    worktree_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True, text=True
+    ).stdout.strip()
     record = {
         "arm": arm,
         "tier": tier,
+        "attempt": attempt,
+        # the scenario's final worktree state, durably recorded (PR #57
+        # review: scenario HEADs need recorded hashes, wipe pins the ref)
+        "worktree_head": worktree_head,
         "budgets": scenario,
         "session": session,
         "frozen_drift": drift,
@@ -161,6 +321,13 @@ def main() -> int:
     parser.add_argument("--arms", default="W,L", help="subset, e.g. W (dry runs)")
     parser.add_argument("--scenarios", default="S1,S2,S3", help="subset, e.g. S1")
     parser.add_argument("--budget-scale", type=float, default=1.0, help="dry-run scaling")
+    parser.add_argument(
+        "--attempt",
+        type=int,
+        default=1,
+        help="rerun counter: >1 writes S<t>-rN scenario dirs and holdout "
+        "run ids, leaving flagged originals in place (PR #57 review)",
+    )
     args = parser.parse_args()
 
     error = validate_seed_ranges(DEV_SEEDS, HOLDOUT_SEEDS)
@@ -175,6 +342,10 @@ def main() -> int:
     treatment["protocol"] = "ADR-h3-campaign-protocol"
     treatment["nudge_sha256"] = hashlib.sha256(NUDGE.encode()).hexdigest()
     treatment["budget_scale"] = args.budget_scale
+    # PR #61 review: campaign.py's runner_sha256 does not cover THIS
+    # orchestrator — record its identity so treatment-policy changes
+    # (wipe/guard semantics) are visible in every campaign record
+    treatment["h3_runner_sha256"] = h3_runner_identity()
     arms = [a for a in ARMS if a in args.arms.split(",")]
     tiers = [s["tier"] for s in SCENARIOS if s["tier"] in args.scenarios.split(",")]
     unknown = (set(args.arms.split(",")) - set(ARMS)) | (
@@ -184,18 +355,47 @@ def main() -> int:
         # a typo must refuse, not exit 0 with an empty "campaign" (PR #48)
         print(json.dumps({"ok": False, "error": f"bad selection: {sorted(unknown)}"}))
         return 1
+    # a RERUN must never clobber the campaign's primary record
+    # (self-review of PR #57: --attempt 2 would have overwritten
+    # h3_results.json with the 2-record rerun output)
+    results_path = args.out / f"h3_results{'' if args.attempt == 1 else f'-r{args.attempt}'}.json"
+    backup = backup_existing_results(results_path)
+    if backup is not None:
+        print(f"[h3] prior aggregate backed up to {backup.name}", file=sys.stderr)
     records = []
+    wipes = []
     for arm in arms:
         wt = args.out / f"worktree_{arm}"
         if not wt.exists():
             print(f"[h3] arm {arm}: worktree at {oid[:8]}", file=sys.stderr)
             make_worktree(oid, wt)
-        for scenario in SCENARIOS:
+        for index, scenario in enumerate(SCENARIOS):
             if scenario["tier"] not in tiers:
                 continue
-            if arm == "W" and scenario["tier"] != "S1":
-                wiped = wipe_library(wt, oid)
-                print(f"[h3] arm W wiped {len(wiped['removed'])} path(s)", file=sys.stderr)
+            if index > 0 or args.attempt > 1:
+                slot = scenario_slot(scenario["tier"], args.attempt)
+                if arm == "W":
+                    wiped = wipe_library(wt, oid, keep_ref=f"h3/keep-{arm}-pre-{slot}")
+                    print(f"[h3] arm W wiped {len(wiped['removed'])} path(s)", file=sys.stderr)
+                else:
+                    # PR #60 review: arm L carries ONLY its defined library
+                    # forward — stray working residue is untreated state.
+                    # On a rerun, the library is further limited to the
+                    # tier's ORIGINAL prior_skills (PR #61 review)
+                    allow = None
+                    if args.attempt > 1:
+                        prev = args.out / f"arm_{arm}" / scenario["tier"] / "scenario.json"
+                        if prev.exists():
+                            allow = json.loads(prev.read_text()).get("prior_skills", [])
+                    wiped = clear_nonlibrary_residue(
+                        wt, oid, keep_ref=f"h3/keep-{arm}-pre-{slot}", keep_skills=allow
+                    )
+                    print(
+                        f"[h3] arm L residue cleared ({len(wiped['removed'])} path(s), "
+                        f"library kept: {wiped['kept_skills'] or 'none'})",
+                        file=sys.stderr,
+                    )
+                wipes.append({"arm": arm, "before": slot, **wiped})
             scaled = {
                 **scenario,
                 "tokens": int(scenario["tokens"] * args.budget_scale),
@@ -203,24 +403,29 @@ def main() -> int:
             }
             print(f"[h3] arm {arm} {scenario['tier']} starting", file=sys.stderr)
             try:
-                records.append(run_scenario(wt, oid, arm, scaled, args.out, agent, model))
+                records.append(
+                    run_scenario(wt, oid, arm, scaled, args.out, agent, model, args.attempt)
+                )
             except Exception as exc:  # noqa: BLE001 — protocol point 8
                 # infra abort: keep prior records, attribute, stop the run
                 records.append({"arm": arm, "tier": scenario["tier"], "infra_error": repr(exc)})
-                (args.out / "h3_results.json").write_text(
-                    json.dumps({"ok": False, "treatment": treatment, "records": records}, indent=1)
+                results_path.write_text(
+                    json.dumps(
+                        {"ok": False, "treatment": treatment, "records": records, "wipes": wipes},
+                        indent=1,
+                    )
                 )
                 print(json.dumps({"ok": False, "error": f"infra abort: {exc!r}"}))
                 return 1
     ok = all(not r.get("frozen_drift") for r in records)
-    (args.out / "h3_results.json").write_text(
-        json.dumps({"ok": ok, "treatment": treatment, "records": records}, indent=1)
+    results_path.write_text(
+        json.dumps({"ok": ok, "treatment": treatment, "records": records, "wipes": wipes}, indent=1)
     )
     print(
         json.dumps(
             {
                 "ok": ok,
-                "record": str(args.out / "h3_results.json"),
+                "record": str(results_path),
                 "scenarios_run": [f"{r['arm']}/{r['tier']}" for r in records],
                 "holdout_pass1": {
                     f"{r['arm']}/{r['tier']}": r["holdout"].get("pass1") for r in records

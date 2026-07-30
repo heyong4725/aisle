@@ -1,0 +1,30 @@
+{
+ "run_id": "a1-expert-t0-T1-holdout",
+ "git_sha": "87b1ff66b9dcf6397ee4a84afee9870591e5c8bc",
+ "env_hash": "025c7de2bebaddba2f063a0e94192d2a7269ccc8c1cc53a83bd8caa8a8aedaa4",
+ "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+ "graph": "graphs/expert_t0.yaml",
+ "graph_hash": "b9388ce4e926171620d4a8c135a5b0f08b45e44085412b0252fc5caadc4227da",
+ "tier": "T1",
+ "embodiment": "franka",
+ "seeds": [
+  100,
+  101,
+  102,
+  103,
+  104,
+  105,
+  106,
+  107
+ ],
+ "reset": "teleport",
+ "verifier": "oracle",
+ "idea": null,
+ "no_idea_gate": true,
+ "env_baseline": "local",
+ "env_baseline_oid": null,
+ "budget_reservation": null,
+ "tokens_log": null,
+ "wall_clamped": [],
+ "relaunches": 0
+}

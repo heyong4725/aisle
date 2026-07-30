@@ -1,0 +1,8 @@
+{"episode": 0, "seed": 100, "status": "success", "failure": null, "t_end": 24.5, "goal_id": "ep-0000", "verifier": "oracle"}
+{"episode": 1, "seed": 101, "status": "success", "failure": null, "t_end": 19.1, "goal_id": "ep-0001", "verifier": "oracle"}
+{"episode": 2, "seed": 102, "status": "success", "failure": null, "t_end": 16.47, "goal_id": "ep-0002", "verifier": "oracle"}
+{"episode": 3, "seed": 103, "status": "fail", "failure": "dropped", "t_end": 20.0, "goal_id": "ep-0003", "verifier": "oracle"}
+{"episode": 4, "seed": 104, "status": "success", "failure": null, "t_end": 17.4, "goal_id": "ep-0004", "verifier": "oracle"}
+{"episode": 5, "seed": 105, "status": "success", "failure": null, "t_end": 23.93, "goal_id": "ep-0005", "verifier": "oracle"}
+{"episode": 6, "seed": 106, "status": "success", "failure": null, "t_end": 19.07, "goal_id": "ep-0006", "verifier": "oracle"}
+{"episode": 7, "seed": 107, "status": "success", "failure": null, "t_end": 16.33, "goal_id": "ep-0007", "verifier": "oracle"}

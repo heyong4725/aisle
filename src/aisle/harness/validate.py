@@ -10,9 +10,8 @@ capability or a concrete fix. No genesis or dora imports (unit territory).
 """
 
 import difflib
-import functools
-import importlib.metadata
 import json
+import re
 import tomllib
 from collections import Counter
 from pathlib import Path
@@ -20,6 +19,9 @@ from pathlib import Path
 import yaml
 
 from aisle.harness.registry import (
+    _path_source_valid,
+    _pip_dist,
+    _pip_installed,
     load_capability_schema,
     load_manifests,
     load_vocabulary,
@@ -180,42 +182,46 @@ def load_graph(path: Path) -> tuple[list | None, list[dict]]:
     return nodes, []
 
 
-def _pip_dist(manifest: dict) -> str | None:
-    """The normalized pip distribution name of a manifest's source, or None
-    for non-pip sources. Scheme match is case-insensitive (a lowercase-only
-    match let `PIP:x` dodge the check), the name is stripped and cut at the
-    first extras/specifier character (`pip:dora-yolo[gpu]`/`==1.2` probed
-    the literal string, falsely flagging installed dists). An empty name
-    maps to '' — a structured error, never a `version('')` ValueError
-    (PR #34 review)."""
-    source = manifest.get("source")
-    if not isinstance(source, str) or not source[:4].lower() == "pip:":
-        return None
-    name = source[4:].strip()
-    for cut in "[=<>!~;@":
-        name = name.split(cut, 1)[0]
-    return name.strip()
-
-
-@functools.cache
-def _pip_installed(dist: str) -> bool:
-    try:
-        importlib.metadata.version(dist)
-    except (importlib.metadata.PackageNotFoundError, ValueError):
-        return False
-    return True
-
-
-def _manifest_launchable(manifest: dict, arm_kind: str) -> bool:
-    """A candidate INSTALL_MISSING alternative must itself survive the NEXT
-    compile: an installed distribution (or source-tree node) AND compatible
-    with the graph's embodiment — an so101-only suggestion on a franka
-    graph just trades INSTALL_MISSING for EMBODIMENT_MISMATCH."""
+def _manifest_launchable(
+    manifest: dict,
+    arm_kind: str,
+    root: Path | None = None,
+    embodiment: str | None = None,
+    allow_unproven: bool = False,
+) -> bool:
+    """A candidate INSTALL_MISSING alternative must survive EVERY
+    manifest-level check of the NEXT compile (VAL-2's never-fail-the-
+    next-compile MUST; PR #63/#64 reviews): an installed distribution —
+    or a path source that is a real file under the root (else
+    SOURCE_INVALID) — AND arm-compatible AND base-compatible (a
+    base-requiring peer on a fixed-base graph is EMBODIMENT_MISMATCH)
+    AND, for motion manifests, evalcarded unless the caller allows
+    unproven motion (else EVAL_MISSING_FOR_MOTION)."""
     dist = _pip_dist(manifest)
     if dist is not None and not _pip_installed(dist):
         return False
+    source = manifest.get("source")
+    if (
+        dist is None
+        and root is not None
+        and isinstance(source, str)
+        and ":" not in source
+        and not _path_source_valid(source, root)
+    ):
+        return False
     arms = manifest.get("embodiment", {}).get("arm", [])
-    return not arms or arm_kind in arms
+    if arms and arm_kind not in arms:
+        return False
+    base = manifest.get("embodiment", {}).get("base", [])
+    if base and embodiment is not None and embodiment not in base:
+        return False
+    if (
+        manifest.get("safety_class") == "motion"
+        and manifest.get("eval") is None
+        and not allow_unproven
+    ):
+        return False
+    return True
 
 
 def validate_nodes(
@@ -224,6 +230,8 @@ def validate_nodes(
     vocabulary: set[str],
     embodiment: str,
     allow_unproven: bool,
+    graph_dir: Path | None = None,
+    root: Path | None = None,
 ) -> tuple[list[dict], list[dict]]:
     errors: list[dict] = []
     warnings: list[dict] = []
@@ -252,7 +260,8 @@ def validate_nodes(
                 f"rename the node to {close!r}"
                 if close
                 else "no similar manifest id exists; find one with: "
-                "python -m aisle.harness.registry search --provides <capability>"
+                "python -m aisle.harness.registry search --provides <capability> "
+                "--installed (issue #39: only launchable nodes)"
             )
             errors.append(
                 _entry(
@@ -279,11 +288,34 @@ def validate_nodes(
                         )
                     )
             continue
+        # VAL-2 SOURCE_INVALID (issue #35): unknown schemes and empty pip
+        # dists are CAP-1 pattern violations (schema/lint + the registry
+        # screen above), so the remaining dodge channel a schema cannot
+        # check is a path-form source naming NO FILE under the root — the
+        # manifest's launch claim is unverifiable: error out and skip the
+        # source-derived checks for this node.
+        source_val = manifest.get("source")
+        source_invalid = False
+        if isinstance(source_val, str) and root is not None:
+            if ":" not in source_val and not _path_source_valid(source_val, root):
+                source_invalid = True
+                errors.append(
+                    _entry(
+                        "SOURCE_INVALID",
+                        {"node": node_id},
+                        f"manifest source {source_val!r} is not a regular "
+                        "file contained by the root — the graph would "
+                        "validate but never launch (or launch code outside "
+                        "the vetted tree)",
+                        "point the manifest source at the node's real file "
+                        "(or register the node with harness skill register)",
+                    )
+                )
         # VAL-2 INSTALL_MISSING (H1-discovered): a pip:-sourced capability
         # that is not installed validates into a graph that cannot launch —
         # the agent's only signal is this error, so the hint must name an
         # installed same-capability alternative when one exists
-        dist = _pip_dist(manifest)
+        dist = None if source_invalid else _pip_dist(manifest)
         if dist is not None and not _pip_installed(dist):
             provided = set(manifest.get("provides") or [])
             # a usable alternative must FULLY cover the missing node's
@@ -293,7 +325,7 @@ def validate_nodes(
                 for other_id, other in manifests.items()
                 if other_id != node_id
                 and provided <= set(other.get("provides") or [])
-                and _manifest_launchable(other, arm_kind)
+                and _manifest_launchable(other, arm_kind, root, embodiment, allow_unproven)
             )
             if alternatives:
                 hint = f"use an installed provider of {sorted(provided)}: " + ", ".join(
@@ -316,6 +348,48 @@ def validate_nodes(
                 + " — the graph would validate but never launch"
             )
             errors.append(_entry("INSTALL_MISSING", {"node": node_id}, detail, hint))
+        # VAL-2 PATH_MANIFEST_MISMATCH (issue #36; H3 campaign 2 live case):
+        # dora launches the graph node's `path`, not the manifest's
+        # `source` — an approved id with a divergent path executes unvetted
+        # code under a vetted identity, and every topology check passes
+        node_path = node.get("path")
+        source = manifest.get("source")
+        if (
+            isinstance(node_path, str)
+            and isinstance(source, str)
+            and not source_invalid
+            and graph_dir is not None
+            and root is not None
+        ):
+            pip_name = _pip_dist(manifest)
+            if pip_name is not None:
+                # graphs reference pip nodes as the manifest source
+                # verbatim or the bare NORMALIZED distribution name (PR
+                # #62 review P2: reuse _pip_dist so decorated/case-varied
+                # sources match the INSTALL_MISSING contract) — anything
+                # else launches other code
+                canonical_path = re.sub(r"[-_.]+", "-", node_path.strip()).lower()
+                matches = node_path == source or canonical_path == pip_name
+            else:
+                # exactly ONE base: the graph's own directory — the base
+                # dora resolves against. A graphs-dir fallback approved
+                # tmpdir-staged graphs whose paths resolve elsewhere at
+                # runtime (PR #62 review P1: the live-swap bypass);
+                # staged copies must carry absolute paths instead.
+                matches = (graph_dir / node_path).resolve() == (root / source).resolve()
+            if not matches:
+                errors.append(
+                    _entry(
+                        "PATH_MANIFEST_MISMATCH",
+                        {"node": node_id},
+                        f"path {node_path!r} does not resolve to the manifest "
+                        f"source {source!r} — dora would launch code the "
+                        f"registry never vetted under the id {node_id!r}",
+                        f"point path at the manifest source ({source!r}), or "
+                        "register a manifest for what path actually launches "
+                        "(harness skill register)",
+                    )
+                )
         # VAL-4: every schema name a graph node's manifest references must be
         # in the vocabulary — including unwired ports; never silently passed
         for direction in ("inputs", "outputs"):
@@ -566,7 +640,23 @@ def _validate_edge(
 
 
 def validate(graph_path: Path, root: Path, embodiment: str, allow_unproven: bool) -> dict:
-    report = {"ok": False, "graph": str(graph_path), "errors": [], "warnings": []}
+    report = {"ok": False, "graph": str(graph_path), "errors": [], "warnings": [], "dist_state": {}}
+    # ADR-24 D5 (PR #69 review F4): the diagnostic is computed from the
+    # REGISTRY alone, before any graph parsing — early graph errors still
+    # carry the three registry mappings
+    try:
+        import importlib.metadata as _md
+
+        for _, m_early in load_manifests(root)[0]:
+            dist_early = _pip_dist(m_early) if isinstance(m_early, dict) else None
+            if dist_early:
+                try:
+                    report["dist_state"][dist_early] = _md.version(dist_early)
+                except _md.PackageNotFoundError:
+                    report["dist_state"][dist_early] = None
+        report["dist_state"] = dict(sorted(report["dist_state"].items()))
+    except Exception:  # noqa: BLE001 — a broken registry surfaces via its own errors
+        pass
     nodes, errors = load_graph(graph_path)
     if nodes is None:
         report["errors"] = errors
@@ -617,7 +707,15 @@ def validate(graph_path: Path, root: Path, embodiment: str, allow_unproven: bool
         return report
     manifests = {m["id"]: m for _, m in manifest_list}
 
-    errors, warnings = validate_nodes(nodes, manifests, vocabulary, embodiment, allow_unproven)
+    errors, warnings = validate_nodes(
+        nodes,
+        manifests,
+        vocabulary,
+        embodiment,
+        allow_unproven,
+        graph_dir=graph_path.parent,
+        root=root,
+    )
     report["errors"] = errors
     report["warnings"] = warnings
     report["ok"] = not errors

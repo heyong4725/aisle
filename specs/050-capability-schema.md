@@ -5,7 +5,7 @@ Status: DRAFT. Files: `registry/schema/capability.schema.json`, `registry/manife
 - CAP-1: Manifest fields (all required unless noted): id, kind(node|subgraph), provides[], requires[], inputs{name:{schema, rate_hz}}, outputs{name:{schema, latency_class}}, params{name:{type,default,range?}} (optional), embodiment{arm[],gripper}, safety_class(perception|decision|motion), eval{suite,pass_rate,last_run}|null, origin(hub|agent-authored), source(path or pip ref).
 - CAP-2: `schema` values come from a closed vocabulary in `registry/schema/schemas.toml` mapping name → Arrow type + shape (e.g. pose7d_f32 → Float32[7]). Adding a schema name is a Class C change.
 - CAP-3: JSON Schema validation: `harness/registry.py lint` validates every manifest; CI runs it (marker unit).
-- CAP-4: `harness/registry.py search --provides grasp_planning [--embodiment franka]` returns matching manifests as JSON (CON-8).
+- CAP-4: `harness/registry.py search --provides grasp_planning [--embodiment franka] [--installed]` returns matching manifests as JSON (CON-8). Every match carries `launchable` — pip sources installed, path sources a regular file contained by the root (issue #39: search advertised uninstalled `pip:` nodes with no flag, the H1 discovery-surface gap; `analysis/h1/h1_findings.md`) — and `--installed` narrows to launchable matches; the validator's MANIFEST_MISSING hint recommends it. Graph-context checks (arm/base/evalcard) remain the validator's (VAL-2).
 - CAP-5: The CURATED core registry is pinned exactly: the 12 initial manifests
   — camera-source, oracle-pose, detector-openvocab, ocr-label, pose-estimator,
   grasp-planner-topdown, ik-trajectory, arm-driver-sim, gripper-driver-sim,

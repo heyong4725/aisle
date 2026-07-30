@@ -1,0 +1,115 @@
+{
+ "ok": true,
+ "treatment": {
+  "commit": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+  "agent": "claude",
+  "agent_cli_version": "2.1.214 (Claude Code)",
+  "model": "claude-fable-5",
+  "prompt_template_sha256": "0f7fb5d9ea5d45e771eea1de0db36475787c8ce8b1892393d4cae19b0b985b6d",
+  "dev_seeds": "0..49",
+  "holdout_seeds": "100..107",
+  "holdout_episodes": 8,
+  "claude_max_turns": null,
+  "runner_sha256": "bb030880fbde33822a25023927f480e9b4258e6f0009afe85b70cbc0d8c8b5e6",
+  "session_spawn": {
+   "stdin": "devnull",
+   "confinement": "none (ADR-h2 point 5)"
+  },
+  "protocol": "ADR-h3-campaign-protocol",
+  "nudge_sha256": "ddf2dba404a0f44b19956c2aa937c5c4ea5046f604a5c687f05e4d9004eddbed",
+  "budget_scale": 1.0
+ },
+ "records": [
+  {
+   "arm": "L",
+   "tier": "S2",
+   "attempt": 1,
+   "worktree_head": "bf6b1ed1f8277442e308f6affb0cc0ba376fc145",
+   "budgets": {
+    "tier": "S2",
+    "tokens": 750000,
+    "episodes": 60,
+    "wall_h": 5.0
+   },
+   "session": {
+    "stopped": "token_budget",
+    "rc": -9,
+    "tokens": 750238,
+    "wall_s": 5137.7
+   },
+   "frozen_drift": [],
+   "holdout": {
+    "ok": true,
+    "error": null,
+    "pass1": 0.0,
+    "pass8": 0.0,
+    "failures": {
+     "missing_item": 5,
+     "wrong_slot": 3
+    }
+   },
+   "first_success_wall_s": null,
+   "wrong_object_total": 0,
+   "rollouts": [
+    {
+     "run_id": "campaign-holdout-L-S2",
+     "mtime": 1785359123.0344713,
+     "episodes": 8,
+     "pass1": 0.0
+    }
+   ],
+   "prior_skills": [],
+   "skills_after": [
+    "s1-driver-v2"
+   ],
+   "skill_reuse_in_deliverable": []
+  },
+  {
+   "arm": "L",
+   "tier": "S3",
+   "attempt": 1,
+   "worktree_head": "bf6b1ed1f8277442e308f6affb0cc0ba376fc145",
+   "budgets": {
+    "tier": "S3",
+    "tokens": 750000,
+    "episodes": 60,
+    "wall_h": 5.0
+   },
+   "session": {
+    "stopped": "token_budget",
+    "rc": -9,
+    "tokens": 751798,
+    "wall_s": 3520.2
+   },
+   "frozen_drift": [],
+   "holdout": {
+    "ok": true,
+    "error": null,
+    "pass1": 0.0,
+    "pass8": 0.0,
+    "failures": {
+     "missing_item": 5,
+     "wrong_slot": 3
+    }
+   },
+   "first_success_wall_s": null,
+   "wrong_object_total": 0,
+   "rollouts": [
+    {
+     "run_id": "campaign-holdout-L-S3",
+     "mtime": 1785371960.4368675,
+     "episodes": 8,
+     "pass1": 0.0
+    }
+   ],
+   "prior_skills": [
+    "s1-driver-v2"
+   ],
+   "skills_after": [
+    "s1-driver-v2"
+   ],
+   "skill_reuse_in_deliverable": []
+  }
+ ],
+ "wipes": []
+}
