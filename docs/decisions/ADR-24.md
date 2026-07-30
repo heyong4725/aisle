@@ -1,6 +1,6 @@
 # ADR-24 — Installed-environment attestation (issue #38)
 
-Status: DRAFT v2 — decision-ready for the owner (v1 revised per the
+Status: ACCEPTED (owner-resolved 2026-07-30; v1 revised per the
 PR #68 review: version maps do not attest code, recorded drift does not
 satisfy CON-5, and collection must live inside ADR-21's self-verified
 boundary). Trigger: PR #34 red-team follow-up 4/5. Relates to ADR-21
@@ -114,14 +114,19 @@ artifacts.
 - H2/H3 records to date predate this and are not retroactively
   annotated.
 
-## Open questions for the owner
+## Resolved questions (owner decision, 2026-07-30)
 
-1. D2's post-session RECORD re-verification set: proposed =
-   registry-referenced dists + the named sim core. Full-environment
-   re-verification is the strict alternative (~minutes per session).
-2. CON-5 amendment wording: fingerprint as a fifth tuple component
-   (proposed) vs folding it into `env hash` (simpler tuple, muddier
-   attribution).
+1. **RECORD re-verification scope: the attested set** —
+   registry-referenced dists + the named sim core (genesis, torch,
+   dora-rs, pyarrow). Matches the threat model (code that can affect
+   verdicts or physics) at seconds of audit I/O; full-environment
+   verification rejected as minutes of noise over incidental packages.
+2. **CON-5 wording: `env_fingerprint` is a FIFTH tuple component** —
+   `(graph hash, env hash, env_fingerprint, platform, seed list)`.
+   Drift attribution stays legible: env hash answers "did the frozen
+   code move", the fingerprint answers "did the installed environment
+   move". Folding into env hash rejected for muddying CON-7's clean
+   frozen-tree meaning.
 
 IDs: CON-5 (amended tuple), CON-7 (posture parity), ADR-21 (boundary +
 baseline surface), VAL-3, HAR-2/4, CAP-4; CON-14 (implementation via
