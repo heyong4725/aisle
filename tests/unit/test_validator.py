@@ -503,17 +503,48 @@ def test_install_missing_hint_names_installed_alternative():
     pip:-sourced manifest whose distribution is absent errors rather than
     validating a graph that cannot launch; per VAL-3 the hint MUST name an
     installed registry alternative with the same capability when one
-    exists (oracle-pose provides object_pose alongside pose-estimator)."""
-    code, report = run_validate(BAD_DIR / "install_missing_detector.yaml")
+    exists (oracle-pose provides object_pose alongside pose-estimator).
+    Runs against the reserved_dists root like every INSTALL_MISSING
+    expectation (PR #65 review: this dedicated test was the one remaining
+    ambient-env coupling)."""
+    code, report = corpus_report("install_missing_detector")
     assert code != 0
     entries = [e for e in report["errors"] if e["code"] == "INSTALL_MISSING"]
     assert {e["node"] for e in entries} == {"detector-openvocab", "pose-estimator"}
     pose_hint = next(e["hint"] for e in entries if e["node"] == "pose-estimator")
     assert "oracle-pose" in pose_hint
     # the NO-alternative fallback branch (detector-openvocab is the sole
-    # object_detection provider) must stay actionable, not just non-empty
+    # object_detection provider) must stay actionable, not just non-empty —
+    # naming the RESERVED distribution, not the ambient-coupled real one
     det_hint = next(e["hint"] for e in entries if e["node"] == "detector-openvocab")
-    assert "dora-yolo" in det_hint and "install" in det_hint
+    assert "aisle-corpus-reserved-yolo" in det_hint and "install" in det_hint
+
+
+def test_corpus_and_hint_survive_dora_dists_installed(monkeypatch):
+    """PR #65 review P1 (the reviewer's reproduction, pinned): with fake
+    installed metadata for ALL THREE real dora perception dists — the
+    exact env-change the INSTALL_MISSING hint invites — the corpus
+    fixture AND the dedicated hint path must be unmoved: reserved names
+    keep firing INSTALL_MISSING."""
+    import aisle.harness.validate as val
+    from aisle.harness.validate import validate
+
+    real = val._pip_installed.__wrapped__  # unwrap the functools.cache
+
+    def fake_installed(dist):
+        return True if dist in ("dora-yolo", "dora-pose", "dora-ocr") else real(dist)
+
+    monkeypatch.setattr(val, "_pip_installed", fake_installed)
+    report = validate(
+        BAD_DIR / "install_missing_detector.yaml",
+        REPO_ROOT / "tests" / "fixtures" / "roots" / "reserved_dists",
+        "franka",
+        False,
+    )
+    codes_fired = {e["code"] for e in report["errors"]}
+    assert codes_fired == {"INSTALL_MISSING"}, codes_fired
+    det_hint = next(e["hint"] for e in report["errors"] if e["node"] == "detector-openvocab")
+    assert "aisle-corpus-reserved-yolo" in det_hint
 
 
 def _pip_manifest(base_id: str, **overrides) -> dict:
