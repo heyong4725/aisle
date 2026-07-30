@@ -1,137 +1,95 @@
 # H3 findings — skill-accumulation campaign (design doc §11.5, hypothesis §6 H3)
 
-**Status: INCOMPLETE (4 of 6 scenarios). No H3 verdict is drawable
-yet.** This document records what the partial run supports and names
-exactly what must still run. Protocol: `tools/h3_campaign.py` per
-`docs/decisions/ADR-h3-campaign-protocol.md` (campaign 2, commit
-`03da7469`, model `claude-fable-5`, dev seeds 0..49, held-out 100..107).
-Table + raw records: `h3_results_table.md`, `records/`. Assembled by
-`tools/h3_analysis.py` — **reproduce the whole table with**
-`uv run python tools/h3_analysis.py --dir analysis/h3/records` (the
-`records/` bundle is self-contained: `h3_results.json` +
-`arm_*/S*/scenario.json` + `token_samples.jsonl` per cell; runs/ itself
-is gitignored).
+**Status: all six scenarios recorded. Direction: H3 NOT MET under these
+budgets — arm L (the library arm) never achieved a single dev success
+on either verdict tier, which fixes the outcome regardless of arm W's
+pending rerun.** The formal verdict remains `pending` in the analyzer
+only because the W/S2 and W/S3 cells are `wipe_leak`-contaminated and
+excluded; the queued `--attempt 2` rerun completes the record but
+cannot change the direction (a tier where L never succeeds is not-met
+by construction, ADR-h3 §7).
 
-## Why the campaign is incomplete
+Protocol: `tools/h3_campaign.py` per
+`docs/decisions/ADR-h3-campaign-protocol.md` (campaign 2 + resume,
+commit `03da7469`, model `claude-fable-5`, dev seeds 0..49, held-out
+100..107). Arm L's S2 originally aborted on a Fable 5 quota 429 and was
+resumed same-model after the worktree residue clear (ADR resume
+amendment); the aborted 3.4-min telemetry is preserved separately
+(`records/arm_L/S2/token_samples-aborted-429.jsonl`).
 
-Arm W ran all three scenarios; arm L completed S1; **arm L's S2 session
-aborted 3.4 minutes in on a Fable 5 account usage limit** (HTTP 429,
-`"You've reached your Fable 5 limit"`) — an infra abort, not an agent
-outcome, correctly logged with no scenario record written. Arm L's S3
-never started. Finishing the campaign validly requires L/S2 and L/S3 on
-the **same** model (ADR-h3 §9 confound control: same model + CLI version
-both arms); a mid-campaign model switch would make arm L incomparable to
-arm W and to its own S1.
+**Reproduce the whole table:**
+`uv run python tools/h3_analysis.py --dir analysis/h3/records`
+(self-contained: both aggregates + per-cell `scenario.json` +
+`token_samples.jsonl`; `runs/` is gitignored).
 
 ## The records (assembled table)
 
-| Arm | Tier | Held-out pass@1 | Session end | First success (min) | Tokens@1st | Flags |
-|---|---|---|---|---|---|---|
-| W | S1 | 0.375 | agent_done | 146.7 | 165k | — |
-| L | S1 | 0.500 | token_budget | 100.8 | 661k | — |
-| W | S2 | 0.333 (partial) | token_budget | 101.4 | 716k | wipe_leak, holdout_partial |
-| W | S3 | 0.000 | token_budget | 48.9 | 536k | wipe_leak |
-| L | S2 | — | — | — | — | infra abort (Fable 5 429) |
-| L | S3 | — | — | — | — | not run |
+| Arm | Tier | Held-out pass@1 | Session end | First success (min) | Tokens@1st | Precision fails (holdout) | Flags |
+|---|---|---|---|---|---|---|---|
+| W | S1 | 0.375 | agent_done | 146.7 | 165k | 0 | — |
+| L | S1 | 0.500 | token_budget | 100.8 | 661k | 0 | — |
+| W | S2 | 0.333 (partial) | token_budget | 101.4 | 716k | misplaced 1 | wipe_leak, holdout_partial |
+| W | S3 | 0.000 | token_budget | 48.9 | 536k | wrong_slot 7 | wipe_leak |
+| L | S2 | 0.000 | token_budget | — | — | wrong_slot 3 | — |
+| L | S3 | 0.000 | token_budget | — | — | wrong_slot 3 | — |
 
-## H5 in the retail suite — the precision guarantee did NOT hold clean
+## The headline: the library arm collapsed on the verdict tiers
 
-**Correction (PR #60 review).** H5 is the *precision* claim: the wrong
-thing is never delivered/placed (design doc §1, the 10x-asymmetric
-penalty). In the DESK suite that failure is `wrong_object`; in the
-RETAIL suite that label never fires — the precision failures are
-`extra_item` (delivered an unordered item — the campaign notes call it
-"the 10x class", RS-7), `misplaced`, and `wrong_slot`. The scenario
-records' `wrong_object_total: 0` is therefore **vacuous for retail**, and
-reporting it as "H5 holds" (as an earlier draft of this doc did) was
-wrong.
+L/S2 and L/S3 each burned their full 750k-token budget **without
+completing a single dev rollout** — the held-out scoring run is the
+only rollout in both records, and `first_success_wall_s` is null. The
+sessions ended by token kill at 1.4h and 1.0h respectively: the fastest
+burns of the campaign, all context and no measurement. Meanwhile the
+wiped arm — even discounting its contamination — reached dev successes
+on both tiers. Whatever the mechanism, "a persistent library cuts
+time-to-success ≥2x" (H3) cannot hold when the library arm records no
+successes at all.
 
-Counting the retail precision classes across every recorded episode
-(dev + held-out):
+Two observations that sharpen the mechanism question:
 
-| Cell | precision-class failures |
-|---|---|
-| W/S1 | 2 `extra_item` (dev) |
-| W/S2 | 1 `misplaced` (dev) + 1 `misplaced` (holdout) |
-| W/S3 | 7 `wrong_slot` (dev) + 7 `wrong_slot` (holdout) |
-| L/S1 | none |
-| **total** | **18** (2 extra_item, 2 misplaced, 14 wrong_slot) |
+- **The transfer channel worked; the transfer didn't.** L/S2 started
+  with an empty library (L/S1 registered nothing) but RE-CREATED and
+  registered `s1-driver-v2` from the read-only idea tree (D3) — the
+  weak channel carried. L/S3 then started with that skill in its
+  library (`prior_skills: [s1-driver-v2]`)… and never wired it into a
+  deliverable (`skill_reuse_in_deliverable: []`), never succeeded.
+  Library *presence* did not produce library *use*.
+- **The budgets were plausibly under water.** L/S1's
+  tokens-to-first-success was **661k** — the verdict tiers' entire
+  budget is 750k, with S2/S3 being *harder* scenarios. The D2
+  sub-budget split (1M for S1, 0.75M for S2/S3) assumed later
+  scenarios get cheaper via accumulation; the data says the assumption
+  did the gating. "NOT MET under these budgets" is therefore the
+  honest claim — the campaign does not distinguish "libraries don't
+  help" from "0.75M is below the entry cost of S2/S3."
 
-So the retail precision guarantee was **breached repeatedly** in the
-recorded runs — most sharply W/S3's 7/8 held-out `wrong_slot`. H5's
-status in retail is *open and currently negative*; the eventual H3/H5
-writeup must score the retail precision classes, not `wrong_object`.
-(The `s1-driver-v2` skill's own design targets `extra_item=0` by
-skipping the L0 picks that snag neighbours — see below — which is why
-L/S1 and the v2 dev runs show none, but W/S2/S3 with different
-deliverables did not.)
+## H5 in the retail suite: breached
 
-## What the records do NOT support
+14 held-out precision-class failures across the six cells
+(13 `wrong_slot`, 1 `misplaced`); `wrong_object` stays 0 but is
+vacuous in retail (desk-only label). Dev-side adds W/S1's 2
+`extra_item`. The structural-safety claim survives only in its
+narrow desk form; the retail precision guarantee did not hold.
 
-- **The H3 transfer verdict.** H3's criterion lives on S2/S3. Every
-  S2/S3 cell is unusable: W/S2 and W/S3 are `wipe_leak`-flagged (the
-  campaign-2 wipe carried `s1-driver-v2` through — [PR #57] fixed the
-  wipe but these records predate it), W/S2 is additionally a partial
-  holdout, and both L cells are missing. `tools/h3_analysis.py` returns
-  `met: null`, correctly.
+## The one clean pair (S1) — replicated caution, not transfer
 
-- **Seed-keyed overfitting as the cause of W/S3's 1.0→0.0.** An earlier
-  draft called this "memorized slot assignments." **Correction (PR #60
-  review): the records do not demonstrate that.** The v2-family driver
-  skips L0 (bottom-shelf) picks by design (they jam on the L1 board and
-  snag neighbours → `extra_item`), so an order is fulfillable only if
-  every line has L1 stock; `metformin` has zero L1 slots. The agent
-  validated on self-selected, L1-fulfillable dev seeds ({0,1,4,6,7,8,9,
-  10}), while the held-out seeds 100..107 were unfiltered and contain
-  L0-dependent orders. The 1.0-dev → 0.0-holdout gap is therefore a
-  **dev-seed selection / distribution-shift** effect (the agent measured
-  on a favourable subset), not demonstrated seed-keyed memorization. The
-  `wrong_slot` failures are consistent with attempting L0-dependent
-  orders the driver cannot fulfil, not with a slot lookup keyed to seeds.
+Both arms start library-empty on S1, so the pair measures run-to-run
+variance of the same condition: L 0.5 vs W 0.375 held-out, L faster in
+wall time (101 vs 147 min) but ~4x the tokens to first success (661k vs
+165k). n=1 per cell; wide single-session variance is itself a finding
+the eventual verdict must weigh.
 
-- **A skill-accumulation signal at all.** Arm L — the *library* arm —
-  finished S1 with `skills_after: []`: it registered no skill despite the
-  identical D5 nudge. Any S1→S2 transfer would have to come through the
-  read-only idea tree (D3), a weaker channel than the ASPIRE mechanism
-  the hypothesis names. A single session did not choose to distill under
-  these budgets — itself a finding.
+## What remains for the formal record
 
-## What the records DO support
+1. **W/S2 + W/S3 rerun** under the hardened runner (`--arms W
+   --scenarios S2,S3 --attempt 2`, fixed wipe [PR #57], rerun
+   allowlist + slot rotation [PR #61]) — replaces the `wipe_leak`
+   cells; the analyzer then computes `met: false` formally from clean
+   cells. Queued for machine time; cannot change the direction.
+2. Any budget-corrected follow-up campaign (e.g. equal 1M budgets per
+   scenario) would be a NEW experiment answering the confound above —
+   a protocol decision, not a rerun.
 
-- **S1, the one clean pair, is not a transfer measurement.** S1 is the
-  first scenario for both arms, so both start library-empty; the two
-  cells are two draws from the *same* from-scratch condition, not
-  treatment vs control. They diverge sharply — L 0.5 vs W 0.375 held-out,
-  L first-success faster in wall time (101 vs 147 min) but ~4x the tokens
-  (661k vs 165k). With n=1 per cell, this is the run-to-run variance of
-  the S1 condition — a caution that single-session cells carry wide
-  uncertainty, which the eventual verdict must weigh.
-
-## What must run to complete H3
-
-1. **L/S2 and L/S3 on Fable 5** (same model), when the account quota is
-   available. Arm L keeps only its *defined* library — registered skills
-   + read-only idea tree (D3). L/S1 registered nothing, but its session
-   left **untracked non-library residue** in `worktree_L`
-   (`graphs/agent_campaign.yaml`, an unregistered `skills/s1-driver-v2/`).
-   Before resuming, that residue MUST be cleared so arm L does not carry
-   unregistered working state into S2 (PR #60 review):
-   `git -C runs/h3/worktree_L clean -fdx -e runs` (preserves runs/ =
-   ledger + idea tree), then
-   `uv run python tools/h3_campaign.py --arms L --scenarios S2,S3
-   --commit 03da7469`. This residue-leak affects the arm-L path in
-   general (arm L never wipes); a runner guard is filed as a follow-up.
-2. **W/S2 and W/S3 rerun under the fixed wipe** ([PR #57], `--attempt 2`
-   → `S2-r2`/`S3-r2`), replacing the `wipe_leak` cells; the analyzer
-   already prefers the highest-attempt clean cell.
-3. Re-run `tools/h3_analysis.py`; the verdict becomes drawable once every
-   S2/S3 cell is clean and present, and the retail precision classes are
-   scored for H5.
-
-Until then: no accumulation claim, positive or negative, is on the
-record — and the recorded retail runs show the precision guarantee (H5)
-was not clean.
-
-IDs: design doc §11.5 (transfer curve), §6 H3/H5, §1 (10x precision
-asymmetry); ADR-h3-campaign-protocol (§7 verdict, §9 confound control,
-campaign-2 amendment); RS-7 (retail precision failure classes); CON-5.
+IDs: design doc §11.5, §6 H3/H5, §1 (10x precision asymmetry);
+ADR-h3-campaign-protocol §7/§9 + campaign-2 and resume amendments;
+RS-7; CON-5.
