@@ -1,0 +1,23 @@
+id: placement-controller
+kind: node
+provides:
+- fine_placement
+requires: []
+inputs:
+  place_goal:
+    schema: json_utf8
+    rate_hz: 1
+outputs:
+  target_pose:
+    schema: pose7d_f32
+    latency_class: soft_rt
+embodiment:
+  arm:
+  - franka
+  gripper: any
+  base:
+  - mobile
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/nodes/placement_controller.py

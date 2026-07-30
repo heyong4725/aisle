@@ -530,18 +530,57 @@ def _single_node_graph(root, manifest):
     )
 
 
-def test_install_missing_corpus_env_assumption():
-    """PR #34 review (multi-source): 19 corpus expectations assume the
-    dora perception distributions are ABSENT from the ambient env. Pin the
-    assumption in ONE place so a future env-change PR that installs any of
-    them fails here with a pointer, not as 19 cryptic corpus diffs."""
+def test_install_missing_corpus_is_env_independent():
+    """Issue #37 (full fix of the PR #34 finding): the INSTALL_MISSING
+    corpus entries run against the reserved_dists fixture root, whose
+    perception manifests name RESERVED never-published distributions —
+    installing the real dora-yolo/dora-pose/dora-ocr (exactly what the
+    INSTALL_MISSING hint invites) must shift NOTHING. The reserved names
+    stay uninstallable by convention; assert it so a collision fails in
+    one labeled place."""
     from aisle.harness.validate import _pip_installed
 
-    for dist in ("dora-yolo", "dora-pose", "dora-ocr"):
+    for dist in (
+        "aisle-corpus-reserved-yolo",
+        "aisle-corpus-reserved-pose",
+        "aisle-corpus-reserved-ocr",
+    ):
         assert not _pip_installed(dist), (
-            f"{dist!r} is now installed: update the INSTALL_MISSING entries in "
-            "tests/fixtures/graphs/bad/expected.toml and the good-corpus notes"
+            f"reserved corpus name {dist!r} is installed in this environment — "
+            "these names exist to be permanently absent; pick a new reserved "
+            "name in tests/fixtures/roots/reserved_dists and expected.toml"
         )
+
+
+def test_reserved_root_mirrors_real_registry():
+    """Issue #37: the reserved_dists fixture root is the REAL registry
+    with exactly three perception sources swapped to reserved names —
+    pinned here so registry changes cannot silently drift the corpus
+    environment."""
+    import yaml as _yaml
+
+    swaps = {
+        "detector-openvocab": "pip:aisle-corpus-reserved-yolo",
+        "pose-estimator": "pip:aisle-corpus-reserved-pose",
+        "ocr-label": "pip:aisle-corpus-reserved-ocr",
+    }
+    real_dir = REPO_ROOT / "registry" / "manifests"
+    fixture_dir = REPO_ROOT / "tests" / "fixtures" / "roots" / "reserved_dists"
+    fixture_manifests = fixture_dir / "registry" / "manifests"
+    assert {p.name for p in real_dir.glob("*.yaml")} == {
+        p.name for p in fixture_manifests.glob("*.yaml")
+    }
+    for real_path in sorted(real_dir.glob("*.yaml")):
+        real = _yaml.safe_load(real_path.read_text())
+        copy = _yaml.safe_load((fixture_manifests / real_path.name).read_text())
+        if real["id"] in swaps:
+            assert copy["source"] == swaps[real["id"]], real["id"]
+            real, copy = dict(real), dict(copy)
+            real.pop("source"), copy.pop("source")
+        assert copy == real, f"{real_path.name} drifted from the real registry"
+        source = _yaml.safe_load((fixture_manifests / real_path.name).read_text()).get("source")
+        if isinstance(source, str) and ":" not in source:
+            assert (fixture_dir / source).is_file(), f"missing stub for {source}"
 
 
 def test_install_missing_installed_distribution_passes(tmp_path):

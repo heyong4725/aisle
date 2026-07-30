@@ -1,0 +1,23 @@
+id: task-planner
+kind: node
+provides:
+- task_planning
+requires: []
+inputs:
+  episode_goal:
+    schema: json_utf8
+    rate_hz: 1
+outputs:
+  subtask_plan:
+    schema: json_utf8
+    latency_class: best_effort
+embodiment:
+  arm:
+  - franka
+  gripper: any
+  base:
+  - mobile
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/nodes/task_planner.py
