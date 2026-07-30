@@ -1,44 +1,67 @@
-# Ablation A1 — agent-composed vs expert graphs (design doc §6): data inventory
+# Ablation A1 — agent-composed vs expert graphs (design doc §6)
 
 A1 asks whether agent composition carries a tax (or gain) versus the
-hand-written expert. **No matched comparison exists yet** — this
-document inventories what the records actually support, with tier,
-seeds, and revision stated per row, and names the runs that would make
-the cells comparable. Conclusions are deliberately withheld until
-matched cells exist (PR #52 review).
+hand-written expert. **The matched fill-runs have now landed** (both
+expert cells on the held-out seeds 100..107 at one pin, run
+2026-07-29/30; evidence in `records/`, runs reproducible from the
+manifests there). Per-row provenance stays explicit; n=8 per cell keeps
+every conclusion coarse.
 
-## What the records support (per-row provenance)
+## The matched comparison (held-out seeds 100..107)
 
-| System | Tier | Seeds | Commit | pass@1 | N | Notes |
-|---|---|---|---|---|---|---|
-| Expert `expert_t0.yaml` | T0 | 0..49 | `3644a501` | **0.98** | 50 | M0 gate; the second 50-episode run is the SAME seeds at the SAME commit — the CON-5 determinism replicate (identical 49/50), NOT additional independent episodes |
-| Agent zero-shot (oracle-pose family) | T1 | 100..107 | `abd2e9d3` | 0.75–1.0, median 0.875 | 16 graphs × 8 | H1, `analysis/h1/` |
-| Agent EN-loop (claude) | T1 | 100..107 held-out | `e8f163ab` | 1.0 | 8 | H2 |
-| Agent EN-loop (codex, clean) | T1 | 100..107 held-out | `e8f163ab` | 0.875 (dev 0.967/30) | 8 | H2 |
-| Agent (H3, arms W/L) | S1–S3 | 100..107 held-out | `03da7469` | pending | — | campaign in flight |
+| System | Tier | Commit | pass@1 | Failures | Notes |
+|---|---|---|---|---|---|
+| **Expert `expert_t0`** | T1 | `87b1ff66` | **0.875** | 1 `dropped` | fill-run `a1-expert-t0-T1-holdout` |
+| Agent zero-shot (H1, launched graphs) | T1 | `abd2e9d3` | median 0.875 | — | 16 graphs × 8 |
+| Agent EN-loop claude (H2) | T1 | `e8f163ab` | 1.0 | — | held-out |
+| Agent EN-loop codex (H2, clean) | T1 | `e8f163ab` | 0.875 | 1 `dropped` | held-out |
+| **Expert `expert_s1`** | S1 | `87b1ff66` | **0.125** | 5 `timeout`, **2 `extra_item`** | fill-run `a1-expert-s1-holdout` |
+| Agent campaign W/S1 (H3) | S1 | `03da7469` | 0.375 | 5 `timeout` | clean cell |
+| Agent campaign L/S1 (H3) | S1 | `03da7469` | 0.5 | 4 `timeout` | clean cell |
 
-## What the records do NOT support
+Reference rows (different tier, context only): expert_t0 @ T0 = 0.98
+over 50 seeds (M0, `3644a501`, with its CON-5 determinism replicate).
 
-- **Expert-vs-agent on the same tier**: the expert row is T0 (fixed
-  pose); every agent row is T1 (named among 5, randomized poses) —
-  different seeds and revisions besides. No tax/gain conclusion is
-  drawable from these rows.
-- **An expert S1 baseline**: the 13 `s1-gate-*` runs are ALL seed 1,
-  single-episode, across six development commits (`c51b8a99` …
-  `8bd6b234`) — a development trajectory of one repeated seed, not a
-  baseline. Their 8/13 aggregate is recorded here only to prevent its
-  reuse as one.
+## What the matched cells support
 
-## Runs required to fill A1 (queued for post-campaign machine time)
+- **T1 (desk): no composition tax, modest EN-loop gain.** The expert,
+  the H1 zero-shot median, and the codex EN-loop arm all sit at 0.875
+  on this seed set (the codex arm's failure is even the same class,
+  one `dropped`); the claude EN-loop arm's 1.0 is one episode better.
+  At T1 the ceiling is high for everything and A1 discriminates
+  little. Commit skew caveat: the expert cell is at the current pin,
+  the agent rows at their campaign pins.
+- **S1 (retail, long-horizon): agent GAIN, not tax — the expert
+  baseline collapses.** Expert 0.125 vs agent-session systems 0.375
+  (W) and 0.5 (L) on identical held-out seeds: the agent-iterated
+  drivers are 3–4x the expert's pass rate. The expert's held-out
+  failure profile (0.125, 5 timeout, 2 extra_item) **replicates its
+  dev-seed profile exactly** (run `20260728-001009`, seeds 0..7:
+  0.125, 5 timeout, 2 extra_item — see `analysis/h3/records/`),
+  so this is the graph's real level, not seed luck.
+- **The expert commits DELIVERY-class failures; the agent systems did
+  not.** `extra_item` (the 10x class, RS-7) fires twice for the
+  expert on held-out seeds — the L0-pick/neighbour-snag mode the H3
+  S1 agents diagnosed and designed out (their held-out delivery
+  count: 0). Two consequences: the H3 analysis's "delivery precision
+  held" claim is a property of the *agent-built* systems, not of the
+  suite; and H5's structural guarantee does not extend to
+  `extra_item` (the budget guard cannot gate "picked up a neighbour
+  too" — it is verifier-detected only), which the eventual H5
+  writeup must state.
 
-1. `expert_t0.yaml` under `--tier T1`, seeds 100..107, 8 episodes,
-   current pin — the matched expert cell for every T1 agent row.
-2. `expert_s1.yaml`, `--tier S1 --embodiment mobile`, seeds 100..107,
-   8 episodes, current pin — the matched expert cell for the H3 rows.
-3. (After H3 lands) the agent S1–S3 held-out rows from
-   `runs/h3/h3_results.json`.
+## Caveats
 
-With cells 1–3 filled at one pin and one seed range, this becomes a
-real comparison; until then it is an inventory.
+- n=8 per cell; a one-episode swing is 0.125 of pass rate.
+- The expert cells ran at the current pin (`87b1ff66`), the agent
+  rows at their campaign pins — the frozen env is hash-identical
+  (`025c7de2`) across all of them, but graph-adjacent code drifted
+  between pins.
+- H3's S1 cells are single sessions (see `analysis/h3/` for the
+  variance caution); the H1/H2 rows carry their own findings' caveats.
+- Both fill-runs used the recorded human overrides
+  (`--no-idea-gate`, `--env-baseline local`), manifests committed in
+  `records/`.
 
-IDs: design doc §6 ablation A1; CON-5 (replicate accounting).
+IDs: design doc §6 ablation A1, RS-7 (delivery class), CON-5
+(replicate accounting + provenance).
