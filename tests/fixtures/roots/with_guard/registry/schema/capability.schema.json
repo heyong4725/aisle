@@ -18,19 +18,46 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
-    "kind": { "enum": ["node", "subgraph"] },
-    "provides": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
-    "requires": { "type": "array", "items": { "type": "string" } },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "kind": {
+      "enum": [
+        "node",
+        "subgraph"
+      ]
+    },
+    "provides": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "inputs": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
-        "required": ["schema", "rate_hz"],
+        "required": [
+          "schema",
+          "rate_hz"
+        ],
         "additionalProperties": false,
         "properties": {
-          "schema": { "type": "string" },
-          "rate_hz": { "type": "number", "exclusiveMinimum": 0 }
+          "schema": {
+            "type": "string"
+          },
+          "rate_hz": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
         }
       }
     },
@@ -38,11 +65,22 @@
       "type": "object",
       "additionalProperties": {
         "type": "object",
-        "required": ["schema", "latency_class"],
+        "required": [
+          "schema",
+          "latency_class"
+        ],
         "additionalProperties": false,
         "properties": {
-          "schema": { "type": "string" },
-          "latency_class": { "enum": ["hard_rt", "soft_rt", "best_effort"] }
+          "schema": {
+            "type": "string"
+          },
+          "latency_class": {
+            "enum": [
+              "hard_rt",
+              "soft_rt",
+              "best_effort"
+            ]
+          }
         }
       }
     },
@@ -50,14 +88,26 @@
       "type": "object",
       "additionalProperties": {
         "type": "object",
-        "required": ["type", "default"],
+        "required": [
+          "type",
+          "default"
+        ],
         "additionalProperties": false,
         "properties": {
-          "type": { "enum": ["float", "int", "bool", "str"] },
+          "type": {
+            "enum": [
+              "float",
+              "int",
+              "bool",
+              "str"
+            ]
+          },
           "default": {},
           "range": {
             "type": "array",
-            "items": { "type": "number" },
+            "items": {
+              "type": "number"
+            },
             "minItems": 2,
             "maxItems": 2
           }
@@ -66,39 +116,85 @@
     },
     "embodiment": {
       "type": "object",
-      "required": ["arm", "gripper"],
+      "required": [
+        "arm",
+        "gripper"
+      ],
       "additionalProperties": false,
       "properties": {
         "arm": {
           "type": "array",
-          "items": { "enum": ["franka", "so101"] },
+          "items": {
+            "enum": [
+              "franka",
+              "so101"
+            ]
+          },
           "minItems": 1
         },
-        "gripper": { "enum": ["parallel", "any"] },
+        "gripper": {
+          "enum": [
+            "parallel",
+            "any"
+          ]
+        },
         "base": {
           "type": "array",
-          "items": { "enum": ["mobile"] },
+          "items": {
+            "enum": [
+              "mobile"
+            ]
+          },
           "minItems": 1
         }
       }
     },
-    "safety_class": { "enum": ["perception", "decision", "motion"] },
+    "safety_class": {
+      "enum": [
+        "perception",
+        "decision",
+        "motion"
+      ]
+    },
     "eval": {
       "oneOf": [
-        { "type": "null" },
+        {
+          "type": "null"
+        },
         {
           "type": "object",
-          "required": ["suite", "pass_rate", "last_run"],
+          "required": [
+            "suite",
+            "pass_rate",
+            "last_run"
+          ],
           "additionalProperties": false,
           "properties": {
-            "suite": { "type": "string" },
-            "pass_rate": { "type": "number", "minimum": 0, "maximum": 1 },
-            "last_run": { "type": "string" }
+            "suite": {
+              "type": "string"
+            },
+            "pass_rate": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "last_run": {
+              "type": "string"
+            }
           }
         }
       ]
     },
-    "origin": { "enum": ["hub", "agent-authored"] },
-    "source": { "type": "string" }
+    "origin": {
+      "enum": [
+        "hub",
+        "agent-authored"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^(pip:\\s*[^:\\s][^:]*|[^:]+)$",
+      "description": "pip:<distribution> (padding allowed, but at least one non-whitespace distribution character \u2014 issue #35/PR #63: whitespace-only dists are schema errors) or a root-relative path"
+    }
   }
 }

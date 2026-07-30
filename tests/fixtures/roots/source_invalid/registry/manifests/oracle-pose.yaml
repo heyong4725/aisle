@@ -1,0 +1,21 @@
+# issue #35: schema-valid path-form source naming NO file under this
+# root — the launch claim is unverifiable (SOURCE_INVALID, VAL-2)
+id: oracle-pose
+kind: node
+provides:
+- object_pose
+requires: []
+inputs: {}
+outputs:
+  object_pose:
+    schema: pose7d_f32
+    latency_class: best_effort
+embodiment:
+  arm:
+  - franka
+  - so101
+  gripper: any
+safety_class: perception
+eval: null
+origin: hub
+source: src/aisle/nodes/ghost_oracle.py
