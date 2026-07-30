@@ -223,19 +223,20 @@ def test_cli_fails_closed_on_missing_or_malformed_input(tmp_path):
     assert proc.returncode == 1 and out["ok"] is False and "mismatch" in out["error"]
 
 
-def test_precision_failures_score_retail_classes_not_wrong_object():
-    """PR #60 review: H5 in retail is scored on extra_item/misplaced/
-    wrong_slot (RS-7), NOT the desk-only wrong_object (which never fires
-    in retail — a vacuous 0). The cell tallies the held-out precision
-    classes; the CLI totals them per class so a nonzero count is never
-    hidden behind wrong_object_total: 0."""
-    c = cell(record("W", "S3", failures={"wrong_slot": 7, "missing_item": 1}))
-    assert c["precision_failures"] == {"wrong_slot": 7}  # missing_item is not precision
-    assert c["precision_failures_total"] == 7
+def test_failure_classes_split_delivery_from_placement():
+    """PR #60/#67 reviews: H5's 10x precision analogue is the wrong THING
+    delivered (wrong_object desk, extra_item retail) — placement-quality
+    failures (misplaced/wrong_slot/misaligned/overhang, §11.3) are a
+    different claim and must never be conflated into one "precision"
+    number (an earlier draft overstated an H5 breach exactly that way)."""
+    c = cell(record("W", "S3", failures={"wrong_slot": 7, "extra_item": 1, "missing_item": 1}))
+    assert c["delivery_failures"] == {"extra_item": 1}
+    assert c["placement_failures"] == {"wrong_slot": 7}  # missing_item is neither
+    assert c["delivery_failures_total"] == 1 and c["placement_failures_total"] == 7
     assert c["wrong_object_total"] == 0  # the vacuous desk metric, still reported
 
     clean = cell(record("L", "S1", failures={"timeout": 4}))
-    assert clean["precision_failures"] == {} and clean["precision_failures_total"] == 0
+    assert clean["delivery_failures"] == {} and clean["placement_failures"] == {}
 
 
 def test_cli_totals_precision_failures_by_class(tmp_path):
@@ -255,8 +256,9 @@ def test_cli_totals_precision_failures_by_class(tmp_path):
         text=True,
     )
     out = json.loads(proc.stdout)
-    assert out["holdout_precision_failures_total"] == 8
-    assert out["holdout_precision_failures_by_class"] == {"wrong_slot": 7, "misplaced": 1}
+    assert out["holdout_delivery_failures_total"] == 0
+    assert out["holdout_placement_failures_total"] == 8
+    assert out["holdout_placement_failures_by_class"] == {"wrong_slot": 7, "misplaced": 1}
 
 
 def test_markdown_marks_leak_and_stop_reason():
@@ -266,3 +268,58 @@ def test_markdown_marks_leak_and_stop_reason():
     ]
     text = results_markdown(cells, h3_verdict(cells))
     assert "wipe_leak" in text and "agent_done" in text
+
+
+def test_residue_leak_derived_from_aggregates(tmp_path):
+    """PR #67 review: an arm-L scenario that is not the FIRST arm-L
+    scenario of its invocation and has no recorded residue-clear entry
+    inherited the previous session's working state (the resume ran a
+    pre-guard runner with wipes: []). Derived from the aggregates: the
+    first L of an invocation is clean, an infra-abort entry is neither a
+    flag target nor a residue-producing predecessor, and a recorded
+    {"arm": "L", "before": <slot>} clear suppresses the flag."""
+    (tmp_path / "h3_results.json").write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "treatment": TREATMENT,
+                "wipes": [],
+                "records": [
+                    {"arm": "L", "tier": "S1"},
+                    {"arm": "L", "tier": "S2", "infra_error": "429"},
+                ],
+            }
+        )
+    )
+    (tmp_path / "h3_results-r0.json").write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "treatment": TREATMENT,
+                "wipes": [{"arm": "L", "before": "S3"}],
+                "records": [
+                    {"arm": "L", "tier": "S2"},
+                    {"arm": "L", "tier": "S3"},
+                    {"arm": "L", "tier": "S1", "attempt": 2},
+                ],
+            }
+        )
+    )
+    for arm, tier in (("L", "S1"), ("L", "S2"), ("L", "S3")):
+        d = tmp_path / f"arm_{arm}" / tier
+        d.mkdir(parents=True)
+        (d / "scenario.json").write_text(json.dumps(record(arm, tier)))
+    rerun = tmp_path / "arm_L" / "S1-r2"
+    rerun.mkdir()
+    rerun_rec = record("L", "S1")
+    rerun_rec["attempt"] = 2
+    (rerun / "scenario.json").write_text(json.dumps(rerun_rec))
+
+    cells = {
+        (c["arm"], c["tier"], c["attempt"]): c
+        for c in map(cell, load_campaign(tmp_path)["records"])
+    }
+    assert "residue_leak" not in cells[("L", "S1", 1)]["flags"]  # first L of invocation 1
+    assert "residue_leak" not in cells[("L", "S2", 1)]["flags"]  # first L of invocation 2
+    assert "residue_leak" not in cells[("L", "S3", 1)]["flags"]  # cleared (wipes entry)
+    assert "residue_leak" in cells[("L", "S1", 2)]["flags"]  # third L, no clear entry

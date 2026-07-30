@@ -1,0 +1,44 @@
+{
+ "arm": "L",
+ "tier": "S2",
+ "attempt": 1,
+ "worktree_head": "bf6b1ed1f8277442e308f6affb0cc0ba376fc145",
+ "budgets": {
+  "tier": "S2",
+  "tokens": 750000,
+  "episodes": 60,
+  "wall_h": 5.0
+ },
+ "session": {
+  "stopped": "token_budget",
+  "rc": -9,
+  "tokens": 750238,
+  "wall_s": 5137.7
+ },
+ "frozen_drift": [],
+ "holdout": {
+  "ok": true,
+  "error": null,
+  "pass1": 0.0,
+  "pass8": 0.0,
+  "failures": {
+   "missing_item": 5,
+   "wrong_slot": 3
+  }
+ },
+ "first_success_wall_s": null,
+ "wrong_object_total": 0,
+ "rollouts": [
+  {
+   "run_id": "campaign-holdout-L-S2",
+   "mtime": 1785359123.0344713,
+   "episodes": 8,
+   "pass1": 0.0
+  }
+ ],
+ "prior_skills": [],
+ "skills_after": [
+  "s1-driver-v2"
+ ],
+ "skill_reuse_in_deliverable": []
+}

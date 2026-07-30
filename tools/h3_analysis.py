@@ -23,12 +23,15 @@ CRITERION = "arm L S2+S3 time-to-first-success <= 0.5x arm W's (ADR-h3 §7)"
 # the campaign identity that must be single-valued across every combined
 # record (PR #59 review: no cross-commit/model/seed aggregation)
 IDENTITY_KEYS = ("commit", "agent", "model", "dev_seeds", "holdout_seeds")
-# H5 precision classes: the "wrong thing delivered/placed" failures
-# (design doc §1, 10x-asymmetric). `wrong_object` is the DESK label and
-# never fires in retail; the retail suite emits extra_item / misplaced /
-# wrong_slot (RS-7). Reporting only wrong_object_total reads a vacuous 0
-# for every retail scenario (PR #60 review) — score these instead.
-PRECISION_CLASSES = ("wrong_object", "extra_item", "misplaced", "wrong_slot")
+# H5 failure classes, split by WHAT failed (PR #67 review: placement
+# quality is not wrong-medicine delivery). DELIVERY classes are the 10x
+# precision analogue — the wrong THING delivered (`wrong_object` desk,
+# `extra_item` retail, RS-7/design doc §1). PLACEMENT classes are
+# where/how it was placed (§11.3 placement score family). Conflating
+# them overstated an H5 breach when the committed held-out records show
+# zero delivery-class failures.
+DELIVERY_CLASSES = ("wrong_object", "extra_item")
+PLACEMENT_CLASSES = ("misplaced", "wrong_slot", "misaligned", "overhang")
 
 
 def load_campaign(campaign_dir: Path) -> dict:
@@ -54,6 +57,31 @@ def load_campaign(campaign_dir: Path) -> dict:
     scenario_files = sorted(campaign_dir.glob("arm_*/S*/scenario.json"))
     if not scenario_files:
         raise ValueError(f"no scenario records under {campaign_dir}")
+    # residue-leak derivation (PR #67 review): within each invocation
+    # (one h3_results*.json), an arm-L scenario AFTER the first must have
+    # a recorded residue-clear ({"arm": "L", "before": <slot>} in wipes) —
+    # the resume ran a pre-guard runner with wipes: [], so L/S3 inherited
+    # L/S2's working state. Derived from the aggregates, never asserted.
+    leaked: set[tuple[str, str, int]] = set()
+    for f in result_files:
+        agg = json.loads(f.read_text())
+        cleared = {
+            (w.get("arm"), w.get("before")) for w in agg.get("wipes") or [] if isinstance(w, dict)
+        }
+        prev_l = False
+        for rec in agg.get("records") or []:
+            if not isinstance(rec, dict) or rec.get("arm") != "L":
+                continue
+            if rec.get("infra_error"):
+                # an aborted entry wrote no scenario record and ran no
+                # completed session — neither a flag target nor a
+                # residue-producing predecessor for this rule
+                continue
+            attempt = rec.get("attempt", 1)
+            slot = rec.get("tier", "") + ("" if attempt == 1 else f"-r{attempt}")
+            if prev_l and ("L", slot) not in cleared:
+                leaked.add(("L", rec.get("tier"), attempt))
+            prev_l = True
     records = []
     for path in scenario_files:
         try:
@@ -61,6 +89,8 @@ def load_campaign(campaign_dir: Path) -> dict:
         except json.JSONDecodeError as exc:
             raise ValueError(f"malformed scenario record {path}: {exc}") from exc
         rec["_token_samples"] = _samples(path.parent / "token_samples.jsonl")
+        if (rec.get("arm"), rec.get("tier"), rec.get("attempt", 1)) in leaked:
+            rec["_residue_leak"] = True
         records.append(rec)
     return {"treatment": {k: base.get(k) for k in IDENTITY_KEYS}, "records": records}
 
@@ -104,18 +134,26 @@ def cell(rec: dict) -> dict:
     if not holdout.get("ok"):
         flags.append("holdout_partial")
     first = rec.get("first_success_wall_s")
-    # H5 scored on the HELD-OUT precision classes (what we score; dev-side
-    # failures are the agent's own and not in the committed record)
+    # H5 scored on the HELD-OUT records (what we score; dev-side failures
+    # are the agent's own and live outside the committed record)
     holdout_failures = holdout.get("failures") or {}
-    precision = {k: holdout_failures[k] for k in PRECISION_CLASSES if holdout_failures.get(k)}
+    delivery = {k: holdout_failures[k] for k in DELIVERY_CLASSES if holdout_failures.get(k)}
+    placement = {k: holdout_failures[k] for k in PLACEMENT_CLASSES if holdout_failures.get(k)}
+    if rec.get("_residue_leak"):
+        # derived from the aggregates (PR #67 review): an arm-L scenario
+        # that is not the first of its invocation and has NO recorded
+        # residue-clear inherited the previous session's working state
+        flags.append("residue_leak")
     return {
         "arm": rec.get("arm"),
         "tier": rec.get("tier"),
         "attempt": rec.get("attempt", 1),
         "holdout_pass1": holdout.get("pass1"),
         "holdout_failures": holdout_failures,
-        "precision_failures": precision,
-        "precision_failures_total": sum(precision.values()),
+        "delivery_failures": delivery,
+        "delivery_failures_total": sum(delivery.values()),
+        "placement_failures": placement,
+        "placement_failures_total": sum(placement.values()),
         "stopped": session.get("stopped"),
         "tokens": session.get("tokens"),
         "wall_s": session.get("wall_s"),
@@ -179,9 +217,9 @@ def h3_verdict(cells: list[dict]) -> dict:
 def results_markdown(cells: list[dict], verdict: dict) -> str:
     header = (
         "| Arm | Tier | Held-out pass@1 | Session end | Tokens | Wall h "
-        "| First success (min) | Tokens@1st | Precision fails (holdout) | Reuse | Flags |"
+        "| First success (min) | Tokens@1st | Delivery fails | Placement fails | Reuse | Flags |"
     )
-    lines = [header, "|---|---|---|---|---|---|---|---|---|---|---|"]
+    lines = [header, "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for c in cells:
         pass1 = c["holdout_pass1"]
         shown = "—" if pass1 is None else f"{pass1:.3f}"
@@ -189,13 +227,15 @@ def results_markdown(cells: list[dict], verdict: dict) -> str:
             shown += " (partial)"
         first = c["first_success_wall_s"]
         tok1 = c["tokens_to_first_success"]
-        prec = ", ".join(f"{k} {v}" for k, v in c["precision_failures"].items()) or "0"
+        deliv = ", ".join(f"{k} {v}" for k, v in c["delivery_failures"].items()) or "0"
+        place = ", ".join(f"{k} {v}" for k, v in c["placement_failures"].items()) or "0"
         lines.append(
             f"| {c['arm']} | {c['tier']} | {shown} | {c['stopped']} "
             f"| {c['tokens']} | {(c['wall_s'] or 0) / 3600:.2f} "
             f"| {'—' if first is None else f'{first / 60:.1f}'} "
             f"| {'—' if tok1 is None else tok1} "
-            f"| {prec} "
+            f"| {deliv} "
+            f"| {place} "
             f"| {', '.join(c['skill_reuse_in_deliverable'] or []) or '—'} "
             f"| {', '.join(c['flags']) or '—'} |"
         )
@@ -224,13 +264,17 @@ def main() -> int:
     if args.markdown:
         args.markdown.write_text(results_markdown(cells, verdict))
     total_wrong = sum(c["wrong_object_total"] or 0 for c in cells)
-    # H5 scored on the retail precision classes (PR #60 review): the sum
-    # over holdouts, plus the per-class breakdown so a nonzero total is
-    # never hidden behind a vacuous wrong_object_total: 0
-    precision_by_class: dict[str, int] = {}
+    # H5 (PR #60/#67 reviews): delivery-class (wrong THING) and
+    # placement-class (wrong WHERE/HOW) totals reported separately —
+    # never hidden behind a vacuous wrong_object_total: 0, never
+    # conflated into one "precision" number
+    delivery_by_class: dict[str, int] = {}
+    placement_by_class: dict[str, int] = {}
     for c in cells:
-        for k, v in c["precision_failures"].items():
-            precision_by_class[k] = precision_by_class.get(k, 0) + v
+        for k, v in c["delivery_failures"].items():
+            delivery_by_class[k] = delivery_by_class.get(k, 0) + v
+        for k, v in c["placement_failures"].items():
+            placement_by_class[k] = placement_by_class.get(k, 0) + v
     print(
         json.dumps(
             {
@@ -239,8 +283,10 @@ def main() -> int:
                 "cells": cells,
                 "verdict": verdict,
                 "wrong_object_total": total_wrong,
-                "holdout_precision_failures_total": sum(precision_by_class.values()),
-                "holdout_precision_failures_by_class": precision_by_class,
+                "holdout_delivery_failures_total": sum(delivery_by_class.values()),
+                "holdout_delivery_failures_by_class": delivery_by_class,
+                "holdout_placement_failures_total": sum(placement_by_class.values()),
+                "holdout_placement_failures_by_class": placement_by_class,
             },
             indent=1,
         )
