@@ -1,0 +1,12 @@
+# The skill's shipped eval suite (design doc §3 rule 3, CAP-6): the S3
+# retail rollout on two dev seeds whose swaps are both-L1 (the v1
+# feasible class; L0-involving seeds are refused by design and would
+# only measure the no-op). min_pass_rate 0.5 tolerates one sim flake
+# without overclaiming; the evalcard records the measured rate.
+suite: retail
+graph: graphs/eval_s3_driver_v1.yaml
+tier: S3
+embodiment: mobile
+episodes: 2
+seeds: 33,34
+min_pass_rate: 0.5

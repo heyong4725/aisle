@@ -1,0 +1,21 @@
+# The skill's shipped eval suite (design doc §3 rule 3, CAP-6): the S1
+# retail rollout on two dev seeds. min_pass_rate 0.5 tolerates one sim
+# flake without overclaiming; the evalcard records the measured rate
+# either way.
+#
+# Registration eval of record (CON-5 reproducibility — PR #54 review):
+#   run_id  skill-s1-driver-v2-2026-07-29-rerun
+#   git_sha 232286453e7e808319dba971d262ca5540d968de  (contains THIS
+#           graph + the driver source + this suite; `git show
+#           232286453:graphs/eval_s1_driver_v2.yaml` resolves)
+#   result  pass_rate 1.0 (2/2), on the bail-firewall-fixed source
+# Reproduce: git checkout 232286453e7e && uv run harness skill register \
+#   skills/s1-driver-v2/ --run-id <fresh>  (runs/ is gitignored; the run
+#   manifest re-records the same git_sha + graph_hash 4a5029ee…).
+suite: retail
+graph: graphs/eval_s1_driver_v2.yaml
+tier: S1
+embodiment: mobile
+episodes: 2
+seeds: 0..1
+min_pass_rate: 0.5
