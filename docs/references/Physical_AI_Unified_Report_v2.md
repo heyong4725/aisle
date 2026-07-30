@@ -12,12 +12,24 @@
 >   customer delivery upcoming in 2026, not already delivering to US
 >   homes ([1X factory update](https://www.1x.tech/discover/neo-factory)).
 >
+> **Calibration key for readers:** statements in this snapshot are one
+> of — a **reported result** (a specific paper/vendor announcement; the
+> strongest), a **survey inference** (this synthesis connecting dots),
+> or a **prediction** (§12 explicitly). Language like "the field
+> converged," "standard," or "resolved" is survey inference, not
+> consensus fact. The two claims below were found stale by
+> spot-checking and are now CORRECTED IN THE BODY TEXT (with citations
+> at the claims); treat other time-sensitive claims with the same
+> suspicion.
+>
 > Primary sources for the core results the AISLE primer relies on:
 > ENPIRE (arXiv 2606.19980), DreamZero/WAM (arXiv 2602.15922), and the
 > DreamDojo, EgoScale, ASPIRE, and Cosmos 3 releases via
 > nvidia-cosmos on GitHub/Hugging Face and nvidianews.nvidia.com.
 
-# Physical AI: World Models, World Action Models, and the NVIDIA Stack
+# Physical AI industry snapshot — July 2026 (unaudited synthesis)
+
+*Formerly titled: World Models, World Action Models, and the NVIDIA Stack*
 
 **Unified technical architecture guide — v2, July 2026**
 *(Merges the January 2026 report "Physical AI and NVIDIA COSMOS" with the July 2026 progress survey. Superseded claims from v1 are updated in place and logged in the changelog at the end.)*
@@ -33,7 +45,7 @@ The fundamental insight driving the field is unchanged: rather than hand-coding 
 - **DreamZero** (NVIDIA, Feb 2026) defined the WAM paradigm — jointly predicting future video and robot actions in one model — with roughly 2x the task progress of state-of-the-art VLAs in unseen environments, at real-time 7 Hz control.
 - **EgoScale** (NVIDIA, Feb 2026) demonstrated a near-perfect **log-linear scaling law for dexterity (R² = 0.998)** against egocentric human video hours, with less than 0.1% robot data in the training mix.
 - **DreamDojo** (NVIDIA, Feb 2026) delivered an open, action-conditioned neural simulator whose policy rankings correlate with real-world outcomes at **Pearson r = 0.995**.
-- **ENPIRE** (NVIDIA GEAR + CMU + UC Berkeley, June 2026) demonstrated **physical auto-research**: fleets of frontier coding agents (Codex, Claude Code, Kimi Code) given only a high-level goal, autonomously running the full research loop — reset, rollout, verify, analyze, rewrite code — on real robots, reaching 99% success on contact-rich tasks like GPU insertion.
+- **ENPIRE** (NVIDIA GEAR + CMU + UC Berkeley, June 2026) demonstrated **physical auto-research**: fleets of frontier coding agents (Codex, Claude Code, Kimi Code) given only a high-level goal, autonomously running the full research loop — reset, rollout, verify, analyze, rewrite code — on real robots; the paper reports up to 99% success on bounded dexterous tasks (Push-T, pin-box organization, zip-tie cutting) and separately reports high-success transfer to GPU insertion.
 - **ASPIRE** (NVIDIA, July 2026) added a complementary agentic axis: coding agents that debug robot programs and distill fixes into a compounding skill library.
 - **Cosmos 3** (May 2026) unified NVIDIA's previously separate model families into a single open **omnimodel** spanning text, image, video, audio, and action.
 
@@ -72,7 +84,7 @@ At GTC Taipei, NVIDIA released **Cosmos 3**, its first fully open *omnimodel*: a
 
 - **Cosmos 3 Nano** — 16B (8B reasoner + 8B generator), for real-time robotics inference.
 - **Cosmos 3 Super** — 64B (32B reasoner + 32B generator), for datacenter-scale synthetic data generation, physical-reasoning research, and post-training smaller robot models.
-- **Cosmos 3 Edge** (2B) announced for later release. *(Correction 2026-07-31: Edge shipped as a 4B model on July 15 — see provenance note.)*
+- **Cosmos 3 Edge** — 4B, released July 15, 2026 ([NVIDIA announcement](https://nvidianews.nvidia.com/news/japans-robotics-and-manufacturing-leaders-build-on-nvidia-cosmos-to-advance-physical-ai-frontier)). *(Corrected 2026-07-31; originally announced here as a future 2B model.)*
 
 Architecturally, the reasoner+generator split absorbs the old Predict/Reason division into one model line and telegraphs the industry's likely endpoint: video-native dynamics fused with language-native reasoning. Domain verticals extend the family — **Cosmos-H** (healthcare/surgical world models, used by CMR Surgical and J&J MedTech) launched at GTC in March.
 
@@ -153,7 +165,7 @@ Two GEAR-lab releases in June–July 2026 opened an axis orthogonal to model sca
 **The operating model** is exactly the "goal-driven agent fleet" pattern: eight coding agents were dropped into a robot fleet with GPU compute and a generous token budget and given a simple objective — solve the task as fast as possible, keep robots busy but safe, don't waste compute. Humans then largely withdrew; researchers reviewed what the agents produced overnight.
 
 **Results:**
-- **99% pass@8 success** on contact-rich dexterous tasks: Push-T, pin-box organization, zip-tie tying/cutting with a cutter tool, and **seating a GPU into a motherboard PCIe slot**. (pass@8 here means up to 8 *in-context* retries per subtask within one long-horizon rollout, each conditioned on prior failures — measuring emergent retry-and-recovery, not sampling luck; a 13% policy stays ~13% under this metric.)
+- **99% rollout success (with up to eight adaptive retries)** on contact-rich dexterous tasks: Push-T, pin-box organization, and zip-tie tying/cutting with a cutter tool; the paper separately reports a **high success rate** transferring to seating a GPU into a motherboard PCIe slot. (The protocol allows up to 8 retries within one long-horizon rollout, each conditioned on observed failures — measuring retry-and-recovery. The paper does not name this metric "pass@8"; this repository reserves pass@k for its own HAR-3 definition.)
 - **Agent comparison (AutoEnvBench)**: the three harnessed agents were **Codex (GPT-5.5), Claude Code (Opus 4.7), and Kimi Code (Kimi K2.6)**, tracked on research progress over wall-clock time rather than just final success. A telling sim-to-real datum: on Push-T, all three agents solved the task in simulation, but two of three initially failed on real hardware — friction, object dynamics, and sensor noise that simulation didn't capture. ENPIRE's answer is to make the *real world* iterable rather than the simulator more faithful.
 - **Fleet scaling ("physical scaling law")**: 1 → 4 → 8 agent teams reach success progressively faster, with two new efficiency metrics — **Mean Robot Utilization (MRU)** and **Mean Token Utilization (MTU)**. The costs of scale are candidly reported: robots idle (often ~half the time) while agents read logs, write code, or wait on LLM backends; larger teams spend growing token budgets summarizing each other's branches, so token-to-success grows super-linearly with fleet size even as wall-clock time falls.
 - Simulation evaluation in RoboCasa (kitchen manipulation) separates agent research behavior from hardware throughput and confirms recipe transfer.
@@ -198,7 +210,7 @@ Edge: **Jetson AGX Thor** (2,070 FP4 TFLOPS, 128GB unified memory; 7.5x Orin's A
 
 **Figure AI** shipped **Helix 02 (January 2026)**: a ~10M-parameter network replaced ~109,000 lines of hand-engineered C++ balance code, and the system completed a 4-minute, 61-action dishwasher-loading task end-to-end without resets. Figure 03 (Oct 2025: 35-DoF hands, 2x frame rate, System 1/System 2 Helix at 7–9 Hz / 200 Hz) is in production at BotQ (~1 robot/hour; up to 12K/year capacity). The deployment-economics signal: the first BMW industrial use case took 12 months to stand up; the second paying customer took 30 days. Valuation ~$39B after an OpenAI-led round.
 
-**1X Technologies** moved from announcement to delivery: **NEO began shipping to US homes in 2026** *(correction 2026-07-31: per 1X's latest factory update, units were still in internal home testing with customer delivery upcoming — see provenance note)* at $20K or $499/month — the first consumer humanoid — with the honest caveat that unknown tasks may fall back to scheduled remote "Expert Mode" teleoperation (which doubles as the data flywheel). Their 1XWM world model (Jan 2026) and human-video-first training thesis are now the industry mainstream.
+**1X Technologies**: NEO (priced at $20K or $499/month) is in **internal home testing with customer delivery upcoming in 2026** ([1X factory update](https://www.1x.tech/discover/neo-factory)) — with the stated caveat that unknown tasks may fall back to scheduled remote "Expert Mode" teleoperation (which doubles as the data flywheel). Their 1XWM world model (Jan 2026) and human-video-first training thesis are widely influential (survey inference). *(Corrected 2026-07-31; originally claimed NEO had begun shipping to US homes.)*
 
 **Agility Robotics** is the operational-evidence leader: 100K+ totes moved at GXO, Toyota and Mercado Libre added, **$300M+ in contracted Digit v5 orders**, and a **~$2.5B SPAC announced July 5, 2026**.
 
@@ -272,7 +284,7 @@ The convergence of every major AI lab on world models, noted in v1 as a paradigm
 - *"Data collection bottleneck is the fundamental constraint; Tesla fleet and Figure manufacturing scale are the strategic moats"* → revised: **EgoScale's dexterity scaling law** makes egocentric human video the scalable supervision source; the moat shifts to egocentric capture flywheels.
 - *"Real-time inference presents ongoing challenges… sacrifice capacity for speed (SmolVLA) or accept latency (V-JEPA 2)"* → largely resolved via distillation and asynchronous execution (DreamZero-Flash, DreamDojo distillation); System 1/System 2 decomposition is now standard.
 - *Meta V-JEPA 2 as "most architecturally elegant approach"* → the JEPA lineage's center of gravity moved: **LeCun left Meta (Nov 2025) and founded AMI Labs** ($1.03B seed, Mar 2026).
-- *1X World Model announced, NEO at $20K early access* → **NEO is delivering to US homes** ($20K or $499/mo), with Expert-Mode teleoperation fallback.
+- *1X World Model announced, NEO at $20K early access* → NEO in internal home testing, customer delivery upcoming in 2026 ($20K or $499/mo), with Expert-Mode teleoperation fallback *(corrected 2026-07-31)*.
 - *Figure 03/Helix as of Oct 2025* → add **Helix 02 (Jan 2026)**: 10M-param network replacing ~109K lines of C++ balance code; 61-action end-to-end dishwasher task; BotQ at ~1 robot/hour.
 - *Isaac Lab (v1-era)* → **Isaac Lab 3.0** on Newton physics 1.0; add Isaac Lab-Arena, OSMO, Physical AI Data Factory Blueprint.
 - *GR00T N1.x era* → **N1.6 (CES), N1.7 early access with commercial licensing (GTC), N2 previewed (WAM-based, end of 2026, #1 on RoboArena/MolmoSpaces)**.
