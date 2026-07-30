@@ -66,9 +66,11 @@ Two observations that sharpen the mechanism question:
 ## H5 in the retail suite: breached
 
 14 held-out precision-class failures across the six cells
-(13 `wrong_slot`, 1 `misplaced`); `wrong_object` stays 0 but is
-vacuous in retail (desk-only label). Dev-side adds W/S1's 2
-`extra_item`. The structural-safety claim survives only in its
+(13 `wrong_slot`: W/S3 7, L/S2 3, L/S3 3; 1 `misplaced`: W/S2);
+`wrong_object` stays 0 but is vacuous in retail (desk-only label).
+Dev-side adds 10 more: W/S1 2 `extra_item`, W/S2 1 `misplaced`,
+W/S3 7 `wrong_slot` — 24 precision-class failures in total across
+dev + held-out. The structural-safety claim survives only in its
 narrow desk form; the retail precision guarantee did not hold.
 
 ## The one clean pair (S1) — replicated caution, not transfer
