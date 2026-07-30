@@ -62,13 +62,16 @@ intervals:
 
 The intervals overlap heavily: the 3–4x ratios are **point estimates
 from single sessions**, and A1/S1 is **inconclusive pending repeated,
-attested sessions**. The expert's variance is now directly observed:
-three nominally-identical 8-seed runs scored 1/8 (dev seeds), 1/8
-(held-out), and 0/8 (held-out, the invalid-provenance rerun) with
-shifting failure mixes — and the two held-out runs used identical node
-code and seeds, which is a CON-5 determinism violation surface filed as
-issue #71 (S1 nondeterminism). Until #71 resolves, S1 pass rates carry
-run-to-run noise beyond seed choice. What the records do support:
+attested sessions**. One further UNEXPLAINED observation (correction,
+PR #72 review: this establishes neither a CON-5 violation nor
+run-to-run noise — the runs' environment tuples are unmatched): the
+invalid-provenance held-out rerun scored 0/8 (7 timeout, 1 extra_item)
+where the unattested original scored 1/8, and the dev-seed baseline
+(different seeds, 0..7) also read 1/8. Records committed evidence-only
+under `records/INVALID-a1-expert-s1-holdout-att/`; the observation
+motivates issue #71, whose back-to-back attested same-tuple rerun pair
+is the test that could establish (non)determinism. What the records do
+support:
 
 - The expert's held-out failure histogram (0.125; 5 timeout,
   2 extra_item) matches its dev-seed baseline run exactly (seeds 0..7,
@@ -84,9 +87,11 @@ run-to-run noise beyond seed choice. What the records do support:
 ## Caveats
 
 - n=8 cells throughout; one episode swings a rate by 0.125.
-- Expert cells at pin `87b1ff66`, agent rows at their campaign pins;
-  frozen-tree `env_hash` identical (`025c7de2`) across rows, installed
-  environments NOT identified (unattested runs).
+- Pins: the ATTESTED T1 cell of record is at `0d7bd127`; the original
+  unattested fill-runs are at `87b1ff66`; agent rows at their campaign
+  pins. Frozen-tree `env_hash` is identical (`025c7de2`) across all of
+  them; installed environments are identified ONLY for the attested T1
+  cell (fingerprint `46f2ec83…`).
 - H3's S1 cells are single sessions (`analysis/h3/` variance caution);
   H1/H2 rows carry their findings' caveats.
 - Fill-runs used the recorded human overrides (`--no-idea-gate`,
