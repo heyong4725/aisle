@@ -63,3 +63,21 @@ idea-open ts → first episode result after the change.
   mode that supports live mutation; episode-0 outcomes under daemon
   mode showed run-to-run variation during the shakeout, so per-rep
   context (which seed, warm scene) is recorded in the evidence.
+
+## Revision 2 (2026-07-31, PR #79 review)
+
+Rev 1's fixed R,H,R,H order with the idea logged the instant the
+stream's first result landed PHASE-LOCKED the measurement: every
+hot-swap idea arrived 0.5–7.7 ms after an episode result, so the next
+episode was always a straddler and the hot-swap arm always paid the
+worst-case wait (confirmed from the rev-1 records). Rev 2 randomizes
+BOTH the path order (seeded shuffle of N relaunch + N hot-swap) and
+the idea-arrival phase (seeded uniform(0, 25 s) delay after the
+stream-health check), with the seed recorded in the batch manifest.
+Rev-1 records are retained as superseded evidence and excluded from
+the published table. Additionally: batch manifests now record the
+full CON-5 tuple with an explicit UNATTESTED label (dev measurement,
+ADR-24), episode timelines are sampled by a continuous 4 Hz background
+thread (synchronous polling left gaps that mis-credited episodes), and
+orphan reaping is scoped to the dataflow's own pids (never a global
+pattern kill).

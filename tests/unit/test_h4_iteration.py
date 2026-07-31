@@ -97,3 +97,47 @@ def test_analyze_recomputes_from_raw_records_only():
     assert table["hotswap"]["median_s"] == pytest.approx(50.0)
     assert table["hotswap"]["failed"] == 1 and table["hotswap"]["n"] == 2
     assert table["median_ratio_relaunch_over_hotswap"] == pytest.approx(2.2)
+
+
+def test_stale_pid_selection_leaves_unrelated_processes_alone():
+    """PR #79 review P1: orphan reaping must be scoped to THIS
+    dataflow's own node pids whose live command line references THIS
+    checkout — an unrelated AISLE experiment (other pid, other
+    checkout) must never be selected."""
+    from h4_iteration import stale_node_pids
+
+    entries = [
+        {"node": "grasp-planner-topdown", "pid": "111"},
+        {"node": "dora-genesis", "pid": "222"},
+        {"node": "bad", "pid": "not-a-pid"},
+    ]
+    ps = [
+        "111 /this/checkout/.venv/bin/python3 /this/checkout/src/aisle/nodes/grasp_topdown.py",
+        "222 /this/checkout/.venv/bin/python3 /this/checkout/src/aisle/nodes/dora_genesis.py",
+        "333 /other/checkout/.venv/bin/python3 /other/checkout/src/aisle/nodes/dora_genesis.py",
+        "444 /this/checkout/.venv/bin/python3 /this/checkout/src/aisle/nodes/oracle_pose.py",
+    ]
+    # 333: unrelated checkout — excluded even though it is an AISLE node.
+    # 444: this checkout but NOT one of this dataflow's snapshot pids.
+    assert stale_node_pids(entries, ps, "/this/checkout") == [111, 222]
+    # a snapshot pid whose process is gone (not in ps) is not selected
+    assert stale_node_pids([{"pid": "999"}], ps, "/this/checkout") == []
+
+
+def test_runner_has_no_global_pkill():
+    """The reaping path must be pid-scoped — a global pattern kill can
+    terminate concurrent campaigns (PR #79 review P1)."""
+    src = (REPO_ROOT / "tools" / "h4_iteration.py").read_text()
+    assert "pkill" not in src
+    assert "stale_node_pids(" in src
+
+
+def test_order_and_phase_are_seeded_not_fixed():
+    """PR #79 review P1 (phase lock): the runner must randomize the
+    path order and the idea-arrival phase from a recorded seed — a
+    fixed R,H order with instant idea logging pins every hot-swap rep
+    to the worst arrival phase."""
+    src = (REPO_ROOT / "tools" / "h4_iteration.py").read_text()
+    assert "rng.shuffle(order)" in src
+    assert "rng.uniform(0.0, 25.0)" in src
+    assert "phase_delay_s" in src

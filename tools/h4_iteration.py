@@ -11,7 +11,11 @@ JSON to stdout, logs to stderr, exit 0 iff ok).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
+import platform as platform_mod
+import random
 import subprocess
 import sys
 import time
@@ -59,6 +63,26 @@ def latency_from_record(rec: dict) -> float | None:
     if credited is None:
         return None
     return credited[1] - float(rec["t_idea"])
+
+
+def stale_node_pids(node_entries: list[dict], ps_lines: list[str], repo_root: str) -> list[int]:
+    """PIDs safe to reap after `dora stop`: they were THIS dataflow's own
+    nodes (from `dora node list -d <name>`) AND their current command
+    line still references this checkout. NEVER a global pattern kill
+    (PR #79 review P1: a global pattern kill matches every AISLE
+    experiment on the host and can corrupt concurrent campaigns)."""
+    pids: list[int] = []
+    for entry in node_entries:
+        try:
+            pid = int(str(entry.get("pid", "")).strip())
+        except ValueError:
+            continue
+        for line in ps_lines:
+            parts = line.strip().split(None, 1)
+            if len(parts) == 2 and parts[0] == str(pid) and repo_root in parts[1]:
+                pids.append(pid)
+                break
+    return pids
 
 
 def timeline_from_polls(poll: list) -> list[float]:
@@ -113,9 +137,16 @@ def sh(cmd: list[str]) -> subprocess.CompletedProcess:
 
 
 class Stream:
-    """One daemon-mode dataflow and its poll-derived episode timeline."""
+    """One daemon-mode dataflow and its poll-derived episode timeline.
+    A BACKGROUND sampler thread polls the results stream at 4 Hz for the
+    stream's whole lifetime — synchronous polling left gaps during phase
+    delays and CLI calls, collapsing every episode completed in a gap
+    onto one timestamp and mis-crediting pre-change episodes (a 3.4 s
+    "latency" artifact caught in the PR #79 rework)."""
 
     def __init__(self, graph: Path, results: Path, name: str) -> None:
+        import threading
+
         self.results = results
         self.name = name
         self.poll: list[tuple[float, int]] = []
@@ -124,11 +155,22 @@ class Stream:
         started = sh(["dora", "start", str(graph), "--uv", "--name", name, "--detach"])
         if started.returncode != 0:
             raise RuntimeError(f"dora start failed: {(started.stderr or '')[-300:]}")
+        self._stop_sampling = threading.Event()
 
-    def sample(self) -> list[float]:
+        def _sampler() -> None:
+            while not self._stop_sampling.is_set():
+                self._sample_once()
+                self._stop_sampling.wait(0.25)
+
+        self._thread = threading.Thread(target=_sampler, daemon=True)
+        self._thread.start()
+
+    def _sample_once(self) -> None:
         count = len(self.results.read_text().splitlines()) if self.results.exists() else 0
         self.poll.append((time.time(), count))
-        return timeline_from_polls(self.poll)
+
+    def sample(self) -> list[float]:
+        return timeline_from_polls(list(self.poll))
 
     def wait(self, condition, timeout_s: float) -> bool:
         deadline = time.time() + timeout_s
@@ -138,10 +180,32 @@ class Stream:
             time.sleep(0.5)
         return False
 
+    def node_entries(self) -> list[dict]:
+        proc = sh(["dora", "node", "list", "-d", self.name, "--format", "json"])
+        entries = []
+        for line in (proc.stdout or "").splitlines():
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+        return entries
+
     def stop(self) -> None:
+        # snapshot THIS dataflow's node pids before stop, then reap only
+        # those whose live cmdline still references this checkout
+        # (PR #79 review P1: no global pattern kill — concurrent AISLE
+        # experiments on the host must be untouchable)
+        self._stop_sampling.set()
+        entries = self.node_entries()
         sh(["dora", "stop", "--name", self.name, "--grace-duration", "5s"])
         time.sleep(2)
-        subprocess.run(["pkill", "-f", "src/aisle/"], capture_output=True)
+        ps = subprocess.run(["ps", "ax", "-o", "pid=,command="], capture_output=True, text=True)
+        for pid in stale_node_pids(entries, (ps.stdout or "").splitlines(), str(REPO_ROOT)):
+            try:
+                os.kill(pid, 9)
+                print(f"[h4] reaped stale node pid {pid}", file=sys.stderr)
+            except ProcessLookupError:
+                pass
         time.sleep(1)
 
 
@@ -171,7 +235,45 @@ def build_graph(work: Path, seeds: int, results: Path) -> tuple[Path, Path]:
     return graph, variant
 
 
-def run_experiment(out_dir: Path, reps: int) -> dict:
+def batch_manifest(out_dir: Path, graph: Path, seed: int, order: list[str]) -> dict:
+    """CON-5 provenance for the whole batch (PR #79 review P1): the full
+    tuple recorded through the ADR-24 facts path, honestly labelled — a
+    dev measurement with a local baseline and no post-run audit makes NO
+    reproducibility claim (CON-5 as amended)."""
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    import env_hash as envh
+
+    git_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True
+    ).stdout.strip()
+    env_hash_val, _ = envh.compute_env_hash(REPO_ROOT)
+    att = envh.dist_attestation(REPO_ROOT, None, ["sim"])
+    dora_version = subprocess.run(["dora", "--version"], capture_output=True, text=True)
+    manifest = {
+        "git_sha": git_sha,
+        "platform": platform_mod.platform(),
+        "env_hash": env_hash_val,
+        "env_fingerprint": att.get("fingerprint"),
+        "env_attested": False,
+        "dist_problems": att.get("problems"),
+        "attestation_note": (
+            "dev measurement: local baseline, no post-run audit — per CON-5 "
+            "as amended (ADR-24) this evidence makes NO reproducibility claim"
+        ),
+        "graph_sha256": hashlib.sha256(graph.read_bytes()).hexdigest(),
+        "seeds": "0..29 (episode stream)",
+        "order_seed": seed,
+        "order": order,
+        "phase_model": "idea arrival delayed uniform(0, 25.0)s after stream health check",
+        "dora_cli": (dora_version.stdout or "").strip(),
+        "dora_api_rev": "7eb4a5f8b",
+        "coordinator_port": os.environ.get("DORA_COORDINATOR_PORT", "6013 (default)"),
+    }
+    (out_dir / f"manifest-seed{seed}.json").write_text(json.dumps(manifest, indent=1) + "\n")
+    return manifest
+
+
+def run_experiment(out_dir: Path, reps: int, seed: int = 0) -> dict:
     import yaml
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -179,7 +281,14 @@ def run_experiment(out_dir: Path, reps: int) -> dict:
     graph, variant = build_graph(out_dir, 30, results)
     record_path = out_dir / "h4_latency.jsonl"
     records: list[dict] = []
-    order = [p for _ in range(reps) for p in ("relaunch", "hotswap")]
+    # PR #79 review P1 (phase lock): a fixed R,H order with ideas logged
+    # the instant a result lands pins every hot-swap idea to the worst
+    # arrival phase (the next episode is ALWAYS a straddler). Randomize
+    # BOTH the path order and the idea-arrival phase, seeded (CON-5).
+    rng = random.Random(seed)
+    order = ["relaunch"] * reps + ["hotswap"] * reps
+    rng.shuffle(order)
+    batch_manifest(out_dir, graph, seed, order)
     nonce = int(time.time()) % 100000  # unique dataflow names across invocations
     stream_index = 0
     stream = Stream(graph, results, f"h4-{nonce}-{stream_index}")
@@ -187,6 +296,8 @@ def run_experiment(out_dir: Path, reps: int) -> dict:
         for rep, path_name in enumerate(order):
             if not stream.wait(lambda t: len(t) >= 1, 600):
                 raise RuntimeError(f"rep {rep}: stream produced no episode in 600s")
+            phase_delay = rng.uniform(0.0, 25.0)
+            time.sleep(phase_delay)
             t_idea = log_idea(f"H4 rep {rep} ({path_name}): null-variant {NODE_ID}")
             if path_name == "hotswap":
                 swap = sh(
@@ -246,6 +357,7 @@ def run_experiment(out_dir: Path, reps: int) -> dict:
                 "change_ok_ts": change_ok,
                 "timeline": stream.sample(),
                 "timed_out": not ok,
+                "phase_delay_s": round(phase_delay, 3),
             }
             rec["latency_s"] = latency_from_record(rec)
             records.append(rec)
@@ -261,6 +373,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "runs" / "h4")
     parser.add_argument("--reps", type=int, default=6, help="repetitions PER PATH")
+    parser.add_argument("--seed", type=int, default=0, help="order/phase RNG seed (CON-5)")
     parser.add_argument("--analyze", type=Path, default=None, help="recompute from a record")
     args = parser.parse_args()
     try:
@@ -272,7 +385,7 @@ def main() -> int:
             return 0
         # resolve: AISLE_RESULTS lands in node env, and nodes run with
         # the GRAPH dir as cwd — a relative --out silently nests
-        table = run_experiment(args.out.resolve(), args.reps)
+        table = run_experiment(args.out.resolve(), args.reps, args.seed)
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
         return 1
