@@ -246,11 +246,20 @@ def batch_manifest(out_dir: Path, graph: Path, seed: int, order: list[str]) -> d
     git_sha = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True
     ).stdout.strip()
+    dirty = bool(
+        subprocess.run(
+            ["git", "status", "--porcelain"], cwd=REPO_ROOT, capture_output=True, text=True
+        ).stdout.strip()
+    )
     env_hash_val, _ = envh.compute_env_hash(REPO_ROOT)
     att = envh.dist_attestation(REPO_ROOT, None, ["sim"])
     dora_version = subprocess.run(["dora", "--version"], capture_output=True, text=True)
     manifest = {
         "git_sha": git_sha,
+        # PR #79 re-review P1: a sha only identifies the code if the
+        # tree was CLEAN — a dirty tree is recorded and disqualifies
+        # the batch from citing the sha as its code identity
+        "git_dirty": dirty,
         "platform": platform_mod.platform(),
         "env_hash": env_hash_val,
         "env_fingerprint": att.get("fingerprint"),
@@ -366,6 +375,17 @@ def run_experiment(out_dir: Path, reps: int, seed: int = 0) -> dict:
             print(f"[h4] rep {rep} {path_name}: {rec['latency_s']}s", file=sys.stderr)
     finally:
         stream.stop()
+        # HAR-7/HAR-12 evidence rides WITH the batch (PR #79 re-review
+        # P1: the idea/swap logs were forgotten at evidence-assembly
+        # time) — copy the branch's append-only logs into the out dir
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"], cwd=REPO_ROOT, capture_output=True, text=True
+        ).stdout.strip()
+        safe = branch.replace("/", "__")
+        for kind in ("ideas", "swaps"):
+            src = REPO_ROOT / "runs" / kind / f"{safe}.jsonl"
+            if src.exists():
+                (out_dir / f"{kind}.jsonl").write_text(src.read_text())
     return analyze(records)
 
 
