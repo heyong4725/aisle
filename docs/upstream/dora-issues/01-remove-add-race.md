@@ -1,6 +1,6 @@
 # Bug: `dora node remove` -> `node add` (same id) race — old process's SIGKILL is attributed to the freshly added node, marking it failed
 
-**Filed as [dora-rs/dora#2916](https://github.com/dora-rs/dora/issues/2916) (2026-07-31).**
+**Filed as [dora-rs/dora#2916](https://github.com/dora-rs/dora/issues/2916) (2026-07-31). RESOLVED: fixed upstream in `eec31a40b` (#2893, merged 4 days after our pin); retest on main confirmed (issue comment, 2026-07-31). Our settle workaround stays until the AISLE dora pin moves past the fix.**
 
 **Versions:** dora-cli 1.0.0-rc.4; daemon/coordinator + Python node API built from git rev `7eb4a5f8b` (CLI cargo-installed from the same rev). macOS arm64 (Darwin 25.5.0).
 
