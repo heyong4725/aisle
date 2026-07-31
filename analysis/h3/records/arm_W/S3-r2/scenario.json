@@ -1,0 +1,58 @@
+{
+ "arm": "W",
+ "tier": "S3",
+ "attempt": 2,
+ "worktree_head": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+ "budgets": {
+  "tier": "S3",
+  "tokens": 750000,
+  "episodes": 60,
+  "wall_h": 5.0
+ },
+ "session": {
+  "stopped": "token_budget",
+  "rc": -9,
+  "tokens": 750887,
+  "wall_s": 5507.3
+ },
+ "frozen_drift": [],
+ "holdout": {
+  "ok": true,
+  "error": null,
+  "pass1": 0.0,
+  "pass8": 0.0,
+  "failures": {
+   "missing_item": 7,
+   "wrong_slot": 1
+  }
+ },
+ "first_success_wall_s": null,
+ "wrong_object_total": 0,
+ "rollouts": [
+  {
+   "run_id": "skill-s3-driver-v2-2026-07-30-d5e65a",
+   "mtime": 1785436641.3668094,
+   "episodes": 2,
+   "pass1": 0.0,
+   "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+   "env_baseline": "local",
+   "env_baseline_oid": null,
+   "env_attested": null
+  },
+  {
+   "run_id": "campaign-holdout-W-S3-r2",
+   "mtime": 1785447040.0924094,
+   "episodes": 8,
+   "pass1": 0.0,
+   "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+   "env_baseline": "local",
+   "env_baseline_oid": null,
+   "env_attested": null
+  }
+ ],
+ "prior_skills": [],
+ "skills_after": [
+  "s3-driver-v2"
+ ],
+ "skill_reuse_in_deliverable": []
+}
