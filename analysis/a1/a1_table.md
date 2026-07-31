@@ -13,9 +13,10 @@ the unattested run exactly — 0.875, one `dropped`. The S1 rerun is
 INVALID as an attested cell: it executed from the live repo tree after a
 branch switch (pre-ADR-24 code at `05f7598` — an operator error now
 avoided by running long jobs from pinned worktrees only) and is retained
-solely as a variance observation below. A clean attested S1 expert run
-is queued behind the H3 verdict reruns. n=8 per cell keeps every
-conclusion coarse.
+solely as a variance observation below. The queued clean attested S1
+expert runs landed 2026-07-31 as the issue #71 determinism pair
+(`analysis/s1-determinism/`) — see the amended S1 section. n=8 per
+cell keeps every conclusion coarse.
 
 ## T1 (desk): the END-TO-END estimand shows a real composition tax
 
@@ -57,20 +58,25 @@ intervals:
 | System | pass@1 (observed) | Wilson 95% | Failures |
 |---|---|---|---|
 | Expert `expert_s1` (fill-run, unattested) | 0.125 (1/8) | 0.02–0.47 | 5 `timeout`, 2 `extra_item` |
+| Expert `expert_s1` (ATTESTED, `s1-det-pair-1`) | 0.0 (0/8) | 0.00–0.32 | 5 `timeout`, 3 `extra_item` |
+| Expert `expert_s1` (ATTESTED, `s1-det-pair-2`) | 0.0 (0/8) | 0.00–0.32 | 7 `timeout`, 1 `extra_item` |
 | Agent W/S1 (H3, `03da7469`) | 0.375 (3/8) | 0.14–0.69 | 5 `timeout` |
 | Agent L/S1 (H3, `03da7469`) | 0.500 (4/8) | 0.22–0.79 | 4 `timeout` |
 
-The intervals overlap heavily: the 3–4x ratios are **point estimates
-from single sessions**, and A1/S1 is **inconclusive pending repeated,
-attested sessions**. One further UNEXPLAINED observation (correction,
-PR #72 review: this establishes neither a CON-5 violation nor
-run-to-run noise — the runs' environment tuples are unmatched): the
-invalid-provenance held-out rerun scored 0/8 (7 timeout, 1 extra_item)
-where the unattested original scored 1/8, and the dev-seed baseline
-(different seeds, 0..7) also read 1/8. Records committed evidence-only
-under `records/INVALID-a1-expert-s1-holdout-att/`; the observation
-motivates issue #71, whose back-to-back attested same-tuple rerun pair
-is the test that could establish (non)determinism. What the records do
+The intervals overlap heavily: the ratios are **point estimates from
+single sessions**, and A1/S1 is **inconclusive** — now for an
+established mechanical reason, not a suspicion. **Resolution of the
+formerly-unexplained observation (issue #71): the back-to-back
+attested same-tuple pair (`analysis/s1-determinism/`, pin `9019752e`,
+identical fingerprint `46f2ec83…`, both `env_attested: true`)
+DIVERGED — a CON-5 violation in the S1/mobile stack.** Two seeds flip
+failure class between runs; the desk tier shows no such drift. Every
+single-session S1 rate in this table is therefore a draw from a
+nondeterministic process; the invalid-provenance rerun's 0/8 against
+the unattested 1/8 needs no further explanation (three expert_s1
+sessions read 1/8, 0/8, 0/8). Establishing an S1 expert level of
+record now requires either the determinism fix or a repeated-session
+protocol. What the records do
 support:
 
 - The expert's held-out failure histogram (0.125; 5 timeout,
