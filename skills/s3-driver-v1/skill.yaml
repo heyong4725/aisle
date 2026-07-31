@@ -4,11 +4,15 @@
 # shelf place, with the wrist spin at placement derived from the
 # MEASURED in-hand yaw offset (poses topic vs FK) so the box lands at
 # the slot yaw — the lost s2-driver-v1's dominant `misaligned` failure.
-# L0-involving swaps are refused at plan time (safe no-op). Idea I1 in
-# the H3-S3 campaign tree.
+# L0-involving swaps are refused at plan time (safe no-op) — the
+# capability id carries that precondition (PR #75 review: a generic
+# s3_reshelving_driving identity hid the 6/50 full-tier applicability
+# behind a 1.0 evalcard). safety_class is motion: this node emits
+# joint_cmd/gripper_cmd directly (CAP-6). Idea I1 in the H3-S3
+# campaign tree.
 id: s3-driver-v1
 kind: node
-provides: [s3_reshelving_driving]
+provides: [s3_reshelving_driving_both_l1]
 requires: [waypoint_navigation]
 inputs:
   episode_goal: {schema: json_utf8, rate_hz: 1}
@@ -25,7 +29,7 @@ embodiment:
   arm: [franka]
   gripper: any
   base: [mobile]
-safety_class: decision
+safety_class: motion
 eval: null
 origin: agent-authored
 source: skills/s3-driver-v1/s3_driver_v1.py

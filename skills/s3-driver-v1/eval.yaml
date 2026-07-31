@@ -1,12 +1,19 @@
-# The skill's shipped eval suite (design doc §3 rule 3, CAP-6): the S3
-# retail rollout on two dev seeds whose swaps are both-L1 (the v1
-# feasible class; L0-involving seeds are refused by design and would
-# only measure the no-op). min_pass_rate 0.5 tolerates one sim flake
-# without overclaiming; the evalcard records the measured rate.
-suite: retail
+# The skill's shipped eval suite (design doc §3 rule 3, CAP-6). The
+# population is the ENTIRE generator-derived both-L1 feasible class over
+# the S3 dev range 0..49 — six seeds, machine-derived by
+# tests/unit/test_s3_driver_v1.py from generate_episode + the driver's
+# own refusal logic, never a handpicked subset (PR #75 review). The
+# suite and capability identity carry the L1-only precondition: this
+# node REFUSES any swap involving an L0 slot at plan time (safe no-op,
+# S1 I3 finding: the descent jams on the L1 board), so its full-tier
+# S3 applicability is 6/50 = 0.12 and the evalcard's pass_rate speaks
+# ONLY for the narrowed s3_reshelving_driving_both_l1 capability.
+# min_pass_rate 0.5 tolerates sim flakes without overclaiming; the
+# evalcard records the measured rate either way.
+suite: retail-s3-both-l1
 graph: graphs/eval_s3_driver_v1.yaml
 tier: S3
 embodiment: mobile
-episodes: 2
-seeds: 33,34
+episodes: 6
+seeds: 19,28,33,34,35,36
 min_pass_rate: 0.5

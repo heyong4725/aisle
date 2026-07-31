@@ -32,6 +32,7 @@ Pure planning/geometry at module level (CON-12); dora only in main().
 
 from __future__ import annotations
 
+import dataclasses
 import math
 
 import numpy as np
@@ -49,6 +50,8 @@ from aisle.nodes.ik_trajectory import (
 )
 from aisle.scenes.pharmacy import load_meds, load_physics
 from aisle.scenes.store import load_planogram, slot_world_pose, stocked_items
+from aisle.verifier.retail import build_retail_cfg
+from aisle.verifier.retail import placement_check as verifier_placement_check
 
 PARK_STANDOFF_M = 0.48
 # counter buffer standoff. 0.42 (not S1's 0.50): the RE-PICK's retract
@@ -64,11 +67,45 @@ GRASP_CRITICAL = frozenset({"pregrasp", "advance", "close"})
 GRIP_FROM_TOP = 0.035  # GRIP_ENGAGEMENT: TCP this far below the box top
 PLACE_HOVER = 0.02  # box bottom hovers this above the surface at release
 TRANSFER_LIFT = 0.06  # transfer height above the release TCP
-# post-place verification bands (self-check from `poses`, tighter than
-# the verifier's 0.02 m / 10 deg so a pass here implies a pass there)
+# pos/yaw self-check bands, tightened BELOW the verifier's 0.02 m /
+# 10 deg; the other three RS-4 criteria run at the verifier's own bands
+# (place_check delegates to the verifier's placement_check, PR #75
+# review) so a pass here implies a verifier pass on all five
 CHECK_POS_M = 0.016
 CHECK_YAW_RAD = 0.14
 J7_MIN, J7_MAX = -2.8973, 2.8973
+
+
+class PickStreamGate:
+    """Grasp-critical bail firewall around a pick StageStreamer (PR #54
+    review, reused here per PR #75 review): the MOMENT
+    pregrasp/advance/close bails, all further stream output is
+    suppressed — including the bailed tick's own command. Without it
+    the streamer marches on and issues every later close/lift/retract/
+    carry command with tracking already declared unsafe, preserving the
+    blind-close/neighbour-snag failure mode."""
+
+    def __init__(self, streamer) -> None:
+        self.streamer = streamer
+        self.bails: set[str] = set()
+        self.critical_bail: str | None = None
+
+    @property
+    def done(self) -> bool:
+        return self.critical_bail is not None or self.streamer.done
+
+    def step(self, qpos):
+        if self.critical_bail is not None:
+            return None, None, []
+        full_cmd, grip_out, logs = self.streamer.step(qpos)
+        for line in logs:
+            if " bailed at joint " in line:
+                stage = line.split()[1]
+                self.bails.add(stage)
+                if stage in GRASP_CRITICAL:
+                    self.critical_bail = stage
+                    return None, None, logs
+        return full_cmd, grip_out, logs
 
 
 def _wrap(a: float) -> float:
@@ -254,20 +291,25 @@ def place_stages(
     return stages, None
 
 
-def place_check(box_pos, box_yaw: float, slot_id: str, plano: dict) -> str | None:
-    """Self-check a placement from `poses` against the slot template
-    (bands tighter than the verifier's). None iff good."""
-    world, slot_yaw = slot_world_pose(plano, slot_id)
-    dx = float(box_pos[0]) - world[0]
-    dy = float(box_pos[1]) - world[1]
-    err = _wrap(box_yaw - slot_yaw)
-    if math.hypot(dx, dy) > CHECK_POS_M:
-        return f"pos {math.hypot(dx, dy):.3f}"
-    if math.cos(err) <= 0.0:
-        return f"front_face (err {err:.2f})"
-    folded = ((err + math.pi / 2) % math.pi) - math.pi / 2
-    if abs(folded) > CHECK_YAW_RAD:
-        return f"yaw {folded:.3f}"
+def place_check(box_pos, box_yaw: float, slot_id: str, plano: dict, half, cfg) -> str | None:
+    """Self-check a placement from `poses` against ALL FIVE RS-4
+    criteria by delegating to the verifier's own placement_check
+    (PR #75 review: the old XY+yaw-only check returned None for a box
+    10 cm above its slot and ignored overhang/alignment, turning
+    repairable placements into timeouts). pos/yaw run tightened bands;
+    the other three run the verifier's own, so a pass here implies a
+    verifier pass. Returns the first failing criterion, None iff good."""
+    check_cfg = dataclasses.replace(
+        cfg,
+        pos_tol_m=min(cfg.pos_tol_m, CHECK_POS_M),
+        yaw_tol_deg=min(cfg.yaw_tol_deg, math.degrees(CHECK_YAW_RAD)),
+    )
+    result = verifier_placement_check(
+        np.asarray(box_pos, dtype=np.float32), box_yaw, half, slot_id, plano, check_cfg
+    )
+    for criterion in ("pos", "yaw", "front_face", "overhang", "alignment"):
+        if not result[criterion]:
+            return criterion
     return None
 
 
@@ -305,6 +347,7 @@ def main() -> None:
     send = make_sender(node)
 
     goal = None
+    retail_cfg = None
     roster: list[str] = []
     queue: list[dict] = []
     pending: dict | None = None
@@ -374,7 +417,9 @@ def main() -> None:
             print(f"pick {item_id} failed: {err}", file=sys.stderr)
             fail_item(item_id)
             return
-        streamer = StageStreamer(stages, home, dt, 1.0, integ_cap=0.30)
+        # pick streams run behind the bail firewall (PR #54/#75 reviews):
+        # a grasp-critical bail must stop the stream THAT tick
+        streamer = PickStreamGate(StageStreamer(stages, home, dt, 1.0, integ_cap=0.30))
         stream_bails = set()
         carry_q = q_carry
         carried = {
@@ -512,7 +557,12 @@ def main() -> None:
         item_id = task["item"]
         slot_id = task["slot"]
         pose = item_pose(item_id)
-        problem = "no pose" if pose is None else place_check(pose[0], pose[1], slot_id, plano)
+        half = tuple(float(s) / 2 for s in carried["size"]) if carried else (0.02, 0.02, 0.05)
+        problem = (
+            "no pose"
+            if pose is None
+            else place_check(pose[0], pose[1], slot_id, plano, half, retail_cfg)
+        )
         if problem is None:
             print(f"placement verified: {item_id} -> {slot_id}", file=sys.stderr)
             carry_q = None
@@ -593,6 +643,7 @@ def main() -> None:
             clear()
         elif event["id"] == "episode_goal":
             goal = json.loads(event["value"][0].as_py())
+            retail_cfg = build_retail_cfg(plano, goal)
             roster = [item.item_id for item in stocked_items(plano, goal)]
             if queue or streamer is not None:
                 continue  # one plan per episode
@@ -683,7 +734,15 @@ def main() -> None:
                 print(line, file=sys.stderr)
                 if " bailed at joint " in line:
                     stream_bails.add(line.split()[1])
-            if streamer.done:
+            if isinstance(streamer, PickStreamGate) and streamer.critical_bail:
+                # PR #54/#75 reviews: abort NOW — the gate already
+                # suppressed this tick's command, and waiting for the
+                # stream to run dry would issue every later close/lift/
+                # retract/carry command with tracking declared unsafe
+                ctx, streamer = after_stream, None
+                after_stream = None
+                abort_release(ctx["task"])
+            elif streamer.done:
                 ctx, streamer = after_stream, None
                 after_stream = None
                 if ctx is None:
