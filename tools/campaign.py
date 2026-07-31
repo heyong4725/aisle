@@ -295,10 +295,17 @@ def sweep_worktree(wt: Path) -> list[int]:
     return killed
 
 
-def campaign_metrics(wt: Path, session_t0: float, since: float | None = None) -> dict:
+def campaign_metrics(
+    wt: Path, session_t0: float, since: float | None = None, pin: str | None = None
+) -> dict:
     """ADR-h2 point 7, from harness-written artifacts only: chronological
     pass1 trajectory, wall time to the first verified success, wrong_object
-    total (H5), episode totals."""
+    total (H5), episode totals. Each rollout entry carries its manifest's
+    provenance (git_sha / env_baseline / env_baseline_oid / env_attested)
+    so the committed record is auditable; with `pin` set, first_success is
+    derived ONLY from admissible rollouts — trusted-baseline runs at the
+    treatment pin (PR #76 review: a local skill-eval success must never
+    supply the headline verdict metric)."""
     rollouts = []
     first_success: float | None = None
     wrong_object = 0
@@ -319,14 +326,24 @@ def campaign_metrics(wt: Path, session_t0: float, since: float | None = None) ->
         successes = sum(1 for e in episodes if e.get("status") == "success")
         wrong_object += sum(1 for e in episodes if e.get("failure") == "wrong_object")
         episodes_total += len(episodes)
-        if successes and (first_success is None or mtime < first_success):
+        manifest = json.loads(manifest_path.read_text())
+        admissible = pin is None or (
+            manifest.get("git_sha") == pin
+            and manifest.get("env_baseline") == "origin/main"
+            and manifest.get("env_baseline_oid") == pin
+        )
+        if successes and admissible and (first_success is None or mtime < first_success):
             first_success = mtime
         rollouts.append(
             {
-                "run_id": json.loads(manifest_path.read_text()).get("run_id"),
+                "run_id": manifest.get("run_id"),
                 "mtime": mtime,
                 "episodes": len(episodes),
                 "pass1": round(successes / len(episodes), 3) if episodes else 0.0,
+                "git_sha": manifest.get("git_sha"),
+                "env_baseline": manifest.get("env_baseline"),
+                "env_baseline_oid": manifest.get("env_baseline_oid"),
+                "env_attested": manifest.get("env_attested"),
             }
         )
     rollouts.sort(key=lambda r: r["mtime"])
@@ -446,7 +463,14 @@ def score_holdout(wt: Path, holdout_seeds: str, run_tag: str, tier: str = "T1") 
     """ADR-h2 point 4: the deliverable graph on held-out seeds, run by the
     RUNNER in the session worktree through the standard pipeline."""
     if not (wt / DELIVERABLE).exists():
-        return {"ok": False, "error": f"no deliverable at {DELIVERABLE}"}
+        # a STRUCTURED outcome, not prose: the analyzer keys its
+        # no-deliverable classification on this field (PR #76 review —
+        # never a substring match against the error message)
+        return {
+            "ok": False,
+            "outcome": "no_deliverable",
+            "error": f"no deliverable at {DELIVERABLE}",
+        }
     cmd = [
         "uv",
         "run",

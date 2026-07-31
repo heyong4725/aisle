@@ -1,0 +1,143 @@
+{
+ "ok": true,
+ "treatment": {
+  "commit": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+  "agent": "claude",
+  "agent_cli_version": "2.1.214 (Claude Code)",
+  "model": "claude-fable-5",
+  "prompt_template_sha256": "0f7fb5d9ea5d45e771eea1de0db36475787c8ce8b1892393d4cae19b0b985b6d",
+  "dev_seeds": "0..49",
+  "holdout_seeds": "100..107",
+  "holdout_episodes": 8,
+  "claude_max_turns": null,
+  "runner_sha256": "bb030880fbde33822a25023927f480e9b4258e6f0009afe85b70cbc0d8c8b5e6",
+  "session_spawn": {
+   "stdin": "devnull",
+   "confinement": "none (ADR-h2 point 5)"
+  },
+  "protocol": "ADR-h3-campaign-protocol",
+  "nudge_sha256": "ddf2dba404a0f44b19956c2aa937c5c4ea5046f604a5c687f05e4d9004eddbed",
+  "budget_scale": 1.0,
+  "h3_runner_sha256": "aecf2cd85ed7f93b322c7d4e30983c9945487b64ad0c28c82ee2524e78a6cf46"
+ },
+ "records": [
+  {
+   "arm": "W",
+   "tier": "S2",
+   "attempt": 2,
+   "worktree_head": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+   "budgets": {
+    "tier": "S2",
+    "tokens": 750000,
+    "episodes": 60,
+    "wall_h": 5.0
+   },
+   "session": {
+    "stopped": "token_budget",
+    "rc": -9,
+    "tokens": 751655,
+    "wall_s": 1968.1
+   },
+   "frozen_drift": [],
+   "holdout": {
+    "ok": false,
+    "error": "no deliverable at graphs/agent_campaign.yaml",
+    "pass1": null,
+    "pass8": null,
+    "failures": null
+   },
+   "first_success_wall_s": null,
+   "wrong_object_total": 0,
+   "rollouts": [],
+   "prior_skills": [],
+   "skills_after": [],
+   "skill_reuse_in_deliverable": []
+  },
+  {
+   "arm": "W",
+   "tier": "S3",
+   "attempt": 2,
+   "worktree_head": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+   "budgets": {
+    "tier": "S3",
+    "tokens": 750000,
+    "episodes": 60,
+    "wall_h": 5.0
+   },
+   "session": {
+    "stopped": "token_budget",
+    "rc": -9,
+    "tokens": 750887,
+    "wall_s": 5507.3
+   },
+   "frozen_drift": [],
+   "holdout": {
+    "ok": true,
+    "error": null,
+    "pass1": 0.0,
+    "pass8": 0.0,
+    "failures": {
+     "missing_item": 7,
+     "wrong_slot": 1
+    }
+   },
+   "first_success_wall_s": null,
+   "wrong_object_total": 0,
+   "rollouts": [
+    {
+     "run_id": "skill-s3-driver-v2-2026-07-30-d5e65a",
+     "mtime": 1785436641.3668094,
+     "episodes": 2,
+     "pass1": 0.0
+    },
+    {
+     "run_id": "campaign-holdout-W-S3-r2",
+     "mtime": 1785447040.0924094,
+     "episodes": 8,
+     "pass1": 0.0
+    }
+   ],
+   "prior_skills": [],
+   "skills_after": [
+    "s3-driver-v2"
+   ],
+   "skill_reuse_in_deliverable": []
+  }
+ ],
+ "wipes": [
+  {
+   "arm": "W",
+   "before": "S2-r2",
+   "removed": [
+    ".ruff_cache/",
+    ".venv/",
+    "docs/campaign-h3-s3-notes.md",
+    "registry/manifests/s3-driver-v1.yaml",
+    "skills/s3-driver-v1/",
+    "src/aisle/__pycache__/",
+    "src/aisle/harness/__pycache__/",
+    "src/aisle/mobility/__pycache__/",
+    "src/aisle/nodes/__pycache__/",
+    "src/aisle/scenes/__pycache__/",
+    "src/aisle/verifier/__pycache__/",
+    "runs/ideas/"
+   ],
+   "detached_from": "267a903a6128048bc05dd62f6f3769ad14034b30",
+   "kept_ref": "h3/keep-W-pre-S2-r2"
+  },
+  {
+   "arm": "W",
+   "before": "S3-r2",
+   "removed": [
+    ".venv/",
+    "skills/s2-restock-v1/",
+    "src/aisle/__pycache__/",
+    "src/aisle/harness/__pycache__/",
+    "src/aisle/nodes/__pycache__/",
+    "src/aisle/scenes/__pycache__/"
+   ],
+   "detached_from": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+   "kept_ref": "h3/keep-W-pre-S3-r2"
+  }
+ ]
+}

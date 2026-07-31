@@ -1,0 +1,8 @@
+{"episode": 0, "seed": 100, "status": "fail", "failure": "timeout", "t_end": 600.0, "goal_id": "ep-0000", "verifier": "oracle", "suite": "retail", "success": false, "penalties": ["timeout"], "placement_scores": []}
+{"episode": 1, "seed": 101, "status": "fail", "failure": "timeout", "t_end": 600.0, "goal_id": "ep-0001", "verifier": "oracle", "suite": "retail", "success": false, "penalties": ["timeout"], "placement_scores": []}
+{"episode": 2, "seed": 102, "status": "fail", "failure": "timeout", "t_end": 600.0, "goal_id": "ep-0002", "verifier": "oracle", "suite": "retail", "success": false, "penalties": ["timeout"], "placement_scores": []}
+{"episode": 3, "seed": 103, "status": "fail", "failure": "timeout", "t_end": 600.0, "goal_id": "ep-0003", "verifier": "oracle", "suite": "retail", "success": false, "penalties": ["timeout"], "placement_scores": []}
+{"episode": 4, "seed": 104, "status": "fail", "failure": "timeout", "t_end": 600.0, "goal_id": "ep-0004", "verifier": "oracle", "suite": "retail", "success": false, "penalties": ["timeout"], "placement_scores": []}
+{"episode": 5, "seed": 105, "status": "fail", "failure": "timeout", "t_end": 600.0, "goal_id": "ep-0005", "verifier": "oracle", "suite": "retail", "success": false, "penalties": ["timeout"], "placement_scores": []}
+{"episode": 6, "seed": 106, "status": "fail", "failure": "timeout", "t_end": 600.0, "goal_id": "ep-0006", "verifier": "oracle", "suite": "retail", "success": false, "penalties": ["timeout"], "placement_scores": []}
+{"episode": 7, "seed": 107, "status": "fail", "failure": "extra_item", "t_end": 294.1, "goal_id": "ep-0007", "verifier": "oracle", "suite": "retail", "success": false, "penalties": ["extra_item"], "placement_scores": []}

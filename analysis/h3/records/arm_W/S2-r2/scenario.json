@@ -1,0 +1,32 @@
+{
+ "arm": "W",
+ "tier": "S2",
+ "attempt": 2,
+ "worktree_head": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+ "budgets": {
+  "tier": "S2",
+  "tokens": 750000,
+  "episodes": 60,
+  "wall_h": 5.0
+ },
+ "session": {
+  "stopped": "token_budget",
+  "rc": -9,
+  "tokens": 751655,
+  "wall_s": 1968.1
+ },
+ "frozen_drift": [],
+ "holdout": {
+  "ok": false,
+  "error": "no deliverable at graphs/agent_campaign.yaml",
+  "pass1": null,
+  "pass8": null,
+  "failures": null
+ },
+ "first_success_wall_s": null,
+ "wrong_object_total": 0,
+ "rollouts": [],
+ "prior_skills": [],
+ "skills_after": [],
+ "skill_reuse_in_deliverable": []
+}

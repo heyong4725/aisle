@@ -239,16 +239,29 @@ def test_failure_classes_split_delivery_from_placement():
     assert clean["delivery_failures"] == {} and clean["placement_failures"] == {}
 
 
-def test_cli_totals_precision_failures_by_class(tmp_path):
-    """The CLI surfaces holdout_precision_failures_total + by_class so the
-    H5 signal is visible at the top level (PR #60 review)."""
+def test_cli_h5_totals_state_their_aggregation_set(tmp_path):
+    """PR #60/#76 reviews: H5 totals are emitted over EXPLICIT cell sets
+    — `selected` (highest-attempt clean cell per arm/tier, the verdict's
+    set) and `all_records` (the full historical inventory including
+    flagged/superseded cells) — each with the executed-episode exposure
+    (episodes_scored), so a flagged cell's failures can never inflate
+    the selected safety claim and an unexecuted cell contributes zero
+    exposure."""
     (tmp_path / "h3_results.json").write_text(
         json.dumps({"ok": True, "treatment": TREATMENT, "records": []})
     )
-    for arm, tier, fails in (("W", "S3", {"wrong_slot": 7}), ("W", "S2", {"misplaced": 1})):
-        d = tmp_path / f"arm_{arm}" / tier
+    holdout_run = lambda tag, n: {"run_id": f"campaign-holdout-{tag}", "mtime": 1.0, "episodes": n}  # noqa: E731
+    clean = record("W", "S3", failures={"wrong_slot": 7})
+    clean["rollouts"] = [holdout_run("W-S3", 8)]
+    flagged = record("W", "S2", prior=["s1-x"], failures={"misplaced": 1})
+    flagged["rollouts"] = [holdout_run("W-S2", 3)]
+    rerun = record("W", "S2", failures={"wrong_slot": 1})
+    rerun["attempt"] = 2
+    rerun["rollouts"] = [holdout_run("W-S2-r2", 8)]
+    for rec, sub in ((clean, "S3"), (flagged, "S2"), (rerun, "S2-r2")):
+        d = tmp_path / "arm_W" / sub
         d.mkdir(parents=True)
-        (d / "scenario.json").write_text(json.dumps(record(arm, tier, failures=fails)))
+        (d / "scenario.json").write_text(json.dumps(rec))
         (d / "token_samples.jsonl").write_text('{"wall_s": 5.0, "tokens": 1000}\n')
     proc = subprocess.run(
         [sys.executable, str(REPO_ROOT / "tools" / "h3_analysis.py"), "--dir", str(tmp_path)],
@@ -256,9 +269,118 @@ def test_cli_totals_precision_failures_by_class(tmp_path):
         text=True,
     )
     out = json.loads(proc.stdout)
-    assert out["holdout_delivery_failures_total"] == 0
-    assert out["holdout_placement_failures_total"] == 8
-    assert out["holdout_placement_failures_by_class"] == {"wrong_slot": 7, "misplaced": 1}
+    sel = out["h5"]["selected"]
+    assert sorted(sel["cells"]) == ["W/S2-r2", "W/S3"]  # flagged W/S2 excluded
+    assert sel["episodes_scored"] == 16
+    assert sel["delivery_failures_total"] == 0
+    assert sel["placement_failures_by_class"] == {"wrong_slot": 8}
+    inv = out["h5"]["all_records"]
+    assert inv["episodes_scored"] == 19
+    assert inv["placement_failures_by_class"] == {"wrong_slot": 8, "misplaced": 1}
+
+
+def test_treatment_drift_and_unattested_metric_from_provenance():
+    """PR #76 review (L/S3-r2): a rollout recorded off the treatment pin
+    (post-pin baseline merge) flags treatment_drift; a first-success
+    supplied by a local/unattested skill-eval instead of a trusted
+    rollout at the pin flags unattested_metric. Both are derived from
+    the per-rollout provenance campaign_metrics now records; both
+    exclude the cell from the verdict (ADR-h3: one pinned OID, trusted
+    rollouts only)."""
+    rec = record("L", "S3", first_success=1390.4)
+    rec["rollouts"] = [
+        {
+            "run_id": "skill-eval-local",
+            "mtime": 1.0,
+            "episodes": 2,
+            "pass1": 1.0,
+            "git_sha": "abc123",
+            "env_baseline": "local",
+            "env_baseline_oid": None,
+            "env_attested": None,
+        },
+        {
+            "run_id": "trusted-but-drifted",
+            "mtime": 2.0,
+            "episodes": 4,
+            "pass1": 1.0,
+            "git_sha": "MERGEDHEAD",
+            "env_baseline": "origin/main",
+            "env_baseline_oid": "POSTPIN",
+            "env_attested": True,
+        },
+        {"run_id": "campaign-holdout-L-S3-r2", "mtime": 3.0, "episodes": 8, "pass1": 0.0},
+    ]
+    c = cell(rec, "abc123")
+    assert "treatment_drift" in c["flags"]
+    assert "unattested_metric" in c["flags"]
+    assert c["episodes_scored"] == 8
+
+    # the same record with a trusted-at-pin success rollout is clean
+    ok = record("L", "S3", first_success=100.0)
+    ok["rollouts"] = [
+        {
+            "run_id": "dev",
+            "mtime": 1.0,
+            "episodes": 4,
+            "pass1": 0.5,
+            "git_sha": "abc123",
+            "env_baseline": "origin/main",
+            "env_baseline_oid": "abc123",
+            "env_attested": True,
+        },
+    ]
+    assert cell(ok, "abc123")["flags"] == []
+
+
+def test_legacy_records_without_provenance_get_no_new_flags():
+    """Campaign-1/2 scenario records predate rollout provenance: absent
+    git_sha/env_baseline_oid must not be treated as drift (fail on what
+    the record SHOWS, never on what it lacks — their original flags
+    stand and their exclusion story is unchanged)."""
+    rec = record("W", "S2", first_success=100.0)
+    rec["rollouts"] = [
+        {"run_id": "skill-eval", "mtime": 1.0, "episodes": 2, "pass1": 0.5},
+        {"run_id": "campaign-holdout-W-S2", "mtime": 2.0, "episodes": 3, "pass1": 0.333},
+    ]
+    c = cell(rec, "abc123")
+    assert "treatment_drift" not in c["flags"]
+    assert "unattested_metric" not in c["flags"]
+    assert c["episodes_scored"] == 3
+
+
+def test_verdict_short_circuits_on_a_decided_false_tier():
+    """PR #76 review: met = all(tiers), so one tier decided False from
+    clean cells fixes NOT MET even while the other tier has no clean
+    cell (pending stays only for undecided-and-incomplete)."""
+    cells = [
+        cell(record("W", "S2", first_success=None)),
+        cell(record("L", "S2", first_success=None)),  # S2 decided False
+        cell(record("W", "S3", first_success=100.0)),
+        cell(record("L", "S3", first_success=100.0, drift=["x"])),  # S3 incomplete
+    ]
+    verdict = h3_verdict(cells)
+    assert verdict["per_tier"] == {"S2": False}
+    assert verdict["complete"] is False
+    assert verdict["met"] is False
+
+    undecided = [
+        cell(record("W", "S2", first_success=100.0)),
+        cell(record("L", "S2", first_success=40.0)),  # S2 True
+        cell(record("W", "S3", first_success=100.0)),
+        cell(record("L", "S3", first_success=100.0, drift=["x"])),  # S3 incomplete
+    ]
+    assert h3_verdict(undecided)["met"] is None  # nothing False, S3 pending
+
+
+def test_markdown_renders_rerun_slot_identity():
+    """PR #76 review: rerun rows must be distinguishable — the Cell
+    column carries the runner's slot naming (S3-r2), not a bare tier."""
+    rerun = record("L", "S3")
+    rerun["attempt"] = 2
+    cells = [cell(record("L", "S3")), cell(rerun)]
+    text = results_markdown(cells, h3_verdict(cells))
+    assert "| L | S3-r2 |" in text and "| L | S3 |" in text
 
 
 def test_markdown_marks_leak_and_stop_reason():
@@ -323,3 +445,66 @@ def test_residue_leak_derived_from_aggregates(tmp_path):
     assert "residue_leak" not in cells[("L", "S2", 1)]["flags"]  # first L of invocation 2
     assert "residue_leak" not in cells[("L", "S3", 1)]["flags"]  # cleared (wipes entry)
     assert "residue_leak" in cells[("L", "S1", 2)]["flags"]  # third L, no clear entry
+
+
+def test_no_deliverable_is_a_scored_zero_not_a_partial():
+    """W/S2-r2 (rerun campaign): a session that produces NO deliverable
+    is a legitimate experimental OUTCOME — there was nothing to score,
+    so the held-out pass rate is 0 — distinct from an expired scoring
+    window (infra partial). The cell scores 0.0, carries no_deliverable
+    for honesty, is NOT flagged, and therefore completes the verdict.
+    PR #76 review: the classification is STRUCTURAL and fail-closed —
+    the runner's `outcome` field (or the legacy exact error template)
+    plus ok=false, no scores, no failures, zero executed episodes;
+    every other unsuccessful state stays a partial."""
+
+    def no_deliv_rec():
+        rec = record("W", "S2", first_success=None, holdout_ok=False)
+        rec["holdout"].update(
+            {
+                "error": "no deliverable at graphs/agent_campaign.yaml",
+                "pass1": None,
+                "pass8": None,
+                "failures": None,
+            }
+        )
+        return rec
+
+    c = cell(no_deliv_rec())
+    assert c["flags"] == []
+    assert c["holdout_pass1"] == 0.0
+    assert c["no_deliverable"] is True
+    assert c["episodes_scored"] == 0
+
+    # the structured field alone is sufficient (new runner records)
+    structured = no_deliv_rec()
+    structured["holdout"]["error"] = None
+    structured["holdout"]["outcome"] = "no_deliverable"
+    assert cell(structured)["no_deliverable"] is True
+
+    # an expired window stays a partial
+    exp = cell(record("W", "S2", holdout_ok=False))
+    assert "holdout_partial" in exp["flags"]
+
+    # fail closed: prose merely CONTAINING the phrase is not the state —
+    # a record with scores/failures or executed episodes stays a partial
+    prose = record("W", "S2", holdout_ok=False, pass1=0.25)
+    prose["holdout"]["error"] = "scorer crashed: no deliverable rollouts remained"
+    assert "holdout_partial" in cell(prose)["flags"]
+    contradictory = no_deliv_rec()
+    contradictory["holdout"]["failures"] = {"timeout": 2}
+    assert "holdout_partial" in cell(contradictory)["flags"]
+    executed = no_deliv_rec()
+    executed["rollouts"] = [{"run_id": "campaign-holdout-W-S2", "mtime": 1.0, "episodes": 3}]
+    assert "holdout_partial" in cell(executed)["flags"]
+
+    # verdict completes: both arms' S2 first-success null -> tier False
+    cells = [
+        c,
+        cell(record("L", "S2", first_success=None)),
+        cell(record("W", "S3", first_success=None)),
+        cell(record("L", "S3", first_success=100.0)),
+    ]
+    verdict = h3_verdict(cells)
+    assert verdict["per_tier"] == {"S2": False, "S3": True}
+    assert verdict["met"] is False

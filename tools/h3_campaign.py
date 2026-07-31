@@ -287,7 +287,7 @@ def run_scenario(
     sweep_worktree(wt)
     # since=t0 scopes EVERY aggregate to this scenario (PR #48 review:
     # unscoped first_success/wrong_object contaminated the H3 headline)
-    metrics = campaign_metrics(wt, session_t0=t0, since=t0)
+    metrics = campaign_metrics(wt, session_t0=t0, since=t0, pin=oid)
     reuse = skill_reuse(wt / "graphs" / "agent_campaign.yaml", prior_skills)
     worktree_head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True, text=True

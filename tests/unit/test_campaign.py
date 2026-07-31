@@ -187,6 +187,81 @@ def test_campaign_metrics_no_success(tmp_path):
     assert metrics["first_success_wall_s"] is None
 
 
+def _write_provenanced_run(wt, run_id, mtime, episodes, **manifest_extra):
+    import os
+
+    run_dir = wt / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(json.dumps({"run_id": run_id, **manifest_extra}))
+    ep = run_dir / "episodes.jsonl"
+    ep.write_text("".join(json.dumps(e) + "\n" for e in episodes))
+    os.utime(ep, (mtime, mtime))
+    os.utime(run_dir / "manifest.json", (mtime, mtime))
+
+
+def test_campaign_metrics_records_provenance_and_pins_first_success(tmp_path):
+    """PR #76 review (the L/S3-r2 defect): every rollout entry carries
+    its manifest's git_sha / env_baseline / env_baseline_oid /
+    env_attested so the committed scenario record is auditable, and with
+    `pin` set the first-success metric is derived ONLY from
+    trusted-baseline rollouts at the treatment pin — a local skill-eval
+    success (earlier mtime) must never supply the headline metric."""
+    t0 = 1_000_000.0
+    success = [{"episode": 0, "status": "success", "failure": None}]
+    _write_provenanced_run(
+        tmp_path,
+        "skill-eval-local",
+        t0 + 100,
+        success,
+        git_sha="PIN",
+        env_baseline="local",
+        env_baseline_oid=None,
+        env_attested=None,
+    )
+    _write_provenanced_run(
+        tmp_path,
+        "trusted-at-pin",
+        t0 + 500,
+        success,
+        git_sha="PIN",
+        env_baseline="origin/main",
+        env_baseline_oid="PIN",
+        env_attested=True,
+    )
+    metrics = campaign_metrics(tmp_path, session_t0=t0, pin="PIN")
+    assert metrics["first_success_wall_s"] == pytest.approx(500.0)  # NOT the local 100
+    by_id = {r["run_id"]: r for r in metrics["rollouts"]}
+    assert by_id["skill-eval-local"]["env_baseline"] == "local"
+    assert by_id["trusted-at-pin"]["env_baseline_oid"] == "PIN"
+    assert by_id["trusted-at-pin"]["env_attested"] is True
+    # without a pin (legacy callers) the earliest success still wins
+    assert campaign_metrics(tmp_path, session_t0=t0)["first_success_wall_s"] == pytest.approx(100.0)
+    # a drifted trusted run (baseline moved past the pin) is inadmissible
+    drifted = tmp_path / "drifted"
+    _write_provenanced_run(
+        drifted,
+        "trusted-drifted",
+        t0 + 50,
+        success,
+        git_sha="MERGED",
+        env_baseline="origin/main",
+        env_baseline_oid="POSTPIN",
+        env_attested=True,
+    )
+    assert campaign_metrics(drifted, session_t0=t0, pin="PIN")["first_success_wall_s"] is None
+
+
+def test_score_holdout_no_deliverable_is_structured(tmp_path):
+    """PR #76 review: the no-deliverable outcome is a structured field,
+    not prose — the analyzer keys on it instead of substring-matching
+    the error message."""
+    from campaign import score_holdout
+
+    out = score_holdout(tmp_path, "100..107", "W-S1", "S1")
+    assert out["ok"] is False
+    assert out["outcome"] == "no_deliverable"
+
+
 def test_audit_frozen_detects_drift(tmp_path):
     """ADR-h2 point 5: the post-session audit diffs the frozen paths in
     the worktree against the pinned OID — any drift is reported."""
