@@ -21,6 +21,8 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+import sys
+import sysconfig
 import tempfile
 import time
 import uuid
@@ -122,6 +124,41 @@ def swap_event(root: Path, branch: str, event: dict) -> dict:
     return entry
 
 
+def _node_health(runner, dataflow: str, node_id: str, sleeper, tries: int = 6) -> bool | None:
+    """Post-add health of the replacement via `dora node list --format
+    json`: True = Running, False = Failed/absent after every retry,
+    None = the CLI output is unrecognized. None does NOT refuse — the
+    health check is a detection belt (the remove->add race itself is
+    prevented by the settle delay), and CLI format drift must not brick
+    every swap."""
+    last: bool | None = False
+    for attempt in range(tries):
+        proc = runner(["node", "list", "-d", dataflow, "--format", "json"])
+        out = getattr(proc, "stdout", "") or ""
+        if not out.strip():
+            return None  # no output (or a runner without stdout): belt off
+        # the CLI emits JSON LINES (one object per node), not an array
+        entries = []
+        for line in out.splitlines():
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+        if not entries:
+            return None  # non-JSONL output: unrecognized format
+        mine = [e for e in entries if isinstance(e, dict) and e.get("node") == node_id]
+        if mine:
+            status = str(mine[0].get("status", "")).lower()
+            if "running" in status:
+                return True
+            if not ("failed" in status or "exited" in status):
+                return None  # unknown status vocabulary: belt off
+            last = False
+        if attempt < tries - 1:
+            sleeper(0.5)
+    return last
+
+
 def swap(
     root: Path,
     graph: Path,
@@ -131,11 +168,23 @@ def swap(
     embodiment: str,
     branch: str,
     runner=_default_runner,
+    settle_s: float = 2.0,
+    sleeper=time.sleep,
 ) -> dict:
     """HAR-10: validate the FULL post-swap graph (every SPEC 060 check)
-    BEFORE any runtime mutation; then remove old / add new with the
-    original restored on add failure; on success the graph file is
-    written back so the next validation sees live reality."""
+    BEFORE any runtime mutation; then remove old / SETTLE / add new with
+    the original restored on add failure; on success the graph file is
+    written back so the next validation sees live reality.
+
+    The settle delay works around a dora daemon race (H4 shakeout,
+    2026-07-31, pinned rev 7eb4a5f; filed as dora-rs/dora#2916): a back-to-back remove->add lets the
+    REMOVED process's kill-on-drop land ~15 ms AFTER the add, and its
+    Signal(9) exit is attributed to the node identity — the daemon marks
+    the freshly added replacement failed ("node added successfully" then
+    "node exited with error: Signal(9)"; every later episode
+    never_grasped). Settling until the old process's exit is accounted
+    before re-adding avoids the race; the post-add health check is the
+    detection belt, and an unhealthy replacement is rolled back."""
 
     def refused(error: str) -> dict:
         swap_event(root, branch, {"action": "swap_refused", "dataflow": dataflow, "node": node_id})
@@ -189,6 +238,9 @@ def swap(
                 "ok": False,
                 "error": f"dora node remove failed: {(removed.stderr or '')[-200:]}",
             }
+        # the race workaround (docstring): the old process's exit must be
+        # accounted before the add, or its Signal(9) poisons the new node
+        sleeper(settle_s)
         added = runner(["node", "add", "-d", dataflow, "--from-yaml", str(staged_node)])
         if added.returncode != 0:
             # restore the original so the live dataflow is never left
@@ -205,6 +257,25 @@ def swap(
                 "restored": restored.returncode == 0,
                 "degraded": restored.returncode != 0,
             }
+        health = _node_health(runner, dataflow, node_id, sleeper)
+        if health is False:
+            # the replacement registered but is not running — the race's
+            # signature. Roll back rather than leave a dead node on a
+            # live stream (remove the corpse, re-add the original).
+            runner(["node", "remove", "-d", dataflow, node_id])
+            sleeper(settle_s)
+            restore_file = tmpdir / "restore.yaml"
+            restore_file.write_text(yaml.safe_dump(original, sort_keys=False))
+            restored = runner(["node", "add", "-d", dataflow, "--from-yaml", str(restore_file)])
+            swap_event(
+                root, branch, {"action": "swap_failed", "dataflow": dataflow, "node": node_id}
+            )
+            return {
+                "ok": False,
+                "error": "replacement unhealthy after add (not Running)",
+                "restored": restored.returncode == 0,
+                "degraded": restored.returncode != 0,
+            }
     finally:
         for leftover in tmpdir.glob("*"):
             leftover.unlink(missing_ok=True)
@@ -212,7 +283,13 @@ def swap(
 
     graph.write_text(yaml.safe_dump(doc, sort_keys=False))  # live reality persisted
     event = swap_event(root, branch, {"action": "swap", "dataflow": dataflow, "node": node_id})
-    return {"ok": True, "swapped": node_id, "dataflow": dataflow, "ts": event["ts"]}
+    return {
+        "ok": True,
+        "swapped": node_id,
+        "dataflow": dataflow,
+        "ts": event["ts"],
+        "replacement_health": "running" if health else "unknown",
+    }
 
 
 def probe(
@@ -240,9 +317,21 @@ def probe(
     probe_id = f"probe-{uuid.uuid4().hex[:8]}"
     node_doc = {
         "id": probe_id,
-        "path": str(Path(__file__).with_name("trace_recorder.py")),
+        # dynamic adds spawn WITHOUT the dataflow's --uv wrapping (H4
+        # shakeout: the recorder died at import under the daemon's bare
+        # python, ExitCode(1) before register; dora-rs/dora#2918) — spawn
+        # via THIS
+        # interpreter, and pin PYTHONPATH to its site-packages: the
+        # daemon resolves the interpreter SYMLINK before exec, which
+        # bypasses pyvenv.cfg discovery and loses the venv (observed:
+        # venv python path in the yaml, ModuleNotFoundError: numpy)
+        "path": sys.executable,
+        "args": str(Path(__file__).with_name("trace_recorder.py")),
         "inputs": {"probe": {"source": topic, "queue_size": 100}},
-        "env": {"AISLE_TRACE_DIR": str(root / "runs" / "probes" / probe_id)},
+        "env": {
+            "AISLE_TRACE_DIR": str(root / "runs" / "probes" / probe_id),
+            "PYTHONPATH": sysconfig.get_paths()["purelib"],
+        },
     }
     staged = root / "runs" / "probes" / f"{probe_id}.yaml"
     staged.parent.mkdir(parents=True, exist_ok=True)

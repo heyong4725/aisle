@@ -1,0 +1,8 @@
+{
+ "git_sha": "b5778c442400d9dd7f8f4f93ce33d8e63bb65369",
+ "graph": "graphs/expert_t0.yaml (null-variant of grasp-planner-topdown)",
+ "dora_cli": "dora-cli 1.0.0-rc.4",
+ "dora_api_rev": "7eb4a5f8b",
+ "mode": "daemon (dora coordinator/daemon, isolated port 6113 for the final reps)",
+ "note": "reps 0-7 ran on the default port; rep 6 timed out under external load (rustc build + a cross-instance dora destroy, dora-rs/dora#2924) and is counted failed; final 3+3 reps on the isolated port"
+}

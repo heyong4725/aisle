@@ -1,0 +1,15 @@
+{"ts": 1785522082.367229, "open_idea": null, "action": "swap_failed", "dataflow": "h4-shakeout", "node": "grasp-planner-topdown"}
+{"ts": 1785522283.752186, "open_idea": null, "action": "probe_failed", "dataflow": "h4-shakeout", "topic": "dora-genesis/joint_state"}
+{"ts": 1785522542.597047, "open_idea": null, "action": "swap", "dataflow": "h4-shakeout", "node": "grasp-planner-topdown"}
+{"ts": 1785522602.87747, "open_idea": null, "action": "probe", "dataflow": "h4-shakeout", "topic": "dora-genesis/joint_state"}
+{"ts": 1785522921.255785, "open_idea": null, "action": "swap", "dataflow": "h4-swap3", "node": "grasp-planner-topdown"}
+{"ts": 1785523561.333788, "open_idea": null, "action": "swap", "dataflow": "h4-swap5", "node": "grasp-planner-topdown"}
+{"ts": 1785523566.467413, "open_idea": null, "action": "probe", "dataflow": "h4-swap5", "topic": "dora-genesis/poses"}
+{"ts": 1785523949.8548522, "open_idea": null, "action": "swap", "dataflow": "h4-swap6", "node": "grasp-planner-topdown"}
+{"ts": 1785523963.01774, "open_idea": null, "action": "probe", "dataflow": "h4-swap6", "topic": "dora-genesis/poses"}
+{"ts": 1785527899.1324532, "open_idea": "I3", "action": "swap", "dataflow": "h4-1", "node": "grasp-planner-topdown"}
+{"ts": 1785527998.021413, "open_idea": "I5", "action": "swap", "dataflow": "h4-2", "node": "grasp-planner-topdown"}
+{"ts": 1785528114.2462652, "open_idea": "I7", "action": "swap", "dataflow": "h4-3", "node": "grasp-planner-topdown"}
+{"ts": 1785529516.5914712, "open_idea": "I11", "action": "swap", "dataflow": "h4-29424-1", "node": "grasp-planner-topdown"}
+{"ts": 1785529624.392649, "open_idea": "I13", "action": "swap", "dataflow": "h4-29424-2", "node": "grasp-planner-topdown"}
+{"ts": 1785529724.464706, "open_idea": "I15", "action": "swap", "dataflow": "h4-29424-3", "node": "grasp-planner-topdown"}
