@@ -81,6 +81,10 @@ common cause).
 
 ## 4. Where to go next
 
+- `docs/physical-ai-primer.md` — the concepts behind the project
+  (Physical AI, VLM/VLA/world models/WAMs, sim-to-real, agentic
+  auto-research) mapped to where each lives in this repo — start here
+  if you are new to the field itself.
 - `docs/architecture.md` — what the nodes, graphs, and harness are and
   how they fit together.
 - `docs/development-workflow.md` — the spec-driven loop, quality gates,
