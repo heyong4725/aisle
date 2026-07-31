@@ -58,24 +58,25 @@ intervals:
 | System | pass@1 (observed) | Wilson 95% | Failures |
 |---|---|---|---|
 | Expert `expert_s1` (fill-run, unattested) | 0.125 (1/8) | 0.02–0.47 | 5 `timeout`, 2 `extra_item` |
-| Expert `expert_s1` (ATTESTED, `s1-det-pair-1`) | 0.0 (0/8) | 0.00–0.32 | 5 `timeout`, 3 `extra_item` |
-| Expert `expert_s1` (ATTESTED, `s1-det-pair-2`) | 0.0 (0/8) | 0.00–0.32 | 7 `timeout`, 1 `extra_item` |
+| Expert `expert_s1` (dev-attested, `s1-det-pair-1`) | 0.0 (0/8) | 0.00–0.32 | 5 `timeout`, 3 `extra_item` |
+| Expert `expert_s1` (dev-attested, `s1-det-pair-2`) | 0.0 (0/8) | 0.00–0.32 | 7 `timeout`, 1 `extra_item` |
 | Agent W/S1 (H3, `03da7469`) | 0.375 (3/8) | 0.14–0.69 | 5 `timeout` |
 | Agent L/S1 (H3, `03da7469`) | 0.500 (4/8) | 0.22–0.79 | 4 `timeout` |
 
 The intervals overlap heavily: the ratios are **point estimates from
 single sessions**, and A1/S1 is **inconclusive** — now for an
-established mechanical reason, not a suspicion. **Resolution of the
-formerly-unexplained observation (issue #71): the back-to-back
-attested same-tuple pair (`analysis/s1-determinism/`, pin `9019752e`,
-identical fingerprint `46f2ec83…`, both `env_attested: true`)
-DIVERGED — a CON-5 violation in the S1/mobile stack.** Two seeds flip
-failure class between runs; the desk tier shows no such drift. Every
-single-session S1 rate in this table is therefore a draw from a
-nondeterministic process; the invalid-provenance rerun's 0/8 against
-the unattested 1/8 needs no further explanation (three expert_s1
-sessions read 1/8, 0/8, 0/8). Establishing an S1 expert level of
-record now requires either the determinism fix or a repeated-session
+established mechanical reason, not a suspicion. **Update (issue #71): the back-to-back
+same-recorded-tuple pair (`analysis/s1-determinism/`, pin `9019752e`,
+identical fingerprint `46f2ec83…`) DIVERGED — a CON-5 violation
+observed on the S1 workload.** Both pair runs are dev-attested only
+(local baseline, no post-run audit), so environment drift is narrowed,
+not excluded. Two seeds flip failure class between runs; the runtime
+evidence implicates scheduling/startup ordering. Every single-session
+S1 rate in this table is therefore a draw from an unstable process.
+The invalid-provenance rerun's 0/8 against the unattested 1/8 is
+consistent with this instability but remains unattributable (its
+provenance is unmatched). Establishing an S1 expert level of record
+now requires either the determinism fix or a repeated-session
 protocol. What the records do
 support:
 
@@ -94,10 +95,14 @@ support:
 
 - n=8 cells throughout; one episode swings a rate by 0.125.
 - Pins: the ATTESTED T1 cell of record is at `0d7bd127`; the original
-  unattested fill-runs are at `87b1ff66`; agent rows at their campaign
-  pins. Frozen-tree `env_hash` is identical (`025c7de2`) across all of
-  them; installed environments are identified ONLY for the attested T1
-  cell (fingerprint `46f2ec83…`).
+  unattested fill-runs are at `87b1ff66`; the S1 determinism pair at
+  `9019752e`; agent rows at their campaign pins. Frozen-tree
+  `env_hash` is identical (`025c7de2`) across all of them. Installed
+  environments are fingerprinted (`46f2ec83…`) for the attested T1
+  cell AND the S1 pair — but the S1 pair is dev-attested only
+  (`env_baseline: local`, no post-run RECORD audit), which identifies
+  the gate-time lock state, not verified post-session environment
+  identity (ADR-24).
 - H3's S1 cells are single sessions (`analysis/h3/` variance caution);
   H1/H2 rows carry their findings' caveats.
 - Fill-runs used the recorded human overrides (`--no-idea-gate`,
