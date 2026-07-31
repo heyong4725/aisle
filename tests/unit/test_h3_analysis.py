@@ -323,3 +323,33 @@ def test_residue_leak_derived_from_aggregates(tmp_path):
     assert "residue_leak" not in cells[("L", "S2", 1)]["flags"]  # first L of invocation 2
     assert "residue_leak" not in cells[("L", "S3", 1)]["flags"]  # cleared (wipes entry)
     assert "residue_leak" in cells[("L", "S1", 2)]["flags"]  # third L, no clear entry
+
+
+def test_no_deliverable_is_a_scored_zero_not_a_partial():
+    """W/S2-r2 (rerun campaign): a session that produces NO deliverable
+    is a legitimate experimental OUTCOME — there was nothing to score,
+    so the held-out pass rate is 0 — distinct from an expired scoring
+    window (infra partial). The cell scores 0.0, carries no_deliverable
+    for honesty, is NOT flagged, and therefore completes the verdict."""
+    rec = record("W", "S2", first_success=None, holdout_ok=False)
+    rec["holdout"]["error"] = "no deliverable at graphs/agent_campaign.yaml"
+    rec["holdout"]["pass1"] = None
+    c = cell(rec)
+    assert c["flags"] == []
+    assert c["holdout_pass1"] == 0.0
+    assert c["no_deliverable"] is True
+
+    # an expired window stays a partial
+    exp = cell(record("W", "S2", holdout_ok=False))
+    assert "holdout_partial" in exp["flags"]
+
+    # verdict completes: both arms' S2 first-success null -> tier False
+    cells = [
+        c,
+        cell(record("L", "S2", first_success=None)),
+        cell(record("W", "S3", first_success=None)),
+        cell(record("L", "S3", first_success=100.0)),
+    ]
+    verdict = h3_verdict(cells)
+    assert verdict["per_tier"] == {"S2": False, "S3": True}
+    assert verdict["met"] is False

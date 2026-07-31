@@ -131,7 +131,11 @@ def cell(rec: dict) -> dict:
         flags.append("wipe_leak")
     if rec.get("frozen_drift"):
         flags.append("frozen_drift")
-    if not holdout.get("ok"):
+    # a session that produced NO deliverable is a scored OUTCOME (0.0 —
+    # nothing to run), distinct from an expired scoring window (infra
+    # partial); PR #67 follow-up, decided at the rerun campaign
+    no_deliverable = bool(holdout.get("error")) and "no deliverable" in str(holdout.get("error"))
+    if not holdout.get("ok") and not no_deliverable:
         flags.append("holdout_partial")
     first = rec.get("first_success_wall_s")
     # H5 scored on the HELD-OUT records (what we score; dev-side failures
@@ -148,7 +152,8 @@ def cell(rec: dict) -> dict:
         "arm": rec.get("arm"),
         "tier": rec.get("tier"),
         "attempt": rec.get("attempt", 1),
-        "holdout_pass1": holdout.get("pass1"),
+        "holdout_pass1": 0.0 if no_deliverable else holdout.get("pass1"),
+        "no_deliverable": no_deliverable,
         "holdout_failures": holdout_failures,
         "delivery_failures": delivery,
         "delivery_failures_total": sum(delivery.values()),
@@ -225,6 +230,8 @@ def results_markdown(cells: list[dict], verdict: dict) -> str:
         shown = "—" if pass1 is None else f"{pass1:.3f}"
         if "holdout_partial" in c["flags"]:
             shown += " (partial)"
+        if c.get("no_deliverable"):
+            shown += " (no deliverable)"
         first = c["first_success_wall_s"]
         tok1 = c["tokens_to_first_success"]
         deliv = ", ".join(f"{k} {v}" for k, v in c["delivery_failures"].items()) or "0"

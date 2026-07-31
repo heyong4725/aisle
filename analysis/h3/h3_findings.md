@@ -1,13 +1,18 @@
 # H3 findings — skill-accumulation campaign (design doc §11.5, hypothesis §6 H3)
 
-**Status: all six scenarios ran; five produced usable-or-flagged
-records and one (L/S3) is excluded for a residue leak. Direction: H3
-NOT MET under these budgets** — arm L's one *clean* verdict-tier cell
-(L/S2) burned its full budget without a single dev success, which fixes
-the S2 tier at not-met and therefore caps the campaign verdict at
-not-met. The analyzer's formal verdict stays `pending` until the three
-queued reruns replace the flagged cells (W/S2, W/S3: `wipe_leak`;
-L/S3: `residue_leak`); no rerun outcome can flip the direction.
+**Status: COMPLETE. Formal verdict: H3 NOT MET** — computed by
+`tools/h3_analysis.py` from clean cells only, after the three flagged
+cells were replaced by `--attempt 2` reruns under the hardened runner.
+`met: false` because the S2 tier fails (neither clean arm ever
+succeeded); the S3 tier is formally TRUE — the library arm (with
+`s1-driver-v2` carried by the residue guard's allowlist) reached dev
+first-success at 23 minutes while the clean wiped arm never succeeded
+on either verdict tier — the experiment's one positive transfer
+signal, at n=1, with held-out pass@1 still 0.0 for both. The verdict
+criterion (`met = all tiers`) and the budget confound below cap the
+honest claim at: **no accumulation benefit demonstrated under these
+budgets; one mechanism-level hint that the library shortened
+time-to-first-success on S3.**
 
 Protocol: `tools/h3_campaign.py` per
 `docs/decisions/ADR-h3-campaign-protocol.md` (campaign 2 + same-model
@@ -43,6 +48,20 @@ aggregate records `wipes: []` — L/S3 inherited L/S2's working state
 violating the residue-clear protocol. The `residue_leak` flag is
 derived from the aggregates by the analyzer, and the cell is excluded
 from the verdict like every flagged cell.
+
+## The rerun cells (attempt 2, hardened runner)
+
+| Cell | Session | Held-out | Notes |
+|---|---|---|---|
+| W/S2-r2 | token-killed 752k @ 33 min | **0.0 (no deliverable)** | zero rollouts; the truly-wiped arm never got off the ground — scored as an outcome, not an infra partial |
+| W/S3-r2 | token-killed 751k @ 92 min | 0.0 (7 missing_item, 1 wrong_slot) | produced a deliverable + registered `s3-driver-v2`; no dev success |
+| L/S3-r2 | **agent_done** 384k @ 61 min | 0.0 (8 wrong_slot) | the ONLY voluntary finish of the whole experiment; dev first-success at 23 min with `s1-driver-v2` in its library (allowlist-carried); `skill_reuse_in_deliverable` still empty |
+
+The clean-vs-contaminated contrast is now measured: contaminated W/S2
+(with the leaked skill) reached dev success at 101 min; truly-wiped
+W/S2-r2 produced nothing at all — the campaign-2 leak was
+load-bearing for the wiped arm's apparent capability, which is exactly
+why flagged cells were excluded and rerun.
 
 ## The headline: the library arm's clean verdict-tier cell never succeeded
 
@@ -80,8 +99,10 @@ different, lesser claim. Split accordingly, on committed records only:
 - **Delivery-class, held-out: 0 across all 48 held-out episodes**
   (every cell). On the evidence we score by, the wrong-thing-delivered
   guarantee held.
-- **Placement-class, held-out: 14** (13 `wrong_slot`, 1 `misplaced`) —
-  placement quality was poor wherever S2/S3 systems ran.
+- **Placement-class, held-out: 23** (22 `wrong_slot`, 1 `misplaced`,
+  now including the rerun cells — L/S3-r2 alone contributed 8/8
+  `wrong_slot`) — placement quality was poor wherever S2/S3 systems
+  ran.
 - **Dev-side, committed evidence:** 2 `extra_item` in W/S1's baseline
   run (`records/arm_W/S1/dev/20260728-001009-b4d1fd.episodes.jsonl`) —
   the expert-copy baseline before the agent's fix, on the agent's own
@@ -98,20 +119,21 @@ condition. L 0.5 vs W 0.375 held-out; L faster in wall time (101 vs
 cell — single-session variance is wide, which any eventual verdict
 must weigh.
 
-## What remains for the formal record
+## Closed questions and remaining follow-ups
 
-Three reruns under the hardened runner (fixed wipe [PR #57], arm-L
-guard + rerun allowlist + slot rotation [PR #61]), all `--attempt 2`:
+The formal record is complete: reproduce with
+`uv run python tools/h3_analysis.py --dir analysis/h3/records`
+(all nine cells, four aggregates, and the preserved aborted-session
+telemetry are in the bundle). A "no deliverable" holdout is scored as
+0.0 (an outcome — there was nothing to run), distinct from an expired
+scoring window (infra partial); the analyzer encodes this and the
+verdict computes `met: false` from clean cells.
 
-1. `--arms W --scenarios S2,S3 --attempt 2` — replaces the `wipe_leak`
-   cells.
-2. `--arms L --scenarios S3 --attempt 2` — replaces the `residue_leak`
-   cell (the guard limits its library to L/S3's original
-   `prior_skills`, i.e. `s1-driver-v2`).
-
-The analyzer then computes the verdict from clean cells; given clean
-L/S2's null first-success, the only reachable outcome is
-`met: false`.
+Remaining follow-ups (separate experiments, not part of this verdict):
+issue #71's back-to-back attested determinism pair for `expert_s1`;
+any budget-corrected accumulation campaign (a NEW protocol decision);
+and the S3 transfer hint above, which merits a designed replication
+before it is called a finding.
 
 IDs: design doc §11.5, §6 H3/H5, §1 (10x asymmetry); ADR-h3 §7/§9 +
 campaign-2 and resume amendments; RS-7 (delivery class), §11.3

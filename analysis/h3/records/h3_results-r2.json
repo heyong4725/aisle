@@ -1,0 +1,122 @@
+{
+ "ok": true,
+ "treatment": {
+  "commit": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+  "agent": "claude",
+  "agent_cli_version": "2.1.214 (Claude Code)",
+  "model": "claude-fable-5",
+  "prompt_template_sha256": "0f7fb5d9ea5d45e771eea1de0db36475787c8ce8b1892393d4cae19b0b985b6d",
+  "dev_seeds": "0..49",
+  "holdout_seeds": "100..107",
+  "holdout_episodes": 8,
+  "claude_max_turns": null,
+  "runner_sha256": "bb030880fbde33822a25023927f480e9b4258e6f0009afe85b70cbc0d8c8b5e6",
+  "session_spawn": {
+   "stdin": "devnull",
+   "confinement": "none (ADR-h2 point 5)"
+  },
+  "protocol": "ADR-h3-campaign-protocol",
+  "nudge_sha256": "ddf2dba404a0f44b19956c2aa937c5c4ea5046f604a5c687f05e4d9004eddbed",
+  "budget_scale": 1.0,
+  "h3_runner_sha256": "aecf2cd85ed7f93b322c7d4e30983c9945487b64ad0c28c82ee2524e78a6cf46"
+ },
+ "records": [
+  {
+   "arm": "L",
+   "tier": "S3",
+   "attempt": 2,
+   "worktree_head": "fee9e9f3c00e4d7082bd6278453c6eddb6d02348",
+   "budgets": {
+    "tier": "S3",
+    "tokens": 750000,
+    "episodes": 60,
+    "wall_h": 5.0
+   },
+   "session": {
+    "stopped": "agent_done",
+    "rc": 0,
+    "tokens": 383794,
+    "wall_s": 3653.1
+   },
+   "frozen_drift": [],
+   "holdout": {
+    "ok": true,
+    "error": null,
+    "pass1": 0.0,
+    "pass8": 0.0,
+    "failures": {
+     "wrong_slot": 8
+    }
+   },
+   "first_success_wall_s": 1390.4,
+   "wrong_object_total": 0,
+   "rollouts": [
+    {
+     "run_id": "skill-s3-driver-v1-2026-07-30-b784b9",
+     "mtime": 1785448447.783384,
+     "episodes": 2,
+     "pass1": 1.0
+    },
+    {
+     "run_id": "20260730-215526-e8d40b",
+     "mtime": 1785450268.8177545,
+     "episodes": 4,
+     "pass1": 1.0
+    },
+    {
+     "run_id": "campaign-holdout-L-S3-r2",
+     "mtime": 1785463474.2084818,
+     "episodes": 8,
+     "pass1": 0.0
+    }
+   ],
+   "prior_skills": [
+    "s1-driver-v2"
+   ],
+   "skills_after": [
+    "s1-driver-v2",
+    "s3-driver-v1"
+   ],
+   "skill_reuse_in_deliverable": []
+  }
+ ],
+ "wipes": [
+  {
+   "arm": "L",
+   "before": "S3-r2",
+   "removed": [
+    ".pytest_cache/",
+    ".ruff_cache/",
+    ".venv/",
+    "err.log",
+    "l0dbg.err",
+    "skills/s2-driver-v1/",
+    "skills/s3-driver-v1/",
+    "src/aisle/__pycache__/",
+    "src/aisle/harness/__pycache__/",
+    "src/aisle/mobility/__pycache__/",
+    "src/aisle/nodes/__pycache__/",
+    "src/aisle/scenes/__pycache__/",
+    "src/aisle/verifier/__pycache__/",
+    "study_err.log",
+    "t3.err",
+    "t4.err",
+    "t5.err",
+    "t6.err",
+    "t7.err",
+    "t8.err",
+    "t9.err",
+    "tests/__pycache__/",
+    "tests/unit/__pycache__/",
+    "vc.err",
+    "runs/ideas/"
+   ],
+   "detached_from": "bf6b1ed1f8277442e308f6affb0cc0ba376fc145",
+   "kept_ref": "h3/keep-L-pre-S3-r2",
+   "kept_skills": [
+    "s1-driver-v2"
+   ],
+   "skipped_ids": []
+  }
+ ]
+}
