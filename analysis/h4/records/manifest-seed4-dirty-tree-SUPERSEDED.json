@@ -1,0 +1,31 @@
+{
+ "git_sha": "a9227931a99cb50eb11f89edba3e283d7f313cce",
+ "git_dirty": true,
+ "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+ "env_hash": "025c7de2bebaddba2f063a0e94192d2a7269ccc8c1cc53a83bd8caa8a8aedaa4",
+ "env_fingerprint": null,
+ "env_attested": false,
+ "dist_problems": [],
+ "attestation_note": "dev measurement: local baseline, no post-run audit \u2014 per CON-5 as amended (ADR-24) this evidence makes NO reproducibility claim",
+ "graph_sha256": "f636186b712e93704dac8a066becde9ca5fec44d0f72a63463069b3e60a14f81",
+ "seeds": "0..29 (episode stream)",
+ "order_seed": 4,
+ "order": [
+  "hotswap",
+  "relaunch",
+  "hotswap",
+  "hotswap",
+  "relaunch",
+  "relaunch",
+  "hotswap",
+  "hotswap",
+  "hotswap",
+  "relaunch",
+  "relaunch",
+  "relaunch"
+ ],
+ "phase_model": "idea arrival delayed uniform(0, 25.0)s after stream health check",
+ "dora_cli": "dora-cli 1.0.0-rc.4",
+ "dora_api_rev": "7eb4a5f8b",
+ "coordinator_port": "6113"
+}
