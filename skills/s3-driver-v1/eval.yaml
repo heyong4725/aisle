@@ -1,0 +1,28 @@
+# The skill's shipped eval suite (design doc §3 rule 3, CAP-6). The
+# population is the ENTIRE generator-derived both-L1 feasible class over
+# the S3 dev range 0..49 — six seeds, machine-derived by
+# tests/unit/test_s3_driver_v1.py from generate_episode + the driver's
+# own refusal logic, never a handpicked subset (PR #75 review). The
+# suite and capability identity carry the L1-only precondition: this
+# node REFUSES any swap involving an L0 slot at plan time (safe no-op,
+# S1 I3 finding: the descent jams on the L1 board), so its full-tier
+# S3 applicability is 6/50 = 0.12 and the evalcard's pass_rate speaks
+# ONLY for the narrowed s3_reshelving_driving_both_l1 capability.
+# min_pass_rate 0.5 tolerates sim flakes without overclaiming; the
+# evalcard records the measured rate either way.
+#
+# Registration eval of record (CON-5 reproducibility — PR #54 precedent):
+#   run_id  skill-s3-driver-v1-1b72d33-record
+#   git_sha 1b72d33b (contains THIS suite + the fixed driver source +
+#           the eval graph; graph_hash 4e75b8a5)
+#   result  pass_rate 1.0 (6/6) over the full both-L1 feasible class
+# Reproduce: git checkout 1b72d33b && uv run harness skill register \
+#   skills/s3-driver-v1/ --run-id <fresh>  (runs/ is gitignored; the
+#   run manifest re-records the same git_sha + graph_hash).
+suite: retail-s3-both-l1
+graph: graphs/eval_s3_driver_v1.yaml
+tier: S3
+embodiment: mobile
+episodes: 6
+seeds: 19,28,33,34,35,36
+min_pass_rate: 0.5
