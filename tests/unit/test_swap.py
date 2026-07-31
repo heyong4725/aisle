@@ -16,17 +16,38 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 REAL_GRAPH = REPO_ROOT / "graphs" / "expert_t0.yaml"
 
 
-def make_runner(calls, fail_on=None):
+def make_runner(calls, fail_on=None, stdout_for=None):
     def run(cmd):
         calls.append(cmd)
 
         class R:
             returncode = 1 if fail_on and cmd[:2] == list(fail_on) else 0
             stderr = "boom" if fail_on and cmd[:2] == list(fail_on) else ""
+            stdout = stdout_for(cmd) if stdout_for else ""
 
         return R()
 
     return run
+
+
+def no_sleep(calls):
+    """A sleeper that records into the same call list so ORDER against
+    the dora commands is assertable."""
+
+    def sleeper(seconds):
+        calls.append(("sleep", seconds))
+
+    return sleeper
+
+
+def running_list(node_id):
+    def stdout_for(cmd):
+        if cmd[:2] == ["node", "list"]:
+            # the real CLI emits JSON LINES, one object per node
+            return json.dumps({"node": node_id, "status": "Running"}) + "\n"
+        return ""
+
+    return stdout_for
 
 
 @pytest.fixture
@@ -318,3 +339,109 @@ def test_swap_stages_absolute_paths_one_authoritative_base(tmp_path, graph, monk
     for node in doc["nodes"]:
         if isinstance(node.get("path"), str) and not node["path"].startswith("pip:"):
             assert Path(node["path"]).is_absolute(), node["id"]
+
+
+def test_swap_settles_between_remove_and_add(tmp_path, graph, monkeypatch):
+    """HAR-10 hardening (H4 shakeout, dora rev 7eb4a5f): a back-to-back
+    remove->add races the removed process's kill-on-drop, whose
+    Signal(9) is attributed to the node identity AFTER the add and
+    poisons the replacement (observed live: 'node added successfully'
+    then Signal(9), every later episode never_grasped). The swap MUST
+    settle between remove and add."""
+    monkeypatch.chdir(tmp_path)
+    calls = []
+    out = swap(
+        REPO_ROOT,
+        graph,
+        "df",
+        "oracle-pose",
+        identity_swap_file(tmp_path, graph),
+        "franka",
+        "b",
+        runner=make_runner(calls, stdout_for=running_list("oracle-pose")),
+        settle_s=2.0,
+        sleeper=no_sleep(calls),
+    )
+    assert out["ok"] is True and out["replacement_health"] == "running"
+    remove_i = calls.index(["node", "remove", "-d", "df", "oracle-pose"])
+    add_i = next(i for i, c in enumerate(calls) if c[:2] == ["node", "add"])
+    assert ("sleep", 2.0) in calls[remove_i + 1 : add_i]  # the settle sits between
+
+
+def test_swap_unhealthy_replacement_rolls_back(tmp_path, graph, monkeypatch):
+    """The post-add health belt: a replacement reported Failed by
+    `dora node list` refuses the swap and restores the ORIGINAL node
+    (never a dead planner on a live stream), logging a HAR-12
+    swap_failed event."""
+    monkeypatch.chdir(tmp_path)
+    calls = []
+
+    def failed_list(cmd):
+        if cmd[:2] == ["node", "list"]:
+            return json.dumps({"node": "oracle-pose", "status": "Failed"}) + "\n"
+        return ""
+
+    out = swap(
+        REPO_ROOT,
+        graph,
+        "df",
+        "oracle-pose",
+        identity_swap_file(tmp_path, graph),
+        "franka",
+        "b",
+        runner=make_runner(calls, stdout_for=failed_list),
+        sleeper=no_sleep(calls),
+    )
+    assert out["ok"] is False and "unhealthy" in out["error"]
+    assert out["restored"] is True
+    adds = [c for c in calls if c[:2] == ["node", "add"]]
+    assert len(adds) == 2  # the replacement, then the original restored
+    events = (REPO_ROOT / "runs" / "swaps" / "b.jsonl").read_text().splitlines()
+    assert json.loads(events[-1])["action"] == "swap_failed"
+
+
+def test_swap_unknown_health_format_does_not_refuse(tmp_path, graph, monkeypatch):
+    """CLI format drift must not brick swaps: unparseable `node list`
+    output reports health 'unknown' and the swap stands (the race is
+    prevented by the settle, not the belt)."""
+    monkeypatch.chdir(tmp_path)
+    calls = []
+    out = swap(
+        REPO_ROOT,
+        graph,
+        "df",
+        "oracle-pose",
+        identity_swap_file(tmp_path, graph),
+        "franka",
+        "b",
+        runner=make_runner(calls, stdout_for=lambda cmd: "not json"),
+        sleeper=no_sleep(calls),
+    )
+    assert out["ok"] is True and out["replacement_health"] == "unknown"
+
+
+def test_probe_spawns_via_current_interpreter(tmp_path):
+    """H4 shakeout: dynamically added nodes spawn WITHOUT the dataflow's
+    --uv wrapping, so a bare recorder path died at import under the
+    daemon's python (ExitCode(1) before register). The probe node MUST
+    spawn via the harness's own interpreter."""
+    import sys
+
+    calls = []
+    out = probe(tmp_path, "df", "dora-genesis/poses", 0.0, "b", runner=make_runner(calls))
+    assert out["ok"] is True
+    staged = yaml.safe_load((tmp_path / "runs" / "probes" / f"{out['probe']}.yaml").read_text())
+    assert staged["path"] == sys.executable
+    assert staged["args"].endswith("trace_recorder.py")
+
+
+def test_probe_env_pins_site_packages(tmp_path):
+    """The daemon resolves the interpreter symlink before exec, losing
+    pyvenv.cfg discovery — PYTHONPATH must pin the venv's site-packages
+    (H4 shakeout: ModuleNotFoundError: numpy under the venv python)."""
+    import sysconfig
+
+    calls = []
+    out = probe(tmp_path, "df", "dora-genesis/poses", 0.0, "b", runner=make_runner(calls))
+    staged = yaml.safe_load((tmp_path / "runs" / "probes" / f"{out['probe']}.yaml").read_text())
+    assert staged["env"]["PYTHONPATH"] == sysconfig.get_paths()["purelib"]
