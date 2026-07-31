@@ -10,6 +10,15 @@
 # ONLY for the narrowed s3_reshelving_driving_both_l1 capability.
 # min_pass_rate 0.5 tolerates sim flakes without overclaiming; the
 # evalcard records the measured rate either way.
+#
+# Registration eval of record (CON-5 reproducibility — PR #54 precedent):
+#   run_id  skill-s3-driver-v1-1b72d33-record
+#   git_sha 1b72d33b (contains THIS suite + the fixed driver source +
+#           the eval graph; graph_hash 4e75b8a5)
+#   result  pass_rate 1.0 (6/6) over the full both-L1 feasible class
+# Reproduce: git checkout 1b72d33b && uv run harness skill register \
+#   skills/s3-driver-v1/ --run-id <fresh>  (runs/ is gitignored; the
+#   run manifest re-records the same git_sha + graph_hash).
 suite: retail-s3-both-l1
 graph: graphs/eval_s3_driver_v1.yaml
 tier: S3
