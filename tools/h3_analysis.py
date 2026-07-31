@@ -4,9 +4,13 @@ Reads the campaign's record set (h3_results*.json + per-scenario
 arm_*/S*/scenario.json + token_samples.jsonl) and emits the cells table,
 time- AND tokens-to-first-success ratios, and the H3 verdict. Integrity
 is computed FROM the records, never hand-annotated: wipe_leak (non-empty
-prior_skills on the wiped arm), frozen_drift (non-empty audit), and
-holdout_partial (expired scoring window) each flag a cell, and ONLY
-unflagged cells enter the verdict. Records from different campaigns
+prior_skills on the wiped arm), frozen_drift (non-empty audit),
+holdout_partial (expired scoring window), residue_leak (from the
+aggregates' wipes lists), treatment_drift (a rollout whose recorded
+git_sha or env_baseline_oid is not the treatment pin), and
+unattested_metric (first-success supplied by a rollout that is not a
+trusted-baseline run at the pin) each flag a cell, and ONLY unflagged
+cells enter the verdict. Records from different campaigns
 (commit/agent/model/seeds) refuse to combine. CON-8: single JSON object
 on stdout, exit 0 iff ok — missing or malformed input fails closed.
 """
@@ -15,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 TIERS = ("S1", "S2", "S3")
@@ -32,6 +37,11 @@ IDENTITY_KEYS = ("commit", "agent", "model", "dev_seeds", "holdout_seeds")
 # zero delivery-class failures.
 DELIVERY_CLASSES = ("wrong_object", "extra_item")
 PLACEMENT_CLASSES = ("misplaced", "wrong_slot", "misaligned", "overhang")
+# score_holdout's exact no-deliverable template — admitted ONLY for
+# legacy records that predate the structured `outcome` field, and only
+# together with the full structural state (PR #76 review)
+_LEGACY_NO_DELIVERABLE = re.compile(r"no deliverable at \S+")
+HOLDOUT_RUN_PREFIX = "campaign-holdout"
 
 
 def load_campaign(campaign_dir: Path) -> dict:
@@ -118,11 +128,15 @@ def _tokens_at(samples: list[dict], wall_s: float | None) -> int | None:
     return samples[-1].get("tokens") if samples else None
 
 
-def cell(rec: dict) -> dict:
+def cell(rec: dict, commit: str | None = None) -> dict:
     """One table cell per (arm, tier, attempt), with integrity flags
-    derived from the record itself — never hand-annotated."""
+    derived from the record itself — never hand-annotated. `commit` is
+    the treatment pin: with it, rollout provenance (recorded by
+    campaign_metrics) yields treatment_drift / unattested_metric;
+    records that predate provenance keep only their original flags."""
     holdout = rec.get("holdout") or {}
     session = rec.get("session") or {}
+    rollouts = rec.get("rollouts") or []
     flags = []
     if rec.get("arm") == "W" and rec.get("prior_skills"):
         # the WIPED arm saw prior-scenario state (campaign-2 leak). The
@@ -131,13 +145,66 @@ def cell(rec: dict) -> dict:
         flags.append("wipe_leak")
     if rec.get("frozen_drift"):
         flags.append("frozen_drift")
+    # held-out episodes actually EXECUTED (the H5 exposure denominator):
+    # from the holdout scoring run's own rollout entry — a cell whose
+    # deliverable never ran contributes ZERO safety evidence (PR #76
+    # review), however its pass rate is scored
+    episodes_scored = sum(
+        r.get("episodes") or 0
+        for r in rollouts
+        if str(r.get("run_id") or "").startswith(HOLDOUT_RUN_PREFIX)
+    )
     # a session that produced NO deliverable is a scored OUTCOME (0.0 —
     # nothing to run), distinct from an expired scoring window (infra
-    # partial); PR #67 follow-up, decided at the rerun campaign
-    no_deliverable = bool(holdout.get("error")) and "no deliverable" in str(holdout.get("error"))
+    # partial); PR #67 follow-up, decided at the rerun campaign. The
+    # classification is STRUCTURAL (PR #76 review): the runner's
+    # `outcome` field (or, for records predating it, score_holdout's
+    # exact error template) plus the full no-score state — anything
+    # else unsuccessful stays a partial.
+    no_deliverable = (
+        (
+            holdout.get("outcome") == "no_deliverable"
+            or _LEGACY_NO_DELIVERABLE.fullmatch(str(holdout.get("error") or "")) is not None
+        )
+        and holdout.get("ok") is False
+        and holdout.get("pass1") is None
+        and holdout.get("pass8") is None
+        and not holdout.get("failures")
+        and episodes_scored == 0
+    )
     if not holdout.get("ok") and not no_deliverable:
         flags.append("holdout_partial")
     first = rec.get("first_success_wall_s")
+    if commit:
+        # treatment_drift (PR #76 review): a rollout recorded on a
+        # different commit, or trusted against a baseline other than the
+        # pin, broke the pinned-treatment invariant (ADR-h3: one pinned
+        # OID, no mid-campaign repo updates)
+        for r in rollouts:
+            sha, oid = r.get("git_sha"), r.get("env_baseline_oid")
+            if (sha is not None and sha != commit) or (oid is not None and oid != commit):
+                flags.append("treatment_drift")
+                break
+        # unattested_metric (PR #76 review): the rollout that supplies
+        # first-success must be a trusted-baseline run at the pin — a
+        # local/unattested skill-eval success is not an admissible
+        # verdict metric (protocol point 2)
+        if first is not None:
+            dev_successes = [
+                r
+                for r in rollouts
+                if (r.get("pass1") or 0) > 0
+                and not str(r.get("run_id") or "").startswith(HOLDOUT_RUN_PREFIX)
+            ]
+            if dev_successes:
+                src = min(dev_successes, key=lambda r: r.get("mtime") or 0)
+                trusted = (
+                    src.get("git_sha") == commit
+                    and src.get("env_baseline") == "origin/main"
+                    and src.get("env_baseline_oid") == commit
+                )
+                if "git_sha" in src and not trusted:
+                    flags.append("unattested_metric")
     # H5 scored on the HELD-OUT records (what we score; dev-side failures
     # are the agent's own and live outside the committed record)
     holdout_failures = holdout.get("failures") or {}
@@ -154,6 +221,7 @@ def cell(rec: dict) -> dict:
         "attempt": rec.get("attempt", 1),
         "holdout_pass1": 0.0 if no_deliverable else holdout.get("pass1"),
         "no_deliverable": no_deliverable,
+        "episodes_scored": episodes_scored,
         "holdout_failures": holdout_failures,
         "delivery_failures": delivery,
         "delivery_failures_total": sum(delivery.values()),
@@ -208,20 +276,39 @@ def h3_verdict(cells: list[dict]) -> dict:
             per_tier[tier] = True  # only L succeeded: transfer at its clearest
         else:
             per_tier[tier] = l_first <= 0.5 * w_first
-    caveats = [f"{c['arm']}/{c['tier']}: {flag}" for c in cells for flag in c["flags"]]
+    caveats = [f"{c['arm']}/{_slot(c)}: {flag}" for c in cells for flag in c["flags"]]
+    # met = all(tiers): one tier decided False from clean cells fixes
+    # NOT MET regardless of whether the other tier still lacks a clean
+    # cell (PR #76 review) — pending only while no tier is decided False
+    # and some tier is incomplete
+    if any(v is False for v in per_tier.values()):
+        met: bool | None = False
+    elif not complete or not per_tier:
+        met = None
+    else:
+        met = True
     return {
         "criterion": CRITERION,
         "ratios": ratios,
         "token_ratios": token_ratios,
         "per_tier": per_tier,
-        "met": all(per_tier.values()) if complete and per_tier else None,
+        "complete": complete,
+        "met": met,
         "caveats": caveats,
     }
 
 
+def _slot(c: dict) -> str:
+    """Tier + attempt identity (matches the runner's slot naming) so rerun
+    rows are distinguishable from the cells they supersede (PR #76
+    review: two indistinguishable `L | S3` rows misread as duplicates)."""
+    attempt = c.get("attempt", 1)
+    return c["tier"] + ("" if attempt == 1 else f"-r{attempt}")
+
+
 def results_markdown(cells: list[dict], verdict: dict) -> str:
     header = (
-        "| Arm | Tier | Held-out pass@1 | Session end | Tokens | Wall h "
+        "| Arm | Cell | Held-out pass@1 | Session end | Tokens | Wall h "
         "| First success (min) | Tokens@1st | Delivery fails | Placement fails | Reuse | Flags |"
     )
     lines = [header, "|---|---|---|---|---|---|---|---|---|---|---|---|"]
@@ -237,7 +324,7 @@ def results_markdown(cells: list[dict], verdict: dict) -> str:
         deliv = ", ".join(f"{k} {v}" for k, v in c["delivery_failures"].items()) or "0"
         place = ", ".join(f"{k} {v}" for k, v in c["placement_failures"].items()) or "0"
         lines.append(
-            f"| {c['arm']} | {c['tier']} | {shown} | {c['stopped']} "
+            f"| {c['arm']} | {_slot(c)} | {shown} | {c['stopped']} "
             f"| {c['tokens']} | {(c['wall_s'] or 0) / 3600:.2f} "
             f"| {'—' if first is None else f'{first / 60:.1f}'} "
             f"| {'—' if tok1 is None else tok1} "
@@ -266,22 +353,11 @@ def main() -> int:
     except ValueError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
         return 1
-    cells = [cell(r) for r in campaign["records"]]
+    cells = [cell(r, campaign["treatment"].get("commit")) for r in campaign["records"]]
     verdict = h3_verdict(cells)
     if args.markdown:
         args.markdown.write_text(results_markdown(cells, verdict))
     total_wrong = sum(c["wrong_object_total"] or 0 for c in cells)
-    # H5 (PR #60/#67 reviews): delivery-class (wrong THING) and
-    # placement-class (wrong WHERE/HOW) totals reported separately —
-    # never hidden behind a vacuous wrong_object_total: 0, never
-    # conflated into one "precision" number
-    delivery_by_class: dict[str, int] = {}
-    placement_by_class: dict[str, int] = {}
-    for c in cells:
-        for k, v in c["delivery_failures"].items():
-            delivery_by_class[k] = delivery_by_class.get(k, 0) + v
-        for k, v in c["placement_failures"].items():
-            placement_by_class[k] = placement_by_class.get(k, 0) + v
     print(
         json.dumps(
             {
@@ -290,15 +366,52 @@ def main() -> int:
                 "cells": cells,
                 "verdict": verdict,
                 "wrong_object_total": total_wrong,
-                "holdout_delivery_failures_total": sum(delivery_by_class.values()),
-                "holdout_delivery_failures_by_class": delivery_by_class,
-                "holdout_placement_failures_total": sum(placement_by_class.values()),
-                "holdout_placement_failures_by_class": placement_by_class,
+                "h5": {
+                    "selected": h5_totals(select_cells(cells)),
+                    "all_records": h5_totals(cells),
+                },
             },
             indent=1,
         )
     )
     return 0
+
+
+def select_cells(cells: list[dict]) -> list[dict]:
+    """The verdict's aggregation set: per (arm, tier), the
+    highest-attempt CLEAN cell — flagged and superseded cells stay in
+    the all_records inventory only (PR #76 review)."""
+    selected = []
+    for arm in ("W", "L"):
+        for tier in TIERS:
+            eligible = [
+                c for c in cells if c["arm"] == arm and c["tier"] == tier and not c["flags"]
+            ]
+            if eligible:
+                selected.append(max(eligible, key=lambda c: c["attempt"]))
+    return selected
+
+
+def h5_totals(cset: list[dict]) -> dict:
+    """H5 (PR #60/#67/#76 reviews): delivery-class (wrong THING) and
+    placement-class (wrong WHERE/HOW) totals reported separately, over
+    an EXPLICIT cell set, with the executed-episode exposure alongside —
+    a no-deliverable cell executed nothing and is zero safety evidence."""
+    delivery_by_class: dict[str, int] = {}
+    placement_by_class: dict[str, int] = {}
+    for c in cset:
+        for k, v in c["delivery_failures"].items():
+            delivery_by_class[k] = delivery_by_class.get(k, 0) + v
+        for k, v in c["placement_failures"].items():
+            placement_by_class[k] = placement_by_class.get(k, 0) + v
+    return {
+        "cells": [f"{c['arm']}/{_slot(c)}" for c in cset],
+        "episodes_scored": sum(c["episodes_scored"] for c in cset),
+        "delivery_failures_total": sum(delivery_by_class.values()),
+        "delivery_failures_by_class": delivery_by_class,
+        "placement_failures_total": sum(placement_by_class.values()),
+        "placement_failures_by_class": placement_by_class,
+    }
 
 
 if __name__ == "__main__":

@@ -33,13 +33,21 @@
    "run_id": "skill-s3-driver-v2-2026-07-30-d5e65a",
    "mtime": 1785436641.3668094,
    "episodes": 2,
-   "pass1": 0.0
+   "pass1": 0.0,
+   "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+   "env_baseline": "local",
+   "env_baseline_oid": null,
+   "env_attested": null
   },
   {
    "run_id": "campaign-holdout-W-S3-r2",
    "mtime": 1785447040.0924094,
    "episodes": 8,
-   "pass1": 0.0
+   "pass1": 0.0,
+   "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+   "env_baseline": "local",
+   "env_baseline_oid": null,
+   "env_attested": null
   }
  ],
  "prior_skills": [],
