@@ -4,6 +4,11 @@ Contract: same (seed, cfg, platform) ⇒ bitwise-identical initial
 `oracle_state`. Verified by `tests/sim/test_scene.py::test_build_determinism`
 on macOS arm64 (Metal backend, float32).
 
+Backend selection is automatic: macOS uses Metal; other platforms use CUDA
+when PyTorch reports an available CUDA device and otherwise use CPU. Linux
+x86-64 CUDA execution has been exercised on an NVIDIA GeForce RTX 5090 with
+driver 580.126.09 and PyTorch 2.13.0+cu130.
+
 Known platform caveats — recorded here rather than hidden (SCN-7):
 
 - Initial oracle_state is placement-derived (pure Python RNG → float32), so
@@ -13,6 +18,5 @@ Known platform caveats — recorded here rather than hidden (SCN-7):
   onward; measure before promising cross-platform reproducibility).
 - genesis is initialized once per process (backend fixed at first
   build_scene call); mixing backends in one process is unsupported.
-
-No Metal-vs-CUDA divergence has been measured yet — no CUDA machine in the
-loop. This file is the place to record it when one appears.
+- CUDA startup errors propagate; AISLE never silently retries initialization
+  on CPU. Metal-vs-CUDA post-step divergence has not yet been quantified.

@@ -32,6 +32,13 @@ DOWNWARD_QUAT = (0.0, 1.0, 0.0, 0.0)
 _MAX_PLACEMENT_TRIES = 1000
 
 
+def select_genesis_backend(platform_name: str, cuda_available: bool) -> str:
+    """Select the deterministic Genesis backend for this resolved host."""
+    if platform_name == "Darwin":
+        return "metal"
+    return "cuda" if cuda_available else "cpu"
+
+
 def load_meds() -> dict:
     with open(_SCENES_DIR / "meds.toml", "rb") as f:
         return tomllib.load(f)
@@ -241,7 +248,14 @@ def _separated(
 def _ensure_genesis():
     import genesis as gs
 
-    expected = gs.metal if platform.system() == "Darwin" else gs.cpu
+    system = platform.system()
+    cuda_available = False
+    if system != "Darwin":
+        import torch
+
+        cuda_available = torch.cuda.is_available()
+    backend_name = select_genesis_backend(system, cuda_available)
+    expected = {"metal": gs.metal, "cuda": gs.cuda, "cpu": gs.cpu}[backend_name]
     if not getattr(gs, "_initialized", False):
         # fixed seed: genesis's internal RNG must never be an input to build
         # outcomes (CON-5); reachability IK is additionally made

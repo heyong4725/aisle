@@ -182,6 +182,25 @@ def test_module_import_stays_sim_free():
     assert proc.returncode == 0, proc.stderr
 
 
+@pytest.mark.parametrize(
+    ("platform_name", "cuda_available", "expected"),
+    [
+        ("Darwin", False, "metal"),
+        ("Darwin", True, "metal"),
+        ("Linux", True, "cuda"),
+        ("Linux", False, "cpu"),
+        ("Windows", True, "cuda"),
+        ("Windows", False, "cpu"),
+    ],
+)
+def test_select_genesis_backend(platform_name, cuda_available, expected):
+    """SCN-7, CON-5: backend selection is deterministic from platform and
+    resolved CUDA availability; macOS remains Metal."""
+    from aisle.scenes.pharmacy import select_genesis_backend
+
+    assert select_genesis_backend(platform_name, cuda_available) == expected
+
+
 def test_sampled_boxes_always_have_open_sky(placements_200):
     """SCN-3 / ADR-12: the staggered sampler's open bands and the
     planner's needs_front safety net agree — across 200 seeds and both
