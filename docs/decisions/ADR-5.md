@@ -48,12 +48,29 @@ as the uniqueness mechanism; closed enums for latency_class
 {parallel, any} — all Class C to extend, which is the intended friction; the
 `pip:` source-ref prefix; eval.pass_rate bounded [0,1].
 
-**OPEN — needs human ratification (do not treat as settled):**
+**RATIFIED 2026-08-03 (owner decision, PR #81 review resolution) —
+`motion` means EMITS ACTUATION COMMANDS.** The question below was open
+since the T02 retro review (decision item 1); the owner ratified the
+reversal of the interim policy. The rule: any manifest whose outputs
+include joint_cmd/gripper_cmd/base_cmd (raw or guard-gated `*_safe`) is
+safety_class `motion` and therefore needs an evalcard under CAP-6.
+Enacted consistently in PR #81: ik-trajectory, s1-expert, waypoint-nav,
+nav-action, budget-guard, s1-driver-v2 flipped with evalcards citing
+their acceptance suites (s3-driver-v1 already conformed via PR #75);
+pinned registry-wide by
+`test_manifests.py::test_actuation_command_emitters_are_motion_with_evalcards`.
+VAL-5 sink semantics are UNCHANGED except one recorded exemption
+amending ADR-4's reading: the budget-guard, though motion-class, is
+never a VAL-5 sink — it IS the gate every command path must traverse,
+and raw commands are exactly what it consumes. Sinks remain motion-class
+nodes with command input ports (the executors: dora-genesis and the sim
+drivers; none of the flipped emitters have command inputs).
+
+Original open question, for the record:
 ik-trajectory emits joint_cmd/gripper_cmd yet is safety_class `decision`.
-Current policy: `motion` means "executes actuation" (the drivers); emitters
-and gates are `decision`. Consequences if ratified: only drivers need
-evalcards under CAP-6, and VAL-5 sinks are exactly the driver inputs. If
-reversed (motion = produces commands): ik-trajectory and budget-guard need
-evalcards, and the guard exemption in ADR-4 must be rethought. CAP-6 and
-SPEC 080 semantics hang on this either way — flagged in the T02 retro
-review as decision item 1.
+Interim policy (now superseded): `motion` means "executes actuation" (the
+drivers); emitters and gates are `decision`. Consequences if ratified:
+only drivers need evalcards under CAP-6, and VAL-5 sinks are exactly the
+driver inputs. If reversed (motion = produces commands): ik-trajectory
+and budget-guard need evalcards, and the guard exemption in ADR-4 must
+be rethought. CAP-6 and SPEC 080 semantics hang on this either way.

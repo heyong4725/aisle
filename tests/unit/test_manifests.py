@@ -470,3 +470,41 @@ def test_pip_installed_probe_is_cached():
     finally:
         md.version = original
         reg._pip_installed.cache_clear()
+
+
+def test_actuation_command_emitters_are_motion_with_evalcards():
+    """ADR-5 safety-class boundary, RATIFIED 2026-08-03 (owner decision,
+    PR #81 review): motion means EMITS ACTUATION COMMANDS. Every registry
+    manifest whose outputs include a joint/gripper/base command (raw or
+    guard-gated *_safe) must be safety_class motion and carry an evalcard
+    (CAP-6 then requires eval non-null for the class)."""
+    actuation = {
+        "joint_cmd",
+        "gripper_cmd",
+        "base_cmd",
+        "joint_cmd_safe",
+        "gripper_cmd_safe",
+        "base_cmd_safe",
+    }
+    emitters = []
+    for path in sorted((REPO_ROOT / "registry" / "manifests").glob("*.yaml")):
+        manifest = yaml.safe_load(path.read_text())
+        if set(manifest.get("outputs") or {}) & actuation:
+            emitters.append(manifest["id"])
+            assert manifest["safety_class"] == "motion", (
+                f"{manifest['id']} emits actuation commands but is "
+                f"safety_class={manifest['safety_class']!r} (ADR-5 ratified)"
+            )
+            assert manifest.get("eval") is not None, (
+                f"{manifest['id']} is motion with no evalcard (CAP-6)"
+            )
+    # the boundary decision covers the full emitter set, not one skill
+    assert {
+        "budget-guard",
+        "ik-trajectory",
+        "nav-action",
+        "s1-driver-v2",
+        "s1-expert",
+        "s3-driver-v1",
+        "waypoint-nav",
+    } <= set(emitters)

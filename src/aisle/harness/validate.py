@@ -511,7 +511,14 @@ def _validate_edge(
     # RESOLVED budget-guard (topological, per the spec's "every path"; a
     # same-named node with no manifest is spoofing; timers and unresolvable
     # sources are ungated). Never let a later check's early return hide this.
-    if manifest.get("safety_class") == "motion" and port in MOTION_SINK_PORTS:
+    # The guard itself is motion under the ratified ADR-5 boundary (it emits
+    # the *_safe actuation streams) but is exempt as a sink: it IS the gate
+    # every path must traverse — raw commands are exactly what it consumes.
+    if (
+        manifest.get("safety_class") == "motion"
+        and port in MOTION_SINK_PORTS
+        and node_id != GUARD_ID
+    ):
         gated = not is_dora_source and _gated_source(source, graph_nodes, manifests, {}, set())
         if not gated:
             errors.append(

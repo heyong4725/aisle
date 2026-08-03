@@ -47,7 +47,10 @@ embodiment:
   gripper: any
   base:
   - mobile
-safety_class: decision
-eval: null
+safety_class: motion
+eval:
+  suite: runs/a1-expert-s1-holdout (S1 held-out pass@1)
+  pass_rate: 0.125
+  last_run: '2026-07-30'
 origin: hub
 source: src/aisle/nodes/s1_expert.py
