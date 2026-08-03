@@ -19,6 +19,7 @@ from pathlib import Path
 import yaml
 
 from aisle.harness.registry import (
+    MOTION_SINK_PORTS,
     _path_source_valid,
     _pip_dist,
     _pip_installed,
@@ -28,10 +29,9 @@ from aisle.harness.registry import (
     manifest_schema_errors,
 )
 
-# base_cmd is a motion sink too (SPEC 210 MOB-3): a mobile base command
-# reaching the bridge MUST traverse the budget guard, or a producer could
-# drive the base unguarded.
-MOTION_SINK_PORTS = {"joint_cmd", "gripper_cmd", "base_cmd"}
+# MOTION_SINK_PORTS lives in registry.py (shared with the ADR-5 lint rule):
+# base_cmd is a motion sink too (SPEC 210 MOB-3) — a mobile base command
+# reaching the bridge MUST traverse the budget guard.
 GUARD_ID = "budget-guard"
 RATE_BAND = 0.2  # TC-4: rates are contracts within ±20%
 # MOB-4: each embodiment profile resolves to an ARM kind. `mobile` is the
@@ -541,7 +541,14 @@ def _validate_edge(
     # RESOLVED budget-guard (topological, per the spec's "every path"; a
     # same-named node with no manifest is spoofing; timers and unresolvable
     # sources are ungated). Never let a later check's early return hide this.
-    if manifest.get("safety_class") == "motion" and port in MOTION_SINK_PORTS:
+    # The guard itself is motion under the ratified ADR-5 boundary (it emits
+    # the *_safe actuation streams) but is exempt as a sink: it IS the gate
+    # every path must traverse — raw commands are exactly what it consumes.
+    if (
+        manifest.get("safety_class") == "motion"
+        and port in MOTION_SINK_PORTS
+        and node_id != GUARD_ID
+    ):
         gated = not is_dora_source and _gated_source(source, graph_nodes, manifests, {}, set())
         if not gated:
             errors.append(

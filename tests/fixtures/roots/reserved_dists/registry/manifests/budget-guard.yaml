@@ -45,7 +45,10 @@ embodiment:
   arm:
   - franka
   gripper: any
-safety_class: decision
-eval: null
+safety_class: motion
+eval:
+  suite: tests/graph/test_guard_in_graph.py (SPEC 080 adversarial)
+  pass_rate: 1.0
+  last_run: '2026-08-03'
 origin: hub
 source: src/aisle/nodes/budget_guard.py

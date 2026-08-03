@@ -47,7 +47,7 @@ embodiment:
   gripper: any
   base:
   - mobile
-safety_class: decision
+safety_class: motion
 eval:
   suite: retail
   pass_rate: 1.0

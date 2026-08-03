@@ -21,7 +21,10 @@ embodiment:
   arm: [franka]
   gripper: any
   base: [mobile]
-safety_class: decision
-eval: null
+safety_class: motion
+eval:
+  suite: tests/accept/test_contract_mobile.py (MOB-2 nav lifecycle)
+  pass_rate: 1.0
+  last_run: '2026-08-03'
 origin: hub
 source: src/aisle/nodes/nav_action.py
