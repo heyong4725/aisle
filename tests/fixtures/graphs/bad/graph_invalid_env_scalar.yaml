@@ -1,0 +1,9 @@
+# PR #80 re-review P1: a scalar node env crashed the validator with
+# AttributeError instead of the VAL-3/CON-8 JSON report — env shape must
+# be checked structurally, like inputs and outputs
+nodes:
+- id: dora-genesis
+  inputs: {tick: dora/timer/millis/10}
+  outputs:
+  - poses
+  env: not-a-mapping

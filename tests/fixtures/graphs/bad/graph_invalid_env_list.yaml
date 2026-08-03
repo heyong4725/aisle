@@ -1,0 +1,8 @@
+# PR #80 re-review P1 (list variant): env as a YAML list, not a mapping
+nodes:
+- id: dora-genesis
+  inputs: {tick: dora/timer/millis/10}
+  outputs:
+  - poses
+  env:
+  - AISLE_STEP_WITHOUT_RESET=1

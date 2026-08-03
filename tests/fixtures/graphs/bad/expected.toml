@@ -228,3 +228,11 @@ root = "tests/fixtures/roots/source_invalid"
 # graph-YAML node env bypasses the rollout runner's os.environ scrub —
 # a measured rollout would restore the issue-#71 pre-reset startup race.
 codes = ["BRINGUP_ENV_FORBIDDEN"]
+
+[graph_invalid_env_scalar]
+# PR #80 re-review P1: non-mapping env is a structural error, not an
+# AttributeError crash (VAL-3/CON-8)
+codes = ["GRAPH_INVALID"]
+
+[graph_invalid_env_list]
+codes = ["GRAPH_INVALID"]

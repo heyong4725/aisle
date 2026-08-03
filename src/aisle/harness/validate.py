@@ -177,6 +177,18 @@ def load_graph(path: Path) -> tuple[list | None, list[dict]]:
                     "remove the repeated entries from the outputs list",
                 )
             )
+        env = node.get("env")
+        if env is not None and not isinstance(env, dict):
+            # PR #80 re-review: downstream checks read env with .get(); a
+            # scalar/list here must be a structural refusal, not a crash
+            structural.append(
+                _entry(
+                    "GRAPH_INVALID",
+                    {"node": str(node_id)},
+                    f"env must be a mapping of variable -> value, got {type(env).__name__}",
+                    "write env as {VAR: value} pairs",
+                )
+            )
     if structural:
         return None, structural
     return nodes, []
