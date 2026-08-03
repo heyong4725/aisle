@@ -222,3 +222,9 @@ codes = ["PATH_MANIFEST_MISMATCH"]
 [source_invalid_ghost_path]
 codes = ["SOURCE_INVALID"]
 root = "tests/fixtures/roots/source_invalid"
+
+[bringup_env_in_graph]
+# ADR-25 (PR #80 review P1): the reset-less bring-up opt-out supplied via
+# graph-YAML node env bypasses the rollout runner's os.environ scrub —
+# a measured rollout would restore the issue-#71 pre-reset startup race.
+codes = ["BRINGUP_ENV_FORBIDDEN"]

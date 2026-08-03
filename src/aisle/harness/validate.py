@@ -253,6 +253,24 @@ def validate_nodes(
     arm_kind = EMBODIMENT_ARM.get(embodiment, embodiment)
     for node in nodes:
         node_id = node["id"]
+        # ADR-25 (issue #71, PR #80 review): the bridge's reset-less
+        # bring-up opt-out must never reach a validated graph — the rollout
+        # runner scrubs it from os.environ, but node env in graph YAML
+        # bypasses that scrub and would restore the pre-reset startup race
+        # in a measured rollout. Fail closed on the truthy spellings the
+        # bridge itself accepts.
+        bringup = str((node.get("env") or {}).get("AISLE_STEP_WITHOUT_RESET", ""))
+        if bringup.strip().lower() in ("1", "true", "yes"):
+            errors.append(
+                _entry(
+                    "BRINGUP_ENV_FORBIDDEN",
+                    {"node": node_id},
+                    f"node {node_id!r} sets AISLE_STEP_WITHOUT_RESET={bringup!r} in graph env",
+                    "remove it: pre-reset free-running is a bring-up mode for "
+                    "reset-less debug graphs run directly via `dora run`, never "
+                    "for validated rollouts (CON-5, ADR-25)",
+                )
+            )
         manifest = manifests.get(node_id)
         if manifest is None:
             close = _closest(node_id, list(manifests))

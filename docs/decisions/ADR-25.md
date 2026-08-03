@@ -49,13 +49,16 @@ interactions amplify from there (first nav 25.7 s vs 6.68 s).
 3. **Bring-up escape hatch, attested:** `AISLE_STEP_WITHOUT_RESET=1`
    restores the old free-running behavior for reset-less debug graphs
    (conformance/multi-env/mobile-integration/contract-acceptance
-   tests). Two guards keep it out of measured runs: the flag is
+   tests). Three guards keep it out of measured runs: the flag is
    surfaced in `bridge_info` (recorded in every run's traces, so a
-   free-running bridge is auditable), and the rollout runner SCRUBS the
+   free-running bridge is auditable); the rollout runner SCRUBS the
    variable from the dora process environment (`scrub_bringup_env`,
-   HAR-1) — ambient shell state cannot silently flip a measured run.
-   Setting it via graph YAML changes the graph hash, which the manifest
-   records.
+   HAR-1) — ambient shell state cannot silently flip a measured run;
+   and the VALIDATOR fails closed on any graph whose node env sets a
+   truthy value (`BRINGUP_ENV_FORBIDDEN`, PR #80 review P1 — graph-YAML
+   env reaches the bridge without passing through the scrub, and
+   `run_gates` runs validation before every launch). Bring-up graphs
+   run directly via `dora run`, never through validated rollouts.
 
 Interpretation recorded per CON-15: BRG-1's "each tick advances sim by
 cfg.dt" is read as applying to the seeded world — the world does not
