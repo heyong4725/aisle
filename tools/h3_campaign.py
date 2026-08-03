@@ -130,8 +130,26 @@ def wipe_library(wt: Path, oid: str, keep_ref: str | None = None) -> dict:
             tree = subprocess.run(
                 ["git", "write-tree"], cwd=wt, env=env, capture_output=True, text=True, check=True
             ).stdout.strip()
+            # commit-tree needs a committer identity, and this snapshot is
+            # campaign machinery rather than anyone's authorship. Pin one
+            # instead of inheriting the operator's: a host with no global git
+            # config (a CI runner, a fresh clone) has no identity to inherit
+            # and `commit-tree` exits 128 — losing the residue evidence the
+            # keep-ref exists to preserve.
             snap = subprocess.run(
-                ["git", "commit-tree", tree, "-p", head, "-m", f"pre-wipe snapshot ({keep_ref})"],
+                [
+                    "git",
+                    "-c",
+                    "user.name=aisle-h3-campaign",
+                    "-c",
+                    "user.email=h3-campaign@aisle.invalid",
+                    "commit-tree",
+                    tree,
+                    "-p",
+                    head,
+                    "-m",
+                    f"pre-wipe snapshot ({keep_ref})",
+                ],
                 cwd=wt,
                 env=env,
                 capture_output=True,
