@@ -1,12 +1,15 @@
 """dora-genesis bridge node (SPEC 030, implementing SPEC 010 over SPEC 020).
 
 Exactly one bridge owns the Genesis scene per dataflow (BRG-1). The node is
-driven by dora/timer/millis/10 ticks; each tick advances sim by cfg.dt,
-services coalesced commands in arrival order (BRG-3), and publishes topics
-at their contract rates (TC table) — rendering only when a camera topic is
-due (BRG-2). Pure control-plane logic (scheduler, coalescer, config,
-bridge_info) lives at module level, sim-free and unit-tested; dora, arrow,
-and genesis are imported only inside main() (CON-12).
+driven by dora/timer/millis/10 ticks; each tick after the first reset
+advances sim by cfg.dt, services coalesced commands in arrival order
+(BRG-3), and publishes topics at their contract rates (TC table) —
+rendering only when a camera topic is due (BRG-2). Ticks BEFORE the first
+reset are dropped (CON-5/ADR-25) unless AISLE_STEP_WITHOUT_RESET=1 opts a
+reset-less bring-up graph out. Pure control-plane logic (scheduler,
+coalescer, config, bridge_info) lives at module level, sim-free and
+unit-tested; dora, arrow, and genesis are imported only inside main()
+(CON-12).
 
 Sim exceptions propagate: there is deliberately no try/except around
 scene.step() or state injection — a physics error must crash the node
@@ -67,6 +70,11 @@ class BridgeConfig:
     # mode (per-frame rendering slows episodes; never for measured runs).
     # Default stays headless: every recorded pipeline is unaffected.
     headless: bool = True
+    # AISLE_STEP_WITHOUT_RESET=1 lets ticks step physics before the first
+    # reset — a BRING-UP mode for reset-less debug graphs. Default off
+    # (CON-5/ADR-25, issue #71): the first step must not race the first
+    # reset, so measured rollouts start episode 0 at sim step 0 exactly.
+    step_without_reset: bool = False
 
 
 def parse_bridge_config(env: dict) -> BridgeConfig:
@@ -78,6 +86,8 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
         scene=env.get("AISLE_SCENE", "pharmacy"),
         scenario=env.get("AISLE_SCENARIO", "S1"),
         headless=env.get("AISLE_HEADLESS", "1") not in ("0", "false", "no"),
+        step_without_reset=env.get("AISLE_STEP_WITHOUT_RESET", "0").strip().lower()
+        in ("1", "true", "yes"),
     )
 
 
@@ -191,9 +201,18 @@ class CommandQueue:
 
 
 def make_bridge_info(
-    embodiment: str, n_dof: int, n_envs: int, genesis_version: str, env_hash: str
+    embodiment: str,
+    n_dof: int,
+    n_envs: int,
+    genesis_version: str,
+    env_hash: str,
+    step_without_reset: bool,
 ) -> str:
-    """BRG-6: the startup contract announcement, as a JSON string."""
+    """BRG-6: the startup contract announcement, as a JSON string.
+
+    step_without_reset is surfaced so a run whose bridge free-ran before the
+    first reset (ADR-25 bring-up mode) is auditable from its traces — the
+    env var alone would leave no attestation footprint (issue #71)."""
     return json.dumps(
         {
             "contract": "v0",
@@ -203,6 +222,7 @@ def make_bridge_info(
             "genesis_version": genesis_version,
             "platform": f"{platform.system().lower()}-{platform.machine()}",
             "env_hash": env_hash,
+            "step_without_reset": step_without_reset,
         }
     )
 
@@ -307,6 +327,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     n_envs=cfg.n_envs,
                     genesis_version=genesis.__version__,
                     env_hash=compute_env_hash(root),
+                    step_without_reset=cfg.step_without_reset,
                 )
             ]
         ),
@@ -351,6 +372,13 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     seq: dict[tuple[str, int], int] = {}
     dropped_counts: dict[str, dict[int, int]] = {"joint": {}, "gripper": {}}
     sim_time_ns = 0
+    # CON-5/ADR-25 (issue #71): the first physics step must not race the
+    # first reset request — ticks are dropped until it lands, so episode 0
+    # always starts from the seed-injected state at sim step 0. Two attested
+    # expert_s1 runs diverged on whether one settle step ran pre-reset.
+    awaiting_first_reset = not cfg.step_without_reset
+    if awaiting_first_reset:
+        print("holding at sim step 0 until the first reset (CON-5)", file=sys.stderr)
     quarantine = ResetQuarantine(RESET_SETTLE_TICKS)  # holds arm at home post-reset
     home_hold = (
         np.asarray(profile["home_qpos"], dtype=np.float32) if "home_qpos" in profile else None
@@ -527,6 +555,8 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         input_id = event["id"]
         metadata = event.get("metadata") or {}
         if input_id == "tick":
+            if awaiting_first_reset:
+                continue
             settling = home_hold is not None and quarantine.hold()
             if settling:
                 # post-reset settle: hold the arm at home and DROP any stale
@@ -667,6 +697,12 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             if mode == 1:
                 raise NotImplementedError("behavioral reset lands with SPEC 040 (T06)")
             teleport_reset(reset_seed)
+            awaiting_first_reset = False
+            # CON-5/ADR-25: re-anchor the publish-cadence grid to the reset,
+            # so which ticks fire the sub-100 Hz topics (poses, oracle_state,
+            # base_pose...) is a function of the episode, not of the wall
+            # tick the request happened to land on
+            scheduler = RateScheduler(topic_rates, dt)
             if is_mobile:
                 # MOB-1/ADR-13: re-home the base to the store-frame start and
                 # drop the in-flight base command (mirrors the arm re-home).

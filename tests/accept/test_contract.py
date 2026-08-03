@@ -137,6 +137,7 @@ def test_reset_service(tmp_path, dataflow):
         dataflow,
         tmp_path,
         bridge_env={"AISLE_SEED": 7},
+        step_without_reset=False,
         driver_env={
             "DRIVER_MODE": "reset",
             "DRIVER_RESET_SEEDS": ",".join(str(s) for s in seeds),

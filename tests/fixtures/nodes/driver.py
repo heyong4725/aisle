@@ -29,8 +29,17 @@ def main() -> None:
     reset_seeds = [int(s) for s in os.environ.get("DRIVER_RESET_SEEDS", "1").split(",")]
     spacing = int(os.environ.get("DRIVER_RESET_SPACING", "20"))
     sent_resets = 0
+    # $DRIVER_WAIT_BRIDGE_INFO=1: ignore ticks until the bridge publishes
+    # bridge_info, so send timings count from a LIVE loop rather than from
+    # process start (during the genesis build everything sent just queues)
+    waiting = os.environ.get("DRIVER_WAIT_BRIDGE_INFO") == "1"
     for event in node:
         if event["type"] != "INPUT":
+            continue
+        if event["id"] == "bridge_info":
+            waiting = False
+            continue
+        if waiting:
             continue
         tick += 1
         if mode == "conformance":
