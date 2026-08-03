@@ -22,3 +22,21 @@ jobs:
       - run: uv run ruff format --check . && uv run ruff check .
       - run: uv run pytest -m unit
       - run: uv run python tools/trace_check.py
+
+  # CON-1 keeps the default dependency set free of CUDA-only wheels so the
+  # code runs off Metal too — but nothing verified that claim. This job is
+  # that check: default `uv sync` plus the unit suite on a non-Metal host.
+  # Deliberately unit-only: ruff, trace_check and the PR-title gate are
+  # platform-independent, so ci/unit already covers them once.
+  unit-linux:
+    name: ci/unit-linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # same reason as ci/unit: the CON-11 mainline-subject test SKIPS on a
+          # shallow checkout, so depth-1 would silently under-run this job too
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run pytest -m unit
