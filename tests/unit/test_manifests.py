@@ -478,16 +478,10 @@ def test_actuation_command_emitters_are_motion_with_evalcards():
     manifest whose outputs include a joint/gripper/base command (raw or
     guard-gated *_safe) must be safety_class motion and carry an evalcard
     (CAP-6 then requires eval non-null for the class)."""
-    actuation = {
-        "joint_cmd",
-        "gripper_cmd",
-        "base_cmd",
-        "joint_cmd_safe",
-        "gripper_cmd_safe",
-        "base_cmd_safe",
-    }
+    from aisle.harness.registry import ACTUATION_PORTS as actuation
+
     emitters = []
-    for path in sorted((REPO_ROOT / "registry" / "manifests").glob("*.yaml")):
+    for path in sorted(MANIFESTS_DIR.glob("*.yaml")):
         manifest = yaml.safe_load(path.read_text())
         if set(manifest.get("outputs") or {}) & actuation:
             emitters.append(manifest["id"])
@@ -495,8 +489,10 @@ def test_actuation_command_emitters_are_motion_with_evalcards():
                 f"{manifest['id']} emits actuation commands but is "
                 f"safety_class={manifest['safety_class']!r} (ADR-5 ratified)"
             )
-            assert manifest.get("eval") is not None, (
-                f"{manifest['id']} is motion with no evalcard (CAP-6)"
+            card = manifest.get("eval")
+            # a vacuous card must not satisfy CAP-6: require the full shape
+            assert isinstance(card, dict) and {"suite", "pass_rate", "last_run"} <= set(card), (
+                f"{manifest['id']} is motion without a complete evalcard (CAP-6): {card!r}"
             )
     # the boundary decision covers the full emitter set, not one skill
     assert {
@@ -508,3 +504,21 @@ def test_actuation_command_emitters_are_motion_with_evalcards():
         "s3-driver-v1",
         "waypoint-nav",
     } <= set(emitters)
+
+
+def test_lint_rejects_nonmotion_actuation_emitter(tmp_path):
+    """ADR-5 (ratified 2026-08-03): registry lint enforces the boundary at
+    runtime, not only in CI — a decision-class manifest with actuation
+    outputs must fail lint, or a mid-campaign `skill register` could drift
+    the registry from the ratified policy unnoticed."""
+    root = make_registry_root(tmp_path)
+    write_manifest(
+        root,
+        valid_manifest(
+            outputs={"joint_cmd": {"schema": "jointvec_f32", "latency_class": "hard_rt"}},
+            safety_class="decision",
+        ),
+    )
+    code, report = run_registry("lint", "--root", str(root))
+    assert code != 0
+    assert any("motion" in e["message"] and "ADR-5" in e["message"] for e in report["errors"])

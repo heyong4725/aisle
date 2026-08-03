@@ -34,7 +34,12 @@ GRAPH_INVALID — a loader failure distinct from VAL-2's check codes.
 (7) `--allow-unproven` (design doc §8.2.1) downgrades EVAL_MISSING_FOR_MOTION
 to a warning; the harness never sets it for agent runs.
 
-Two constraints this places on later tasks: (a) T07 MUST declare the
+Two constraints this places on later tasks: (a) [SUPERSEDED by the ADR-5
+safety-class ratification, 2026-08-03: the guard IS motion-class (it
+emits the *_safe actuation streams) and carries a SPEC 080 evalcard; the
+self-flagging problem this constraint prevented is solved instead by the
+recorded VAL-5 sink exemption — the guard is never a sink because it is
+the gate. Original text:] T07 MUST declare the
 budget-guard manifest with safety_class != motion — its inputs are literally
 named joint_cmd/gripper_cmd (BG-1), so a motion-classed guard would flag its
 own inputs MOTION_UNGATED and trip EVAL_MISSING_FOR_MOTION; the guard gates

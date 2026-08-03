@@ -29,6 +29,13 @@ from aisle.harness.common import DEFAULT_ROOT, emit_report
 # --allow-unproven). The set stays as an empty tombstone the T10 gate
 # asserts on.
 PENDING_M0_EVALCARDS: set[str] = set()
+# The actuation command ports (MOB-3 includes base_cmd). Shared source of
+# truth: VAL-5 sink checks (validate.py), the ADR-5 lint rule below, and the
+# registry-wide invariant test all key on this set.
+MOTION_SINK_PORTS = {"joint_cmd", "gripper_cmd", "base_cmd"}
+# ADR-5 boundary, RATIFIED 2026-08-03: motion = emits actuation commands,
+# raw or guard-gated
+ACTUATION_PORTS = MOTION_SINK_PORTS | {f"{p}_safe" for p in MOTION_SINK_PORTS}
 
 
 def load_manifests(root: Path) -> tuple[list[tuple[Path, dict]], list[dict]]:
@@ -169,6 +176,20 @@ def lint(root: Path) -> dict:
                             "registry/schema/schemas.toml (CAP-2)",
                         }
                     )
+        # ADR-5 boundary (ratified 2026-08-03): a manifest emitting actuation
+        # commands must be motion-class. Enforced here so a mid-campaign
+        # `skill register` cannot drift the registry from the ratified policy
+        # between CI runs (PR #81 review).
+        outputs = manifest.get("outputs")
+        emits_actuation = isinstance(outputs, dict) and set(outputs) & ACTUATION_PORTS
+        if emits_actuation and manifest.get("safety_class") != "motion":
+            errors.append(
+                {
+                    "manifest": path.name,
+                    "message": f"outputs {sorted(set(outputs) & ACTUATION_PORTS)} are actuation "
+                    "commands, so safety_class must be motion (ADR-5, ratified 2026-08-03)",
+                }
+            )
         if "eval" in manifest and manifest["eval"] is None:
             origin_hub = manifest.get("origin") == "hub"
             if not origin_hub or manifest.get("safety_class") == "motion":

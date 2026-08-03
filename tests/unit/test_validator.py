@@ -276,7 +276,11 @@ def test_motion_gate_is_topological(tmp_path):
     the resolved budget-guard — a multi-hop path THROUGH the guard passes,
     a direct guard edge passes, and an indirect path that bypasses the
     guard is MOTION_UNGATED. Uses a fixture registry that includes the
-    guard manifest (real registry gains it at T07). See ADR 4."""
+    guard manifest (real registry gains it at T07). See ADR 4, as amended
+    by the ADR-5 ratification (2026-08-03): the fixture guard is
+    motion-class, so the DIRECT case — the guard's own joint_cmd fed from
+    a raw timer — exercises the guard-sink exemption: without
+    `node_id != GUARD_ID` in _validate_edge it would be MOTION_UNGATED."""
     direct = write_graph(
         tmp_path,
         [

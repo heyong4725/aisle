@@ -16,7 +16,14 @@ embodiment:
   - franka
   - so101
   gripper: any
-safety_class: decision
-eval: null
+# ADR-5 ratified boundary: the guard emits joint_cmd_safe, so it is
+# motion-class — and the VAL-5 sink EXEMPTION (validate.py, node_id !=
+# GUARD_ID) is what these fixtures now exercise: raw commands into the
+# guard are legal, it IS the gate
+safety_class: motion
+eval:
+  suite: fixture stand-in (SPEC 080 adversarial)
+  pass_rate: 1.0
+  last_run: '2026-08-03'
 origin: hub
 source: src/aisle/nodes/budget-guard.py
