@@ -123,6 +123,9 @@ def test_bridge_info_shape():
             n_envs=1,
             genesis_version="1.2.3",
             env_hash="a" * 64,
+            # required, not defaulted: a caller that forgot to wire the cfg
+            # flag must fail loudly, not attest "off" while free-running
+            step_without_reset=False,
         )
     )
     assert info == {
@@ -133,6 +136,8 @@ def test_bridge_info_shape():
         "genesis_version": "1.2.3",
         "platform": info["platform"],  # host-dependent, non-empty
         "env_hash": "a" * 64,
+        # ADR-25: bring-up mode leaves an attestation footprint in traces
+        "step_without_reset": False,
     }
     assert info["platform"]
 
@@ -144,6 +149,15 @@ def test_bridge_config_from_env():
     assert (cfg.seed, cfg.embodiment, cfg.n_envs) == (0, "franka", 1)
     cfg = parse_bridge_config({"AISLE_SEED": "7", "AISLE_EMBODIMENT": "so101", "AISLE_N_ENVS": "4"})
     assert (cfg.seed, cfg.embodiment, cfg.n_envs) == (7, "so101", 4)
+
+
+def test_step_without_reset_defaults_off():
+    """CON-5/ADR-25 (issue #71): the bridge holds at sim step 0 until the
+    first reset by DEFAULT — the pre-reset free-run that made two attested
+    expert_s1 runs diverge is bring-up-only, opted into explicitly."""
+    assert parse_bridge_config({}).step_without_reset is False
+    assert parse_bridge_config({"AISLE_STEP_WITHOUT_RESET": "1"}).step_without_reset is True
+    assert parse_bridge_config({"AISLE_STEP_WITHOUT_RESET": "0"}).step_without_reset is False
 
 
 def test_mobile_rejects_batched_envs():
