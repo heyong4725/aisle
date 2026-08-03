@@ -79,3 +79,19 @@ def test_noncritical_streams_pass_through():
 
 def test_grasp_critical_set_matches_reviewed_stages():
     assert GRASP_CRITICAL == {"pregrasp", "advance", "close"}
+
+
+def test_manifests_classify_command_producer_as_motion():
+    """CAP-6 (PR #75 review follow-up): s1-driver-v2 emits joint_cmd and
+    gripper_cmd, so BOTH its manifests must declare safety_class motion —
+    decision-class would let discovery/hot-swap policy treat executable
+    motion code as decision logic."""
+    import yaml
+
+    for path in (
+        REPO_ROOT / "skills" / "s1-driver-v2" / "skill.yaml",
+        REPO_ROOT / "registry" / "manifests" / "s1-driver-v2.yaml",
+    ):
+        manifest = yaml.safe_load(path.read_text())
+        assert set(manifest["outputs"]) >= {"joint_cmd", "gripper_cmd"}
+        assert manifest["safety_class"] == "motion", path

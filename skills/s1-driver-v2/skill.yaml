@@ -25,7 +25,7 @@ embodiment:
   arm: [franka]
   gripper: any
   base: [mobile]
-safety_class: decision
+safety_class: motion
 eval: null
 origin: agent-authored
 source: skills/s1-driver-v2/s1_driver_v2.py
