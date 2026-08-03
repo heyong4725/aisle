@@ -393,6 +393,15 @@ def instrumented_graph(
     return out_path
 
 
+def scrub_bringup_env(env: dict) -> dict:
+    """ADR-25 (issue #71): the bridge's bring-up opt-out must never reach a
+    measured rollout — an ambient AISLE_STEP_WITHOUT_RESET=1 would silently
+    restore the pre-reset startup race while git_sha/env_hash/graph_hash all
+    attest clean. Graph-YAML env stays visible in the graph hash; the
+    process environment does not, so it is scrubbed here."""
+    return {k: v for k, v in env.items() if k != "AISLE_STEP_WITHOUT_RESET"}
+
+
 def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict) -> subprocess.Popen:
     return subprocess.Popen(
         ["dora", "run", str(exec_graph), "--uv"],
@@ -478,18 +487,20 @@ def rollout(
     env_hash = gates["env_hash"]
 
     episode_timeout_s, per_episode_budget_s = tier_budgets(tier)
-    env = {
-        **os.environ,
-        "AISLE_SEEDS": ",".join(str(s) for s in seeds),
-        # the caller-selected tier propagates to the graph (HAR-1): the
-        # rollout client stamps it into every goal, and the SELECTED graph
-        # determines its tier-specific wiring
-        "AISLE_TIER": tier,
-        # M0-5: the embodiment profile swap rides on env, zero YAML edits
-        "AISLE_EMBODIMENT": embodiment,
-        "AISLE_TIMEOUT_S": str(episode_timeout_s),
-        "AISLE_RESULTS": str(results_path),
-    }
+    env = scrub_bringup_env(
+        {
+            **os.environ,
+            "AISLE_SEEDS": ",".join(str(s) for s in seeds),
+            # the caller-selected tier propagates to the graph (HAR-1): the
+            # rollout client stamps it into every goal, and the SELECTED graph
+            # determines its tier-specific wiring
+            "AISLE_TIER": tier,
+            # M0-5: the embodiment profile swap rides on env, zero YAML edits
+            "AISLE_EMBODIMENT": embodiment,
+            "AISLE_TIMEOUT_S": str(episode_timeout_s),
+            "AISLE_RESULTS": str(results_path),
+        }
+    )
     started = time.monotonic()
     run_budget_s = timeout_s or (GENESIS_BUILD_BUDGET_S + per_episode_budget_s * episodes)
     if env_baseline != "local":

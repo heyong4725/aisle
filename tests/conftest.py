@@ -54,7 +54,13 @@ def write_bridge_dataflow(
     with_verifier_stub: bool = False,
     with_reset_service: bool = False,
     with_guard: bool = False,
+    driver_waits_for_bridge_info: bool = False,
+    step_without_reset: bool = True,
 ) -> Path:
+    """step_without_reset defaults True: most fixture drivers never send a
+    reset, and without the opt-out the ADR-25 bridge holds at sim step 0
+    forever — the test then fails 420 s later, opaquely. Tests that exercise
+    the production (reset-anchored) startup pass step_without_reset=False."""
     recorder_inputs = {t: f"bridge/{t}" for t in BRIDGE_OUTPUTS}
     if with_guard:
         recorder_inputs["violation"] = _q("budget-guard/violation")
@@ -94,14 +100,27 @@ def write_bridge_dataflow(
                     ),
                 },
                 "outputs": BRIDGE_OUTPUTS,
-                "env": {k: str(v) for k, v in (bridge_env or {}).items()},
+                "env": {
+                    **({"AISLE_STEP_WITHOUT_RESET": "1"} if step_without_reset else {}),
+                    **{k: str(v) for k, v in (bridge_env or {}).items()},
+                },
             },
             {
                 "id": "driver",
                 "path": str(FIXTURE_NODES / "driver.py"),
-                "inputs": {"tick": "dora/timer/millis/50"},
+                "inputs": {
+                    "tick": "dora/timer/millis/50",
+                    # always wired; a non-waiting driver just skips the event.
+                    # Lets driver_waits_for_bridge_info time sends from the
+                    # moment the bridge loop is live instead of process start
+                    # (requests sent during the genesis build just queue up)
+                    "bridge_info": "bridge/bridge_info",
+                },
                 "outputs": DRIVER_OUTPUTS,
-                "env": {k: str(v) for k, v in (driver_env or {}).items()},
+                "env": {
+                    **{k: str(v) for k, v in (driver_env or {}).items()},
+                    **({"DRIVER_WAIT_BRIDGE_INFO": "1"} if driver_waits_for_bridge_info else {}),
+                },
             },
             *(
                 [
@@ -275,7 +294,9 @@ def read_records(record_out: Path) -> list[dict]:
     for line in record_out.read_text().splitlines():
         if line.strip():
             records.append(json.loads(line))
-    return records
+    # the recorder's completion sentinel is control-plane, not data: drop it
+    # so consumers never see a pseudo-record without value/metadata
+    return [r for r in records if r.get("id") != "__recorder_done__"]
 
 
 @pytest.fixture

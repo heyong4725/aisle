@@ -55,7 +55,11 @@ def _write_bridge_graph(tmp: Path, rec_out: Path) -> Path:
                     "base_cmd": {"source": "guard/base_cmd_safe", "queue_size": 100},
                 },
                 "outputs": ["base_pose", "base_scan", "frame_info", "bridge_info"],
-                "env": {"AISLE_EMBODIMENT": "mobile", "AISLE_SEED": "0"},
+                "env": {
+                    "AISLE_EMBODIMENT": "mobile",
+                    "AISLE_SEED": "0",
+                    "AISLE_STEP_WITHOUT_RESET": "1",
+                },
             },
             {
                 "id": "rec",

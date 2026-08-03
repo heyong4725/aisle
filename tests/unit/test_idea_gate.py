@@ -439,3 +439,14 @@ else:
     assert any("RECORD" in p for p in manifest["post_run_audit"]["problems"])
     assert (root / "runs" / "postaudit" / "gate_inventory.json").exists()  # evidence
     assert report["ok"] is False  # fake dora ran zero episodes (unrelated)
+
+
+def test_rollout_scrubs_bringup_env():
+    """ADR-25 (issue #71, CON-5): AISLE_STEP_WITHOUT_RESET never reaches a
+    measured rollout's dora environment — ambient leakage would silently
+    restore the pre-reset startup race with clean attestation fields."""
+    from aisle.harness.rollout import scrub_bringup_env
+
+    env = scrub_bringup_env({"AISLE_STEP_WITHOUT_RESET": "1", "AISLE_TIER": "S1"})
+    assert "AISLE_STEP_WITHOUT_RESET" not in env
+    assert env == {"AISLE_TIER": "S1"}

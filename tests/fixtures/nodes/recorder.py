@@ -24,6 +24,11 @@ def main() -> None:
             if deadline is None:
                 deadline = now + duration
             elif now > deadline:
+                # explicit completion sentinel: run_dataflow_until_settled
+                # stops on it instead of burning its whole outer deadline
+                # (written only when an event ARRIVES after the window, i.e.
+                # the stream flowed through the whole capture)
+                out.write(json.dumps({"id": "__recorder_done__"}) + "\n")
                 break
             if event["type"] != "INPUT":
                 continue
