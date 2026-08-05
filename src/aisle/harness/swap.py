@@ -22,7 +22,6 @@ import hashlib
 import json
 import subprocess
 import sys
-import sysconfig
 import tempfile
 import time
 import uuid
@@ -128,9 +127,12 @@ def _node_health(runner, dataflow: str, node_id: str, sleeper, tries: int = 6) -
     """Post-add health of the replacement via `dora node list --format
     json`: True = Running, False = Failed/absent after every retry,
     None = the CLI output is unrecognized. None does NOT refuse — the
-    health check is a detection belt (the remove->add race itself is
-    prevented by the settle delay), and CLI format drift must not brick
-    every swap."""
+    health check is a detection belt, and CLI format drift must not
+    brick every swap. At dora cd597e705 a dynamically re-added node
+    reports status "Unknown" (the metrics view loses re-added nodes:
+    pid "-"), so post-swap health is usually None/"unknown" and the
+    episode stream is the authoritative liveness signal (PR #86 live
+    retest: 10/10 settle-free swaps, stream healthy throughout)."""
     last: bool | None = False
     for attempt in range(tries):
         proc = runner(["node", "list", "-d", dataflow, "--format", "json"])
@@ -168,26 +170,24 @@ def swap(
     embodiment: str,
     branch: str,
     runner=_default_runner,
-    settle_s: float = 2.0,
+    settle_s: float = 0.0,
     sleeper=time.sleep,
 ) -> dict:
     """HAR-10: validate the FULL post-swap graph (every SPEC 060 check)
-    BEFORE any runtime mutation; then remove old / SETTLE / add new with
-    the original restored on add failure; on success the graph file is
+    BEFORE any runtime mutation; then remove old / add new with the
+    original restored on add failure; on success the graph file is
     written back so the next validation sees live reality.
 
-    The settle delay works around a dora daemon race (H4 shakeout,
-    2026-07-31; filed as dora-rs/dora#2916, FIXED upstream in eec31a40b
-    which our pin now includes — the settle is retained as a harmless
-    belt until a live swap retest under the new pin justifies removing
-    it): a back-to-back remove->add lets the
-    REMOVED process's kill-on-drop land ~15 ms AFTER the add, and its
-    Signal(9) exit is attributed to the node identity — the daemon marks
-    the freshly added replacement failed ("node added successfully" then
-    "node exited with error: Signal(9)"; every later episode
-    never_grasped). Settling until the old process's exit is accounted
-    before re-adding avoids the race; the post-add health check is the
-    detection belt, and an unhealthy replacement is rolled back."""
+    settle_s defaults to 0: the daemon race it worked around (H4
+    shakeout, 2026-07-31; a back-to-back remove->add let the REMOVED
+    process's kill-on-drop land ~15 ms after the add, its Signal(9) exit
+    was attributed to the node identity, and the daemon marked the fresh
+    replacement failed; filed as dora-rs/dora#2916) is FIXED at our pin
+    (eec31a40b, in cd597e705) — retest-confirmed live with repeated
+    settle-free identity swaps on a running expert_t0 stream (PR #86).
+    The parameter stays as an escape hatch for older daemons; the
+    post-add health check remains the detection belt, and an unhealthy
+    replacement is rolled back."""
 
     def refused(error: str) -> dict:
         swap_event(root, branch, {"action": "swap_refused", "dataflow": dataflow, "node": node_id})
@@ -241,9 +241,9 @@ def swap(
                 "ok": False,
                 "error": f"dora node remove failed: {(removed.stderr or '')[-200:]}",
             }
-        # the race workaround (docstring): the old process's exit must be
-        # accounted before the add, or its Signal(9) poisons the new node
-        sleeper(settle_s)
+        # settle_s is 0 unless a caller opts into the pre-#2916 workaround
+        if settle_s:
+            sleeper(settle_s)
         added = runner(["node", "add", "-d", dataflow, "--from-yaml", str(staged_node)])
         if added.returncode != 0:
             # restore the original so the live dataflow is never left
@@ -266,7 +266,8 @@ def swap(
             # signature. Roll back rather than leave a dead node on a
             # live stream (remove the corpse, re-add the original).
             runner(["node", "remove", "-d", dataflow, node_id])
-            sleeper(settle_s)
+            if settle_s:
+                sleeper(settle_s)
             restore_file = tmpdir / "restore.yaml"
             restore_file.write_text(yaml.safe_dump(original, sort_keys=False))
             restored = runner(["node", "add", "-d", dataflow, "--from-yaml", str(restore_file)])
@@ -323,18 +324,15 @@ def probe(
         # dynamic adds spawn WITHOUT the dataflow's --uv wrapping (H4
         # shakeout: the recorder died at import under the daemon's bare
         # python, ExitCode(1) before register; dora-rs/dora#2918) — spawn
-        # via THIS
-        # interpreter, and pin PYTHONPATH to its site-packages: the
-        # daemon resolves the interpreter SYMLINK before exec, which
-        # bypasses pyvenv.cfg discovery and loses the venv (observed:
-        # venv python path in the yaml, ModuleNotFoundError: numpy)
+        # via THIS interpreter. The PYTHONPATH pin that used to sit here
+        # is gone: the daemon no longer resolves the interpreter symlink
+        # before exec (dora-rs/dora#2942, fixed at our pin cd597e705), so
+        # the venv's pyvenv.cfg discovery works and site-packages resolve
+        # normally (live probe retest in PR #86).
         "path": sys.executable,
         "args": str(Path(__file__).with_name("trace_recorder.py")),
         "inputs": {"probe": {"source": topic, "queue_size": 100}},
-        "env": {
-            "AISLE_TRACE_DIR": str(root / "runs" / "probes" / probe_id),
-            "PYTHONPATH": sysconfig.get_paths()["purelib"],
-        },
+        "env": {"AISLE_TRACE_DIR": str(root / "runs" / "probes" / probe_id)},
     }
     staged = root / "runs" / "probes" / f"{probe_id}.yaml"
     staged.parent.mkdir(parents=True, exist_ok=True)

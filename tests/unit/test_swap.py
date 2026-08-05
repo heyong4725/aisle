@@ -341,13 +341,12 @@ def test_swap_stages_absolute_paths_one_authoritative_base(tmp_path, graph, monk
             assert Path(node["path"]).is_absolute(), node["id"]
 
 
-def test_swap_settles_between_remove_and_add(tmp_path, graph, monkeypatch):
-    """HAR-10 hardening (H4 shakeout, dora rev 7eb4a5f): a back-to-back
-    remove->add races the removed process's kill-on-drop, whose
-    Signal(9) is attributed to the node identity AFTER the add and
-    poisons the replacement (observed live: 'node added successfully'
-    then Signal(9), every later episode never_grasped). The swap MUST
-    settle between remove and add."""
+def test_swap_default_is_settle_free(tmp_path, graph, monkeypatch):
+    """HAR-10: the default swap does NOT sleep between remove and add —
+    the dora-rs/dora#2916 race the 2 s settle worked around (H4 shakeout,
+    rev 7eb4a5f) is fixed at our pin (eec31a40b in cd597e705, live
+    retest in PR #86). An explicit settle_s is still honored as the
+    escape hatch for older daemons."""
     monkeypatch.chdir(tmp_path)
     calls = []
     out = swap(
@@ -359,13 +358,28 @@ def test_swap_settles_between_remove_and_add(tmp_path, graph, monkeypatch):
         "franka",
         "b",
         runner=make_runner(calls, stdout_for=running_list("oracle-pose")),
-        settle_s=2.0,
         sleeper=no_sleep(calls),
     )
     assert out["ok"] is True and out["replacement_health"] == "running"
-    remove_i = calls.index(["node", "remove", "-d", "df", "oracle-pose"])
-    add_i = next(i for i, c in enumerate(calls) if c[:2] == ["node", "add"])
-    assert ("sleep", 2.0) in calls[remove_i + 1 : add_i]  # the settle sits between
+    assert not any(c[0] == "sleep" for c in calls if isinstance(c, tuple))
+
+    calls_legacy = []
+    out = swap(
+        REPO_ROOT,
+        graph,
+        "df",
+        "oracle-pose",
+        identity_swap_file(tmp_path, graph),
+        "franka",
+        "b",
+        runner=make_runner(calls_legacy, stdout_for=running_list("oracle-pose")),
+        settle_s=2.0,
+        sleeper=no_sleep(calls_legacy),
+    )
+    assert out["ok"] is True
+    remove_i = calls_legacy.index(["node", "remove", "-d", "df", "oracle-pose"])
+    add_i = next(i for i, c in enumerate(calls_legacy) if c[:2] == ["node", "add"])
+    assert ("sleep", 2.0) in calls_legacy[remove_i + 1 : add_i]  # explicit settle sits between
 
 
 def test_swap_unhealthy_replacement_rolls_back(tmp_path, graph, monkeypatch):
@@ -435,13 +449,16 @@ def test_probe_spawns_via_current_interpreter(tmp_path):
     assert staged["args"].endswith("trace_recorder.py")
 
 
-def test_probe_env_pins_site_packages(tmp_path):
-    """The daemon resolves the interpreter symlink before exec, losing
-    pyvenv.cfg discovery — PYTHONPATH must pin the venv's site-packages
-    (H4 shakeout: ModuleNotFoundError: numpy under the venv python)."""
-    import sysconfig
-
+def test_probe_env_has_no_pythonpath_pin(tmp_path):
+    """The PYTHONPATH pin existed because the daemon resolved the
+    interpreter symlink before exec, losing pyvenv.cfg discovery (H4
+    shakeout: ModuleNotFoundError: numpy under the venv python). Fixed
+    upstream (dora-rs/dora#2942, in our pin cd597e705; live probe retest
+    in PR #86) — the probe env must stay minimal so the recorder runs
+    under the venv's own discovery, not a hand-pinned path that would
+    mask a future venv drift."""
     calls = []
     out = probe(tmp_path, "df", "dora-genesis/poses", 0.0, "b", runner=make_runner(calls))
     staged = yaml.safe_load((tmp_path / "runs" / "probes" / f"{out['probe']}.yaml").read_text())
-    assert staged["env"]["PYTHONPATH"] == sysconfig.get_paths()["purelib"]
+    assert "PYTHONPATH" not in staged["env"]
+    assert set(staged["env"]) == {"AISLE_TRACE_DIR"}
