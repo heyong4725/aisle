@@ -45,11 +45,11 @@ docstring. `tools/trace_check.py` (SPEC 070) enforces this in CI.
   cadence is reset-anchored (ADR-25) — MUST be exact;
   (c) physics state values MUST agree within a stated tolerance (1e-6
   unless a spec tightens it) over the COMPARISON WINDOW: the first
-  1.0 s of sim time following each reset (a spec MAY extend it; a
-  capture whose shared post-reset span is under 0.1 sim-s is
-  inadmissible and is rerun, not compared). Chaos amplifies ULP noise
-  past any fixed tolerance over full-episode horizons — layer (d)'s
-  regime;
+  1.0 s of sim time following each reset, enforced in full — a capture
+  whose shared post-reset coverage does not reach the end of the window
+  is inadmissible and is rerun, not compared (a spec MAY extend the
+  window). Chaos amplifies ULP noise past any fixed tolerance over
+  full-episode horizons — layer (d)'s regime;
   (d) episode OUTCOMES are statistical: an identical tuple guarantees
   the same outcome DISTRIBUTION, never per-seed status equality.
   Non-rejection by a significance test MUST NOT be treated as

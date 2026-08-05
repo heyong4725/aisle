@@ -83,21 +83,23 @@ def test_m0_1_pass1_at_least_95(m0_first_run):
     assert m0_first_run["pass1"] >= 0.95, m0_first_run["failures"]
 
 
-def _episode_goals_sans_timing(run_id: str) -> list[dict]:
-    """The run's episode_goal payloads with the timing-layer reset_sim_ns
-    stripped — CON-5 layer (a) promises the SEED-DERIVED goal content,
-    layer (b)/(d) own the timing."""
-    import json as _json
+def _episode_goal_bytes_sans_timing(run_id: str) -> list[bytes]:
+    """The run's RAW episode_goal payload bytes with only the timing-layer
+    reset_sim_ns field textually excised — CON-5 layer (a) promises the
+    seed-derived goal content BIT-identically (PR #88 re-review: parsed-
+    object equality would forgive key order, whitespace, and numeric-
+    representation drift), while layers (b)/(d) own the timing."""
+    import re
 
     import pyarrow.ipc as ipc
 
     path = REPO_ROOT / "runs" / run_id / "traces" / "rollout-client__episode_goal.arrow"
-    goals = []
+    out = []
     for row in ipc.open_stream(path).read_all().to_pylist():
-        goal = _json.loads(row["text"])
-        goal.pop("reset_sim_ns", None)
-        goals.append(goal)
-    return goals
+        stripped, n = re.subn(r',\s*"reset_sim_ns":\s*\d+', "", row["text"])
+        assert n == 1, f"goal payload missing reset_sim_ns: {row['text'][:120]}"
+        out.append(stripped.encode())
+    return out
 
 
 def test_m0_2_rerun_reproduces_the_gate_and_goal_content(m0_first_run):
@@ -119,9 +121,16 @@ def test_m0_2_rerun_reproduces_the_gate_and_goal_content(m0_first_run):
     rerun = rollout_50(rerun_id)
 
     # layer (a): seed-derived goal content bit-identical across the pair
-    first_goals = _episode_goals_sans_timing(m0_first_run["run_id"])
-    rerun_goals = _episode_goals_sans_timing(rerun_id)
+    first_goals = _episode_goal_bytes_sans_timing(m0_first_run["run_id"])
+    rerun_goals = _episode_goal_bytes_sans_timing(rerun_id)
     assert first_goals == rerun_goals, "seed-derived episode goals differ (CON-5 layer (a))"
+
+    # seed-list integrity BEFORE the dict conversion: a duplicate seed
+    # would silently collapse and let two identically malformed 50-row
+    # runs pass with n < 50 (PR #88 re-review)
+    for label, report in (("first", m0_first_run), ("rerun", rerun)):
+        seeds = [e["seed"] for e in report["episodes"]]
+        assert sorted(seeds) == list(range(50)), f"{label}: seed list is not exactly 0..49"
 
     first = {e["seed"]: e["status"] for e in m0_first_run["episodes"]}
     second = {e["seed"]: e["status"] for e in rerun["episodes"]}

@@ -31,9 +31,10 @@ CON-5's "reproducible" is layered (amendment in the same PR):
   publish cadence (ADR-25).
 - **(c) tolerance:** physics state values within 1e-6 (unless a spec
   tightens it) over the NORMATIVE comparison window — the first 1.0 s
-  of sim time after each reset, with captures under 0.1 sim-s of shared
-  span inadmissible (rerun, not compared). Full-episode horizons are
-  chaotic and belong to layer (d).
+  of sim time after each reset, enforced in FULL: a capture whose
+  shared coverage does not reach the window's end is inadmissible
+  (rerun, not compared; PR #88 re-review closed the partial-coverage
+  hole). Full-episode horizons are chaotic and belong to layer (d).
 - **(d) statistical outcomes:** an identical CON-5 tuple guarantees the
   same outcome DISTRIBUTION; per-seed status equality is never the
   claim. REVISED per the PR #88 review: non-rejection by a significance
