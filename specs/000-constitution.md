@@ -44,7 +44,9 @@ docstring. `tools/trace_check.py` (SPEC 070) enforces this in CI.
   (b) trace timing — the first reset lands at sim step 0 and publish
   cadence is reset-anchored (ADR-25) — MUST be exact;
   (c) physics state values MUST agree within a stated tolerance (1e-6
-  unless a spec tightens it);
+  unless a spec tightens it) over the spec-defined comparison windows —
+  chaos amplifies ULP noise past any fixed tolerance over full-episode
+  horizons, which is exactly layer (d)'s regime;
   (d) episode OUTCOMES are statistical: an identical tuple guarantees
   the same outcome DISTRIBUTION, and replicate checks compare
   distributions over seed sets (e.g. exact tests on success counts) —

@@ -29,8 +29,9 @@ CON-5's "reproducible" is layered (amendment in the same PR):
   reset states, first post-reset snapshots.
 - **(b) exact timing:** first reset at sim step 0; reset-anchored
   publish cadence (ADR-25).
-- **(c) tolerance:** physics state values within 1e-6 unless a spec
-  tightens it.
+- **(c) tolerance:** physics state values within 1e-6 (unless a spec
+  tightens it) over spec-defined comparison windows; full-episode
+  horizons are chaotic and belong to layer (d).
 - **(d) statistical outcomes:** an identical CON-5 tuple guarantees the
   same outcome DISTRIBUTION; replicate checks compare distributions
   over seed sets. M0-2 becomes a two-sided Fisher exact test on success
