@@ -85,7 +85,13 @@ commits; sequencing after the H3 campaign is natural.
   powder spike showed CPU bit-exact vs Metal nondeterministic; a
   verdict source must not flicker across replays. Judging only
   end-of-episode frames (plus sparse checkpoints) keeps the cost
-  bounded.
+  bounded. SUBSTANTIATED BY TEST (PR #89 re-review): the env-change PR
+  MUST include a determinism replay test — every verifier model
+  (detector, segmenter) run twice on the same golden frames within a
+  process and across two processes, asserting BIT-identical raw
+  outputs (logits/boxes/masks), so the no-flicker guarantee is pinned
+  against torch/transformers upgrades rather than assumed from the
+  powder-spike precedent.
 - (b) MPS with a tolerance band: faster, softer reproducibility for
   the one node whose output is judgment.
 
@@ -145,10 +151,12 @@ commits; sequencing after the H3 campaign is natural.
    calibration contract (stage 0), the joint_state home predicate
    (stage 4, same threshold as the oracle's VER-2), the explicit
    Boolean fusion above, and the per-stage disagreement record.
-2. Env-change PR: `verifier/realistic.py` (three-stage judge,
-   AND-fusion), the `transformers` dependency added to the sim extra,
-   weights fetch + attestation, env_hash regen, golden fidelity tests
-   on recorded frames.
+2. Env-change PR: `verifier/realistic.py` (the five-stage judge —
+   calibration, per-camera identity, overhead containment, overhead
+   upright, joint_state home — with the explicit Boolean fusion), the
+   `transformers` dependency added to the sim extra, weights fetch +
+   attestation, env_hash regen, golden fidelity tests on recorded
+   frames, and the D2 determinism replay test (below).
 3. Harness PR: `harness/fidelity.py` (VER-6), `--verifier both`
    plumbing of the three scalars + disagreement log into manifests.
 
