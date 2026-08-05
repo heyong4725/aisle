@@ -30,31 +30,56 @@
    "run_id": "20260728-001009-b4d1fd",
    "mtime": 1785206140.0482004,
    "episodes": 8,
-   "pass1": 0.125
+   "pass1": 0.125,
+   "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+   "env_baseline": "origin/main",
+   "env_baseline_oid": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+   "_lineage_ok": true,
+   "_anchor_ok": true
   },
   {
    "run_id": "20260728-031402-a575b1",
    "mtime": 1785212004.2352867,
    "episodes": 5,
-   "pass1": 0.8
+   "pass1": 0.8,
+   "git_sha": "73cf402a458389345c81351de43e235facc958f2",
+   "env_baseline": "origin/main",
+   "env_baseline_oid": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+   "_lineage_ok": true,
+   "_anchor_ok": true
   },
   {
    "run_id": "20260728-041509-45c125",
    "mtime": 1785215025.5240965,
    "episodes": 3,
-   "pass1": 0.667
+   "pass1": 0.667,
+   "git_sha": "73cf402a458389345c81351de43e235facc958f2",
+   "env_baseline": "origin/main",
+   "env_baseline_oid": "ac3d159f9e106403e67f5f19a162b72b2d99e6bd",
+   "_lineage_ok": true,
+   "_anchor_ok": true
   },
   {
    "run_id": "skill-s1-driver-v2-2026-07-28-bef9a9",
    "mtime": 1785216135.3098981,
    "episodes": 2,
-   "pass1": 1.0
+   "pass1": 1.0,
+   "git_sha": "73cf402a458389345c81351de43e235facc958f2",
+   "env_baseline": "local",
+   "env_baseline_oid": null,
+   "_lineage_ok": true,
+   "_anchor_ok": true
   },
   {
    "run_id": "campaign-holdout-W-S1",
    "mtime": 1785224395.1540546,
    "episodes": 8,
-   "pass1": 0.375
+   "pass1": 0.375,
+   "git_sha": "5758ccffd172bc7f40bea18d0d12781c893f4377",
+   "env_baseline": "local",
+   "env_baseline_oid": null,
+   "_lineage_ok": true,
+   "_anchor_ok": true
   }
  ],
  "prior_skills": [],

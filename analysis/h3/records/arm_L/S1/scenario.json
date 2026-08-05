@@ -30,19 +30,34 @@
    "run_id": "20260728-202623-85f950",
    "mtime": 1785272428.9582305,
    "episodes": 3,
-   "pass1": 0.667
+   "pass1": 0.667,
+   "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+   "env_baseline": "origin/main",
+   "env_baseline_oid": "a9daae68ff0e929fe06e9d541ac5d0f2d008f2f1",
+   "_lineage_ok": true,
+   "_anchor_ok": true
   },
   {
    "run_id": "20260728-212818-120188",
    "mtime": 1785279519.1815577,
    "episodes": 6,
-   "pass1": 0.5
+   "pass1": 0.5,
+   "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+   "env_baseline": "origin/main",
+   "env_baseline_oid": "a9daae68ff0e929fe06e9d541ac5d0f2d008f2f1",
+   "_lineage_ok": true,
+   "_anchor_ok": true
   },
   {
    "run_id": "campaign-holdout-L-S1",
    "mtime": 1785286792.9917197,
    "episodes": 8,
-   "pass1": 0.5
+   "pass1": 0.5,
+   "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+   "env_baseline": "local",
+   "env_baseline_oid": null,
+   "_lineage_ok": true,
+   "_anchor_ok": true
   }
  ],
  "prior_skills": [],

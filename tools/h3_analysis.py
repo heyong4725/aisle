@@ -6,8 +6,13 @@ time- AND tokens-to-first-success ratios, and the H3 verdict. Integrity
 is computed FROM the records, never hand-annotated: wipe_leak (non-empty
 prior_skills on the wiped arm), frozen_drift (non-empty audit),
 holdout_partial (expired scoring window), residue_leak (from the
-aggregates' wipes lists), treatment_drift (a rollout whose recorded
-git_sha or env_baseline_oid is not the treatment pin), and
+aggregates' wipes lists), treatment_drift (owner-ratified 2026-08-05:
+a rollout whose sha history contains post-pin origin/main commits, or
+whose trust anchor's committed frozen hash differs from the pin's —
+agent-only pin descendants ARE the treatment; bare records fall back
+to the strict sha/oid != pin rule), provenance_missing (a DEV rollout
+whose provenance is neither recorded nor resolvable from the campaign
+worktree's run manifests — fail closed, never clean-by-absence), and
 unattested_metric (first-success supplied by a rollout that is not a
 trusted-baseline run at the pin) each flag a cell, and ONLY unflagged
 cells enter the verdict. Records from different campaigns
@@ -20,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 from pathlib import Path
 
 TIERS = ("S1", "S2", "S3")
@@ -101,8 +107,93 @@ def load_campaign(campaign_dir: Path) -> dict:
         rec["_token_samples"] = _samples(path.parent / "token_samples.jsonl")
         if (rec.get("arm"), rec.get("tier"), rec.get("attempt", 1)) in leaked:
             rec["_residue_leak"] = True
+        _enrich_rollouts(rec, campaign_dir)
+        _annotate_provenance(rec, campaign_dir, base.get("commit"))
         records.append(rec)
     return {"treatment": {k: base.get(k) for k in IDENTITY_KEYS}, "records": records}
+
+
+def _enrich_rollouts(rec: dict, campaign_dir: Path) -> None:
+    """Pre-#76 aggregates hold bare run_id rollout entries; resolve their
+    provenance from the campaign worktree's runs/<id>/manifest.json (and
+    pass1/episodes from episodes.jsonl) so the ratified flags derive from
+    primary evidence. Entries that stay bare are handled FAIL-CLOSED by
+    cell() — absence of evidence is never admissibility (S3-r3 analysis:
+    the un-derivable flags silently read the inadmissible S3-r2 cell as
+    clean and its unattested 23-min first-success entered the verdict)."""
+    arm = rec.get("arm")
+    for ro in rec.get("rollouts") or []:
+        if not isinstance(ro, dict) or "git_sha" in ro:
+            continue
+        run_dir = campaign_dir / f"worktree_{arm}" / "runs" / str(ro.get("run_id") or "")
+        manifest = run_dir / "manifest.json"
+        if not manifest.exists():
+            continue
+        try:
+            m = json.loads(manifest.read_text())
+        except json.JSONDecodeError:
+            continue  # unreadable manifest: stays bare, cell() fails closed
+        for key in ("git_sha", "env_baseline", "env_baseline_oid", "env_attested"):
+            if key in m:
+                ro.setdefault(key, m.get(key))
+        ro.setdefault("mtime", manifest.stat().st_mtime)
+        episodes = run_dir / "episodes.jsonl"
+        if "pass1" not in ro and episodes.exists():
+            rows = [json.loads(line) for line in episodes.read_text().splitlines() if line.strip()]
+            if rows:
+                ro["pass1"] = sum(1 for e in rows if e.get("status") == "success") / len(rows)
+                ro.setdefault("episodes", len(rows))
+
+
+def _git(wt: Path, *args: str) -> str | None:
+    proc = subprocess.run(["git", "-C", str(wt), *args], capture_output=True, text=True)
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def _annotate_provenance(rec: dict, campaign_dir: Path, pin: str | None) -> None:
+    """Owner-ratified drift semantics (2026-08-05, PR #76 follow-up):
+    agent-only descendants of the pin ARE the treatment — drift means the
+    rollout's history contains post-pin origin/main commits (ancestry:
+    merge-base(sha, origin/main) != pin), or a trust anchor whose FROZEN
+    CONTENT differs from the pin's (committed tools/env_hash.json at the
+    anchor ref vs at the pin — the gate passing already implies equality,
+    this verifies it from the object store). Annotations are set only
+    when git answers definitively; bare or un-annotatable entries fall
+    back to cell()'s legacy strict rule / fail-closed handling."""
+    if not pin:
+        return
+    wt = campaign_dir / f"worktree_{rec.get('arm')}"
+    if not (wt / ".git").exists():
+        return
+
+    def frozen_hash(ref: str) -> str | None:
+        blob = _git(wt, "show", f"{ref}:tools/env_hash.json")
+        if blob is None:
+            return None
+        try:
+            return json.loads(blob).get("env_hash")
+        except json.JSONDecodeError:
+            return None
+
+    pin_hash = frozen_hash(pin)
+    for ro in rec.get("rollouts") or []:
+        if not isinstance(ro, dict) or "git_sha" not in ro:
+            continue
+        sha = ro.get("git_sha")
+        if sha == pin:
+            ro["_lineage_ok"] = True
+        elif sha:
+            base = _git(wt, "merge-base", str(sha), "origin/main")
+            if base is not None:
+                ro["_lineage_ok"] = base == pin
+        oid = ro.get("env_baseline_oid")
+        if oid in (None, pin):
+            # missing oid = pre-ADR-24 record; pin = trivially the anchor
+            ro["_anchor_ok"] = True
+        elif pin_hash is not None:
+            anchor_hash = frozen_hash(str(oid))
+            if anchor_hash is not None:
+                ro["_anchor_ok"] = anchor_hash == pin_hash
 
 
 def _samples(path: Path) -> list[dict]:
@@ -181,10 +272,28 @@ def cell(rec: dict, commit: str | None = None) -> dict:
         # pin, broke the pinned-treatment invariant (ADR-h3: one pinned
         # OID, no mid-campaign repo updates)
         for r in rollouts:
+            if "_lineage_ok" in r or "_anchor_ok" in r:
+                # ratified ancestry+content semantics (2026-08-05): agent-
+                # only pin descendants are the treatment; drift is post-pin
+                # origin/main history or a content-unequal trust anchor
+                if r.get("_lineage_ok") is False or r.get("_anchor_ok") is False:
+                    flags.append("treatment_drift")
+                    break
+                continue
             sha, oid = r.get("git_sha"), r.get("env_baseline_oid")
             if (sha is not None and sha != commit) or (oid is not None and oid != commit):
                 flags.append("treatment_drift")
                 break
+        # fail closed (S3-r3 analysis follow-up): a DEV rollout with no
+        # recorded or resolvable provenance cannot prove the
+        # pinned-treatment invariant — absence of evidence is not
+        # admissibility, so the cell leaves the verdict like any flag
+        if any(
+            "git_sha" not in r
+            for r in rollouts
+            if not str(r.get("run_id") or "").startswith(HOLDOUT_RUN_PREFIX)
+        ):
+            flags.append("provenance_missing")
         # unattested_metric (PR #76 review): the rollout that supplies
         # first-success must be a trusted-baseline run at the pin — a
         # local/unattested skill-eval success is not an admissible
@@ -198,11 +307,18 @@ def cell(rec: dict, commit: str | None = None) -> dict:
             ]
             if dev_successes:
                 src = min(dev_successes, key=lambda r: r.get("mtime") or 0)
-                trusted = (
-                    src.get("git_sha") == commit
-                    and src.get("env_baseline") == "origin/main"
-                    and src.get("env_baseline_oid") == commit
-                )
+                if "_lineage_ok" in src or "_anchor_ok" in src:
+                    trusted = (
+                        src.get("_lineage_ok") is True
+                        and src.get("_anchor_ok") is True
+                        and src.get("env_baseline") == "origin/main"
+                    )
+                else:
+                    trusted = (
+                        src.get("git_sha") == commit
+                        and src.get("env_baseline") == "origin/main"
+                        and src.get("env_baseline_oid") == commit
+                    )
                 if "git_sha" in src and not trusted:
                     flags.append("unattested_metric")
     # H5 scored on the HELD-OUT records (what we score; dev-side failures

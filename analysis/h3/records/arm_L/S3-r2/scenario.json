@@ -36,7 +36,8 @@
    "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
    "env_baseline": "local",
    "env_baseline_oid": null,
-   "env_attested": null
+   "_lineage_ok": true,
+   "_anchor_ok": true
   },
   {
    "run_id": "20260730-215526-e8d40b",
@@ -46,7 +47,9 @@
    "git_sha": "fee9e9f3c00e4d7082bd6278453c6eddb6d02348",
    "env_baseline": "origin/main",
    "env_baseline_oid": "d737aeb9d1830406710380f4640de85a3f4fefa2",
-   "env_attested": true
+   "env_attested": true,
+   "_lineage_ok": false,
+   "_anchor_ok": true
   },
   {
    "run_id": "campaign-holdout-L-S3-r2",
@@ -56,7 +59,9 @@
    "git_sha": "fee9e9f3c00e4d7082bd6278453c6eddb6d02348",
    "env_baseline": "local",
    "env_baseline_oid": null,
-   "env_attested": true
+   "env_attested": true,
+   "_lineage_ok": false,
+   "_anchor_ok": true
   }
  ],
  "prior_skills": [

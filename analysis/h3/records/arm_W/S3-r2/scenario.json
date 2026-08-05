@@ -37,7 +37,8 @@
    "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
    "env_baseline": "local",
    "env_baseline_oid": null,
-   "env_attested": null
+   "_lineage_ok": true,
+   "_anchor_ok": true
   },
   {
    "run_id": "campaign-holdout-W-S3-r2",
@@ -47,7 +48,8 @@
    "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
    "env_baseline": "local",
    "env_baseline_oid": null,
-   "env_attested": null
+   "_lineage_ok": true,
+   "_anchor_ok": true
   }
  ],
  "prior_skills": [],

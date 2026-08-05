@@ -163,12 +163,48 @@ The rerun cells' scenario records carry per-rollout provenance copied
 verbatim from their run manifests (a disclosed post-hoc augmentation of
 the committed bundle; the values are the worktrees' own manifest facts).
 
-Remaining follow-ups (separate work, not part of this verdict): a
-protocol-compliant L/S3 rerun to resolve the S3 tier (one pinned OID,
-trusted rollouts only — the runner now derives the metric that way by
-construction); issue #71's back-to-back attested determinism pair for
-`expert_s1`; any budget-corrected accumulation campaign (a NEW
-protocol decision).
+## S3 resolution (attempt 3, 2026-08-05) — tier decided: no transfer shown
+
+The protocol-compliant L/S3 rerun ran at the campaign pin (03da746,
+attempt 3, worktree restored to pin + the tier's original prior_skills
+['s1-driver-v2'] with all drift/residue cleared to a keep-ref). The
+session finished on its own (`agent_done`, 253,776 of 750,000 tokens,
+zero frozen drift), re-authored an s3-driver from the S1 library, and
+scored holdout 0/8 (all `wrong_slot` — seeds 100..107 sit almost
+entirely outside the both-L1 feasible class). No first-success ⇒ with
+a CLEAN L cell and a clean W/S3-r2 (also no first-success), the S3
+tier decides **False: no transfer shown**. `met` remains **NOT MET**,
+now grounded in S3's clean cells.
+
+Analyzer hardening shipped with this resolution (owner-ratified
+2026-08-05): (1) bare run_id rollout entries resolve provenance from
+the campaign worktrees' run manifests, and unresolvable DEV entries
+fail closed (`provenance_missing`) — absence of evidence had silently
+read the inadmissible S3-r2 cell as clean; (2) `treatment_drift` uses
+ancestry+content semantics — agent-only descendants of the pin ARE the
+treatment; drift means post-pin origin/main history in a rollout's sha
+(merge-base test) or a trust anchor whose committed frozen hash
+differs from the pin's. Retroactive flag deltas from the richer
+evidence, disclosed: L/S2 gains `treatment_drift` (the July campaign
+branch carried post-pin main commits — the mid-campaign #58 wall-clamp
+fix and neighbours), and W/S2 + W/S3 gain `unattested_metric` on their
+first-success sources; the S2 tier consequently reverts to UNDECIDED.
+The verdict is unchanged either way. The committed records bundle now
+carries the resolved provenance and annotations (the disclosed PR #76
+augmentation convention, extended), so this table reproduces from the
+bundle alone.
+
+Protocol lessons, recorded: (a) origin/main must be FROZEN while a
+campaign cell runs — attempt 3's trust anchors drifted (content-equal,
+provably, but only because tools/env_hash.json never changed) when
+three PRs merged mid-cell; (b) campaign rollouts should pin
+`--env-baseline` to the campaign OID rather than the moving
+origin/main (follow-up issue).
+
+Remaining follow-ups (separate work, not part of this verdict): any
+budget-corrected accumulation campaign (a NEW protocol decision).
+Issue #71's determinism pair is DONE (ADR-25/26; the S1 pair verified
+layers (a)-(c) with a 27 sim-s bit-coherence horizon).
 
 IDs: design doc §11.5, §6 H3/H5, §1 (10x asymmetry); ADR-h3 §7/§9 +
 campaign-2 and resume amendments; RS-7 (delivery class), §11.3

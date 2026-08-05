@@ -31,25 +31,45 @@
    "run_id": "skill-s3-driver-v1-2026-07-28-138e3a",
    "mtime": 1785250914.4017096,
    "episodes": 2,
-   "pass1": 0.5
+   "pass1": 0.5,
+   "git_sha": "5758ccffd172bc7f40bea18d0d12781c893f4377",
+   "env_baseline": "local",
+   "env_baseline_oid": null,
+   "_lineage_ok": true,
+   "_anchor_ok": true
   },
   {
    "run_id": "20260728-151338-df0952",
    "mtime": 1785253971.0791101,
    "episodes": 4,
-   "pass1": 0.75
+   "pass1": 0.75,
+   "git_sha": "ded24b2ab728960981cd07b8c9901791054c6717",
+   "env_baseline": "origin/main",
+   "env_baseline_oid": "ac3d159f9e106403e67f5f19a162b72b2d99e6bd",
+   "_lineage_ok": true,
+   "_anchor_ok": true
   },
   {
    "run_id": "20260728-155334-27e0f6",
    "mtime": 1785254924.2917197,
    "episodes": 2,
-   "pass1": 1.0
+   "pass1": 1.0,
+   "git_sha": "267a903a6128048bc05dd62f6f3769ad14034b30",
+   "env_baseline": "origin/main",
+   "env_baseline_oid": "ac3d159f9e106403e67f5f19a162b72b2d99e6bd",
+   "_lineage_ok": true,
+   "_anchor_ok": true
   },
   {
    "run_id": "campaign-holdout-W-S3",
    "mtime": 1785266366.6937833,
    "episodes": 8,
-   "pass1": 0.0
+   "pass1": 0.0,
+   "git_sha": "267a903a6128048bc05dd62f6f3769ad14034b30",
+   "env_baseline": "local",
+   "env_baseline_oid": null,
+   "_lineage_ok": true,
+   "_anchor_ok": true
   }
  ],
  "prior_skills": [

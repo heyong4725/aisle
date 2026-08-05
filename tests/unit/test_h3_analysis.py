@@ -508,3 +508,103 @@ def test_no_deliverable_is_a_scored_zero_not_a_partial():
     verdict = h3_verdict(cells)
     assert verdict["per_tier"] == {"S2": False, "S3": True}
     assert verdict["met"] is False
+
+
+def test_missing_dev_rollout_provenance_fails_closed():
+    """PR #76 follow-up (S3-r3 analysis): a record whose DEV rollout
+    entries carry no provenance (pre-#76 aggregates hold bare run_ids)
+    must NOT read as clean — absence of evidence is not admissibility.
+    Such a cell flags provenance_missing and leaves the verdict, exactly
+    like a derived flag would."""
+    rec = record("L", "S3", first_success=1390.4)
+    rec["rollouts"] = [
+        {"run_id": "skill-eval-local"},
+        {"run_id": "campaign-holdout-L-S3-r2", "episodes": 8, "pass1": 0.0},
+    ]
+    c = cell(rec, "abc123")
+    assert "provenance_missing" in c["flags"]
+
+
+def test_bare_rollouts_enrich_from_run_manifests(tmp_path):
+    """PR #76 follow-up: the analyzer resolves bare run_id entries
+    against the campaign worktree's runs/<id>/manifest.json (+ pass1
+    from episodes.jsonl), so pre-provenance aggregates reproduce the
+    ratified flags from primary evidence instead of failing closed."""
+    camp = tmp_path
+    rec = record("L", "S3", first_success=1390.4)
+    rec["rollouts"] = [
+        {"run_id": "dev-drifted"},
+        {"run_id": "campaign-holdout-L-S3-r2", "episodes": 8, "pass1": 0.0},
+    ]
+    (camp / "h3_results-r2.json").write_text(
+        json.dumps({"ok": True, "treatment": TREATMENT, "records": [rec], "wipes": []})
+    )
+    scen = camp / "arm_L" / "S3"
+    scen.mkdir(parents=True)
+    (scen / "scenario.json").write_text(json.dumps(rec))
+    run_dir = camp / "worktree_L" / "runs" / "dev-drifted"
+    run_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "dev-drifted",
+                "git_sha": "MERGEDHEAD",
+                "env_baseline": "origin/main",
+                "env_baseline_oid": "POSTPIN",
+            }
+        )
+    )
+    (run_dir / "episodes.jsonl").write_text(
+        '{"seed": 0, "status": "success"}\n{"seed": 1, "status": "fail"}\n'
+    )
+    data = load_campaign(camp)
+    enriched = data["records"][0]["rollouts"][0]
+    assert enriched["git_sha"] == "MERGEDHEAD"
+    assert enriched["env_baseline_oid"] == "POSTPIN"
+    assert enriched["pass1"] == 0.5
+    c = cell(data["records"][0], "abc123")
+    assert "treatment_drift" in c["flags"]
+    assert "provenance_missing" not in c["flags"]
+
+
+def test_annotated_lineage_and_anchor_override_legacy_drift():
+    """Owner-ratified (2026-08-05, PR #76 follow-up): a rollout whose sha
+    is an agent-only descendant of the pin (_lineage_ok) with a
+    content-equal trust anchor (_anchor_ok) is the TREATMENT, not drift —
+    even though sha/oid differ from the pin. A content-unequal anchor or
+    main-contaminated lineage still flags."""
+    rec = record("L", "S3", first_success=100.0)
+    rec["rollouts"] = [
+        {
+            "run_id": "dev-agent-branch",
+            "mtime": 1.0,
+            "episodes": 4,
+            "pass1": 1.0,
+            "git_sha": "AGENTHEAD",
+            "env_baseline": "origin/main",
+            "env_baseline_oid": "MOVEDMAIN",
+            "_lineage_ok": True,
+            "_anchor_ok": True,
+        },
+        {"run_id": "campaign-holdout-L-S3-r3", "mtime": 2.0, "episodes": 8, "pass1": 0.0},
+    ]
+    c = cell(rec, "abc123")
+    assert "treatment_drift" not in c["flags"]
+    assert "unattested_metric" not in c["flags"]
+
+    bad = record("L", "S3", first_success=100.0)
+    bad["rollouts"] = [
+        {
+            "run_id": "dev-merged-main",
+            "mtime": 1.0,
+            "episodes": 4,
+            "pass1": 1.0,
+            "git_sha": "MERGEDHEAD",
+            "env_baseline": "origin/main",
+            "env_baseline_oid": "MOVEDMAIN",
+            "_lineage_ok": False,
+            "_anchor_ok": True,
+        },
+    ]
+    c = cell(bad, "abc123")
+    assert "treatment_drift" in c["flags"]
