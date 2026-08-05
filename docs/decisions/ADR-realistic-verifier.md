@@ -1,7 +1,14 @@
 # ADR-realistic-verifier — design brief (DRAFT, decision-ready)
 
-Status: DRAFT — decisions D1–D6 are open (human); nothing is
-implemented until this ADR is accepted. Scope: design doc §8.3 item 1
+Status: ACCEPTED — D1–D6 ratified by the owner 2026-08-05
+(in-session), every recommended option chosen: D1 OWLv2/transformers,
+D2 CPU inference for verifier models, D3 pinned HF snapshot + sha256 in
+the env attestation, D4 desk tier T1 first increment, D5 the full VER-6
+fidelity contract, D6 segmentation-assisted upright. Implementation
+follows the three-PR sketch below (spec-change first); note D2's CPU
+choice was reaffirmed independently of ADR-26's statistical-outcome
+ratification — a VERDICT source must not flicker even where episode
+outcomes are statistical. Scope: design doc §8.3 item 1
 and §4.2; SPEC 040 VER-6 (fidelity job) is the governing requirement;
 unlocks perception rung L2, tier T2, ablation A7, and the
 **verifier-fidelity** metric.
@@ -35,7 +42,7 @@ commits; sequencing after the H3 campaign is natural.
 ## Decisions
 
 ### D1 — identity detector
-- **(a) OWLv2 via transformers — RECOMMENDED.** Checkpoints
+- **(a) OWLv2 via transformers — RATIFIED.** Checkpoints
   `google/owlv2-base-patch16-ensemble` (or `-base-patch16`), classes
   `Owlv2Processor`/`Owlv2ForObjectDetection` (per the official
   transformers docs). True free-text queries, which the T2 increment
@@ -48,7 +55,7 @@ commits; sequencing after the H3 campaign is natural.
   hardware; overkill for 5 box classes on clean renders.
 
 ### D2 — determinism policy (CON-5)
-- **(a) CPU inference for all verifier models — RECOMMENDED.** The
+- **(a) CPU inference for all verifier models — RATIFIED.** The
   powder spike showed CPU bit-exact vs Metal nondeterministic; a
   verdict source must not flicker across replays. Judging only
   end-of-episode frames (plus sparse checkpoints) keeps the cost
@@ -58,7 +65,7 @@ commits; sequencing after the H3 campaign is natural.
 
 ### D3 — weights provenance and attestation
 - **(a) Pinned snapshot (exact HF revision) fetched at setup +
-  sha256 digest recorded in the env attestation — RECOMMENDED.**
+  sha256 digest recorded in the env attestation — RATIFIED.**
   Unpinned hub downloads are an unattested judgment channel (issue
   #38). License compliance verified at pin time.
 - (b) Vendored weights via LFS: simplest attestation, largest repo
@@ -66,7 +73,7 @@ commits; sequencing after the H3 campaign is natural.
 
 ### D4 — scope of the first increment
 - **(a) Desk tier T1, identity + 3D containment + upright, overhead +
-  wrist cameras — RECOMMENDED.** Smallest frozen-set change that
+  wrist cameras — RATIFIED.** Smallest frozen-set change that
   yields a fidelity number and unlocks A7. OCR/label-reading (T2) is
   increment two, sequenced on the first fidelity result (the §7
   rendered-label legibility risk may force a scene font/texture pass
@@ -75,7 +82,7 @@ commits; sequencing after the H3 campaign is natural.
   couples two verifier problems.
 
 ### D5 — fidelity reporting contract (VER-6)
-- **(a) VER-6's `harness/fidelity.py` shape in full — RECOMMENDED:**
+- **(a) VER-6's `harness/fidelity.py` shape in full — RATIFIED:**
   replay N episodes through BOTH verifiers and report agreement,
   **false-success rate** (realistic says success, oracle says fail —
   the dangerous direction for A7), and **false-fail rate**, plus a
@@ -86,7 +93,7 @@ commits; sequencing after the H3 campaign is natural.
 
 ### D6 — upright/pose component
 - **(a) Segmentation-assisted (MobileSAM-class mask + depth extent) —
-  RECOMMENDED** for robustness on tilted/occluded boxes; same CPU and
+  RATIFIED** for robustness on tilted/occluded boxes; same CPU and
   attestation rules as D1/D3.
 - (b) Depth-profile heuristic only (no second model): lighter, likely
   brittle exactly where uprightness matters (leaning boxes) — could be
