@@ -35,6 +35,30 @@ docstring. `tools/trace_check.py` (SPEC 070) enforces this in CI.
   cannot be verified against the lock records `attested: false` and
   makes NO reproducibility claim). Nondeterministic APIs (time, RNG)
   MUST be injected, never called ad hoc inside env code.
+  "Reproducible" is LAYERED (ADR-26, ratified 2026-08-05; issue #71: the
+  Metal GPU backend flips single ULPs at unpredictable steps and chaos
+  amplifies them over an episode, so bit-equal replay is not a property
+  this platform can promise):
+  (a) seed-derived artifacts — goals, plans, injected reset states, the
+  first post-reset snapshot — MUST be bit-identical across runs;
+  (b) trace timing — the first reset lands at sim step 0 and publish
+  cadence is reset-anchored (ADR-25) — MUST be exact;
+  (c) physics state values MUST agree within a stated tolerance (1e-6
+  unless a spec tightens it) over the COMPARISON WINDOW: the first
+  1.0 s of sim time following each reset, enforced in full — a capture
+  whose shared post-reset coverage does not reach the end of the window
+  is inadmissible and is rerun, not compared (a spec MAY extend the
+  window). Chaos amplifies ULP noise past any fixed tolerance over
+  full-episode horizons — layer (d)'s regime;
+  (d) episode OUTCOMES are statistical: an identical tuple guarantees
+  the same outcome DISTRIBUTION, never per-seed status equality.
+  Non-rejection by a significance test MUST NOT be treated as
+  equivalence (it cannot certify similarity at campaign sample sizes) —
+  a replicate GATE is the original acceptance threshold independently
+  re-satisfied by the rerun, with the per-seed flip set and both
+  success counts (plus an exact-test p-value as context) PERSISTED in
+  the run evidence. Per-seed flips near decision boundaries are
+  expected noise: recorded, never failed on.
 
 ## 4. Repository invariants
 
