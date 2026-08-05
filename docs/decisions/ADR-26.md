@@ -30,14 +30,25 @@ CON-5's "reproducible" is layered (amendment in the same PR):
 - **(b) exact timing:** first reset at sim step 0; reset-anchored
   publish cadence (ADR-25).
 - **(c) tolerance:** physics state values within 1e-6 (unless a spec
-  tightens it) over spec-defined comparison windows; full-episode
-  horizons are chaotic and belong to layer (d).
+  tightens it) over the NORMATIVE comparison window — the first 1.0 s
+  of sim time after each reset, with captures under 0.1 sim-s of shared
+  span inadmissible (rerun, not compared). Full-episode horizons are
+  chaotic and belong to layer (d).
 - **(d) statistical outcomes:** an identical CON-5 tuple guarantees the
-  same outcome DISTRIBUTION; replicate checks compare distributions
-  over seed sets. M0-2 becomes a two-sided Fisher exact test on success
-  counts (reject only at p < 0.01), with per-seed flips logged.
+  same outcome DISTRIBUTION; per-seed status equality is never the
+  claim. REVISED per the PR #88 review: non-rejection by a significance
+  test is NOT equivalence — at n=50, 48/50 vs 40/50 gives Fisher
+  p = 0.028, so a p >= 0.01 gate would wave through a 16-point
+  regression. The replicate GATE is the original acceptance threshold
+  independently re-satisfied by the rerun (M0-2: pass1 >= 0.95, which
+  bounds the rate difference at <= 0.04 by construction), with the
+  per-seed flip set, both success counts, and a two-sided Fisher exact
+  p-value (context only) PERSISTED to
+  `runs/<rerun-id>/m0_2_replicate.json` — pytest capture hides passing
+  stdout, so logging means a durable artifact.
   `aisle.harness.stats.fisher_exact_two_sided` is dependency-free and
-  pinned against scipy reference values in `tests/unit/test_stats.py`.
+  pinned against scipy reference values in `tests/unit/test_stats.py`;
+  it reports, it does not gate.
 
 Options considered and not taken (may be revisited):
 - **CPU backend for attested runs** — the powder spike showed CPU

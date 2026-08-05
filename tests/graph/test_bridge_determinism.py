@@ -40,9 +40,13 @@ TOPIC_HZ = {"joint_state": 100, "gripper_state": 100, "oracle_state": 30, "poses
 DRIVER_TICK_S = 0.05  # conftest wires the driver to dora/timer/millis/50
 EARLY_SPACING, LATE_SPACING = 40, 97
 TAIL_S = 8.0  # wall capture time after the second reset
-# a window must span at least this much SIM time to prove anything;
-# below it the machine is too loaded for a meaningful run (rtf < ~0.05)
-MIN_SPAN_NS = {0: int(0.1e9), 1: int(0.4e9)}
+# CON-5 layer (c): the NORMATIVE comparison window is the first 1.0 s
+# of sim time after each reset; captures whose shared span is under
+# 0.1 sim-s are inadmissible (machine too loaded — rerun, not compare).
+# Beyond 1.0 s the comparison continues informatively at the same
+# tolerance while this fixture graph stays contact-free.
+NORMATIVE_WINDOW_NS = int(1.0e9)
+MIN_SPAN_NS = {0: int(0.1e9), 1: int(0.1e9)}
 
 
 def _run_pair_member(tmp_path, dataflow, name: str, spacing_ticks: int) -> list[dict]:
@@ -128,6 +132,25 @@ def test_observation_stream_is_reset_anchored(tmp_path, dataflow):
             f"{name}: bridge stepped physics before the first reset "
             f"(reset_done at sim {first_ns} ns)"
         )
+
+    # CON-5 layer (a) (ADR-26, PR #88 review): the FIRST post-reset
+    # snapshot is seed-derived and must be bit-identical across runs.
+    # The first reset lands at sim 0 in both runs (gate above), so its
+    # oracle_state/poses snapshot rows are exactly the stamp-0 rows —
+    # unambiguous here, unlike the reset-2 boundary the windows exclude.
+    for topic in ("oracle_state", "poses"):
+        snaps = []
+        for records in (early, late):
+            rows = [
+                r["sha256"]
+                for r in records
+                if r["id"] == topic and int(r["metadata"]["sim_time_ns"]) == 0
+            ]
+            assert rows, f"{topic}: no reset-1 snapshot at sim 0"
+            snaps.append(rows[0])
+        assert snaps[0] == snaps[1], (
+            f"{topic}: first post-reset snapshot differs across runs (CON-5 layer (a))"
+        )
         # nothing but the BRG-6 startup announcement may precede the first
         # reset in the recorder's file order — a pre-reset physics row means
         # the hold leaked (ADR-25 decision 1)
@@ -148,8 +171,8 @@ def test_observation_stream_is_reset_anchored(tmp_path, dataflow):
             span_ns = shared[-1] - shared[0]
             assert span_ns >= MIN_SPAN_NS[window_idx], (
                 f"seed {seed} {topic}: shared window spans only {span_ns / 1e9:.3f} sim-s "
-                f"(need {MIN_SPAN_NS[window_idx] / 1e9:.1f}) — machine too loaded for a "
-                "meaningful comparison, rerun on an idler box"
+                f"(below the CON-5 layer (c) admissibility floor "
+                f"{MIN_SPAN_NS[window_idx] / 1e9:.1f}) — machine too loaded, rerun"
             )
             # density over the OBSERVED span: half nominal absorbs jitter
             # while proving a real contiguous stretch was compared

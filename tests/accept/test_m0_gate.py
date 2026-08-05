@@ -83,30 +83,68 @@ def test_m0_1_pass1_at_least_95(m0_first_run):
     assert m0_first_run["pass1"] >= 0.95, m0_first_run["failures"]
 
 
-def test_m0_2_rerun_is_statistically_indistinguishable(m0_first_run):
-    """SPEC 090 M0-2 (CON-5 layer (d), ADR-26): re-running M0-1 with
-    identical seeds reproduces a statistically indistinguishable outcome —
-    a two-sided Fisher exact test on the two success counts must not
-    reject at p < 0.01. Per-seed flips are logged, not failed on: the
-    Metal backend flips single ULPs at unpredictable steps and chaos
-    amplifies them over an episode (issue #71), so the pre-ADR-26
-    per-episode-vector equality is not a property the platform has."""
+def _episode_goals_sans_timing(run_id: str) -> list[dict]:
+    """The run's episode_goal payloads with the timing-layer reset_sim_ns
+    stripped — CON-5 layer (a) promises the SEED-DERIVED goal content,
+    layer (b)/(d) own the timing."""
+    import json as _json
+
+    import pyarrow.ipc as ipc
+
+    path = REPO_ROOT / "runs" / run_id / "traces" / "rollout-client__episode_goal.arrow"
+    goals = []
+    for row in ipc.open_stream(path).read_all().to_pylist():
+        goal = _json.loads(row["text"])
+        goal.pop("reset_sim_ns", None)
+        goals.append(goal)
+    return goals
+
+
+def test_m0_2_rerun_reproduces_the_gate_and_goal_content(m0_first_run):
+    """SPEC 090 M0-2 (CON-5 layers (a)/(d), ADR-26): the rerun MUST
+    independently satisfy M0-1's pass1 >= 0.95 — bounding the rate
+    difference at <= 0.04 by construction; non-rejection by a
+    significance test is NOT equivalence and does not gate (PR #88
+    review: 48/50 vs 40/50 gives Fisher p = 0.028, which must fail).
+    Episode goals MUST be bit-identical after stripping reset_sim_ns
+    (layer (a)). The replicate evidence — both success counts, the
+    per-seed flip set, and the Fisher p as context — is persisted to
+    runs/<rerun-id>/m0_2_replicate.json (the MUST-log requirement;
+    pytest capture hides passing-test stdout)."""
+    import json as _json
+
     from aisle.harness.stats import fisher_exact_two_sided
 
-    rerun = rollout_50(f"m0-2-{uuid.uuid4().hex[:6]}")
+    rerun_id = f"m0-2-{uuid.uuid4().hex[:6]}"
+    rerun = rollout_50(rerun_id)
+
+    # layer (a): seed-derived goal content bit-identical across the pair
+    first_goals = _episode_goals_sans_timing(m0_first_run["run_id"])
+    rerun_goals = _episode_goals_sans_timing(rerun_id)
+    assert first_goals == rerun_goals, "seed-derived episode goals differ (CON-5 layer (a))"
+
     first = {e["seed"]: e["status"] for e in m0_first_run["episodes"]}
     second = {e["seed"]: e["status"] for e in rerun["episodes"]}
-    assert first.keys() == second.keys()  # identical seed set, layer (a)
-    flips = {s: (first[s], second[s]) for s in first if first[s] != second[s]}
-    if flips:
-        print(f"M0-2 per-seed flips (expected noise, logged): {flips}")
+    assert first.keys() == second.keys()
+    flips = {s: (first[s], second[s]) for s in sorted(first) if first[s] != second[s]}
     k1 = sum(1 for s in first.values() if s == "success")
     k2 = sum(1 for s in second.values() if s == "success")
-    p = fisher_exact_two_sided(k1, len(first), k2, len(second))
-    assert p >= 0.01, (
-        f"success counts {k1}/{len(first)} vs {k2}/{len(second)} are statistically "
-        f"distinguishable (Fisher two-sided p={p:.5f} < 0.01) — this is a real "
-        f"reproducibility break, not ULP noise; flips: {flips}"
+    evidence = {
+        "first_run": m0_first_run["run_id"],
+        "rerun": rerun_id,
+        "success_counts": [k1, k2],
+        "n": len(first),
+        "per_seed_flips": {str(k): v for k, v in flips.items()},
+        "fisher_two_sided_p_context_only": fisher_exact_two_sided(k1, len(first), k2, len(second)),
+    }
+    evidence_path = REPO_ROOT / "runs" / rerun_id / "m0_2_replicate.json"
+    evidence_path.write_text(_json.dumps(evidence, indent=1) + "\n")
+    assert evidence_path.exists()
+
+    # the GATE: the rerun independently re-satisfies M0-1's threshold
+    assert rerun["pass1"] >= 0.95, (
+        f"rerun pass1 {rerun['pass1']} < 0.95 — the replicate does not re-satisfy "
+        f"M0-1; evidence at {evidence_path}; flips: {flips}"
     )
 
 

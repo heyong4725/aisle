@@ -44,14 +44,21 @@ docstring. `tools/trace_check.py` (SPEC 070) enforces this in CI.
   (b) trace timing — the first reset lands at sim step 0 and publish
   cadence is reset-anchored (ADR-25) — MUST be exact;
   (c) physics state values MUST agree within a stated tolerance (1e-6
-  unless a spec tightens it) over the spec-defined comparison windows —
-  chaos amplifies ULP noise past any fixed tolerance over full-episode
-  horizons, which is exactly layer (d)'s regime;
+  unless a spec tightens it) over the COMPARISON WINDOW: the first
+  1.0 s of sim time following each reset (a spec MAY extend it; a
+  capture whose shared post-reset span is under 0.1 sim-s is
+  inadmissible and is rerun, not compared). Chaos amplifies ULP noise
+  past any fixed tolerance over full-episode horizons — layer (d)'s
+  regime;
   (d) episode OUTCOMES are statistical: an identical tuple guarantees
-  the same outcome DISTRIBUTION, and replicate checks compare
-  distributions over seed sets (e.g. exact tests on success counts) —
-  never per-seed status equality. Per-seed flips near decision
-  boundaries are expected noise and MUST be logged, not failed on.
+  the same outcome DISTRIBUTION, never per-seed status equality.
+  Non-rejection by a significance test MUST NOT be treated as
+  equivalence (it cannot certify similarity at campaign sample sizes) —
+  a replicate GATE is the original acceptance threshold independently
+  re-satisfied by the rerun, with the per-seed flip set and both
+  success counts (plus an exact-test p-value as context) PERSISTED in
+  the run evidence. Per-seed flips near decision boundaries are
+  expected noise: recorded, never failed on.
 
 ## 4. Repository invariants
 
