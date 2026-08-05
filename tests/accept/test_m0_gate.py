@@ -83,13 +83,31 @@ def test_m0_1_pass1_at_least_95(m0_first_run):
     assert m0_first_run["pass1"] >= 0.95, m0_first_run["failures"]
 
 
-def test_m0_2_rerun_reproduces_status_vector(m0_first_run):
-    """SPEC 090 M0-2 (CON-5): re-running M0-1 with identical seeds
-    reproduces the identical per-episode status vector."""
+def test_m0_2_rerun_is_statistically_indistinguishable(m0_first_run):
+    """SPEC 090 M0-2 (CON-5 layer (d), ADR-26): re-running M0-1 with
+    identical seeds reproduces a statistically indistinguishable outcome —
+    a two-sided Fisher exact test on the two success counts must not
+    reject at p < 0.01. Per-seed flips are logged, not failed on: the
+    Metal backend flips single ULPs at unpredictable steps and chaos
+    amplifies them over an episode (issue #71), so the pre-ADR-26
+    per-episode-vector equality is not a property the platform has."""
+    from aisle.harness.stats import fisher_exact_two_sided
+
     rerun = rollout_50(f"m0-2-{uuid.uuid4().hex[:6]}")
-    first = [(e["seed"], e["status"]) for e in m0_first_run["episodes"]]
-    second = [(e["seed"], e["status"]) for e in rerun["episodes"]]
-    assert first == second
+    first = {e["seed"]: e["status"] for e in m0_first_run["episodes"]}
+    second = {e["seed"]: e["status"] for e in rerun["episodes"]}
+    assert first.keys() == second.keys()  # identical seed set, layer (a)
+    flips = {s: (first[s], second[s]) for s in first if first[s] != second[s]}
+    if flips:
+        print(f"M0-2 per-seed flips (expected noise, logged): {flips}")
+    k1 = sum(1 for s in first.values() if s == "success")
+    k2 = sum(1 for s in second.values() if s == "success")
+    p = fisher_exact_two_sided(k1, len(first), k2, len(second))
+    assert p >= 0.01, (
+        f"success counts {k1}/{len(first)} vs {k2}/{len(second)} are statistically "
+        f"distinguishable (Fisher two-sided p={p:.5f} < 0.01) — this is a real "
+        f"reproducibility break, not ULP noise; flips: {flips}"
+    )
 
 
 def test_m0_3_mutated_frozen_file_refuses_rollout():

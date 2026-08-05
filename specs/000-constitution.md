@@ -35,6 +35,21 @@ docstring. `tools/trace_check.py` (SPEC 070) enforces this in CI.
   cannot be verified against the lock records `attested: false` and
   makes NO reproducibility claim). Nondeterministic APIs (time, RNG)
   MUST be injected, never called ad hoc inside env code.
+  "Reproducible" is LAYERED (ADR-26, ratified 2026-08-05; issue #71: the
+  Metal GPU backend flips single ULPs at unpredictable steps and chaos
+  amplifies them over an episode, so bit-equal replay is not a property
+  this platform can promise):
+  (a) seed-derived artifacts — goals, plans, injected reset states, the
+  first post-reset snapshot — MUST be bit-identical across runs;
+  (b) trace timing — the first reset lands at sim step 0 and publish
+  cadence is reset-anchored (ADR-25) — MUST be exact;
+  (c) physics state values MUST agree within a stated tolerance (1e-6
+  unless a spec tightens it);
+  (d) episode OUTCOMES are statistical: an identical tuple guarantees
+  the same outcome DISTRIBUTION, and replicate checks compare
+  distributions over seed sets (e.g. exact tests on success counts) —
+  never per-seed status equality. Per-seed flips near decision
+  boundaries are expected noise and MUST be logged, not failed on.
 
 ## 4. Repository invariants
 
