@@ -275,7 +275,7 @@ def batch_manifest(out_dir: Path, graph: Path, seed: int, order: list[str]) -> d
         "order": order,
         "phase_model": "idea arrival delayed uniform(0, 25.0)s after stream health check",
         "dora_cli": (dora_version.stdout or "").strip(),
-        "dora_api_rev": "7eb4a5f8b",
+        "dora_api_rev": "cd597e705",
         "coordinator_port": os.environ.get("DORA_COORDINATOR_PORT", "6013 (default)"),
     }
     (out_dir / f"manifest-seed{seed}.json").write_text(json.dumps(manifest, indent=1) + "\n")
