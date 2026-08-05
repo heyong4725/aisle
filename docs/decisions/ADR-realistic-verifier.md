@@ -12,10 +12,11 @@ SECOND (OCR) increment, which is sequenced on the first fidelity result
 and is NOT part of this acceptance. Implementation follows the three-PR
 sketch below (spec-change first); note D2's CPU choice was reaffirmed
 independently of ADR-26's statistical-outcome ratification — a VERDICT
-source must not flicker even where episode outcomes are statistical. Scope: design doc §8.3 item 1
-and §4.2; SPEC 040 VER-6 (fidelity job) is the governing requirement;
-unlocks perception rung L2, tier T2, ablation A7, and the
-**verifier-fidelity** metric.
+source must not flicker even where episode outcomes are statistical.
+Scope: design doc §8.3 item 1 and §4.2; SPEC 040 VER-6 (fidelity job)
+is the governing requirement; the scope statement above (T1 fidelity +
+A7 now, L2 groundwork, T2 only with the OCR increment) is the single
+authoritative one.
 
 ## What it must judge (not just detect)
 
@@ -23,20 +24,35 @@ The oracle's verdict (SPEC 040) is a compound geometric judgment:
 correct object IDENTITY inside the TRAY VOLUME (3D containment),
 UPRIGHT, robot home. An open-vocab detector alone provides identity
 and a 2D box — it cannot judge 3D containment or uprightness. The
-realistic pipeline is therefore three stages, per camera:
+realistic pipeline is therefore (PR #89 re-review: the full oracle
+verdict, not a camera-only subset):
 
+0. **Calibration contract** — back-projection needs the overhead
+   camera's intrinsics and camera-to-base extrinsics. The image/depth
+   topics carry only h/w/enc, so the SPEC 040 amendment MUST define an
+   ATTESTED calibration config: in sim it is exported from the frozen
+   scene's camera construction (position/look-at/FOV — already
+   env-hashed with the scene); on hardware the same file carries
+   measured calibration. The judge reads calibration ONLY from this
+   attested source.
 1. **Identity** — open-vocabulary detection on the rendered frame,
    per camera (overhead RGB + wrist RGB).
-2. **3D localization** — back-project the detection using the aligned
-   depth channel to test tray-volume containment in the robot base
-   frame. CORRECTED (PR #89 review): only `depth_overhead` exists —
-   the wrist camera is RGB-only in SPEC 010, the bridge, and the
-   frozen graphs — so 3D localization runs on OVERHEAD depth only.
+2. **3D localization** — back-project the overhead detection through
+   the calibration contract to test tray-volume containment in the
+   robot base frame (only `depth_overhead` exists — the wrist camera
+   is RGB-only in SPEC 010, the bridge, and the frozen graphs).
 3. **Pose/upright** — segmentation-based extent (mask + overhead
    depth) or a depth-profile heuristic; this is the component D6
    decides.
+4. **Robot home** — from `joint_state` against the home-pose
+   threshold, the SAME signal and threshold the oracle uses for VER-2;
+   cameras play no part in this component.
 
-Per-camera verdicts fuse with AND (the ENPIRE recipe). T2's
+The final Boolean is explicit:
+`verdict = identity_overhead AND identity_wrist AND
+containment_overhead AND upright_overhead AND home_joint_state`
+(identity fuses across both cameras per the ENPIRE recipe;
+containment/upright are overhead-only per the D4 amendment). T2's
 label-text-only identification additionally needs OCR/text grounding —
 explicitly a SECOND increment (see D4), not smuggled into this one.
 
@@ -88,8 +104,11 @@ commits; sequencing after the H3 campaign is natural.
   the wrist camera publishes no depth, and adding `depth_wrist` would
   be a Class-C stable-topic-contract change (SPEC 010 + frozen
   bridge/manifest/graphs + BRG-2 render-rate re-check). `depth_wrist`
-  is a NAMED follow-up, taken only if the first fidelity number shows
-  overhead-only 3D as the dominant disagreement source. Smallest
+  is a NAMED follow-up, taken only if the D5 per-stage disagreement
+  breakdown shows the containment/upright stages dominating the
+  disagreements (a criterion measurable from overhead-only evidence —
+  PR #89 re-review: aggregate rates and identity votes alone could
+  not attribute disagreements to 3D). Smallest
   frozen-set change that yields a fidelity number and unlocks A7.
   OCR/label-reading (T2) is increment two, sequenced on the first
   fidelity result (the §7 rendered-label legibility risk may force a
@@ -98,12 +117,16 @@ commits; sequencing after the H3 campaign is natural.
   couples two verifier problems.
 
 ### D5 — fidelity reporting contract (VER-6)
-- **(a) VER-6's `harness/fidelity.py` shape in full — RATIFIED:**
-  replay N episodes through BOTH verifiers and report agreement,
-  **false-success rate** (realistic says success, oracle says fail —
-  the dangerous direction for A7), and **false-fail rate**, plus a
-  per-episode disagreement log (episode id, both verdicts, per-camera
-  votes). Per-run manifests carry the three scalars.
+- **(a) VER-6's `harness/fidelity.py` shape in full — RATIFIED,
+  amended 2026-08-05 (PR #89 re-review):** replay N episodes through
+  BOTH verifiers and report agreement, **false-success rate**
+  (realistic says success, oracle says fail — the dangerous direction
+  for A7), and **false-fail rate**, plus a per-episode disagreement
+  log carrying PER-STAGE votes and measurements — identity per camera,
+  containment, upright, home, each with its stage measurement
+  (score/margin) — so disagreements are attributable to a stage and
+  the D4 `depth_wrist` trigger is measurable. Per-run manifests carry
+  the three scalars.
 - (b) Scalar agreement only: cheaper, loses exactly the asymmetry
   VER-6 exists to expose.
 
@@ -118,7 +141,10 @@ commits; sequencing after the H3 campaign is natural.
 ## Implementation sketch (after acceptance, ~1 PR each)
 
 1. Spec-change PR: SPEC 040 amendment (VER IDs for the realistic
-   pipeline + the D5 contract) — no code.
+   pipeline + the D5 contract) — no code. MUST define: the attested
+   calibration contract (stage 0), the joint_state home predicate
+   (stage 4, same threshold as the oracle's VER-2), the explicit
+   Boolean fusion above, and the per-stage disagreement record.
 2. Env-change PR: `verifier/realistic.py` (three-stage judge,
    AND-fusion), the `transformers` dependency added to the sim extra,
    weights fetch + attestation, env_hash regen, golden fidelity tests
