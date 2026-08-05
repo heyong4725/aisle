@@ -1,14 +1,18 @@
-# ADR-realistic-verifier — design brief (DRAFT, decision-ready)
+# ADR-realistic-verifier — accepted design (D1–D6 ratified 2026-08-05)
 
 Status: ACCEPTED — D1–D6 ratified by the owner 2026-08-05
 (in-session), every recommended option chosen: D1 OWLv2/transformers,
 D2 CPU inference for verifier models, D3 pinned HF snapshot + sha256 in
-the env attestation, D4 desk tier T1 first increment, D5 the full VER-6
-fidelity contract, D6 segmentation-assisted upright. Implementation
-follows the three-PR sketch below (spec-change first); note D2's CPU
-choice was reaffirmed independently of ADR-26's statistical-outcome
-ratification — a VERDICT source must not flicker even where episode
-outcomes are statistical. Scope: design doc §8.3 item 1
+the env attestation, D4 desk tier T1 first increment (amended
+2026-08-05, PR #89 review: 3D from OVERHEAD depth only — see D4), D5
+the full VER-6 fidelity contract, D6 segmentation-assisted upright.
+Increment one unlocks the T1 fidelity number and ablation A7 and lays
+groundwork for perception rung L2; tier T2 is unlocked only by the
+SECOND (OCR) increment, which is sequenced on the first fidelity result
+and is NOT part of this acceptance. Implementation follows the three-PR
+sketch below (spec-change first); note D2's CPU choice was reaffirmed
+independently of ADR-26's statistical-outcome ratification — a VERDICT
+source must not flicker even where episode outcomes are statistical. Scope: design doc §8.3 item 1
 and §4.2; SPEC 040 VER-6 (fidelity job) is the governing requirement;
 unlocks perception rung L2, tier T2, ablation A7, and the
 **verifier-fidelity** metric.
@@ -21,12 +25,16 @@ UPRIGHT, robot home. An open-vocab detector alone provides identity
 and a 2D box — it cannot judge 3D containment or uprightness. The
 realistic pipeline is therefore three stages, per camera:
 
-1. **Identity** — open-vocabulary detection on the rendered frame.
+1. **Identity** — open-vocabulary detection on the rendered frame,
+   per camera (overhead RGB + wrist RGB).
 2. **3D localization** — back-project the detection using the aligned
-   DEPTH channel (both cameras publish depth) to test tray-volume
-   containment in the robot base frame.
-3. **Pose/upright** — segmentation-based extent (mask + depth) or a
-   depth-profile heuristic; this is the component D6 decides.
+   depth channel to test tray-volume containment in the robot base
+   frame. CORRECTED (PR #89 review): only `depth_overhead` exists —
+   the wrist camera is RGB-only in SPEC 010, the bridge, and the
+   frozen graphs — so 3D localization runs on OVERHEAD depth only.
+3. **Pose/upright** — segmentation-based extent (mask + overhead
+   depth) or a depth-profile heuristic; this is the component D6
+   decides.
 
 Per-camera verdicts fuse with AND (the ENPIRE recipe). T2's
 label-text-only identification additionally needs OCR/text grounding —
@@ -42,13 +50,15 @@ commits; sequencing after the H3 campaign is natural.
 ## Decisions
 
 ### D1 — identity detector
-- **(a) OWLv2 via transformers — RATIFIED.** Checkpoints
-  `google/owlv2-base-patch16-ensemble` (or `-base-patch16`), classes
+- **(a) OWLv2 via transformers — RATIFIED.** Checkpoint
+  `google/owlv2-base-patch16-ensemble` (the single ratified identity;
+  exact HF revision + sha256 pinned at implementation per D3), classes
   `Owlv2Processor`/`Owlv2ForObjectDetection` (per the official
   transformers docs). True free-text queries, which the T2 increment
-  will need. transformers/torch are already in the sim extra. Weights
-  size, revision, and license terms to be verified and PINNED at
-  implementation (D3) — not asserted here.
+  will need. CORRECTED (PR #89 review): `torch` is in the sim extra
+  but `transformers` is NOT — the env-change PR adds it (CON-1: no
+  CUDA-only pulls) alongside the weights pin. License terms verified
+  at pin time.
 - (b) YOLO-World via ultralytics: faster, but AGPL-3.0 packaging and
   load-time vocabulary.
 - (c) Grounding-DINO class: strongest grounding, heaviest on this
@@ -72,12 +82,18 @@ commits; sequencing after the H3 campaign is natural.
   cost.
 
 ### D4 — scope of the first increment
-- **(a) Desk tier T1, identity + 3D containment + upright, overhead +
-  wrist cameras — RATIFIED.** Smallest frozen-set change that
-  yields a fidelity number and unlocks A7. OCR/label-reading (T2) is
-  increment two, sequenced on the first fidelity result (the §7
-  rendered-label legibility risk may force a scene font/texture pass
-  first).
+- **(a) Desk tier T1 — RATIFIED, amended 2026-08-05 (PR #89 review):**
+  identity detection on BOTH cameras with per-camera AND-fusion (the
+  ENPIRE recipe), 3D containment + upright from OVERHEAD depth only —
+  the wrist camera publishes no depth, and adding `depth_wrist` would
+  be a Class-C stable-topic-contract change (SPEC 010 + frozen
+  bridge/manifest/graphs + BRG-2 render-rate re-check). `depth_wrist`
+  is a NAMED follow-up, taken only if the first fidelity number shows
+  overhead-only 3D as the dominant disagreement source. Smallest
+  frozen-set change that yields a fidelity number and unlocks A7.
+  OCR/label-reading (T2) is increment two, sequenced on the first
+  fidelity result (the §7 rendered-label legibility risk may force a
+  scene font/texture pass first).
 - (b) Desk + retail in one change: drags D1 toward heavier models and
   couples two verifier problems.
 
@@ -104,8 +120,9 @@ commits; sequencing after the H3 campaign is natural.
 1. Spec-change PR: SPEC 040 amendment (VER IDs for the realistic
    pipeline + the D5 contract) — no code.
 2. Env-change PR: `verifier/realistic.py` (three-stage judge,
-   AND-fusion), weights fetch + attestation, env_hash regen, golden
-   fidelity tests on recorded frames.
+   AND-fusion), the `transformers` dependency added to the sim extra,
+   weights fetch + attestation, env_hash regen, golden fidelity tests
+   on recorded frames.
 3. Harness PR: `harness/fidelity.py` (VER-6), `--verifier both`
    plumbing of the three scalars + disagreement log into manifests.
 
