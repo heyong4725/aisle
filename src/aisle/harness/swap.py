@@ -177,9 +177,10 @@ def swap(
     written back so the next validation sees live reality.
 
     The settle delay works around a dora daemon race (H4 shakeout,
-    2026-07-31, pinned rev 7eb4a5f; filed as dora-rs/dora#2916 — FIXED
-    upstream in eec31a40b, retest-confirmed 2026-07-31; the settle
-    stays while our pin predates the fix and is harmless after): a back-to-back remove->add lets the
+    2026-07-31; filed as dora-rs/dora#2916, FIXED upstream in eec31a40b
+    which our pin now includes — the settle is retained as a harmless
+    belt until a live swap retest under the new pin justifies removing
+    it): a back-to-back remove->add lets the
     REMOVED process's kill-on-drop land ~15 ms AFTER the add, and its
     Signal(9) exit is attributed to the node identity — the daemon marks
     the freshly added replacement failed ("node added successfully" then

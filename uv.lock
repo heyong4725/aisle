@@ -45,7 +45,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dora-rs", marker = "extra == 'sim'", git = "https://github.com/dora-rs/dora?subdirectory=apis%2Fpython%2Fnode&rev=7eb4a5f8b" },
+    { name = "dora-rs", marker = "extra == 'sim'", git = "https://github.com/dora-rs/dora?subdirectory=apis%2Fpython%2Fnode&rev=cd597e7059295cbe9af0d6082697361d152bd444" },
     { name = "genesis-world", marker = "extra == 'sim'", specifier = ">=1.2.3" },
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "numpy", specifier = ">=2.4.6" },
@@ -339,7 +339,7 @@ wheels = [
 [[package]]
 name = "dora-rs"
 version = "1.0.0rc4"
-source = { git = "https://github.com/dora-rs/dora?subdirectory=apis%2Fpython%2Fnode&rev=7eb4a5f8b#7eb4a5f8b8a8500b8c74e9d0cff08ad9b866fb61" }
+source = { git = "https://github.com/dora-rs/dora?subdirectory=apis%2Fpython%2Fnode&rev=cd597e7059295cbe9af0d6082697361d152bd444#cd597e7059295cbe9af0d6082697361d152bd444" }
 dependencies = [
     { name = "numpy" },
     { name = "pyarrow" },

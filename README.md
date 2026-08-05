@@ -34,7 +34,7 @@ Rust toolchain (for the dora CLI). Details and troubleshooting:
 
 ```bash
 uv sync --extra sim        # plain `uv sync` REMOVES the sim extras
-cargo install --git https://github.com/dora-rs/dora --rev 7eb4a5f8b dora-cli --locked
+cargo install --git https://github.com/dora-rs/dora --rev cd597e705 dora-cli --locked
 dora --version             # warns if CLI and python API revs drift
 
 uv run pytest -m unit                            # fast, no sim (~547 tests)
