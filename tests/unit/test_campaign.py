@@ -642,3 +642,64 @@ def test_run_session_spawns_with_the_isolated_env(tmp_path):
     log = (out / "session.jsonl").read_text().splitlines()
     assert log[0] == str(out / "agent_home")
     assert log[1] == str(out / "agent_home" / ".claude")
+
+
+def test_resume_refuses_pre_isolation_records(tmp_path):
+    """PR #98 review P1: existing (pre-#96) campaign records hold
+    UNISOLATED sessions; resuming them with the isolated runner would
+    mix two treatments in one aggregate. The isolation policy is resume
+    identity — old records (no session_isolation_policy key) fail
+    closed."""
+    import campaign as c
+
+    current = c.campaign_treatment("claude", "m", "abc", "0..4", "100..103")
+    assert current["session_isolation_policy"] == "isolated-home-v1"
+    prior = {k: current[k] for k in c.TREATMENT_IDENTITY}
+    del prior["session_isolation_policy"]  # a pre-#98 record
+    (tmp_path / "campaign.json").write_text(json.dumps({"treatment": prior, "sessions": []}))
+    with pytest.raises(SystemExit) as exc:
+        c.load_existing(tmp_path, current)
+    refusal = json.loads(str(exc.value))
+    assert refusal["ok"] is False and "session_isolation_policy" in refusal["error"]
+
+
+def test_isolated_home_is_fresh_on_reuse(tmp_path):
+    """PR #98 review P2: an aborted attempt's agent_home must not leak
+    into the next launch — an occupied home rotates aside (audit
+    preserved) and the new session starts from an EMPTY scratch."""
+    import campaign as c
+
+    out = tmp_path / "session_00"
+    env1, _ = c.isolated_session_env(out)
+    stale = Path(env1["CLAUDE_CONFIG_DIR"]) / "memory.md"
+    stale.write_text("aborted-attempt state")
+    env2, rec2 = c.isolated_session_env(out)
+    assert env2["HOME"] == env1["HOME"]  # same canonical path...
+    assert not (Path(env2["CLAUDE_CONFIG_DIR"]) / "memory.md").exists()  # ...fresh content
+    assert rec2["rotated_prior_home"] == str(out / "agent_home-superseded1")
+    assert (out / "agent_home-superseded1" / ".claude" / "memory.md").read_text() == (
+        "aborted-attempt state"
+    )
+
+
+def test_h2_launcher_probes_auth_before_any_side_effect(tmp_path, monkeypatch, capsys):
+    """PR #98 review P1: the generic campaign launcher must refuse on a
+    failed isolated-env auth probe BEFORE creating the worktree or the
+    session directory — never start a metered session."""
+    import sys as _sys
+
+    import campaign as c
+
+    monkeypatch.setattr(c, "probe_agent_auth", lambda *a, **k: "auth probe exited 1: no creds")
+    monkeypatch.setattr(
+        _sys,
+        "argv",
+        ["campaign.py", "--agent", "claude", "--out", str(tmp_path / "h2")],
+    )
+    rc = c.main()
+    assert rc == 1
+    refusal = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert refusal["ok"] is False and "auth probe" in refusal["error"]
+    out = tmp_path / "h2"
+    assert not (out / "worktree").exists()
+    assert not any(p.name.startswith("session_") for p in out.iterdir())

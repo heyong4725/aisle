@@ -203,10 +203,22 @@ def campaign_treatment(
             "stdin": "devnull",
             "confinement": "none (ADR-h2 point 5)",
         },
+        # issue #96 / PR #98 review: the isolation policy is part of the
+        # treatment — resuming an unisolated (pre-#98) campaign with an
+        # isolated runner would mix two treatments in one record. Old
+        # records carry no key (None) and fail the resume identity check.
+        "session_isolation_policy": "isolated-home-v1",
     }
 
 
-TREATMENT_IDENTITY = ("commit", "agent", "model", "dev_seeds", "holdout_seeds")
+TREATMENT_IDENTITY = (
+    "commit",
+    "agent",
+    "model",
+    "dev_seeds",
+    "holdout_seeds",
+    "session_isolation_policy",
+)
 
 
 def agent_cmd_campaign(agent: str, model: str, prompt: str) -> list[str]:
@@ -380,12 +392,26 @@ def isolated_session_env(out: Path) -> tuple[dict, dict]:
     this env and refuse the campaign on failure (fail closed), never
     silently fall back to the operator home."""
     home = out / "agent_home"
+    rotated = None
+    if home.exists():
+        # PR #98 review P2: an aborted attempt leaves state in agent_home
+        # (H2 reuses session_XX on resume; the auth-probe dir is fixed) —
+        # "per-session scratch" must be FRESH every launch. Rotate the
+        # occupied home aside, preserving abort artifacts for audit.
+        n = 1
+        while (dest := out / f"agent_home-superseded{n}").exists():
+            n += 1
+        home.rename(dest)
+        rotated = str(dest)
     config = home / ".claude"
     config.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["HOME"] = str(home)
     env["CLAUDE_CONFIG_DIR"] = str(config)
-    return env, {"home": str(home), "claude_config_dir": str(config)}
+    record = {"home": str(home), "claude_config_dir": str(config)}
+    if rotated:
+        record["rotated_prior_home"] = rotated
+    return env, record
 
 
 def probe_agent_auth(agent: str, model: str, env: dict, cwd: Path) -> str | None:
@@ -615,6 +641,16 @@ def main() -> int:
     sessions = (existing or {}).get("sessions", [])
     prior_tokens = sum(s["tokens"] for s in sessions)
     prior_wall_s = sum(s["wall_s"] for s in sessions)
+
+    # issue #96 fail-closed (PR #98 review P1): probe auth under the
+    # ISOLATED env before ANY side effect — worktree creation, session
+    # dir, budget spend. An empty home that breaks credentials must
+    # refuse here with CON-8 JSON, never start a metered session.
+    probe_env, _ = isolated_session_env(args.out / "auth_probe")
+    probe_error = probe_agent_auth(args.agent, model, probe_env, args.out)
+    if probe_error:
+        print(json.dumps({"ok": False, "error": probe_error}))
+        return 1
 
     wt = args.out / "worktree"
     if not wt.exists():
