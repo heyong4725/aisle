@@ -104,7 +104,20 @@ def load_campaign(campaign_dir: Path) -> dict:
             rec = json.loads(path.read_text())
         except json.JSONDecodeError as exc:
             raise ValueError(f"malformed scenario record {path}: {exc}") from exc
-        rec["_token_samples"] = _samples(path.parent / "token_samples.jsonl")
+        tokens_path = path.parent / "token_samples.jsonl"
+        rec["_token_samples"] = _samples(tokens_path)
+        # session-start evidence for metric re-derivation (PR #90 review
+        # 1): the token sampler dies with the session, so its file mtime
+        # minus the last sample's wall_s IS the session start. (The
+        # scenario record's mtime is NOT session end — the runner
+        # finalizes it after the multi-hour holdout.) The bundle persists
+        # session_start_epoch: a copied file's own mtime is meaningless.
+        start = rec.get("session_start_epoch")
+        if start is None and rec["_token_samples"] and tokens_path.exists():
+            last_wall = rec["_token_samples"][-1].get("wall_s")
+            if last_wall:
+                start = tokens_path.stat().st_mtime - last_wall
+        rec["_session_start"] = start
         if (rec.get("arm"), rec.get("tier"), rec.get("attempt", 1)) in leaked:
             rec["_residue_leak"] = True
         _enrich_rollouts(rec, campaign_dir)
@@ -229,6 +242,7 @@ def cell(rec: dict, commit: str | None = None) -> dict:
     session = rec.get("session") or {}
     rollouts = rec.get("rollouts") or []
     flags = []
+    first_success_rederived = False
     if rec.get("arm") == "W" and rec.get("prior_skills"):
         # the WIPED arm saw prior-scenario state (campaign-2 leak). The
         # bias direction is NOT established (PR #59 review) — exclusion
@@ -271,14 +285,20 @@ def cell(rec: dict, commit: str | None = None) -> dict:
         # different commit, or trusted against a baseline other than the
         # pin, broke the pinned-treatment invariant (ADR-h3: one pinned
         # OID, no mid-campaign repo updates)
+        half_annotated = False
         for r in rollouts:
             if "_lineage_ok" in r or "_anchor_ok" in r:
                 # ratified ancestry+content semantics (2026-08-05): agent-
                 # only pin descendants are the treatment; drift is post-pin
-                # origin/main history or a content-unequal trust anchor
+                # origin/main history or a content-unequal trust anchor.
+                # BOTH halves must be definitively derived (PR #90 review
+                # 3): a half-annotated entry is neither clean nor drifted —
+                # it fails closed below as provenance_missing
                 if r.get("_lineage_ok") is False or r.get("_anchor_ok") is False:
                     flags.append("treatment_drift")
                     break
+                if not (r.get("_lineage_ok") is True and r.get("_anchor_ok") is True):
+                    half_annotated = True
                 continue
             sha, oid = r.get("git_sha"), r.get("env_baseline_oid")
             if (sha is not None and sha != commit) or (oid is not None and oid != commit):
@@ -288,16 +308,49 @@ def cell(rec: dict, commit: str | None = None) -> dict:
         # recorded or resolvable provenance cannot prove the
         # pinned-treatment invariant — absence of evidence is not
         # admissibility, so the cell leaves the verdict like any flag
-        if any(
+        if half_annotated or any(
             "git_sha" not in r
             for r in rollouts
             if not str(r.get("run_id") or "").startswith(HOLDOUT_RUN_PREFIX)
         ):
             flags.append("provenance_missing")
+        # unattested_env (PR #90 review 2, owner-ratified 2026-08-05):
+        # attestation is judged by the PIN's protocol — a pre-ADR-24 pin
+        # cannot emit env_attested, so null/missing is grandfathered; an
+        # EXPLICIT env_attested=False is a failed attestation, fail closed
+        if any(r.get("env_attested") is False for r in rollouts):
+            flags.append("unattested_env")
         # unattested_metric (PR #76 review): the rollout that supplies
         # first-success must be a trusted-baseline run at the pin — a
         # local/unattested skill-eval success is not an admissible
         # verdict metric (protocol point 2)
+        trusted_dev_successes = [
+            r
+            for r in rollouts
+            if (r.get("pass1") or 0) > 0
+            and not str(r.get("run_id") or "").startswith(HOLDOUT_RUN_PREFIX)
+            and r.get("_lineage_ok") is True
+            and r.get("_anchor_ok") is True
+            and r.get("env_baseline") == "origin/main"
+        ]
+        if first is None and trusted_dev_successes:
+            # PR #90 review 1 (owner-ratified semantics): the runner's
+            # superseded strict rule discarded these successes and nulled
+            # the metric — re-derive from primary timing evidence
+            # (earliest success-manifest mtime minus the session start =
+            # scenario-record mtime minus session wall) or fail closed
+            start = rec.get("_session_start")
+            wall = (session or {}).get("wall_s")
+            success_mtime = min(r.get("mtime") or 0 for r in trusted_dev_successes)
+            derived = (success_mtime - start) if (start and success_mtime) else None
+            if derived is not None and wall and 0 < derived <= wall:
+                # plausibility guard: a first success outside (0, wall]
+                # means the timing evidence is wrong — fail closed rather
+                # than fabricate a metric
+                first = derived
+                first_success_rederived = True
+            else:
+                flags.append("metric_inconsistent")
         if first is not None:
             dev_successes = [
                 r
@@ -347,6 +400,7 @@ def cell(rec: dict, commit: str | None = None) -> dict:
         "tokens": session.get("tokens"),
         "wall_s": session.get("wall_s"),
         "first_success_wall_s": first,
+        "first_success_rederived": first_success_rederived,
         "tokens_to_first_success": _tokens_at(rec.get("_token_samples") or [], first),
         "wrong_object_total": rec.get("wrong_object_total"),
         "skills_after": rec.get("skills_after"),

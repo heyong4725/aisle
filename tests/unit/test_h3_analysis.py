@@ -608,3 +608,92 @@ def test_annotated_lineage_and_anchor_override_legacy_drift():
     ]
     c = cell(bad, "abc123")
     assert "treatment_drift" in c["flags"]
+
+
+def test_partial_annotations_fail_closed():
+    """PR #90 review 3: the annotated path requires BOTH lineage and
+    anchor definitively derived — a half-annotated rollout (git answered
+    one question, not the other) must not bypass drift detection; it
+    flags provenance_missing."""
+    rec = record("L", "S3", first_success=None)
+    rec["rollouts"] = [
+        {
+            "run_id": "dev-half-annotated",
+            "git_sha": "abc123",
+            "env_baseline": "origin/main",
+            "env_baseline_oid": "DRIFT",
+            "_lineage_ok": True,  # anchor never resolved
+        },
+    ]
+    c = cell(rec, "abc123")
+    assert "provenance_missing" in c["flags"]
+    assert "treatment_drift" not in c["flags"]  # not asserted clean either — excluded
+
+
+def test_rederived_first_success_used_when_recorded_is_stale(tmp_path):
+    """PR #90 review 1 (owner-ratified semantics): a cell whose clean DEV
+    rollouts contain successes but whose recorded first_success is null
+    (the runner's superseded strict rule discarded them) re-derives the
+    metric from primary timing evidence — min success-manifest mtime
+    minus the session start (scenario mtime - session wall) — and the
+    verdict uses it. Without re-derivable evidence the cell flags
+    metric_inconsistent (fail closed)."""
+    rec = record("L", "S3", first_success=None)
+    rec["session"] = {"stopped": "agent_done", "rc": 0, "tokens": 1000, "wall_s": 1000.0}
+    rec["rollouts"] = [
+        {
+            "run_id": "dev-success",
+            "mtime": 5400.0,
+            "episodes": 4,
+            "pass1": 1.0,
+            "git_sha": "abc123",
+            "env_baseline": "origin/main",
+            "env_baseline_oid": None,
+            "_lineage_ok": True,
+            "_anchor_ok": True,
+        },
+        {"run_id": "campaign-holdout-L-S3", "mtime": 6000.0, "episodes": 8, "pass1": 0.0},
+    ]
+    # session start 5000 (token-sampler evidence), success at 5400 ->
+    # first success ~400 s, inside (0, wall]
+    rec["_session_start"] = 5000.0
+    c = cell(rec, "abc123")
+    assert c["first_success_wall_s"] == pytest.approx(400.0, abs=1.0)
+    assert "metric_inconsistent" not in c["flags"]
+
+    # no session-start evidence -> fail closed
+    bare = record("L", "S3", first_success=None)
+    bare["rollouts"] = list(rec["rollouts"])
+    c = cell(bare, "abc123")
+    assert "metric_inconsistent" in c["flags"]
+
+    # implausible derivation (success before the derived start) -> fail
+    # closed, never a fabricated 0.0 metric
+    weird = record("L", "S3", first_success=None)
+    weird["session"] = {"stopped": "agent_done", "rc": 0, "tokens": 1, "wall_s": 1000.0}
+    weird["rollouts"] = list(rec["rollouts"])
+    weird["_session_start"] = 9000.0  # after the success mtime 5400
+    c = cell(weird, "abc123")
+    assert "metric_inconsistent" in c["flags"]
+    assert c["first_success_wall_s"] is None
+
+
+def test_explicit_failed_attestation_flags_unattested_env():
+    """PR #90 review 2, owner-ratified 2026-08-05: attestation is judged
+    by the PIN's protocol (grandfather-by-pin — a pre-ADR-24 pin cannot
+    emit env_attested and null/missing is NOT a flag), but an EXPLICIT
+    env_attested=False is a failed attestation and fails closed."""
+    rec = record("L", "S3", first_success=None)
+    rec["rollouts"] = [
+        {
+            "run_id": "dev-failed-attest",
+            "git_sha": "abc123",
+            "env_baseline": "origin/main",
+            "env_baseline_oid": None,
+            "env_attested": False,
+            "_lineage_ok": True,
+            "_anchor_ok": True,
+        },
+    ]
+    c = cell(rec, "abc123")
+    assert "unattested_env" in c["flags"]
