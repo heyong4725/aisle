@@ -250,20 +250,40 @@ def registered_skill_ids(wt: Path) -> set[str]:
 
 
 def host_dora_runtime() -> dict:
-    """The host dora CLI/daemon is part of the treatment (PR #90 review:
-    a committed frozen hash cannot see an external executable change —
-    attempt 3's post-#85 CLI made an otherwise-clean cell inadmissible).
-    Record `dora --version` verbatim; the CLI's own pair-drift warning
-    (stderr, CLI rev != pinned python-API rev) is runtime_drift evidence."""
+    """CONTENT identity of the host dora CLI (PR #90 review round 4).
+    The CLI/daemon is part of the treatment — a committed frozen hash
+    cannot see an external executable change, and `dora --version`
+    cannot either: it prints only CARGO_PKG_VERSION (7eb4a5f8b and
+    cd597e705, the exact mismatch that invalidated S3-r3, BOTH report
+    1.0.0-rc.4) and never inspects the pinned python API. The binary's
+    sha256 is the trustworthy build artifact — any source or toolchain
+    change moves it; the semver line is recorded for humans only."""
+    path = shutil.which("dora")
+    if path is None:
+        return {"path": None, "sha256": None, "version": None, "error": "dora CLI not on PATH"}
+    resolved = str(Path(path).resolve())
     try:
-        proc = subprocess.run(["dora", "--version"], capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return {"version": None, "error": str(exc)}
-    info: dict = {"version": proc.stdout.strip() or None}
-    warning = proc.stderr.strip()
-    if proc.returncode != 0 or warning:
-        info["warning"] = warning[:500] or f"exit {proc.returncode}"
-    return info
+        digest = hashlib.sha256(Path(resolved).read_bytes()).hexdigest()
+    except OSError as exc:
+        return {"path": resolved, "sha256": None, "version": None, "error": str(exc)}
+    try:
+        proc = subprocess.run([resolved, "--version"], capture_output=True, text=True, timeout=30)
+        version = proc.stdout.strip() or None
+    except (OSError, subprocess.TimeoutExpired):
+        version = None
+    return {"path": resolved, "sha256": digest, "version": version}
+
+
+def runtime_drift_check(launch: dict, current: dict) -> dict | None:
+    """Non-None iff the scenario's preflight CLI identity fails to prove
+    it is the launch-captured binary. Fail closed: an UNRESOLVED identity
+    is drift, and an equal semver is never sameness (round-4 review —
+    two source revisions shared 1.0.0-rc.4)."""
+    if not launch.get("sha256") or not current.get("sha256"):
+        return {"launch": launch, "found": current, "reason": "unresolved CLI identity"}
+    if current["sha256"] != launch["sha256"]:
+        return {"launch": launch, "found": current, "reason": "CLI binary changed mid-campaign"}
+    return None
 
 
 def run_scenario(
@@ -275,6 +295,7 @@ def run_scenario(
     agent: str,
     model: str,
     attempt: int = 1,
+    launch_runtime: dict | None = None,
 ) -> dict:
     tier = scenario["tier"]
     slot = scenario_slot(tier, attempt)
@@ -283,6 +304,10 @@ def run_scenario(
     if rotated is not None:
         print(f"[h3] occupied slot rotated to {rotated.name}", file=sys.stderr)
     session_dir.mkdir(parents=True, exist_ok=True)
+    # PREFLIGHT runtime identity (round-4 review: a post-scenario capture
+    # guards nothing) — the scenario runs only against the launch binary
+    runtime = host_dora_runtime()
+    rt_drift = runtime_drift_check(launch_runtime, runtime) if launch_runtime else None
     prior_skills = registered_skill_ids(wt)
     prompt = campaign_prompt(tier, scenario["tokens"], scenario["wall_h"], DEV_SEEDS, note=NUDGE)
     t0 = time.time()
@@ -309,7 +334,6 @@ def run_scenario(
     worktree_head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True, text=True
     ).stdout.strip()
-    runtime = host_dora_runtime()
     record = {
         "arm": arm,
         "tier": tier,
@@ -329,10 +353,10 @@ def run_scenario(
         "skill_reuse_in_deliverable": reuse,
         "host_dora_cli": runtime,
     }
-    if runtime.get("warning") or runtime.get("error"):
-        # the analyzer flags any truthy runtime_drift; a clean version
-        # capture records the runtime without flagging
-        record["runtime_drift"] = runtime
+    if rt_drift is not None:
+        # fail closed: the analyzer excludes any cell carrying a truthy
+        # runtime_drift, and main() turns it into a non-OK campaign
+        record["runtime_drift"] = rt_drift
     (session_dir / "scenario.json").write_text(json.dumps(record, indent=1))
     return record
 
@@ -350,6 +374,13 @@ def main() -> int:
         default=1,
         help="rerun counter: >1 writes S<t>-rN scenario dirs and holdout "
         "run ids, leaving flagged originals in place (PR #57 review)",
+    )
+    parser.add_argument(
+        "--expect-dora-sha256",
+        default=None,
+        help="sha256 of the pin-era dora CLI binary (cargo-installed at "
+        "the campaign rev); a different or unresolved host CLI refuses "
+        "to launch (ADR-h3 amendment §5, PR #90 round 4)",
     )
     args = parser.parse_args()
 
@@ -369,6 +400,27 @@ def main() -> int:
     # orchestrator — record its identity so treatment-policy changes
     # (wipe/guard semantics) are visible in every campaign record
     treatment["h3_runner_sha256"] = h3_runner_identity()
+    # runtime identity preflight (PR #90 round 4): the treatment includes
+    # the host dora CLI as a CONTENT identity — an unresolved binary, or
+    # one that differs from the operator-supplied pin-era hash, refuses
+    # to launch rather than running a doomed treatment
+    launch_runtime = host_dora_runtime()
+    if not launch_runtime.get("sha256"):
+        print(json.dumps({"ok": False, "error": f"unresolved dora CLI identity: {launch_runtime}"}))
+        return 1
+    if args.expect_dora_sha256 and launch_runtime["sha256"] != args.expect_dora_sha256:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "dora CLI is not the pin-era binary",
+                    "expected_sha256": args.expect_dora_sha256,
+                    "found": launch_runtime,
+                }
+            )
+        )
+        return 1
+    treatment["host_dora_cli"] = launch_runtime
     arms = [a for a in ARMS if a in args.arms.split(",")]
     tiers = [s["tier"] for s in SCENARIOS if s["tier"] in args.scenarios.split(",")]
     unknown = (set(args.arms.split(",")) - set(ARMS)) | (
@@ -427,7 +479,17 @@ def main() -> int:
             print(f"[h3] arm {arm} {scenario['tier']} starting", file=sys.stderr)
             try:
                 records.append(
-                    run_scenario(wt, oid, arm, scaled, args.out, agent, model, args.attempt)
+                    run_scenario(
+                        wt,
+                        oid,
+                        arm,
+                        scaled,
+                        args.out,
+                        agent,
+                        model,
+                        args.attempt,
+                        launch_runtime=launch_runtime,
+                    )
                 )
             except Exception as exc:  # noqa: BLE001 — protocol point 8
                 # infra abort: keep prior records, attribute, stop the run
@@ -440,7 +502,10 @@ def main() -> int:
                 )
                 print(json.dumps({"ok": False, "error": f"infra abort: {exc!r}"}))
                 return 1
-    ok = all(not r.get("frozen_drift") for r in records)
+    # non-OK on frozen drift AND on runtime drift (PR #90 round 4): a
+    # scenario that ran against a different CLI binary is not a clean
+    # campaign result even though its record was written
+    ok = all(not r.get("frozen_drift") and not r.get("runtime_drift") for r in records)
     results_path.write_text(
         json.dumps({"ok": ok, "treatment": treatment, "records": records, "wipes": wipes}, indent=1)
     )

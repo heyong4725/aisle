@@ -14,12 +14,14 @@ to the strict sha/oid != pin rule), provenance_missing (a DEV rollout
 whose provenance is neither recorded nor resolvable from the campaign
 worktree's run manifests — fail closed, never clean-by-absence), and
 unattested_metric (first-success supplied by a rollout that is not a
-trusted-baseline run at the pin), and runtime_drift (the record carries
-evidence that the HOST dora runtime — CLI/daemon, an executable no
-committed frozen hash can see — differed from the pin-era runtime;
-recorded by the runner's `dora --version` capture, or a disclosed
-evidence-cited bundle augmentation for records predating the capture)
-each flag a cell, and ONLY unflagged cells enter the verdict. Records from different campaigns
+trusted-baseline run at the pin), and runtime_drift (the HOST dora
+runtime — CLI/daemon, an executable no committed frozen hash can see —
+differed from the campaign's: either explicit evidence on the record
+(runner preflight mismatch, or a disclosed evidence-cited bundle
+augmentation for records predating the capture), or a recorded binary
+sha256 differing from the campaign's launch identity — CONTENT, never
+a version string, since dora revisions share semvers) each flag a
+cell, and ONLY unflagged cells enter the verdict. Records from different campaigns
 (commit/agent/model/seeds) refuse to combine. CON-8: single JSON object
 on stdout, exit 0 iff ok — missing or malformed input fails closed.
 """
@@ -127,7 +129,24 @@ def load_campaign(campaign_dir: Path) -> dict:
         _enrich_rollouts(rec, campaign_dir)
         _annotate_provenance(rec, campaign_dir, base.get("commit"))
         records.append(rec)
-    return {"treatment": {k: base.get(k) for k in IDENTITY_KEYS}, "records": records}
+    # the campaign's runtime CONTENT identity (PR #90 round 4): semver
+    # cannot distinguish dora source revisions (two revs shared
+    # 1.0.0-rc.4), so the baseline is the binary sha256 the earliest
+    # invocation recorded — treatments first (launch capture), then the
+    # earliest record. Records recorded before the capture existed carry
+    # no sha and stay judged by explicit runtime_drift evidence alone.
+    runtime_baseline = next(
+        (sha for _, t in treatments if (sha := (t.get("host_dora_cli") or {}).get("sha256"))),
+        None,
+    ) or next(
+        (sha for r in records if (sha := (r.get("host_dora_cli") or {}).get("sha256"))),
+        None,
+    )
+    return {
+        "treatment": {k: base.get(k) for k in IDENTITY_KEYS},
+        "records": records,
+        "runtime_baseline": runtime_baseline,
+    }
 
 
 def _enrich_rollouts(rec: dict, campaign_dir: Path) -> None:
@@ -236,7 +255,7 @@ def _tokens_at(samples: list[dict], wall_s: float | None) -> int | None:
     return samples[-1].get("tokens") if samples else None
 
 
-def cell(rec: dict, commit: str | None = None) -> dict:
+def cell(rec: dict, commit: str | None = None, runtime_baseline: str | None = None) -> dict:
     """One table cell per (arm, tier, attempt), with integrity flags
     derived from the record itself — never hand-annotated. `commit` is
     the treatment pin: with it, rollout provenance (recorded by
@@ -254,12 +273,20 @@ def cell(rec: dict, commit: str | None = None) -> dict:
         flags.append("wipe_leak")
     if rec.get("frozen_drift"):
         flags.append("frozen_drift")
-    if rec.get("runtime_drift"):
+    rec_runtime_sha = (rec.get("host_dora_cli") or {}).get("sha256")
+    if rec.get("runtime_drift") or (
+        runtime_baseline is not None
+        and rec_runtime_sha is not None
+        and rec_runtime_sha != runtime_baseline
+    ):
         # the host dora CLI/daemon is part of the treatment (PR #90
         # review 3): S3-r3 ran the post-#85 CLI against the pin-era
         # python API — a one-arm environment confound the frozen-tree
-        # hash cannot detect. The field carries its own evidence
-        # (runner `dora --version` warning, or a disclosed augmentation)
+        # hash cannot detect. Drift is either explicit evidence on the
+        # record (runner preflight mismatch, or a disclosed augmentation)
+        # or a recorded binary sha256 that differs from the campaign's
+        # launch identity (round 4: semver cannot distinguish revisions,
+        # so the comparison is CONTENT, never a version string)
         flags.append("runtime_drift")
     # held-out episodes actually EXECUTED (the H5 exposure denominator):
     # from the holdout scoring run's own rollout entry — a cell whose
@@ -534,7 +561,10 @@ def main() -> int:
     except ValueError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
         return 1
-    cells = [cell(r, campaign["treatment"].get("commit")) for r in campaign["records"]]
+    cells = [
+        cell(r, campaign["treatment"].get("commit"), campaign.get("runtime_baseline"))
+        for r in campaign["records"]
+    ]
     verdict = h3_verdict(cells)
     if args.markdown:
         args.markdown.write_text(results_markdown(cells, verdict))

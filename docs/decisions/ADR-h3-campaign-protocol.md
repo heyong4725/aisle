@@ -257,12 +257,21 @@ implements exactly these, fail-closed:
    executable: attempt 3 ran the post-#85 CLI/daemon (`cd597e705`)
    against the pin-era python API (`7eb4a5f8b`), an environment change
    on one arm mid-contrast — the cell is flagged `runtime_drift` and
-   excluded, reverting S3 to undecided. Going forward the runner
-   records `dora --version` (`host_dora_cli`) in every scenario record
-   and flags a CLI/API pair-drift warning as `runtime_drift`; any
-   future attempt at THIS pin must cargo-install the CLI at the pin's
-   rev (`7eb4a5f8b`) into an isolated prefix. Older records without a
-   runtime capture are judged by external evidence where it exists
+   excluded, reverting S3 to undecided. Runtime identity is CONTENT,
+   never a version string (round-4 review: dora's version output is
+   only CARGO_PKG_VERSION — `7eb4a5f8b` and `cd597e705` both report
+   `1.0.0-rc.4`, and the CLI never inspects the pinned python API).
+   Going forward the runner records the resolved CLI binary's sha256
+   (`host_dora_cli`) in the treatment at launch and per scenario at
+   PREFLIGHT: launching against an unresolved binary — or one that
+   differs from the operator-supplied pin-era hash
+   (`--expect-dora-sha256`) — refuses; a mid-campaign change of binary
+   records `runtime_drift` and makes the campaign non-OK; and the
+   analyzer flags any record whose recorded sha differs from the
+   campaign's launch identity. Any future attempt at THIS pin must
+   cargo-install the CLI at the pin's rev (`7eb4a5f8b`) into an
+   isolated prefix and pass its hash at launch. Older records without
+   a runtime capture are judged by external evidence where it exists
    (S3-r3's disclosed augmentation) and are otherwise grandfathered —
    all pre-#85 cells shared one runtime era.
 6. **Mid-cell merges to origin/main are a protocol violation** even

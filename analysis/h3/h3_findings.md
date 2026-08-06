@@ -48,9 +48,11 @@ provenance under the ratified ancestry+content semantics,
 `provenance_missing` failing closed where provenance is neither
 recorded nor resolvable, `metric_inconsistent` failing closed where
 an admissible success exists but its timing cannot be re-derived, and
-`runtime_drift` from recorded host-runtime evidence (the runner now
-captures `dora --version`; S3-r3 carries a disclosed evidence-cited
-augmentation, its runner predating the capture). The
+`runtime_drift` from host-runtime identity — binary CONTENT (sha256),
+never a version string, since dora revisions share semvers (the runner
+now captures the resolved CLI hash at launch and per-scenario
+preflight; S3-r3 carries a disclosed evidence-cited augmentation, its
+runner predating the capture). The
 bundle carries the five aggregates, per-cell `scenario.json` +
 `token_samples.jsonl`, and the one cited dev-evidence file.
 
@@ -94,8 +96,9 @@ Flag provenance in brief (each exclusion's story):
   run completion, and process handling. A one-arm environment
   confound; the frozen-tree hash structurally cannot detect an
   external executable change, so the record carries a disclosed
-  evidence-cited augmentation and the runner now records
-  `dora --version` in every future scenario record.
+  evidence-cited augmentation, and the runner now records the CLI
+  binary's sha256 at launch and per-scenario preflight (content
+  identity — version strings prove nothing, ADR-h3 amendment §5).
 
 ## Attempt 3 (2026-08-05) — protocol-compliant on repo state, inadmissible on runtime
 
@@ -210,8 +213,12 @@ scoring window (infra partial).
   campaign OID (issue #91). All three violations happened in this
   campaign; only the frozen-hash content-equality accident kept
   attempt 3's repo provenance alive, and nothing could save its
-  runtime. The runner now records `dora --version` per scenario
-  (ADR-h3 amendment §5).
+  runtime. The runner now records the CLI binary's sha256 at launch
+  and per-scenario preflight, refuses to launch against a binary that
+  is unresolved or differs from the operator-supplied pin-era hash,
+  and a mid-campaign binary change makes the campaign non-OK (ADR-h3
+  amendment §5; version strings prove nothing — two dora revisions
+  shared 1.0.0-rc.4).
 - Analyzer integrity is fail-closed end to end: absence of provenance,
   a half-derived annotation, an explicit failed attestation, an
   un-re-derivable metric, or recorded runtime drift each exclude a

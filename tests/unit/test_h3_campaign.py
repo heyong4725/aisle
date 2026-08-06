@@ -554,3 +554,50 @@ def test_h3_runner_identity_is_the_orchestrator_hash():
 
     expected = _hashlib.sha256((REPO_ROOT / "tools" / "h3_campaign.py").read_bytes()).hexdigest()
     assert h3_runner_identity() == expected
+
+
+def _fake_dora(tmp_path, name, body_comment):
+    """An executable printing the SAME semver as real dora builds do, with
+    binary content varied via a comment — equal version, different sha."""
+    d = tmp_path / name
+    d.mkdir()
+    exe = d / "dora"
+    exe.write_text(f"#!/bin/sh\n# {body_comment}\necho 'dora-cli 1.0.0-rc.4'\n")
+    exe.chmod(0o755)
+    return d
+
+
+def test_equal_semver_different_binary_is_runtime_drift(tmp_path, monkeypatch):
+    """PR #90 round 4: dora's build_version_string() is only
+    CARGO_PKG_VERSION — 7eb4a5f8b and cd597e705 BOTH report 1.0.0-rc.4,
+    so a version string can never prove runtime identity. Two builds
+    with the SAME semver but different content must yield different
+    sha256 identities, and runtime_drift_check must flag the pair."""
+    from h3_campaign import host_dora_runtime, runtime_drift_check
+
+    monkeypatch.setenv("PATH", str(_fake_dora(tmp_path, "pin_era", "rev 7eb4a5f8b")))
+    launch = host_dora_runtime()
+    monkeypatch.setenv("PATH", str(_fake_dora(tmp_path, "post_85", "rev cd597e705")))
+    current = host_dora_runtime()
+
+    assert launch["version"] == current["version"] == "dora-cli 1.0.0-rc.4"
+    assert launch["sha256"] and current["sha256"]
+    assert launch["sha256"] != current["sha256"]
+    drift = runtime_drift_check(launch, current)
+    assert drift is not None and drift["reason"] == "CLI binary changed mid-campaign"
+    # the same binary re-captured is NOT drift
+    assert runtime_drift_check(launch, dict(launch)) is None
+
+
+def test_unresolved_cli_identity_fails_closed(tmp_path, monkeypatch):
+    """A missing or unhashable CLI cannot prove the treatment runtime:
+    launch preflight refuses (main returns non-OK) and the per-scenario
+    check reports drift rather than assuming cleanliness."""
+    from h3_campaign import host_dora_runtime, runtime_drift_check
+
+    monkeypatch.setenv("PATH", str(tmp_path))  # no dora anywhere
+    missing = host_dora_runtime()
+    assert missing["sha256"] is None
+    good = {"path": "/x/dora", "sha256": "a" * 64, "version": "dora-cli 1.0.0-rc.4"}
+    assert runtime_drift_check(good, missing)["reason"] == "unresolved CLI identity"
+    assert runtime_drift_check(missing, good)["reason"] == "unresolved CLI identity"

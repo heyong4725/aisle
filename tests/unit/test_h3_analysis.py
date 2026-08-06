@@ -716,3 +716,20 @@ def test_runtime_drift_evidence_excludes_the_cell():
     v = h3_verdict([cell(clean, "abc123"), c])
     assert "S3" not in v["per_tier"]  # one-arm tier: undecided, not True
     assert v["met"] is None
+
+
+def test_runtime_content_identity_overrides_equal_semver():
+    """PR #90 round 4: the runtime comparison is binary CONTENT, never a
+    version string — two builds sharing 1.0.0-rc.4 with different sha256
+    must flag, an equal sha must not, and a record predating the capture
+    (no sha) stays judged by explicit evidence alone (grandfathered)."""
+    baseline = "a" * 64
+    same = record("W", "S3", first_success=None, pass1=0.0)
+    same["host_dora_cli"] = {"sha256": baseline, "version": "dora-cli 1.0.0-rc.4"}
+    changed = record("L", "S3", first_success=100.0, pass1=0.0)
+    changed["host_dora_cli"] = {"sha256": "b" * 64, "version": "dora-cli 1.0.0-rc.4"}
+    legacy = record("L", "S2", first_success=None, pass1=0.0)  # no capture
+
+    assert "runtime_drift" not in cell(same, "abc123", baseline)["flags"]
+    assert "runtime_drift" in cell(changed, "abc123", baseline)["flags"]
+    assert "runtime_drift" not in cell(legacy, "abc123", baseline)["flags"]
