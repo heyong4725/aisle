@@ -613,6 +613,8 @@ def test_isolated_session_env_points_home_at_scratch(tmp_path):
     assert rec == {
         "home": env["HOME"],
         "claude_config_dir": env["CLAUDE_CONFIG_DIR"],
+        "codex_home": env["CODEX_HOME"],
+        "xdg_rebound": True,
     }
 
 
@@ -703,3 +705,21 @@ def test_h2_launcher_probes_auth_before_any_side_effect(tmp_path, monkeypatch, c
     out = tmp_path / "h2"
     assert not (out / "worktree").exists()
     assert not any(p.name.startswith("session_") for p in out.iterdir())
+
+
+def test_isolation_pins_agent_home_overrides(tmp_path, monkeypatch):
+    """PR #98 review round 2: an operator-exported CODEX_HOME (or XDG
+    base dir) bypasses the HOME rebind — codex resolves its home from
+    CODEX_HOME first. Every such override must be pinned into the
+    scratch home, never inherited."""
+    import campaign as c
+
+    monkeypatch.setenv("CODEX_HOME", "/Users/operator/.codex")
+    monkeypatch.setenv("XDG_CONFIG_HOME", "/Users/operator/.config")
+    env, rec = c.isolated_session_env(tmp_path / "out")
+    scratch = tmp_path / "out" / "agent_home"
+    assert env["CODEX_HOME"] == str(scratch / ".codex")
+    assert Path(env["CODEX_HOME"]).is_dir() and not any(Path(env["CODEX_HOME"]).iterdir())
+    for var in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
+        assert env[var].startswith(str(scratch)), var
+    assert rec["codex_home"] == str(scratch / ".codex")

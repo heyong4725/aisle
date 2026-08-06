@@ -405,10 +405,26 @@ def isolated_session_env(out: Path) -> tuple[dict, dict]:
         rotated = str(dest)
     config = home / ".claude"
     config.mkdir(parents=True, exist_ok=True)
+    codex_home = home / ".codex"
+    codex_home.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["HOME"] = str(home)
     env["CLAUDE_CONFIG_DIR"] = str(config)
-    record = {"home": str(home), "claude_config_dir": str(config)}
+    # PR #98 review round 2: agent CLIs honor explicit home overrides
+    # that BYPASS the HOME rebind — an operator-exported CODEX_HOME (or
+    # XDG_* base dirs) would expose the operator's directories despite
+    # the isolation record. Pin every such override into the scratch.
+    env["CODEX_HOME"] = str(codex_home)
+    env["XDG_CONFIG_HOME"] = str(home / ".config")
+    env["XDG_DATA_HOME"] = str(home / ".local" / "share")
+    env["XDG_CACHE_HOME"] = str(home / ".cache")
+    env["XDG_STATE_HOME"] = str(home / ".local" / "state")
+    record = {
+        "home": str(home),
+        "claude_config_dir": str(config),
+        "codex_home": str(codex_home),
+        "xdg_rebound": True,
+    }
     if rotated:
         record["rotated_prior_home"] = rotated
     return env, record
