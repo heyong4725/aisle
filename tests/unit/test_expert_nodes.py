@@ -64,6 +64,17 @@ class TestGraspTopdown:
         assert rot[:, 2] == pytest.approx([0.0, 0.0, -1.0], abs=1e-6)  # flange z down
         assert yaw_of(quat) == pytest.approx(HAND_MOUNT_YAW, abs=1e-6)
         assert finger_yaw_of(quat) == pytest.approx(0.0, abs=1e-6)
+        # the two orientation builders must agree for every yaw — grasp
+        # (quat) and place/transfer (matrix) paths share the convention.
+        # The PHYSICAL offset itself is gated by the Genesis measurement
+        # in tests/sim/test_hand_mount.py (PR #93 review: these algebraic
+        # relations alone hold for any HAND_MOUNT_YAW value)
+        from aisle.nodes.ik_trajectory import topdown_rotation
+
+        for yaw in (0.0, 0.5, np.pi / 2, -1.2):
+            assert quat_to_rotation(topdown_quat(yaw)) == pytest.approx(
+                topdown_rotation(yaw), abs=1e-9
+            )
 
     def test_grasp_at_top_section_with_yaw(self):
         """CAP-5 grasp-planner-topdown: TCP at the box's TOP section

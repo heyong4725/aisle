@@ -84,6 +84,26 @@ def test_pick_and_place_stages_solve_for_an_l1_slot():
     assert err is None, err
     assert [s.name for s in placed] == ["unwind", "transfer", "lower", "release", "clear", "home"]
     assert placed[2].gripper == 1.0 and placed[3].gripper == 0.0  # open only when lowered
+    # PR #93 review: the unwound flange rotation must EQUAL the transfer
+    # target (the J7 spin carries the hand-mount offset) — a mismatch
+    # makes the loaded transfer absorb the residual rotation, the exact
+    # carried-box creep the neutral unwind exists to prevent
+    import numpy as np
+
+    from aisle.nodes.budget_guard import fk_flange
+    from aisle.nodes.ik_trajectory import HAND_MOUNT_YAW, topdown_rotation
+
+    unwound_rot = fk_flange(np.asarray(placed[0].path[-1], dtype=np.float64))[1]
+    for residual in (0.0, math.pi, -math.pi):
+        if np.allclose(topdown_rotation(residual), unwound_rot, atol=5e-3):
+            break
+    else:
+        angle = None
+        for residual in (0.0, math.pi):
+            r = topdown_rotation(residual) @ unwound_rot.T
+            angle = math.degrees(math.acos(max(-1.0, min(1.0, (np.trace(r) - 1) / 2))))
+        raise AssertionError(f"unwound flange is {angle:.1f} deg from every place target")
+    assert HAND_MOUNT_YAW != 0.0  # the offset the unwind must carry
 
 
 def test_pick_solves_across_the_nav_tolerance_envelope():

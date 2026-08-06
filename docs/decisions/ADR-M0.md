@@ -1,6 +1,8 @@
 # ADR-M0 — Milestone M0 sign-off (SPEC 090, M0-6)
 
-Status: PENDING HUMAN SIGN-OFF (owner: @heyong4725).
+Status: SIGNED 2026-07-21 (option (a), M0-5 deferred); RE-AFFIRMED on
+fresh evidence 2026-08-06 (option C, PR #93 — see the re-sign section).
+Owner: @heyong4725.
 
 This record is completed by the repo owner, not by an agent (CON-7,
 M0-6). Agents may update the evidence table; only the owner fills the
@@ -10,12 +12,12 @@ verdict.
 
 | Gate | Requirement | Result | Evidence |
 |------|-------------|--------|----------|
-| M0-1 | pass1 >= 0.95, 50 eps, seeds 0..49, macOS-arm64 | PASS: pass1 0.980 (49/50) on final head 3644a50 | runs/m0-1-final |
-| M0-2 | identical per-episode status vector on re-run | PASS: identical (seed, status) vector; both pass1 0.980 | runs/m0-2-final (vs m0-1-final) |
+| M0-1 | pass1 >= 0.95, 50 eps, seeds 0..49, macOS-arm64 | PASS: 0.980 (49/50) at sign-off (runs/m0-1-final, head 3644a50); re-affirmed 0.980 (m0-1-9be87d, PR #93 head) | runs/m0-1-final; runs/m0-1-9be87d |
+| M0-2 | AMENDED (PR #88, ADR-26): the rerun independently satisfies M0-1's pass1 >= 0.95; goals bit-identical sans reset_sim_ns | PASS: 49/50 + 49/50, zero per-seed flips (m0_2_replicate.json) | runs/m0-2-116720 (vs m0-1-9be87d); original: runs/m0-2-final |
 | M0-3 | committed env hash checks; mutation refuses rollout | authored | tests/accept/test_m0_gate.py::test_m0_3_mutated_frozen_file_refuses_rollout |
 | M0-4 | trace_check --strict --specs 000-080 green | PASS | tests/unit/test_process_rules.py (CON-10/11/14/15 waivers retired) |
 | M0-5 | so101 profile swap, pass1 >= 0.80 | BLOCKED — needs OWNER DECISION (see below) | tests/accept/test_m0_gate.py::test_m0_5_so101_profile_swap_pass1_at_least_80 (skip-marked) |
-| M0-6 | this sign-off + frozen-set label | pending | — |
+| M0-6 | this sign-off + frozen-set label | SIGNED 2026-07-21 (option (a)); re-affirmed 2026-08-06 | Owner verdict + re-affirmation below |
 
 ## M0-5 — owner decision required (does not have an agent-side resolution)
 
@@ -95,6 +97,8 @@ Findings the re-sign surfaced, on the record:
 
 ### Owner re-affirmation
 
-- [ ] M0 re-affirmed on the fresh evidence above (merge of this PR
-  ratifies; M0-5 remains deferred per the original option (a))
-- Date / signature: ____ — @heyong4725
+- [x] M0 re-affirmed on the fresh evidence above (M0-5 remains
+  deferred per the original option (a))
+- Date / signature: 2026-08-06 — @heyong4725 (option C chosen in
+  session 2026-08-05; merge of PR #93 ratifies, as PR #12's merge did
+  for the original sign-off)
