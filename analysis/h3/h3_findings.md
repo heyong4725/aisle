@@ -50,9 +50,10 @@ recorded nor resolvable, `metric_inconsistent` failing closed where
 an admissible success exists but its timing cannot be re-derived, and
 `runtime_drift` from host-runtime identity — binary CONTENT (sha256),
 never a version string, since dora revisions share semvers (the runner
-now captures the resolved CLI hash at launch and per-scenario
-preflight; S3-r3 carries a disclosed evidence-cited augmentation, its
-runner predating the capture). The
+now requires the operator's pin-era hash at launch and brackets every
+scenario with preflight/post-session/post-holdout captures; S3-r3
+carries a disclosed evidence-cited augmentation, its runner predating
+the capture). The
 bundle carries the five aggregates, per-cell `scenario.json` +
 `token_samples.jsonl`, and the one cited dev-evidence file.
 
@@ -213,12 +214,12 @@ scoring window (infra partial).
   campaign OID (issue #91). All three violations happened in this
   campaign; only the frozen-hash content-equality accident kept
   attempt 3's repo provenance alive, and nothing could save its
-  runtime. The runner now records the CLI binary's sha256 at launch
-  and per-scenario preflight, refuses to launch against a binary that
-  is unresolved or differs from the operator-supplied pin-era hash,
-  and a mid-campaign binary change makes the campaign non-OK (ADR-h3
-  amendment §5; version strings prove nothing — two dora revisions
-  shared 1.0.0-rc.4).
+  runtime. The runner now REQUIRES the operator's pin-era CLI hash at
+  launch, refuses an unresolved or different binary, and brackets
+  every scenario with preflight/post-session/post-holdout sha256
+  captures — any mismatch makes the campaign non-OK (ADR-h3 amendment
+  §5; version strings prove nothing — two dora revisions shared
+  1.0.0-rc.4).
 - Analyzer integrity is fail-closed end to end: absence of provenance,
   a half-derived annotation, an explicit failed attestation, an
   un-re-derivable metric, or recorded runtime drift each exclude a

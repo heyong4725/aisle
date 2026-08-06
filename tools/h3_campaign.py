@@ -304,10 +304,14 @@ def run_scenario(
     if rotated is not None:
         print(f"[h3] occupied slot rotated to {rotated.name}", file=sys.stderr)
     session_dir.mkdir(parents=True, exist_ok=True)
-    # PREFLIGHT runtime identity (round-4 review: a post-scenario capture
-    # guards nothing) — the scenario runs only against the launch binary
+    # BRACKETING runtime identity (round-5 review: preflight alone leaves
+    # the multi-hour session and holdout windows unguarded) — captured
+    # before the session, after it (before holdout scoring), and after
+    # holdout; every capture must match the launch binary
     runtime = host_dora_runtime()
-    rt_drift = runtime_drift_check(launch_runtime, runtime) if launch_runtime else None
+    rt_baseline = launch_runtime or runtime
+    rechecks: dict[str, dict] = {}
+    rt_drift = runtime_drift_check(rt_baseline, runtime)
     prior_skills = registered_skill_ids(wt)
     prompt = campaign_prompt(tier, scenario["tokens"], scenario["wall_h"], DEV_SEEDS, note=NUDGE)
     t0 = time.time()
@@ -324,9 +328,13 @@ def run_scenario(
         },
     )
     sweep_worktree(wt)
+    rechecks["post_session"] = host_dora_runtime()
+    rt_drift = rt_drift or runtime_drift_check(rt_baseline, rechecks["post_session"])
     drift = audit_frozen(wt, oid)
     holdout = score_holdout(wt, HOLDOUT_SEEDS, f"{arm}-{slot}", tier)
     sweep_worktree(wt)
+    rechecks["post_holdout"] = host_dora_runtime()
+    rt_drift = rt_drift or runtime_drift_check(rt_baseline, rechecks["post_holdout"])
     # since=t0 scopes EVERY aggregate to this scenario (PR #48 review:
     # unscoped first_success/wrong_object contaminated the H3 headline)
     metrics = campaign_metrics(wt, session_t0=t0, since=t0, pin=oid)
@@ -352,6 +360,7 @@ def run_scenario(
         "skills_after": sorted(registered_skill_ids(wt)),
         "skill_reuse_in_deliverable": reuse,
         "host_dora_cli": runtime,
+        "host_dora_cli_rechecks": rechecks,
     }
     if rt_drift is not None:
         # fail closed: the analyzer excludes any cell carrying a truthy
@@ -377,16 +386,28 @@ def main() -> int:
     )
     parser.add_argument(
         "--expect-dora-sha256",
-        default=None,
-        help="sha256 of the pin-era dora CLI binary (cargo-installed at "
-        "the campaign rev); a different or unresolved host CLI refuses "
-        "to launch (ADR-h3 amendment §5, PR #90 round 4)",
+        required=True,
+        help="sha256 of the pin-era dora CLI binary — the operator's "
+        "assertion that the host CLI matches the campaign pin (cargo-"
+        "install at the pin rev, then `shasum -a 256 $(which dora)`). "
+        "REQUIRED: an optional expectation let the S3-r3 mismatch class "
+        "self-certify clean (PR #90 round 5); a different or unresolved "
+        "host CLI refuses to launch (ADR-h3 amendment §5)",
     )
     args = parser.parse_args()
 
     error = validate_seed_ranges(DEV_SEEDS, HOLDOUT_SEEDS)
     if error:
         print(json.dumps({"ok": False, "error": error}))
+        return 1
+    arms = [a for a in ARMS if a in args.arms.split(",")]
+    tiers = [s["tier"] for s in SCENARIOS if s["tier"] in args.scenarios.split(",")]
+    unknown = (set(args.arms.split(",")) - set(ARMS)) | (
+        set(args.scenarios.split(",")) - {s["tier"] for s in SCENARIOS}
+    )
+    if unknown or not arms or not tiers:
+        # a typo must refuse, not exit 0 with an empty "campaign" (PR #48)
+        print(json.dumps({"ok": False, "error": f"bad selection: {sorted(unknown)}"}))
         return 1
     agent, model = "claude", DEFAULT_MODELS["claude"]  # D1
     args.out = args.out.resolve()
@@ -408,7 +429,7 @@ def main() -> int:
     if not launch_runtime.get("sha256"):
         print(json.dumps({"ok": False, "error": f"unresolved dora CLI identity: {launch_runtime}"}))
         return 1
-    if args.expect_dora_sha256 and launch_runtime["sha256"] != args.expect_dora_sha256:
+    if launch_runtime["sha256"] != args.expect_dora_sha256:
         print(
             json.dumps(
                 {
@@ -421,15 +442,6 @@ def main() -> int:
         )
         return 1
     treatment["host_dora_cli"] = launch_runtime
-    arms = [a for a in ARMS if a in args.arms.split(",")]
-    tiers = [s["tier"] for s in SCENARIOS if s["tier"] in args.scenarios.split(",")]
-    unknown = (set(args.arms.split(",")) - set(ARMS)) | (
-        set(args.scenarios.split(",")) - {s["tier"] for s in SCENARIOS}
-    )
-    if unknown or not arms or not tiers:
-        # a typo must refuse, not exit 0 with an empty "campaign" (PR #48)
-        print(json.dumps({"ok": False, "error": f"bad selection: {sorted(unknown)}"}))
-        return 1
     # a RERUN must never clobber the campaign's primary record
     # (self-review of PR #57: --attempt 2 would have overwritten
     # h3_results.json with the 2-record rerun output)

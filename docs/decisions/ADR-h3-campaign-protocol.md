@@ -262,12 +262,16 @@ implements exactly these, fail-closed:
    only CARGO_PKG_VERSION — `7eb4a5f8b` and `cd597e705` both report
    `1.0.0-rc.4`, and the CLI never inspects the pinned python API).
    Going forward the runner records the resolved CLI binary's sha256
-   (`host_dora_cli`) in the treatment at launch and per scenario at
-   PREFLIGHT: launching against an unresolved binary — or one that
-   differs from the operator-supplied pin-era hash
-   (`--expect-dora-sha256`) — refuses; a mid-campaign change of binary
-   records `runtime_drift` and makes the campaign non-OK; and the
-   analyzer flags any record whose recorded sha differs from the
+   (`host_dora_cli`) in the treatment at launch and BRACKETS every
+   scenario — preflight, post-session (before holdout scoring), and
+   post-holdout captures (round 5: preflight alone left the multi-hour
+   session and holdout windows unguarded). The operator's pin-era hash
+   assertion (`--expect-dora-sha256`) is REQUIRED — an optional
+   expectation let the S3-r3 mismatch class self-certify clean — and
+   launching against an unresolved or different binary refuses; any
+   capture differing from the launch identity records `runtime_drift`
+   and makes the campaign non-OK; and the analyzer flags any record
+   whose recorded shas (preflight or rechecks) differ from the
    campaign's launch identity. Any future attempt at THIS pin must
    cargo-install the CLI at the pin's rev (`7eb4a5f8b`) into an
    isolated prefix and pass its hash at launch. Older records without

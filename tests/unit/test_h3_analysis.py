@@ -733,3 +733,21 @@ def test_runtime_content_identity_overrides_equal_semver():
     assert "runtime_drift" not in cell(same, "abc123", baseline)["flags"]
     assert "runtime_drift" in cell(changed, "abc123", baseline)["flags"]
     assert "runtime_drift" not in cell(legacy, "abc123", baseline)["flags"]
+
+
+def test_runtime_recheck_captures_are_compared_too():
+    """PR #90 round 5: preflight alone leaves the session and holdout
+    windows unguarded — the runner brackets each scenario with
+    post-session and post-holdout captures, and a recheck sha that
+    differs from the campaign baseline flags the cell even when the
+    preflight matched."""
+    baseline = "a" * 64
+    rec = record("L", "S3", first_success=None, pass1=0.0)
+    rec["host_dora_cli"] = {"sha256": baseline}
+    rec["host_dora_cli_rechecks"] = {
+        "post_session": {"sha256": "b" * 64},  # rebuilt mid-scenario
+        "post_holdout": {"sha256": baseline},
+    }
+    assert "runtime_drift" in cell(rec, "abc123", baseline)["flags"]
+    rec["host_dora_cli_rechecks"]["post_session"]["sha256"] = baseline
+    assert "runtime_drift" not in cell(rec, "abc123", baseline)["flags"]

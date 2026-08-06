@@ -320,7 +320,14 @@ def test_selection_typos_refuse():
     import subprocess as sp
 
     proc = sp.run(
-        [sys.executable, str(REPO_ROOT / "tools" / "h3_campaign.py"), "--arms", "w"],
+        [
+            sys.executable,
+            str(REPO_ROOT / "tools" / "h3_campaign.py"),
+            "--arms",
+            "w",
+            "--expect-dora-sha256",
+            "0" * 64,
+        ],
         capture_output=True,
         text=True,
     )
@@ -601,3 +608,49 @@ def test_unresolved_cli_identity_fails_closed(tmp_path, monkeypatch):
     good = {"path": "/x/dora", "sha256": "a" * 64, "version": "dora-cli 1.0.0-rc.4"}
     assert runtime_drift_check(good, missing)["reason"] == "unresolved CLI identity"
     assert runtime_drift_check(missing, good)["reason"] == "unresolved CLI identity"
+
+
+def test_launch_requires_and_enforces_the_pin_era_hash(tmp_path, monkeypatch):
+    """PR #90 round 5: an OPTIONAL expectation let the S3-r3 mismatch
+    class self-certify clean — the operator's pin-era hash assertion is
+    now REQUIRED, and launching against a different binary refuses with
+    a CON-8 error before any scenario work."""
+    import json as _json
+    import os
+
+    fake = _fake_dora(tmp_path, "host", "rev cd597e705")
+    env = {**os.environ, "PATH": f"{fake}:/usr/bin:/bin"}
+    script = str(REPO_ROOT / "tools" / "h3_campaign.py")
+
+    # missing --expect-dora-sha256: argparse refuses outright
+    missing = subprocess.run(
+        [sys.executable, script, "--arms", "W", "--scenarios", "S1"],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=tmp_path,
+    )
+    assert missing.returncode != 0
+    assert "--expect-dora-sha256" in missing.stderr
+
+    # wrong hash: refuses with the CON-8 error object, exit nonzero
+    wrong = subprocess.run(
+        [
+            sys.executable,
+            script,
+            "--arms",
+            "W",
+            "--scenarios",
+            "S1",
+            "--expect-dora-sha256",
+            "f" * 64,
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=tmp_path,
+    )
+    assert wrong.returncode != 0
+    out = _json.loads(wrong.stdout)
+    assert out["ok"] is False and "pin-era" in out["error"]
+    assert out["found"]["sha256"] and out["found"]["sha256"] != "f" * 64

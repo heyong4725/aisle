@@ -273,11 +273,16 @@ def cell(rec: dict, commit: str | None = None, runtime_baseline: str | None = No
         flags.append("wipe_leak")
     if rec.get("frozen_drift"):
         flags.append("frozen_drift")
-    rec_runtime_sha = (rec.get("host_dora_cli") or {}).get("sha256")
+    rec_runtime_shas = {
+        sha
+        for src in [
+            rec.get("host_dora_cli") or {},
+            *(rec.get("host_dora_cli_rechecks") or {}).values(),
+        ]
+        if (sha := src.get("sha256"))
+    }
     if rec.get("runtime_drift") or (
-        runtime_baseline is not None
-        and rec_runtime_sha is not None
-        and rec_runtime_sha != runtime_baseline
+        runtime_baseline is not None and any(sha != runtime_baseline for sha in rec_runtime_shas)
     ):
         # the host dora CLI/daemon is part of the treatment (PR #90
         # review 3): S3-r3 ran the post-#85 CLI against the pin-era
