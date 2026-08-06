@@ -1,6 +1,7 @@
 """Unit tests for tools/h3_campaign.py (ADR-h3-campaign-protocol,
 accepted; H3). Pure orchestrator logic — no sim, no agent CLIs."""
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -548,6 +549,55 @@ def test_keep_ref_snapshot_preserves_untracked_residue(tmp_path):
         text=True,
     )
     assert recovered.returncode == 0 and "the removed residue" in recovered.stdout
+
+
+def test_keep_ref_snapshot_needs_no_ambient_git_identity(tmp_path, monkeypatch):
+    """The snapshot commit must not depend on the operator's git config.
+    `git commit-tree` requires a committer identity, so on a host with no
+    global config -- a CI runner, a fresh clone -- it exited 128 and the
+    wipe lost the residue evidence the keep-ref exists to preserve. Passing
+    an explicit machinery identity makes the snapshot host-independent.
+
+    Reproduces the failure by hiding the global and system git config
+    rather than by trusting the test host to have none.
+    """
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
+    monkeypatch.delenv("EMAIL", raising=False)
+
+    wt, oid = _mini_repo(tmp_path)
+    (wt / "graphs" / "agent_campaign.yaml").write_text("nodes: [residue]\n")
+
+    # PR #82 review: environment variables OUTRANK `-c` config — seed
+    # HOSTILE ambient identity AFTER the fixture repo is built (a
+    # conflicting name, an EMPTY author name that crashes commit-tree
+    # despite -c) instead of only deleting variables, and assert the
+    # recorded identity is the machinery's
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "")
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "operator@example.com")
+    monkeypatch.setenv("GIT_COMMITTER_NAME", "Ambient Operator")
+    monkeypatch.setenv("GIT_COMMITTER_EMAIL", "operator@example.com")
+
+    report = wipe_library(wt, oid, keep_ref="h3/keep-W-pre-S2")
+
+    assert report["detached_from"]
+    recovered = subprocess.run(
+        ["git", "show", "h3/keep-W-pre-S2:graphs/agent_campaign.yaml"],
+        cwd=wt,
+        capture_output=True,
+        text=True,
+    )
+    assert recovered.returncode == 0 and "residue" in recovered.stdout
+    ident = subprocess.run(
+        ["git", "log", "-1", "--format=%an <%ae>|%cn <%ce>", "h3/keep-W-pre-S2"],
+        cwd=wt,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert ident == (
+        "aisle-h3-campaign <h3-campaign@aisle.invalid>|"
+        "aisle-h3-campaign <h3-campaign@aisle.invalid>"
+    )
 
 
 def test_h3_runner_identity_is_the_orchestrator_hash():
