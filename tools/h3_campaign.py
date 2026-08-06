@@ -33,6 +33,8 @@ from campaign import (  # noqa: E402
     campaign_metrics,
     campaign_prompt,
     campaign_treatment,
+    isolated_session_env,
+    probe_agent_auth,
     resolve_commit,
     run_session,
     score_holdout,
@@ -322,6 +324,9 @@ def run_scenario(
     session_dir.mkdir(parents=True, exist_ok=True)
     prior_skills = registered_skill_ids(wt)
     prompt = campaign_prompt(tier, scenario["tokens"], scenario["wall_h"], DEV_SEEDS, note=NUDGE)
+    # issue #96: the session runs under an isolated home — operator
+    # memory/config is not a treatment channel; recorded per scenario
+    session_env, session_isolation = isolated_session_env(session_dir)
     t0 = time.time()
     session = run_session(
         agent,
@@ -334,6 +339,7 @@ def run_scenario(
             "token_ceiling": scenario["tokens"],
             "wall_ceiling_s": scenario["wall_h"] * 3600.0,
         },
+        env=session_env,
     )
     sweep_worktree(wt)
     rechecks["post_session"] = host_dora_runtime()
@@ -369,6 +375,7 @@ def run_scenario(
         "skill_reuse_in_deliverable": reuse,
         "host_dora_cli": runtime,
         "host_dora_cli_rechecks": rechecks,
+        "session_isolation": session_isolation,
     }
     if rt_drift is not None:
         # fail closed: the analyzer excludes any cell carrying a truthy
@@ -464,6 +471,17 @@ def main() -> int:
         )
         return 1
     treatment["host_dora_cli"] = launch_runtime
+    # issue #96 fail-closed: verify the agent can authenticate under the
+    # ISOLATED home before any scenario spends budget — credential
+    # stores keyed off the operator HOME break under isolation, and a
+    # silent fallback to the operator home would reopen the memory
+    # channel the isolation exists to close
+    probe_env, _ = isolated_session_env(args.out / "auth_probe")
+    probe_error = probe_agent_auth(agent, model, probe_env, args.out)
+    if probe_error:
+        print(json.dumps({"ok": False, "error": probe_error}))
+        return 1
+    treatment["session_isolation"] = {"home_isolated": True, "auth_probe": "passed"}
     # a RERUN must never clobber the campaign's primary record
     # (self-review of PR #57: --attempt 2 would have overwritten
     # h3_results.json with the 2-record rerun output)

@@ -591,3 +591,135 @@ def test_sweep_worktree_kills_only_worktree_processes(tmp_path):
         for p in (p_in, p_out):
             if p.poll() is None:
                 p.kill()
+
+
+def test_isolated_session_env_points_home_at_scratch(tmp_path):
+    """Issue #96: campaign sessions must not inherit the operator's
+    config/home — the S3-r3 agent read ~/.claude memory (annotated
+    transcript event [21]). The isolation env rebinds HOME and
+    CLAUDE_CONFIG_DIR to a per-session scratch home and returns a
+    record of both, without mutating the parent environment."""
+    import os
+
+    import campaign as c
+
+    before_home = os.environ.get("HOME")
+    env, rec = c.isolated_session_env(tmp_path / "out")
+    assert env["HOME"] == str(tmp_path / "out" / "agent_home")
+    assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path / "out" / "agent_home" / ".claude")
+    assert Path(env["CLAUDE_CONFIG_DIR"]).is_dir()  # created, empty
+    assert not any(Path(env["CLAUDE_CONFIG_DIR"]).iterdir())
+    assert os.environ.get("HOME") == before_home  # parent untouched
+    assert rec == {
+        "home": env["HOME"],
+        "claude_config_dir": env["CLAUDE_CONFIG_DIR"],
+        "codex_home": env["CODEX_HOME"],
+        "xdg_rebound": True,
+    }
+
+
+def test_run_session_spawns_with_the_isolated_env(tmp_path):
+    """The session subprocess must SEE the isolation (issue #96) — a
+    child that prints its HOME/CLAUDE_CONFIG_DIR proves the env reached
+    the spawn, not just the record."""
+    import campaign as c
+
+    out = tmp_path / "out"
+    out.mkdir()
+    env, _ = c.isolated_session_env(out)
+    probe = "import os; print(os.environ['HOME']); print(os.environ['CLAUDE_CONFIG_DIR'])"
+    c.run_session(
+        "claude",
+        [sys.executable, "-u", "-c", probe],
+        tmp_path,
+        out,
+        {
+            "prior_tokens": 0,
+            "prior_wall_s": 0.0,
+            "token_ceiling": 10_000,
+            "wall_ceiling_s": 30.0,
+        },
+        env=env,
+    )
+    log = (out / "session.jsonl").read_text().splitlines()
+    assert log[0] == str(out / "agent_home")
+    assert log[1] == str(out / "agent_home" / ".claude")
+
+
+def test_resume_refuses_pre_isolation_records(tmp_path):
+    """PR #98 review P1: existing (pre-#96) campaign records hold
+    UNISOLATED sessions; resuming them with the isolated runner would
+    mix two treatments in one aggregate. The isolation policy is resume
+    identity — old records (no session_isolation_policy key) fail
+    closed."""
+    import campaign as c
+
+    current = c.campaign_treatment("claude", "m", "abc", "0..4", "100..103")
+    assert current["session_isolation_policy"] == "isolated-home-v1"
+    prior = {k: current[k] for k in c.TREATMENT_IDENTITY}
+    del prior["session_isolation_policy"]  # a pre-#98 record
+    (tmp_path / "campaign.json").write_text(json.dumps({"treatment": prior, "sessions": []}))
+    with pytest.raises(SystemExit) as exc:
+        c.load_existing(tmp_path, current)
+    refusal = json.loads(str(exc.value))
+    assert refusal["ok"] is False and "session_isolation_policy" in refusal["error"]
+
+
+def test_isolated_home_is_fresh_on_reuse(tmp_path):
+    """PR #98 review P2: an aborted attempt's agent_home must not leak
+    into the next launch — an occupied home rotates aside (audit
+    preserved) and the new session starts from an EMPTY scratch."""
+    import campaign as c
+
+    out = tmp_path / "session_00"
+    env1, _ = c.isolated_session_env(out)
+    stale = Path(env1["CLAUDE_CONFIG_DIR"]) / "memory.md"
+    stale.write_text("aborted-attempt state")
+    env2, rec2 = c.isolated_session_env(out)
+    assert env2["HOME"] == env1["HOME"]  # same canonical path...
+    assert not (Path(env2["CLAUDE_CONFIG_DIR"]) / "memory.md").exists()  # ...fresh content
+    assert rec2["rotated_prior_home"] == str(out / "agent_home-superseded1")
+    assert (out / "agent_home-superseded1" / ".claude" / "memory.md").read_text() == (
+        "aborted-attempt state"
+    )
+
+
+def test_h2_launcher_probes_auth_before_any_side_effect(tmp_path, monkeypatch, capsys):
+    """PR #98 review P1: the generic campaign launcher must refuse on a
+    failed isolated-env auth probe BEFORE creating the worktree or the
+    session directory — never start a metered session."""
+    import sys as _sys
+
+    import campaign as c
+
+    monkeypatch.setattr(c, "probe_agent_auth", lambda *a, **k: "auth probe exited 1: no creds")
+    monkeypatch.setattr(
+        _sys,
+        "argv",
+        ["campaign.py", "--agent", "claude", "--out", str(tmp_path / "h2")],
+    )
+    rc = c.main()
+    assert rc == 1
+    refusal = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert refusal["ok"] is False and "auth probe" in refusal["error"]
+    out = tmp_path / "h2"
+    assert not (out / "worktree").exists()
+    assert not any(p.name.startswith("session_") for p in out.iterdir())
+
+
+def test_isolation_pins_agent_home_overrides(tmp_path, monkeypatch):
+    """PR #98 review round 2: an operator-exported CODEX_HOME (or XDG
+    base dir) bypasses the HOME rebind — codex resolves its home from
+    CODEX_HOME first. Every such override must be pinned into the
+    scratch home, never inherited."""
+    import campaign as c
+
+    monkeypatch.setenv("CODEX_HOME", "/Users/operator/.codex")
+    monkeypatch.setenv("XDG_CONFIG_HOME", "/Users/operator/.config")
+    env, rec = c.isolated_session_env(tmp_path / "out")
+    scratch = tmp_path / "out" / "agent_home"
+    assert env["CODEX_HOME"] == str(scratch / ".codex")
+    assert Path(env["CODEX_HOME"]).is_dir() and not any(Path(env["CODEX_HOME"]).iterdir())
+    for var in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
+        assert env[var].startswith(str(scratch)), var
+    assert rec["codex_home"] == str(scratch / ".codex")
