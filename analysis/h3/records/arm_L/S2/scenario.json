@@ -33,12 +33,18 @@
    "run_id": "campaign-holdout-L-S2",
    "mtime": 1785359123.0344713,
    "episodes": 8,
-   "pass1": 0.0
+   "pass1": 0.0,
+   "git_sha": "bf6b1ed1f8277442e308f6affb0cc0ba376fc145",
+   "env_baseline": "local",
+   "env_baseline_oid": null,
+   "_lineage_ok": false,
+   "_anchor_ok": true
   }
  ],
  "prior_skills": [],
  "skills_after": [
   "s1-driver-v2"
  ],
- "skill_reuse_in_deliverable": []
+ "skill_reuse_in_deliverable": [],
+ "session_start_epoch": 1785353518.506943
 }

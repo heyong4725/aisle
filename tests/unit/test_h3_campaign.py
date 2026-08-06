@@ -320,7 +320,14 @@ def test_selection_typos_refuse():
     import subprocess as sp
 
     proc = sp.run(
-        [sys.executable, str(REPO_ROOT / "tools" / "h3_campaign.py"), "--arms", "w"],
+        [
+            sys.executable,
+            str(REPO_ROOT / "tools" / "h3_campaign.py"),
+            "--arms",
+            "w",
+            "--expect-dora-sha256",
+            "0" * 64,
+        ],
         capture_output=True,
         text=True,
     )
@@ -554,3 +561,125 @@ def test_h3_runner_identity_is_the_orchestrator_hash():
 
     expected = _hashlib.sha256((REPO_ROOT / "tools" / "h3_campaign.py").read_bytes()).hexdigest()
     assert h3_runner_identity() == expected
+
+
+def _fake_dora(tmp_path, name, body_comment):
+    """An executable printing the SAME semver as real dora builds do, with
+    binary content varied via a comment — equal version, different sha."""
+    d = tmp_path / name
+    d.mkdir()
+    exe = d / "dora"
+    exe.write_text(f"#!/bin/sh\n# {body_comment}\necho 'dora-cli 1.0.0-rc.4'\n")
+    exe.chmod(0o755)
+    return d
+
+
+def test_equal_semver_different_binary_is_runtime_drift(tmp_path, monkeypatch):
+    """PR #90 round 4: dora's build_version_string() is only
+    CARGO_PKG_VERSION — 7eb4a5f8b and cd597e705 BOTH report 1.0.0-rc.4,
+    so a version string can never prove runtime identity. Two builds
+    with the SAME semver but different content must yield different
+    sha256 identities, and runtime_drift_check must flag the pair."""
+    from h3_campaign import host_dora_runtime, runtime_drift_check
+
+    monkeypatch.setenv("PATH", str(_fake_dora(tmp_path, "pin_era", "rev 7eb4a5f8b")))
+    launch = host_dora_runtime()
+    monkeypatch.setenv("PATH", str(_fake_dora(tmp_path, "post_85", "rev cd597e705")))
+    current = host_dora_runtime()
+
+    assert launch["version"] == current["version"] == "dora-cli 1.0.0-rc.4"
+    assert launch["sha256"] and current["sha256"]
+    assert launch["sha256"] != current["sha256"]
+    drift = runtime_drift_check(launch, current)
+    assert drift is not None and drift["reason"] == "CLI binary changed mid-campaign"
+    # the same binary re-captured is NOT drift
+    assert runtime_drift_check(launch, dict(launch)) is None
+
+
+def test_unresolved_cli_identity_fails_closed(tmp_path, monkeypatch):
+    """A missing or unhashable CLI cannot prove the treatment runtime:
+    launch preflight refuses (main returns non-OK) and the per-scenario
+    check reports drift rather than assuming cleanliness."""
+    from h3_campaign import host_dora_runtime, runtime_drift_check
+
+    monkeypatch.setenv("PATH", str(tmp_path))  # no dora anywhere
+    missing = host_dora_runtime()
+    assert missing["sha256"] is None
+    good = {"path": "/x/dora", "sha256": "a" * 64, "version": "dora-cli 1.0.0-rc.4"}
+    assert runtime_drift_check(good, missing)["reason"] == "unresolved CLI identity"
+    assert runtime_drift_check(missing, good)["reason"] == "unresolved CLI identity"
+
+
+def test_launch_requires_and_enforces_the_pin_era_hash(tmp_path, monkeypatch):
+    """PR #90 round 5: an OPTIONAL expectation let the S3-r3 mismatch
+    class self-certify clean — the operator's pin-era hash assertion is
+    now REQUIRED, and launching against a different binary refuses with
+    a CON-8 error before any scenario work."""
+    import json as _json
+    import os
+
+    fake = _fake_dora(tmp_path, "host", "rev cd597e705")
+    env = {**os.environ, "PATH": f"{fake}:/usr/bin:/bin"}
+    script = str(REPO_ROOT / "tools" / "h3_campaign.py")
+
+    # missing --expect-dora-sha256: a CON-8 JSON refusal on stdout,
+    # exit nonzero — NOT an argparse usage error on stderr (round 6)
+    missing = subprocess.run(
+        [sys.executable, script, "--arms", "W", "--scenarios", "S1"],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=tmp_path,
+    )
+    assert missing.returncode != 0
+    refusal = _json.loads(missing.stdout)
+    assert refusal["ok"] is False and "--expect-dora-sha256" in refusal["error"]
+
+    # wrong hash: refuses with the CON-8 error object, exit nonzero
+    wrong = subprocess.run(
+        [
+            sys.executable,
+            script,
+            "--arms",
+            "W",
+            "--scenarios",
+            "S1",
+            "--expect-dora-sha256",
+            "f" * 64,
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=tmp_path,
+    )
+    assert wrong.returncode != 0
+    out = _json.loads(wrong.stdout)
+    assert out["ok"] is False and "pin-era" in out["error"]
+    assert out["found"]["sha256"] and out["found"]["sha256"] != "f" * 64
+
+
+def test_preflight_runtime_mismatch_refuses_before_the_session(tmp_path, monkeypatch):
+    """PR #90 round 6: a DETECTED preflight mismatch must abort before
+    the multi-hour session spends its budget — never record-and-run."""
+    import h3_campaign as h3
+
+    monkeypatch.setenv("PATH", str(_fake_dora(tmp_path, "drifted", "rev cd597e705")))
+
+    def session_must_not_launch(*a, **kw):
+        raise AssertionError("run_session launched despite preflight runtime drift")
+
+    monkeypatch.setattr(h3, "run_session", session_must_not_launch)
+    launch = {"path": "/pin/dora", "sha256": "a" * 64, "version": "dora-cli 1.0.0-rc.4"}
+    with pytest.raises(RuntimeError, match="runtime drift at scenario preflight"):
+        h3.run_scenario(
+            tmp_path,
+            "deadbeef",
+            "W",
+            {"tier": "S1", "tokens": 1000, "episodes": 8, "wall_h": 1.0},
+            tmp_path / "out",
+            "claude",
+            "m",
+            launch_runtime=launch,
+        )
+    # refused before ANY scenario side effect: no slot dir was created
+    assert not (tmp_path / "out").exists()

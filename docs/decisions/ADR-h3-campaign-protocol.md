@@ -215,3 +215,71 @@ alter arm-L treatment semantics and the audit surface:
    orchestrator's own hash) so these policy changes are visible in every
    campaign record; existing aggregates are backed up (`-prevN`) before
    a partial-arm invocation writes.
+
+## Amendment (analysis, PR #90): admissibility semantics, owner-ratified 2026-08-05
+
+The final-analysis round surfaced rules the original protocol left
+implicit or got wrong. Each was ratified by the owner during the PR #90
+review and is durable protocol from here on — `tools/h3_analysis.py`
+implements exactly these, fail-closed:
+
+1. **Treatment drift is ancestry + content, not one strict OID.** The
+   pin's `git_sha`-equality rule misread the treatment: the agent's own
+   commits on top of the pin ARE the treatment (an agent that authors
+   skills necessarily moves its worktree HEAD). Drift is (a) post-pin
+   origin/main history in the rollout's sha (merge-base against
+   origin/main ≠ pin), or (b) a trust anchor whose COMMITTED frozen
+   hash (`tools/env_hash.json` at the anchor ref) differs from the
+   pin's. Rollouts recorded before annotation fall back to the strict
+   sha/oid rule.
+2. **Provenance fails closed.** A dev rollout whose provenance is
+   neither recorded nor resolvable from the campaign worktree's run
+   manifests — or whose lineage/anchor annotation is only half
+   derivable — excludes its cell (`provenance_missing`). Absence of
+   evidence is never admissibility.
+3. **Attestation is judged by the PIN's protocol (grandfather-by-pin).**
+   A pin that predates ADR-24 structurally cannot emit `env_attested`;
+   null/missing at such a pin is not a flag, an EXPLICIT
+   `env_attested: false` fails closed (`unattested_env`). Scope: this
+   governs H3-campaign cell admissibility only — it claims nothing
+   about CON-5 reproducibility, which continues to require attestation
+   for any reproducibility claim (no spec exception intended or made).
+4. **A nulled metric with trusted successes is re-derived, or the cell
+   dies.** Where the pinned runner's superseded strict rule discarded
+   trusted dev successes and nulled first-success, the analyzer
+   re-derives it from primary timing evidence (earliest trusted
+   success-manifest mtime minus the token-sampler-derived session
+   start), marks it `first_success_rederived`, and fails closed as
+   `metric_inconsistent` when the re-derivation is implausible
+   (outside `(0, wall]`).
+5. **The host dora runtime is part of the treatment** (PR #90 review 3,
+   the S3-r3 lesson). The committed frozen hash cannot see an external
+   executable: attempt 3 ran the post-#85 CLI/daemon (`cd597e705`)
+   against the pin-era python API (`7eb4a5f8b`), an environment change
+   on one arm mid-contrast — the cell is flagged `runtime_drift` and
+   excluded, reverting S3 to undecided. Runtime identity is CONTENT,
+   never a version string (round-4 review: dora's version output is
+   only CARGO_PKG_VERSION — `7eb4a5f8b` and `cd597e705` both report
+   `1.0.0-rc.4`, and the CLI never inspects the pinned python API).
+   Going forward the runner records the resolved CLI binary's sha256
+   (`host_dora_cli`) in the treatment at launch and BRACKETS every
+   scenario — preflight, post-session (before holdout scoring), and
+   post-holdout captures (round 5: preflight alone left the multi-hour
+   session and holdout windows unguarded). The operator's pin-era hash
+   assertion (`--expect-dora-sha256`) is REQUIRED — an optional
+   expectation let the S3-r3 mismatch class self-certify clean — and
+   launching against an unresolved or different binary refuses; any
+   capture differing from the launch identity records `runtime_drift`
+   and makes the campaign non-OK; and the analyzer flags any record
+   whose recorded shas (preflight or rechecks) differ from the
+   campaign's launch identity. Any future attempt at THIS pin must
+   cargo-install the CLI at the pin's rev (`7eb4a5f8b`) into an
+   isolated prefix and pass its hash at launch. Older records without
+   a runtime capture are judged by external evidence where it exists
+   (S3-r3's disclosed augmentation) and are otherwise grandfathered —
+   all pre-#85 cells shared one runtime era.
+6. **Mid-cell merges to origin/main are a protocol violation** even
+   when content-equality rescues the record (attempt 3 survived only
+   because `tools/env_hash.json` never changed): freeze origin/main
+   while a cell runs, and pin campaign rollouts' `--env-baseline` to
+   the campaign OID (issue #91).

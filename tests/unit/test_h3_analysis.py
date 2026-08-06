@@ -508,3 +508,246 @@ def test_no_deliverable_is_a_scored_zero_not_a_partial():
     verdict = h3_verdict(cells)
     assert verdict["per_tier"] == {"S2": False, "S3": True}
     assert verdict["met"] is False
+
+
+def test_missing_dev_rollout_provenance_fails_closed():
+    """PR #76 follow-up (S3-r3 analysis): a record whose DEV rollout
+    entries carry no provenance (pre-#76 aggregates hold bare run_ids)
+    must NOT read as clean — absence of evidence is not admissibility.
+    Such a cell flags provenance_missing and leaves the verdict, exactly
+    like a derived flag would."""
+    rec = record("L", "S3", first_success=1390.4)
+    rec["rollouts"] = [
+        {"run_id": "skill-eval-local"},
+        {"run_id": "campaign-holdout-L-S3-r2", "episodes": 8, "pass1": 0.0},
+    ]
+    c = cell(rec, "abc123")
+    assert "provenance_missing" in c["flags"]
+
+
+def test_bare_rollouts_enrich_from_run_manifests(tmp_path):
+    """PR #76 follow-up: the analyzer resolves bare run_id entries
+    against the campaign worktree's runs/<id>/manifest.json (+ pass1
+    from episodes.jsonl), so pre-provenance aggregates reproduce the
+    ratified flags from primary evidence instead of failing closed."""
+    camp = tmp_path
+    rec = record("L", "S3", first_success=1390.4)
+    rec["rollouts"] = [
+        {"run_id": "dev-drifted"},
+        {"run_id": "campaign-holdout-L-S3-r2", "episodes": 8, "pass1": 0.0},
+    ]
+    (camp / "h3_results-r2.json").write_text(
+        json.dumps({"ok": True, "treatment": TREATMENT, "records": [rec], "wipes": []})
+    )
+    scen = camp / "arm_L" / "S3"
+    scen.mkdir(parents=True)
+    (scen / "scenario.json").write_text(json.dumps(rec))
+    run_dir = camp / "worktree_L" / "runs" / "dev-drifted"
+    run_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "dev-drifted",
+                "git_sha": "MERGEDHEAD",
+                "env_baseline": "origin/main",
+                "env_baseline_oid": "POSTPIN",
+            }
+        )
+    )
+    (run_dir / "episodes.jsonl").write_text(
+        '{"seed": 0, "status": "success"}\n{"seed": 1, "status": "fail"}\n'
+    )
+    data = load_campaign(camp)
+    enriched = data["records"][0]["rollouts"][0]
+    assert enriched["git_sha"] == "MERGEDHEAD"
+    assert enriched["env_baseline_oid"] == "POSTPIN"
+    assert enriched["pass1"] == 0.5
+    c = cell(data["records"][0], "abc123")
+    assert "treatment_drift" in c["flags"]
+    assert "provenance_missing" not in c["flags"]
+
+
+def test_annotated_lineage_and_anchor_override_legacy_drift():
+    """Owner-ratified (2026-08-05, PR #76 follow-up): a rollout whose sha
+    is an agent-only descendant of the pin (_lineage_ok) with a
+    content-equal trust anchor (_anchor_ok) is the TREATMENT, not drift —
+    even though sha/oid differ from the pin. A content-unequal anchor or
+    main-contaminated lineage still flags."""
+    rec = record("L", "S3", first_success=100.0)
+    rec["rollouts"] = [
+        {
+            "run_id": "dev-agent-branch",
+            "mtime": 1.0,
+            "episodes": 4,
+            "pass1": 1.0,
+            "git_sha": "AGENTHEAD",
+            "env_baseline": "origin/main",
+            "env_baseline_oid": "MOVEDMAIN",
+            "_lineage_ok": True,
+            "_anchor_ok": True,
+        },
+        {"run_id": "campaign-holdout-L-S3-r3", "mtime": 2.0, "episodes": 8, "pass1": 0.0},
+    ]
+    c = cell(rec, "abc123")
+    assert "treatment_drift" not in c["flags"]
+    assert "unattested_metric" not in c["flags"]
+
+    bad = record("L", "S3", first_success=100.0)
+    bad["rollouts"] = [
+        {
+            "run_id": "dev-merged-main",
+            "mtime": 1.0,
+            "episodes": 4,
+            "pass1": 1.0,
+            "git_sha": "MERGEDHEAD",
+            "env_baseline": "origin/main",
+            "env_baseline_oid": "MOVEDMAIN",
+            "_lineage_ok": False,
+            "_anchor_ok": True,
+        },
+    ]
+    c = cell(bad, "abc123")
+    assert "treatment_drift" in c["flags"]
+
+
+def test_partial_annotations_fail_closed():
+    """PR #90 review 3: the annotated path requires BOTH lineage and
+    anchor definitively derived — a half-annotated rollout (git answered
+    one question, not the other) must not bypass drift detection; it
+    flags provenance_missing."""
+    rec = record("L", "S3", first_success=None)
+    rec["rollouts"] = [
+        {
+            "run_id": "dev-half-annotated",
+            "git_sha": "abc123",
+            "env_baseline": "origin/main",
+            "env_baseline_oid": "DRIFT",
+            "_lineage_ok": True,  # anchor never resolved
+        },
+    ]
+    c = cell(rec, "abc123")
+    assert "provenance_missing" in c["flags"]
+    assert "treatment_drift" not in c["flags"]  # not asserted clean either — excluded
+
+
+def test_rederived_first_success_used_when_recorded_is_stale(tmp_path):
+    """PR #90 review 1 (owner-ratified semantics): a cell whose clean DEV
+    rollouts contain successes but whose recorded first_success is null
+    (the runner's superseded strict rule discarded them) re-derives the
+    metric from primary timing evidence — min success-manifest mtime
+    minus the session start (scenario mtime - session wall) — and the
+    verdict uses it. Without re-derivable evidence the cell flags
+    metric_inconsistent (fail closed)."""
+    rec = record("L", "S3", first_success=None)
+    rec["session"] = {"stopped": "agent_done", "rc": 0, "tokens": 1000, "wall_s": 1000.0}
+    rec["rollouts"] = [
+        {
+            "run_id": "dev-success",
+            "mtime": 5400.0,
+            "episodes": 4,
+            "pass1": 1.0,
+            "git_sha": "abc123",
+            "env_baseline": "origin/main",
+            "env_baseline_oid": None,
+            "_lineage_ok": True,
+            "_anchor_ok": True,
+        },
+        {"run_id": "campaign-holdout-L-S3", "mtime": 6000.0, "episodes": 8, "pass1": 0.0},
+    ]
+    # session start 5000 (token-sampler evidence), success at 5400 ->
+    # first success ~400 s, inside (0, wall]
+    rec["_session_start"] = 5000.0
+    c = cell(rec, "abc123")
+    assert c["first_success_wall_s"] == pytest.approx(400.0, abs=1.0)
+    assert "metric_inconsistent" not in c["flags"]
+
+    # no session-start evidence -> fail closed
+    bare = record("L", "S3", first_success=None)
+    bare["rollouts"] = list(rec["rollouts"])
+    c = cell(bare, "abc123")
+    assert "metric_inconsistent" in c["flags"]
+
+    # implausible derivation (success before the derived start) -> fail
+    # closed, never a fabricated 0.0 metric
+    weird = record("L", "S3", first_success=None)
+    weird["session"] = {"stopped": "agent_done", "rc": 0, "tokens": 1, "wall_s": 1000.0}
+    weird["rollouts"] = list(rec["rollouts"])
+    weird["_session_start"] = 9000.0  # after the success mtime 5400
+    c = cell(weird, "abc123")
+    assert "metric_inconsistent" in c["flags"]
+    assert c["first_success_wall_s"] is None
+
+
+def test_explicit_failed_attestation_flags_unattested_env():
+    """PR #90 review 2, owner-ratified 2026-08-05: attestation is judged
+    by the PIN's protocol (grandfather-by-pin — a pre-ADR-24 pin cannot
+    emit env_attested and null/missing is NOT a flag), but an EXPLICIT
+    env_attested=False is a failed attestation and fails closed."""
+    rec = record("L", "S3", first_success=None)
+    rec["rollouts"] = [
+        {
+            "run_id": "dev-failed-attest",
+            "git_sha": "abc123",
+            "env_baseline": "origin/main",
+            "env_baseline_oid": None,
+            "env_attested": False,
+            "_lineage_ok": True,
+            "_anchor_ok": True,
+        },
+    ]
+    c = cell(rec, "abc123")
+    assert "unattested_env" in c["flags"]
+
+
+def test_runtime_drift_evidence_excludes_the_cell():
+    """PR #90 review 3 (P1): the host dora CLI/daemon is part of the
+    treatment — no committed frozen hash can see an external executable
+    change, so a record carrying runtime_drift evidence (runner
+    `dora --version` capture, or a disclosed bundle augmentation as on
+    S3-r3) is excluded from the verdict like any integrity flag."""
+    clean = record("W", "S3", first_success=None, pass1=0.0)
+    drifted = record("L", "S3", first_success=1791.4, pass1=0.0)
+    drifted["runtime_drift"] = {
+        "pin_era_runtime": "dora 7eb4a5f8b",
+        "session_runtime": "host CLI rebuilt at cd597e705 (post-PR#85)",
+    }
+    c = cell(drifted, "abc123")
+    assert "runtime_drift" in c["flags"]
+    v = h3_verdict([cell(clean, "abc123"), c])
+    assert "S3" not in v["per_tier"]  # one-arm tier: undecided, not True
+    assert v["met"] is None
+
+
+def test_runtime_content_identity_overrides_equal_semver():
+    """PR #90 round 4: the runtime comparison is binary CONTENT, never a
+    version string — two builds sharing 1.0.0-rc.4 with different sha256
+    must flag, an equal sha must not, and a record predating the capture
+    (no sha) stays judged by explicit evidence alone (grandfathered)."""
+    baseline = "a" * 64
+    same = record("W", "S3", first_success=None, pass1=0.0)
+    same["host_dora_cli"] = {"sha256": baseline, "version": "dora-cli 1.0.0-rc.4"}
+    changed = record("L", "S3", first_success=100.0, pass1=0.0)
+    changed["host_dora_cli"] = {"sha256": "b" * 64, "version": "dora-cli 1.0.0-rc.4"}
+    legacy = record("L", "S2", first_success=None, pass1=0.0)  # no capture
+
+    assert "runtime_drift" not in cell(same, "abc123", baseline)["flags"]
+    assert "runtime_drift" in cell(changed, "abc123", baseline)["flags"]
+    assert "runtime_drift" not in cell(legacy, "abc123", baseline)["flags"]
+
+
+def test_runtime_recheck_captures_are_compared_too():
+    """PR #90 round 5: preflight alone leaves the session and holdout
+    windows unguarded — the runner brackets each scenario with
+    post-session and post-holdout captures, and a recheck sha that
+    differs from the campaign baseline flags the cell even when the
+    preflight matched."""
+    baseline = "a" * 64
+    rec = record("L", "S3", first_success=None, pass1=0.0)
+    rec["host_dora_cli"] = {"sha256": baseline}
+    rec["host_dora_cli_rechecks"] = {
+        "post_session": {"sha256": "b" * 64},  # rebuilt mid-scenario
+        "post_holdout": {"sha256": baseline},
+    }
+    assert "runtime_drift" in cell(rec, "abc123", baseline)["flags"]
+    rec["host_dora_cli_rechecks"]["post_session"]["sha256"] = baseline
+    assert "runtime_drift" not in cell(rec, "abc123", baseline)["flags"]

@@ -37,7 +37,8 @@
    "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
    "env_baseline": "local",
    "env_baseline_oid": null,
-   "env_attested": null
+   "_lineage_ok": true,
+   "_anchor_ok": true
   },
   {
    "run_id": "campaign-holdout-W-S3-r2",
@@ -47,12 +48,14 @@
    "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
    "env_baseline": "local",
    "env_baseline_oid": null,
-   "env_attested": null
+   "_lineage_ok": true,
+   "_anchor_ok": true
   }
  ],
  "prior_skills": [],
  "skills_after": [
   "s3-driver-v2"
  ],
- "skill_reuse_in_deliverable": []
+ "skill_reuse_in_deliverable": [],
+ "session_start_epoch": 1785432678.20618
 }
