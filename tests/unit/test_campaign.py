@@ -591,3 +591,54 @@ def test_sweep_worktree_kills_only_worktree_processes(tmp_path):
         for p in (p_in, p_out):
             if p.poll() is None:
                 p.kill()
+
+
+def test_isolated_session_env_points_home_at_scratch(tmp_path):
+    """Issue #96: campaign sessions must not inherit the operator's
+    config/home — the S3-r3 agent read ~/.claude memory (annotated
+    transcript event [21]). The isolation env rebinds HOME and
+    CLAUDE_CONFIG_DIR to a per-session scratch home and returns a
+    record of both, without mutating the parent environment."""
+    import os
+
+    import campaign as c
+
+    before_home = os.environ.get("HOME")
+    env, rec = c.isolated_session_env(tmp_path / "out")
+    assert env["HOME"] == str(tmp_path / "out" / "agent_home")
+    assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path / "out" / "agent_home" / ".claude")
+    assert Path(env["CLAUDE_CONFIG_DIR"]).is_dir()  # created, empty
+    assert not any(Path(env["CLAUDE_CONFIG_DIR"]).iterdir())
+    assert os.environ.get("HOME") == before_home  # parent untouched
+    assert rec == {
+        "home": env["HOME"],
+        "claude_config_dir": env["CLAUDE_CONFIG_DIR"],
+    }
+
+
+def test_run_session_spawns_with_the_isolated_env(tmp_path):
+    """The session subprocess must SEE the isolation (issue #96) — a
+    child that prints its HOME/CLAUDE_CONFIG_DIR proves the env reached
+    the spawn, not just the record."""
+    import campaign as c
+
+    out = tmp_path / "out"
+    out.mkdir()
+    env, _ = c.isolated_session_env(out)
+    probe = "import os; print(os.environ['HOME']); print(os.environ['CLAUDE_CONFIG_DIR'])"
+    c.run_session(
+        "claude",
+        [sys.executable, "-u", "-c", probe],
+        tmp_path,
+        out,
+        {
+            "prior_tokens": 0,
+            "prior_wall_s": 0.0,
+            "token_ceiling": 10_000,
+            "wall_ceiling_s": 30.0,
+        },
+        env=env,
+    )
+    log = (out / "session.jsonl").read_text().splitlines()
+    assert log[0] == str(out / "agent_home")
+    assert log[1] == str(out / "agent_home" / ".claude")

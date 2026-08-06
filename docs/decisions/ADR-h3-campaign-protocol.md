@@ -283,3 +283,29 @@ implements exactly these, fail-closed:
    because `tools/env_hash.json` never changed): freeze origin/main
    while a cell runs, and pin campaign rollouts' `--env-baseline` to
    the campaign OID (issue #91).
+
+## Amendment (session isolation, issue #96): the treatment boundary is the process environment, not the repository
+
+Ratified by merge of the implementing PR. The annotated S3-r3
+transcript (`analysis/transcripts/h3-L-S3-r3-annotated.md`, event
+[21]) showed a campaign session reading the OPERATOR's `~/.claude`
+memory — ambient state outside D3's defined persistence surface,
+invisible to the wipe machinery, and asymmetric in principle. Rules:
+
+1. **Campaign sessions run under an isolated home.** The runner
+   rebinds `HOME` and `CLAUDE_CONFIG_DIR` to a per-session scratch
+   directory (`isolated_session_env`); the operator's config, memory,
+   and credentials directories are not reachable through the process
+   environment. The only knowledge channels are the protocol-defined
+   ones: the pinned worktree, the registered library, and (arm L) the
+   read-only idea tree.
+2. **Isolation is recorded, fail-closed.** Every scenario record
+   carries `session_isolation` (the scratch paths); its ABSENCE in a
+   future audit means an unisolated session. The launcher runs one
+   trivial auth probe under the isolated env before any scenario
+   spends budget and REFUSES the campaign on failure (credential
+   stores keyed off the operator home break under isolation; a silent
+   fallback would reopen the channel).
+3. **Grandfathering:** all cells recorded before this amendment
+   predate the rule — documented context (the transcript annotation
+   and post-mortem carry the disclosure), not a retroactive flag.

@@ -683,3 +683,106 @@ def test_preflight_runtime_mismatch_refuses_before_the_session(tmp_path, monkeyp
         )
     # refused before ANY scenario side effect: no slot dir was created
     assert not (tmp_path / "out").exists()
+
+
+def test_scenario_session_runs_under_the_isolated_home(tmp_path, monkeypatch):
+    """Issue #96: run_scenario must pass the isolated env into
+    run_session and stamp session_isolation into the scenario record —
+    the absence of the field is what future audits detect."""
+    import h3_campaign as h3
+
+    monkeypatch.setenv("PATH", f"{_fake_dora(tmp_path, 'host', 'rev x')}:/usr/bin:/bin")
+    seen = {}
+
+    def fake_run_session(agent, cmd, wt, out, ceilings, env=None):
+        seen["env"] = env
+        return {"stopped": "agent_done", "rc": 0, "tokens": 1, "wall_s": 1.0}
+
+    monkeypatch.setattr(h3, "run_session", fake_run_session)
+    monkeypatch.setattr(h3, "sweep_worktree", lambda wt: None)
+    monkeypatch.setattr(h3, "audit_frozen", lambda wt, oid: [])
+    monkeypatch.setattr(h3, "score_holdout", lambda *a, **k: {"ok": True, "pass1": 0.0})
+    monkeypatch.setattr(
+        h3,
+        "campaign_metrics",
+        lambda *a, **k: {"first_success_wall_s": None, "wrong_object_total": 0, "rollouts": []},
+    )
+    monkeypatch.setattr(h3, "registered_skill_ids", lambda wt: set())
+    monkeypatch.setattr(h3, "skill_reuse", lambda *a: [])
+    launch = h3.host_dora_runtime()
+    rec = h3.run_scenario(
+        tmp_path,
+        "deadbeef",
+        "W",
+        {"tier": "S1", "tokens": 1000, "episodes": 8, "wall_h": 1.0},
+        tmp_path / "out",
+        "claude",
+        "m",
+        launch_runtime=launch,
+    )
+    session_dir = tmp_path / "out" / "arm_W" / "S1"
+    assert seen["env"]["HOME"] == str(session_dir / "agent_home")
+    assert rec["session_isolation"]["home"] == str(session_dir / "agent_home")
+    assert "runtime_drift" not in rec
+
+
+def test_launch_refuses_when_the_isolated_auth_probe_fails(tmp_path, monkeypatch):
+    """Issue #96 fail-closed: HOME isolation can break credential
+    stores; a failed probe must refuse the CAMPAIGN with a CON-8 error
+    before any scenario budget is spent — never fall back silently to
+    the operator home."""
+    import sys as _sys
+
+    import h3_campaign as h3
+
+    fake = _fake_dora(tmp_path, "host", "rev x")
+    monkeypatch.setenv("PATH", f"{fake}:/usr/bin:/bin")
+    sha = h3.host_dora_runtime()["sha256"]
+    monkeypatch.setattr(h3, "probe_agent_auth", lambda *a, **k: "auth probe exited 1: no creds")
+    monkeypatch.setattr(
+        _sys,
+        "argv",
+        [
+            "h3_campaign.py",
+            "--arms",
+            "W",
+            "--scenarios",
+            "S1",
+            "--out",
+            str(tmp_path / "out"),
+            "--expect-dora-sha256",
+            sha,
+        ],
+    )
+    rc = h3.main()
+    assert rc == 1
+
+
+def test_launch_refusal_prints_the_probe_error(tmp_path, monkeypatch, capsys):
+    import json as _json
+    import sys as _sys
+
+    import h3_campaign as h3
+
+    fake = _fake_dora(tmp_path, "host2", "rev y")
+    monkeypatch.setenv("PATH", f"{fake}:/usr/bin:/bin")
+    sha = h3.host_dora_runtime()["sha256"]
+    monkeypatch.setattr(h3, "probe_agent_auth", lambda *a, **k: "auth probe exited 1: no creds")
+    monkeypatch.setattr(
+        _sys,
+        "argv",
+        [
+            "h3_campaign.py",
+            "--arms",
+            "W",
+            "--scenarios",
+            "S1",
+            "--out",
+            str(tmp_path / "out"),
+            "--expect-dora-sha256",
+            sha,
+        ],
+    )
+    assert h3.main() == 1
+    out = _json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert out["ok"] is False and "auth probe" in out["error"]
