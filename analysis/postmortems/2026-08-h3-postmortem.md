@@ -67,4 +67,7 @@ collection, only claims about it.
 
 ## Owner section
 
-(reserved — append your own "strangest thing" here)
+(RESERVED — the Phase 2 DoD asks for a post-mortem from each human
+team member, so this document meets the DoD only once this section is
+written by @heyong4725. The agent-authored sections above are the
+agent's contribution, not a substitute.)

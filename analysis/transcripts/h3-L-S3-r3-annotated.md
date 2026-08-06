@@ -2,9 +2,12 @@
 
 Phase 1 DoD artifact (design doc §8.2: "one full agent transcript
 annotated by the team — read what the agent actually did"). Source:
-`runs/h3/arm_L/S3-r3/session.jsonl` (520 events, 52 turns, 71 min,
-`agent_done` voluntarily at 253,776 of 750,000 tokens). Event indices
-`[n]` refer to line positions in that file. This is the session whose
+`h3-L-S3-r3-session.jsonl` — the full 520-event transcript, committed
+ALONGSIDE this annotation so the citations are auditable (a verbatim
+copy of the live tree's `runs/h3/arm_L/S3-r3/session.jsonl`; 52 turns,
+71 min, `agent_done` voluntarily at 253,776 of 750,000 tokens). Event
+indices `[n]` are ZERO-BASED event positions into that file (line
+n+1). This is the session whose
 cell was ultimately excluded from the H3 verdict for `runtime_drift`
 (PR #90) — procedurally it is the cleanest campaign session on record,
 which is exactly why it is the one worth annotating.
