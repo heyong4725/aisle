@@ -5,7 +5,14 @@ oracle-pose, grasp-planner-topdown, task-state-machine) — no dora, no sim
 import numpy as np
 import pytest
 
-from aisle.nodes.grasp_topdown import PLACE_DROP_GAP, plan_grasp, topdown_quat, yaw_of
+from aisle.nodes.grasp_topdown import (
+    HAND_MOUNT_YAW,
+    PLACE_DROP_GAP,
+    finger_yaw_of,
+    plan_grasp,
+    topdown_quat,
+    yaw_of,
+)
 from aisle.nodes.ik_trajectory import quat_to_rotation
 from aisle.nodes.oracle_pose import select_pose
 from aisle.nodes.task_state_machine import TaskStateMachine
@@ -19,6 +26,12 @@ def make_poses(n=5):
     for i in range(n):
         blocks.extend([0.5, -0.1 + 0.06 * i, 0.10, 0.0, 0.0, 0.0, 1.0])
     return np.asarray(blocks, dtype=np.float32)
+
+
+def assert_straddle(quat_xyzw, expected_yaw):
+    """Grip-axis equality mod pi, wrap-tolerant (a -1e-9 finger yaw must
+    equal 0, not pi)."""
+    assert abs(np.sin(finger_yaw_of(quat_xyzw) - expected_yaw)) < 1e-5
 
 
 class TestOraclePose:
@@ -37,17 +50,37 @@ class TestOraclePose:
 
 
 class TestGraspTopdown:
-    def test_topdown_quat_points_flange_down(self):
-        """The grasp orientation points the flange z-axis DOWN (top-down
-        grasp); yaw rotates about world z only."""
-        x, y, z, w = topdown_quat(0.0)
-        # 180 deg about x: flange z maps to -z
-        assert (x, y, z, w) == pytest.approx((1.0, 0.0, 0.0, 0.0), abs=1e-6)
+    def test_topdown_quat_points_flange_down_with_hand_mount_offset(self):
+        """The grasp orientation points the flange z-axis DOWN, and the
+        FLANGE yaw carries the hand-mount compensation (issue #92): the
+        Franka hand is mounted -45 degrees from the flange about z, so
+        the flange target shifts by HAND_MOUNT_YAW to realize the
+        planner's grip axis. The uncompensated quat made every
+        'axis-aligned' plan a DIAGONAL pinch in the sim — the T10
+        'diagonal detents' and the m0 seed-3 hand-corner topple both
+        trace to it."""
+        quat = topdown_quat(0.0)
+        rot = quat_to_rotation(quat)
+        assert rot[:, 2] == pytest.approx([0.0, 0.0, -1.0], abs=1e-6)  # flange z down
+        assert yaw_of(quat) == pytest.approx(HAND_MOUNT_YAW, abs=1e-6)
+        assert finger_yaw_of(quat) == pytest.approx(0.0, abs=1e-6)
+        # the two orientation builders must agree for every yaw — grasp
+        # (quat) and place/transfer (matrix) paths share the convention.
+        # The PHYSICAL offset itself is gated by the Genesis measurement
+        # in tests/sim/test_hand_mount.py (PR #93 review: these algebraic
+        # relations alone hold for any HAND_MOUNT_YAW value)
+        from aisle.nodes.ik_trajectory import topdown_rotation
+
+        for yaw in (0.0, 0.5, np.pi / 2, -1.2):
+            assert quat_to_rotation(topdown_quat(yaw)) == pytest.approx(
+                topdown_rotation(yaw), abs=1e-9
+            )
 
     def test_grasp_at_top_section_with_yaw(self):
         """CAP-5 grasp-planner-topdown: TCP at the box's TOP section
-        (center + half height - grip engagement); with tilt=0 the yaw
-        follows the box yaw so the fingers straddle the narrow axis."""
+        (center + half height - grip engagement); with tilt=0 the FINGER
+        yaw follows the box yaw so the fingers straddle the narrow
+        axis."""
         yaw = 0.5
         quat = (0.0, 0.0, np.sin(yaw / 2), np.cos(yaw / 2))
         target = np.array([0.5, -0.1, 0.10, *quat], dtype=np.float32)
@@ -57,14 +90,15 @@ class TestGraspTopdown:
         # release TCP: tray top + hanging box length + drop gap
         assert place_z == pytest.approx(0.04 + (0.090 - 0.025) + PLACE_DROP_GAP, abs=1e-6)
         assert grasp[:3] == pytest.approx([0.5, -0.1, 0.10 + 0.045 - 0.025], abs=1e-6)
-        assert yaw_of(grasp[3:]) % np.pi == pytest.approx(yaw % np.pi, abs=1e-5)
+        assert_straddle(grasp[3:], yaw)
 
     def test_narrow_x_axis_rotates_grip(self):
         """Fingers travel the gripper y-axis: when the box's x side is the
-        narrower one, the grasp yaw turns 90 degrees to straddle it."""
+        narrower one, the grasp FINGER yaw turns 90 degrees to straddle
+        it."""
         target = np.array([0.5, -0.1, 0.10, 0, 0, 0, 1], dtype=np.float32)
         grasp, _, _ = plan_grasp(target, (0.030, 0.065, 0.110), tray_top_z=0.04)
-        assert yaw_of(grasp[3:]) % np.pi == pytest.approx(np.pi / 2, abs=1e-5)
+        assert_straddle(grasp[3:], np.pi / 2)
 
     def test_grip_axis_avoids_a_close_neighbour(self):
         """A same-level neighbour within the default finger sweep flips the
@@ -75,7 +109,7 @@ class TestGraspTopdown:
         target = np.array([0.379, 0.20, 0.10, 0, 0, 0, 1], dtype=np.float32)
         size = (0.050, 0.045, 0.085)  # y is the narrower default straddle
         legacy, _, _ = plan_grasp(target, size, tray_top_z=0.04)
-        assert yaw_of(legacy[3:]) % np.pi == pytest.approx(0.0, abs=1e-5)  # straddles y
+        assert_straddle(legacy[3:], 0.0)  # straddles y
         neighbours = [[0.394, 0.115, 0.0325, 0.015]]  # cetirizine, y-offset
         aware, _, _ = plan_grasp(
             target,
@@ -85,7 +119,7 @@ class TestGraspTopdown:
             finger_open=0.04,
             finger_clear=0.008,
         )
-        assert yaw_of(aware[3:]) % np.pi == pytest.approx(np.pi / 2, abs=1e-5)  # flips to x
+        assert_straddle(aware[3:], np.pi / 2)  # flips to x
 
     def test_elongated_box_keeps_narrow_grip_despite_neighbour(self):
         """An elongated med can only be gripped across its narrow face; a
@@ -101,7 +135,7 @@ class TestGraspTopdown:
             finger_open=0.04,
             finger_clear=0.008,
         )
-        assert yaw_of(grasp[3:]) % np.pi == pytest.approx(0.0, abs=1e-5)  # stays narrow (y)
+        assert_straddle(grasp[3:], 0.0)  # stays narrow (y)
 
     def test_front_mode_approaches_horizontally(self):
         """ADR-10: a box under a board is grasped from the shelf FRONT —

@@ -19,6 +19,7 @@ import math
 
 import numpy as np
 
+from aisle.nodes.ik_trajectory import HAND_MOUNT_YAW
 from aisle.scenes.pharmacy import level_x_span
 
 # how far the fingertips engage below the box TOP (top-down mode). 0.045
@@ -98,11 +99,19 @@ def yaw_of(quat_xyzw) -> float:
 
 
 def topdown_quat(yaw: float) -> tuple[float, float, float, float]:
-    """qz(yaw) * qx(pi): flange z pointing straight down, yawed about world
-    z (TC-1 xyzw)."""
-    qz = (0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2))
+    """qz(yaw + HAND_MOUNT_YAW) * qx(pi): flange z pointing straight down
+    with the FINGER axis at `yaw` (TC-1 xyzw) — the flange target carries
+    the hand-mount offset (issue #92, see HAND_MOUNT_YAW)."""
+    flange_yaw = yaw + HAND_MOUNT_YAW
+    qz = (0.0, 0.0, math.sin(flange_yaw / 2), math.cos(flange_yaw / 2))
     qx = (1.0, 0.0, 0.0, 0.0)
     return _quat_mul(qz, qx)
+
+
+def finger_yaw_of(quat_xyzw) -> float:
+    """The PHYSICAL finger-straddle yaw a flange quaternion realizes —
+    yaw_of minus the hand-mount offset."""
+    return yaw_of(quat_xyzw) - HAND_MOUNT_YAW
 
 
 def _fingertip_clearance(box_xy, u, size_xyz, neighbours, finger_open) -> float:
