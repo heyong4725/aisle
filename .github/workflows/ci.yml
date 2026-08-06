@@ -23,9 +23,12 @@ jobs:
       - run: uv run pytest -m unit
       - run: uv run python tools/trace_check.py
 
-  # CON-1 keeps the default dependency set free of CUDA-only wheels so the
-  # code runs off Metal too — but nothing verified that claim. This job is
-  # that check: default `uv sync` plus the unit suite on a non-Metal host.
+  # Linux unit PORTABILITY coverage (PR #83 review: this is NOT a CON-1
+  # runtime check — CON-1's Metal/MPS runtime half needs a macOS arm64
+  # sim job, and the locked-graph CUDA screen already lives in the
+  # bootstrap test). What this job proves: the default `uv sync`
+  # dependency set installs and the pure/CON-12 unit surface passes on
+  # a Linux CPU host — which caught #82's host-dependent git identity.
   # Deliberately unit-only: ruff, trace_check and the PR-title gate are
   # platform-independent, so ci/unit already covers them once.
   unit-linux:
