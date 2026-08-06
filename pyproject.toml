@@ -19,16 +19,29 @@ dev = [
 [project.scripts]
 harness = "aisle.harness.cli:main"
 
-# CON-1: linux resolves torch from the CPU index so the sim extra never
-# drags CUDA/NVIDIA wheels; a future `cuda` extra is the sanctioned home
-# for GPU builds
+# CON-1: linux resolves torch from the CPU index by default so the sim
+# extra never drags CUDA/NVIDIA wheels; the `cuda` extra is the sanctioned
+# home for GPU builds and is the ONLY way a CUDA wheel enters the closure
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+# sim and cuda are mutually exclusive resolutions of torch: `--extra sim`
+# is the CPU default, `--extra cuda` swaps in the GPU build
+[tool.uv]
+conflicts = [[{ extra = "sim" }, { extra = "cuda" }]]
+
 [tool.uv.sources]
-torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torch = [
+    { index = "pytorch-cu130", extra = "cuda", marker = "sys_platform == 'linux'" },
+    { index = "pytorch-cpu", extra = "sim", marker = "sys_platform == 'linux'" },
+]
 # dora main, pinned by rev (PyPI's latest wheel is 0.5.0, 2026-03 — too old;
 # the CLI is cargo-installed from the SAME rev so the pair stays matched).
 # cd597e70 (2026-08-04) contains the fixes for our filed issue batch
@@ -39,6 +52,14 @@ dora-rs = { git = "https://github.com/dora-rs/dora", subdirectory = "apis/python
 
 [project.optional-dependencies]
 sim = [
+    "dora-rs>=0.5.0",
+    "genesis-world>=1.2.3",
+    "pyarrow>=25.0.0",
+    "torch>=2.13.0",
+]
+# GPU build: same sim stack, torch resolved from the CUDA index (CON-1).
+# `uv sync --extra cuda` replaces `uv sync --extra sim`.
+cuda = [
     "dora-rs>=0.5.0",
     "genesis-world>=1.2.3",
     "pyarrow>=25.0.0",

@@ -18,6 +18,11 @@ things to know before anything else:
 - **Plain `uv sync` REMOVES the sim extras.** If a sim test suddenly
   can't import `genesis` or `dora`, this is why. Re-run with
   `--extra sim`.
+- **On an NVIDIA host, use `--extra cuda` instead.** `sim` resolves the
+  CPU torch on Linux (CON-1 keeps CUDA wheels out of the default set), so
+  Genesis runs on CPU even with a GPU present. `uv sync --extra cuda`
+  installs the same stack with the CUDA torch; the two extras are
+  mutually exclusive.
 - **dora runs from source, not PyPI.** PyPI's latest dora wheel (0.5.0)
   is far behind dora main and lacks the dynamic-node command family this
   repo depends on (`dora node add/remove`, hot-swap). The python API

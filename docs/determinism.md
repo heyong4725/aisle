@@ -9,6 +9,13 @@ when PyTorch reports an available CUDA device and otherwise use CPU. Linux
 x86-64 CUDA execution has been exercised on an NVIDIA GeForce RTX 5090 with
 driver 580.126.09 and PyTorch 2.13.0+cu130.
 
+Selection is only half the story: `uv sync --extra sim` resolves the CPU
+torch on Linux (CON-1), so `cuda_available` is False and the CUDA branch
+never engages. The GPU build comes from the `cuda` extra —
+`uv sync --extra cuda` — which is the sanctioned home for CUDA wheels and
+is mutually exclusive with `sim`. Running `--extra sim` on a GPU host is
+therefore a silent CPU run, not a broken one.
+
 Known platform caveats — recorded here rather than hidden (SCN-7):
 
 - Initial oracle_state is placement-derived (pure Python RNG → float32), so
