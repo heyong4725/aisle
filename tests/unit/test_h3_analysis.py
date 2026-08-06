@@ -697,3 +697,22 @@ def test_explicit_failed_attestation_flags_unattested_env():
     ]
     c = cell(rec, "abc123")
     assert "unattested_env" in c["flags"]
+
+
+def test_runtime_drift_evidence_excludes_the_cell():
+    """PR #90 review 3 (P1): the host dora CLI/daemon is part of the
+    treatment — no committed frozen hash can see an external executable
+    change, so a record carrying runtime_drift evidence (runner
+    `dora --version` capture, or a disclosed bundle augmentation as on
+    S3-r3) is excluded from the verdict like any integrity flag."""
+    clean = record("W", "S3", first_success=None, pass1=0.0)
+    drifted = record("L", "S3", first_success=1791.4, pass1=0.0)
+    drifted["runtime_drift"] = {
+        "pin_era_runtime": "dora 7eb4a5f8b",
+        "session_runtime": "host CLI rebuilt at cd597e705 (post-PR#85)",
+    }
+    c = cell(drifted, "abc123")
+    assert "runtime_drift" in c["flags"]
+    v = h3_verdict([cell(clean, "abc123"), c])
+    assert "S3" not in v["per_tier"]  # one-arm tier: undecided, not True
+    assert v["met"] is None

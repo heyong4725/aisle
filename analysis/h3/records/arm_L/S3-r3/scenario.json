@@ -85,5 +85,14 @@
   "s3-driver-v1"
  ],
  "skill_reuse_in_deliverable": [],
- "session_start_epoch": 1785958839.5453413
+ "session_start_epoch": 1785958839.5453413,
+ "host_dora_cli": {
+  "version": "dora-cli 1.0.0-rc.4 (host build, post-PR#85 source at cd597e705)",
+  "augmented": "disclosed post-hoc augmentation (PR #90 review 3); the pinned runner predates host-runtime capture"
+ },
+ "runtime_drift": {
+  "pin_era_runtime": "dora 7eb4a5f8b (pyproject [tool.uv.sources] at pin 03da7469, PR #45; every July and r2 cell ran pre-PR#85)",
+  "session_runtime": "host dora CLI/daemon rebuilt from cd597e705 (PR #85, merged 2026-08-05T16:06:05Z) while the pinned worktree's python API stayed at 7eb4a5f8b",
+  "evidence": "PR #85 merge timestamp precedes the attempt-3 session start (2026-08-05T19:40:39Z, token-sampler derived); cd597e705 carries runtime fixes for node leaks, run completion, and process handling; CLAUDE.md requires CLI and python API from the SAME rev"
+ }
 }

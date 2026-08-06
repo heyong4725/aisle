@@ -2,8 +2,8 @@
 
 **Status: verdict PENDING** (`met: null`, `complete: false`) — computed
 by `tools/h3_analysis.py` from clean cells only, under the
-owner-ratified provenance semantics of 2026-08-05 (PR #90). The two
-verdict tiers stand:
+owner-ratified admissibility semantics of 2026-08-05 (PR #90, now the
+ADR-h3 amendment). Both verdict tiers are undecided:
 
 - **S2: UNDECIDED.** No admissible L cell exists — full provenance
   resolution retroactively flags L/S2 with `treatment_drift` (the July
@@ -11,19 +11,24 @@ verdict tiers stand:
   mid-campaign #58 wall-clamp fix and neighbours). The clean W cell
   (W/S2-r2) produced no deliverable (a scored 0.0). One arm cannot
   decide a ratio tier.
-- **S3: TRUE (accumulation signal, n=1).** The protocol-compliant
-  attempt-3 library cell is CLEAN and reached a dev success at
-  **29.9 min / 168k tokens** (re-derived metric, below), while the
-  clean wiped cell (W/S3-r2) burned 751k tokens without ever
-  succeeding. ADR-h3 §7: only-L-succeeded satisfies the tier.
+- **S3: UNDECIDED.** No admissible L cell here either. Attempt 3 —
+  run to be the clean library cell — is excluded by `runtime_drift`
+  (PR #90 review 3): it ran the post-#85 host dora CLI/daemon
+  (`cd597e705`) against the pin-era python API (`7eb4a5f8b`), an
+  environment change on ONE arm that no committed frozen hash can see;
+  the wiped comparator (W/S3-r2, clean, never succeeded in 751k
+  tokens) ran entirely pre-#85. One arm cannot decide the tier.
 
 The prior "NOT MET" headline (PR #76) rested on L/S2 being clean; the
-retroactive flag dissolves that basis, and no tier now decides False.
-The honest claim: **one admissible S3 contrast shows the library arm
-succeeding where the wiped arm never did; S2 is provenance-dead; the
-campaign as a whole cannot reach a formal `met` verdict without either
-an owner-accepted incomplete closure or a budget-corrected new
-campaign.**
+retroactive flag dissolves that basis, and no tier now decides in
+either direction. The honest claim: **no admissible L cell survived
+the full integrity audit — every library-arm record fell to drift
+(repo, treatment, or runtime); the wiped arm's clean cells never
+succeeded at S2/S3. The campaign cannot reach a formal `met` verdict
+without either an owner-accepted incomplete closure or a
+budget-corrected new campaign.** Attempt 3's within-cell observation
+(a 29.9-min / 168k-token first success from the S1 library) remains
+informative but inadmissible — like L/S3-r2's before it.
 
 Protocol: `tools/h3_campaign.py` per
 `docs/decisions/ADR-h3-campaign-protocol.md` (campaign 2 + same-model
@@ -41,8 +46,11 @@ wipes lists, `holdout_partial` from the holdout status,
 `treatment_drift`/`unattested_metric`/`unattested_env` from per-rollout
 provenance under the ratified ancestry+content semantics,
 `provenance_missing` failing closed where provenance is neither
-recorded nor resolvable, and `metric_inconsistent` failing closed where
-an admissible success exists but its timing cannot be re-derived. The
+recorded nor resolvable, `metric_inconsistent` failing closed where
+an admissible success exists but its timing cannot be re-derived, and
+`runtime_drift` from recorded host-runtime evidence (the runner now
+captures `dora --version`; S3-r3 carries a disclosed evidence-cited
+augmentation, its runner predating the capture). The
 bundle carries the five aggregates, per-cell `scenario.json` +
 `token_samples.jsonl`, and the one cited dev-evidence file.
 
@@ -59,7 +67,7 @@ bundle carries the five aggregates, per-cell `scenario.json` +
 | W | S2-r2 | 0.0 (no deliverable) | — | — | 0 | 0 | — |
 | W | S3-r2 | 0.000 | — | — | 0 | wrong_slot 1 | — |
 | L | S3-r2 | 0.000 | 23.2 | 323k | 0 | wrong_slot 8 | treatment_drift, unattested_metric |
-| L | S3-r3 | 0.000 | 29.9 (re-derived) | 168k | 0 | wrong_slot 8 | — |
+| L | S3-r3 | 0.000 | 29.9 (re-derived) | 168k | 0 | wrong_slot 8 | runtime_drift |
 
 Flag provenance in brief (each exclusion's story):
 
@@ -76,8 +84,20 @@ Flag provenance in brief (each exclusion's story):
   main commits, and W/S2 + W/S3's first-success rollouts were not
   trusted-at-pin. These flags are richer evidence about old events, not
   new events; they dissolve the S2 tier's former clean basis.
+- **L/S3-r3, `runtime_drift`** (PR #90 review 3): the host dora
+  CLI/daemon had been rebuilt at `cd597e705` (PR #85, merged
+  2026-08-05T16:06:05Z — hours before the session start) while the
+  pinned worktree's python API stayed at the pin era's `7eb4a5f8b`.
+  Mismatched pair (CLAUDE.md requires both from the SAME rev), and a
+  different runtime than every pre-#85 cell including its own wiped
+  comparator — with cd597e705 carrying runtime fixes for node leaks,
+  run completion, and process handling. A one-arm environment
+  confound; the frozen-tree hash structurally cannot detect an
+  external executable change, so the record carries a disclosed
+  evidence-cited augmentation and the runner now records
+  `dora --version` in every future scenario record.
 
-## The S3 resolution (attempt 3, 2026-08-05) — the one admissible contrast
+## Attempt 3 (2026-08-05) — protocol-compliant on repo state, inadmissible on runtime
 
 The rerun ran at the campaign pin (worktree restored to pin + the
 tier's original `prior_skills` `['s1-driver-v2']`, drift/residue
@@ -99,26 +119,31 @@ carries `first_success_rederived: true` in the cell and a plausibility
 guard (must fall inside the session wall) fails closed as
 `metric_inconsistent` if the evidence is broken.
 
-**Admissibility under the ratified rules:** all three dev rollouts ran
-at the pin (`git_sha == pin`); their trust anchors were origin/main
-heads that moved mid-cell because three unrelated PRs merged during the
-session — content-equal to the pin (the committed frozen hash never
-changed), which the ancestry+content semantics accept and the strict
-oid rule would have rejected. Attestation is judged by the PIN's
-protocol (owner-ratified): the pin predates ADR-24, so its runner
-structurally cannot emit `env_attested`; an explicit
-`env_attested: false` would still fail closed. Environment caveat, the
-same class the whole campaign carried: the host dora CLI at attempt 3
-was the post-#85 build while the pinned python API and frozen set were
-identical to July's cells.
+**Where it survives the audit:** all three dev rollouts ran at the pin
+(`git_sha == pin`); their trust anchors were origin/main heads that
+moved mid-cell because three unrelated PRs merged during the session —
+content-equal to the pin (the committed frozen hash never changed),
+which the ancestry+content semantics accept and the strict oid rule
+would have rejected. Attestation is judged by the PIN's protocol
+(owner-ratified): the pin predates ADR-24, so its runner structurally
+cannot emit `env_attested`.
 
-**What the contrast says and doesn't:** clean L with the S1 library
-succeeded at 29.9 min / 168k tokens; clean W without it never succeeded
-in 751k. That satisfies ADR-h3 §7's only-L-succeeded arm of the tier —
-the first admissible accumulation signal in the campaign. It is n=1,
-the wiped comparator is a different attempt generation, and holdout
-transfer remained 0/8 for both arms: a signal about *reaching* S3
-competence, not about *solving* S3.
+**Where it dies:** the host dora runtime. What round 2 of this review
+carried as an "environment caveat" is disqualifying under the one-
+treatment principle (ADR-h3 amendment §5): the CLI/daemon at attempt 3
+was a different upstream revision than the pinned API and than every
+pre-#85 cell, including W/S3-r2 — the very comparator the contrast
+needs. Unlike the ADR-24 attestation Catch-22 there is no grandfather
+argument: the CLI is installable at the pin rev
+(`cargo install --git https://github.com/dora-rs/dora --rev 7eb4a5f8b
+dora-cli --locked`); the operator simply failed to pin it.
+
+**What remains:** a within-cell observation — the library arm
+re-authored an s3-driver from its S1 skills and reached dev success in
+29.9 min / 168k tokens under a 751k budget the wiped arm exhausted
+without success — informative, inadmissible, n=1, cross-runtime. An
+admissible attempt 4 requires the pin-rev CLI in an isolated prefix,
+a frozen origin/main, and `--env-baseline` pinned to the campaign OID.
 
 ## The budgets caveat (unchanged)
 
@@ -136,13 +161,14 @@ H5's 10x-asymmetric claim is about the wrong THING delivered
 failures (`wrong_slot`, `misplaced` — §11.3's family) are the lesser
 claim. On committed records, per the analyzer's explicit sets:
 
-- **Delivery-class, selected set: 0 failures in 32 executed held-out
+- **Delivery-class, selected set: 0 failures in 24 executed held-out
   episodes** (`h5.selected`: highest-attempt clean cell per arm/tier —
-  W/S1, L/S1, W/S2-r2, W/S3-r2, L/S3-r3; W/S2-r2 executed nothing and
-  contributes zero exposure).
-- **Placement-class, selected set: 9** (W/S3-r2 1 + L/S3-r3 8, all
-  `wrong_slot`) — placement quality remained poor wherever S3 systems
-  actually ran.
+  W/S1, L/S1, W/S2-r2, W/S3-r2; W/S2-r2 executed nothing and
+  contributes zero exposure; no L cell survives at S2/S3).
+- **Placement-class, selected set: 1** (W/S3-r2, `wrong_slot`). The
+  wider placement picture lives in the historical inventory below —
+  placement quality was poor wherever S3 systems actually ran (30
+  `wrong_slot` across all records, 8 of them in the excluded L/S3-r3).
 - **Historical inventory, all ten records** (`h5.all_records`,
   including flagged and superseded cells): 67 executed held-out
   episodes, 0 delivery-class, 31 placement-class (30 `wrong_slot`,
@@ -163,33 +189,44 @@ must weigh.
 ## Bundle provenance and augmentations (all disclosed)
 
 The committed bundle reproduces the analysis standalone. Its records
-carry three disclosed post-hoc augmentations, each a copy of primary
-facts from the (gitignored) live tree: per-rollout provenance resolved
-from the run manifests (+ `pass1` from `episodes.jsonl`), the ratified
-lineage/anchor annotations (`_lineage_ok`/`_anchor_ok`, git-derived:
-merge-base ancestry vs the pin; committed frozen-hash equality of the
-trust anchor), and `session_start_epoch` (token-sampler evidence) for
-metric re-derivation. A "no deliverable" holdout remains a structured,
+carry four disclosed post-hoc augmentations, each a copy of primary
+facts from the (gitignored) live tree or from cited external evidence:
+per-rollout provenance resolved from the run manifests (+ `pass1` from
+`episodes.jsonl`), the ratified lineage/anchor annotations
+(`_lineage_ok`/`_anchor_ok`, git-derived: merge-base ancestry vs the
+pin; committed frozen-hash equality of the trust anchor),
+`session_start_epoch` (token-sampler evidence) for metric
+re-derivation, and S3-r3's `host_dora_cli`/`runtime_drift` (evidence:
+the PR #85 merge timestamp vs the session start; the pinned runner
+predates the runner's own `dora --version` capture). A "no deliverable" holdout remains a structured,
 fail-closed classification scored 0.0, distinct from an expired
 scoring window (infra partial).
 
 ## Protocol lessons and remaining follow-ups
 
-- **Freeze origin/main while a campaign cell runs** — attempt 3's trust
-  anchors moved mid-cell (content-equal only because the frozen hash
-  never changed); campaign runners should pin `--env-baseline` to the
-  campaign OID (issue #91).
+- **The treatment includes the RUNTIME, not just the repo** — pin the
+  host dora CLI to the campaign rev (isolated cargo prefix), freeze
+  origin/main while a cell runs, and pin `--env-baseline` to the
+  campaign OID (issue #91). All three violations happened in this
+  campaign; only the frozen-hash content-equality accident kept
+  attempt 3's repo provenance alive, and nothing could save its
+  runtime. The runner now records `dora --version` per scenario
+  (ADR-h3 amendment §5).
 - Analyzer integrity is fail-closed end to end: absence of provenance,
-  a half-derived annotation, an explicit failed attestation, or an
-  un-re-derivable metric each exclude a cell rather than pass it.
-- The formal `met` remains PENDING. Closing it is an owner decision:
-  accept the incomplete ledger as the campaign's final state (S3
-  signal + S2 provenance-dead), or commission a budget-corrected
-  campaign at a current pin. Issue #71's determinism thread is DONE
-  (ADR-25/26; the S1 pair verified layers (a)-(c) with a 27 sim-s
-  bit-coherence horizon).
+  a half-derived annotation, an explicit failed attestation, an
+  un-re-derivable metric, or recorded runtime drift each exclude a
+  cell rather than pass it. The admissibility semantics are durable
+  protocol in the ADR-h3 PR #90 amendment, not PR-local policy.
+- The formal `met` remains PENDING with no admissible L cell at any
+  verdict tier. Closing it is an owner decision: accept the incomplete
+  ledger as the campaign's final state, or commission a
+  budget-corrected campaign at a current pin (which would inherit
+  ADR-24/25/26 attestation and the runtime capture natively). Issue
+  #71's determinism thread is DONE (ADR-25/26; the S1 pair verified
+  layers (a)-(c) with a 27 sim-s bit-coherence horizon).
 
 IDs: design doc §11.5, §6 H3/H5, §1 (10x asymmetry); ADR-h3 §7/§9 +
-campaign-2, resume, and attempt-3 amendments; RS-7 (delivery class),
-§11.3 (placement family); CON-5; ADR-24 (grandfather-by-pin,
-owner-ratified 2026-08-05); ADR-26 (statistical outcomes).
+campaign-2, resume, and PR #90 admissibility amendments; RS-7
+(delivery class), §11.3 (placement family); CON-5; ADR-24
+(grandfather-by-pin, owner-ratified 2026-08-05); ADR-26 (statistical
+outcomes).

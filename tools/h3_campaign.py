@@ -249,6 +249,23 @@ def registered_skill_ids(wt: Path) -> set[str]:
     return ids
 
 
+def host_dora_runtime() -> dict:
+    """The host dora CLI/daemon is part of the treatment (PR #90 review:
+    a committed frozen hash cannot see an external executable change —
+    attempt 3's post-#85 CLI made an otherwise-clean cell inadmissible).
+    Record `dora --version` verbatim; the CLI's own pair-drift warning
+    (stderr, CLI rev != pinned python-API rev) is runtime_drift evidence."""
+    try:
+        proc = subprocess.run(["dora", "--version"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"version": None, "error": str(exc)}
+    info: dict = {"version": proc.stdout.strip() or None}
+    warning = proc.stderr.strip()
+    if proc.returncode != 0 or warning:
+        info["warning"] = warning[:500] or f"exit {proc.returncode}"
+    return info
+
+
 def run_scenario(
     wt: Path,
     oid: str,
@@ -292,6 +309,7 @@ def run_scenario(
     worktree_head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True, text=True
     ).stdout.strip()
+    runtime = host_dora_runtime()
     record = {
         "arm": arm,
         "tier": tier,
@@ -309,7 +327,12 @@ def run_scenario(
         "prior_skills": sorted(prior_skills),
         "skills_after": sorted(registered_skill_ids(wt)),
         "skill_reuse_in_deliverable": reuse,
+        "host_dora_cli": runtime,
     }
+    if runtime.get("warning") or runtime.get("error"):
+        # the analyzer flags any truthy runtime_drift; a clean version
+        # capture records the runtime without flagging
+        record["runtime_drift"] = runtime
     (session_dir / "scenario.json").write_text(json.dumps(record, indent=1))
     return record
 

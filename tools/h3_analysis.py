@@ -14,8 +14,12 @@ to the strict sha/oid != pin rule), provenance_missing (a DEV rollout
 whose provenance is neither recorded nor resolvable from the campaign
 worktree's run manifests — fail closed, never clean-by-absence), and
 unattested_metric (first-success supplied by a rollout that is not a
-trusted-baseline run at the pin) each flag a cell, and ONLY unflagged
-cells enter the verdict. Records from different campaigns
+trusted-baseline run at the pin), and runtime_drift (the record carries
+evidence that the HOST dora runtime — CLI/daemon, an executable no
+committed frozen hash can see — differed from the pin-era runtime;
+recorded by the runner's `dora --version` capture, or a disclosed
+evidence-cited bundle augmentation for records predating the capture)
+each flag a cell, and ONLY unflagged cells enter the verdict. Records from different campaigns
 (commit/agent/model/seeds) refuse to combine. CON-8: single JSON object
 on stdout, exit 0 iff ok — missing or malformed input fails closed.
 """
@@ -250,6 +254,13 @@ def cell(rec: dict, commit: str | None = None) -> dict:
         flags.append("wipe_leak")
     if rec.get("frozen_drift"):
         flags.append("frozen_drift")
+    if rec.get("runtime_drift"):
+        # the host dora CLI/daemon is part of the treatment (PR #90
+        # review 3): S3-r3 ran the post-#85 CLI against the pin-era
+        # python API — a one-arm environment confound the frozen-tree
+        # hash cannot detect. The field carries its own evidence
+        # (runner `dora --version` warning, or a disclosed augmentation)
+        flags.append("runtime_drift")
     # held-out episodes actually EXECUTED (the H5 exposure denominator):
     # from the holdout scoring run's own rollout entry — a cell whose
     # deliverable never ran contributes ZERO safety evidence (PR #76
