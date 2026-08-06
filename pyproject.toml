@@ -30,8 +30,12 @@ explicit = true
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 # dora main, pinned by rev (PyPI's latest wheel is 0.5.0, 2026-03 — too old;
-# the CLI is cargo-installed from the SAME rev so the pair stays matched)
-dora-rs = { git = "https://github.com/dora-rs/dora", subdirectory = "apis/python/node", rev = "7eb4a5f8b" }
+# the CLI is cargo-installed from the SAME rev so the pair stays matched).
+# cd597e70 (2026-08-04) contains the fixes for our filed issue batch
+# (dora-rs/dora#2916-2924): the remove->add swap race (eec31a40b), node
+# leaks on killed `dora run` (#2949/#3018), venv symlink resolution
+# (#2942), and `dora run --exit-when-nodes-finish` (#2957).
+dora-rs = { git = "https://github.com/dora-rs/dora", subdirectory = "apis/python/node", rev = "cd597e7059295cbe9af0d6082697361d152bd444" }
 
 [project.optional-dependencies]
 sim = [

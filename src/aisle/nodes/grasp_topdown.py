@@ -19,6 +19,7 @@ import math
 
 import numpy as np
 
+from aisle.nodes.ik_trajectory import HAND_MOUNT_YAW
 from aisle.scenes.pharmacy import level_x_span
 
 # how far the fingertips engage below the box TOP (top-down mode). 0.045
@@ -55,9 +56,19 @@ WRIST_CLEARANCE = 0.065
 MIN_FINGER_ON_BOX = 0.015
 
 
-# xyzw of Ry(pi/2): flange z horizontal (+x, into the shelf), gripper y
-# horizontal — the front-approach orientation
-FRONT_QUAT = (0.0, 0.7071067811865476, 0.0, 0.7071067811865476)
+# front-approach flange orientation: the intended HAND pose is Ry(pi/2)
+# (flange z horizontal +x into the shelf, finger travel horizontal), and
+# the flange target composes away the local hand mount —
+# Ry(pi/2) @ Rz(-HAND_MOUNT_YAW) (issue #92 follow-up: the bare Ry(pi/2)
+# executed the fingers 45 degrees DIAGONAL in the y-z plane, the
+# front-mode twin of the m0 seed-3 top-down bug; correction sign
+# verified in Genesis — tilt -45.1 -> -0.1 deg. Physical gate:
+# tests/sim/test_hand_mount.py).
+_FRONT_BASE = (0.0, 0.7071067811865476, 0.0, 0.7071067811865476)  # xyzw Ry(pi/2)
+
+
+def _qz(angle: float) -> tuple[float, float, float, float]:
+    return (0.0, 0.0, math.sin(angle / 2), math.cos(angle / 2))
 
 
 def needs_front(box_x: float, box_z: float, shelf: dict) -> bool:
@@ -91,6 +102,11 @@ def _quat_mul(a, b) -> tuple[float, float, float, float]:
     )
 
 
+# composed after _quat_mul is defined; the local (right-hand) factor
+# spins about the flange z so the hand lands on the intended pose
+FRONT_QUAT = _quat_mul(_FRONT_BASE, _qz(-HAND_MOUNT_YAW))
+
+
 def yaw_of(quat_xyzw) -> float:
     """Yaw (rotation about world z) of a pose quaternion."""
     x, y, z, w = (float(v) for v in quat_xyzw)
@@ -98,11 +114,19 @@ def yaw_of(quat_xyzw) -> float:
 
 
 def topdown_quat(yaw: float) -> tuple[float, float, float, float]:
-    """qz(yaw) * qx(pi): flange z pointing straight down, yawed about world
-    z (TC-1 xyzw)."""
-    qz = (0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2))
+    """qz(yaw + HAND_MOUNT_YAW) * qx(pi): flange z pointing straight down
+    with the FINGER axis at `yaw` (TC-1 xyzw) — the flange target carries
+    the hand-mount offset (issue #92, see HAND_MOUNT_YAW)."""
+    flange_yaw = yaw + HAND_MOUNT_YAW
+    qz = (0.0, 0.0, math.sin(flange_yaw / 2), math.cos(flange_yaw / 2))
     qx = (1.0, 0.0, 0.0, 0.0)
     return _quat_mul(qz, qx)
+
+
+def finger_yaw_of(quat_xyzw) -> float:
+    """The PHYSICAL finger-straddle yaw a flange quaternion realizes —
+    yaw_of minus the hand-mount offset."""
+    return yaw_of(quat_xyzw) - HAND_MOUNT_YAW
 
 
 def _fingertip_clearance(box_xy, u, size_xyz, neighbours, finger_open) -> float:

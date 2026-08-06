@@ -1,10 +1,14 @@
 """Orphan-node reaper shared by the rollout runner and the test harness.
 
 dora spawns nodes via `uv run` OUTSIDE the launcher's process group, so
-killing `dora run` leaks them; leaked genesis nodes burn ~50% of a core
-each and have twice strangled whole sessions (T05, T08). Reap ONLY
-processes whose cwd is the given unique run/dataflow directory. SIGTERM
-first (the trace recorder must flush its writers), then SIGKILL."""
+killing `dora run` leaked them wholesale before dora-rs/dora#2949 (in
+our pin since cd597e705); a slow node can STILL outlive the CLI's
+graceful-stop window (deterministic teardown tracked upstream in
+dora#2920), and leaked genesis nodes burn ~50% of a core each and have
+twice strangled whole sessions (T05, T08) — so the reaper stays as the
+belt. Reap ONLY processes whose cwd is the given unique run/dataflow
+directory. SIGTERM first (the trace recorder must flush its writers),
+then SIGKILL."""
 
 from __future__ import annotations
 

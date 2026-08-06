@@ -141,3 +141,21 @@ def test_order_and_phase_are_seeded_not_fixed():
     assert "rng.shuffle(order)" in src
     assert "rng.uniform(0.0, 25.0)" in src
     assert "phase_delay_s" in src
+
+
+def test_manifest_dora_api_rev_matches_pyproject_pin():
+    """PR #85 review: batch_manifest hardcodes dora_api_rev; a future pin
+    bump that misses it would attribute latency samples to the wrong
+    runtime rev — the manifest field designed to catch cross-rev mixing
+    must never itself drift from the pyproject pin."""
+    import re
+    import tomllib
+
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+    pin = pyproject["tool"]["uv"]["sources"]["dora-rs"]["rev"]
+    src = (REPO_ROOT / "tools" / "h4_iteration.py").read_text()
+    constant = re.search(r'"dora_api_rev": "([0-9a-f]+)"', src).group(1)
+    assert pin.startswith(constant), (
+        f"tools/h4_iteration.py dora_api_rev {constant!r} is not a prefix of "
+        f"the pyproject dora-rs pin {pin!r} — update it with the bump"
+    )

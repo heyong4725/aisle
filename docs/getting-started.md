@@ -28,7 +28,7 @@ The dora **CLI** must be cargo-installed from the SAME rev as the
 python API (needs a Rust toolchain — `rustup` if you don't have one):
 
 ```bash
-cargo install --git https://github.com/dora-rs/dora --rev 7eb4a5f8b dora-cli --locked
+cargo install --git https://github.com/dora-rs/dora --rev cd597e705 dora-cli --locked
 dora --version    # prints a warning if the CLI/python-API revs drift
 ```
 

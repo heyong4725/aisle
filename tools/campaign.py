@@ -203,10 +203,22 @@ def campaign_treatment(
             "stdin": "devnull",
             "confinement": "none (ADR-h2 point 5)",
         },
+        # issue #96 / PR #98 review: the isolation policy is part of the
+        # treatment — resuming an unisolated (pre-#98) campaign with an
+        # isolated runner would mix two treatments in one record. Old
+        # records carry no key (None) and fail the resume identity check.
+        "session_isolation_policy": "isolated-home-v1",
     }
 
 
-TREATMENT_IDENTITY = ("commit", "agent", "model", "dev_seeds", "holdout_seeds")
+TREATMENT_IDENTITY = (
+    "commit",
+    "agent",
+    "model",
+    "dev_seeds",
+    "holdout_seeds",
+    "session_isolation_policy",
+)
 
 
 def agent_cmd_campaign(agent: str, model: str, prompt: str) -> list[str]:
@@ -366,10 +378,88 @@ def _default_budgets(root: Path) -> tuple[int, float]:
     return int(campaign["tokens"]), float(campaign["wall_h"])
 
 
-def run_session(agent: str, cmd: list[str], wt: Path, out: Path, ceilings: dict) -> dict:
+def isolated_session_env(out: Path) -> tuple[dict, dict]:
+    """Issue #96: campaign sessions must not inherit the operator's
+    config/home — the S3-r3 agent's third action was reading ~/.claude
+    memory (annotated transcript, event [21]): ambient operator state
+    outside the treatment's defined persistence surface (ADR-h3 D3),
+    invisible to the wipe machinery. HOME and CLAUDE_CONFIG_DIR are
+    rebound to a per-session scratch home so the only knowledge channels
+    are protocol-defined ones; the returned record makes the isolation
+    machine-detectable in every scenario record (absence in future
+    audits = unisolated session). Auth caveat: credential stores keyed
+    off HOME/config break under this — launchers MUST auth-probe with
+    this env and refuse the campaign on failure (fail closed), never
+    silently fall back to the operator home."""
+    home = out / "agent_home"
+    rotated = None
+    if home.exists():
+        # PR #98 review P2: an aborted attempt leaves state in agent_home
+        # (H2 reuses session_XX on resume; the auth-probe dir is fixed) —
+        # "per-session scratch" must be FRESH every launch. Rotate the
+        # occupied home aside, preserving abort artifacts for audit.
+        n = 1
+        while (dest := out / f"agent_home-superseded{n}").exists():
+            n += 1
+        home.rename(dest)
+        rotated = str(dest)
+    config = home / ".claude"
+    config.mkdir(parents=True, exist_ok=True)
+    codex_home = home / ".codex"
+    codex_home.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env["HOME"] = str(home)
+    env["CLAUDE_CONFIG_DIR"] = str(config)
+    # PR #98 review round 2: agent CLIs honor explicit home overrides
+    # that BYPASS the HOME rebind — an operator-exported CODEX_HOME (or
+    # XDG_* base dirs) would expose the operator's directories despite
+    # the isolation record. Pin every such override into the scratch.
+    env["CODEX_HOME"] = str(codex_home)
+    env["XDG_CONFIG_HOME"] = str(home / ".config")
+    env["XDG_DATA_HOME"] = str(home / ".local" / "share")
+    env["XDG_CACHE_HOME"] = str(home / ".cache")
+    env["XDG_STATE_HOME"] = str(home / ".local" / "state")
+    record = {
+        "home": str(home),
+        "claude_config_dir": str(config),
+        "codex_home": str(codex_home),
+        "xdg_rebound": True,
+    }
+    if rotated:
+        record["rotated_prior_home"] = rotated
+    return env, record
+
+
+def probe_agent_auth(agent: str, model: str, env: dict, cwd: Path) -> str | None:
+    """Issue #96 fail-closed companion to isolated_session_env: HOME/
+    config isolation breaks credential stores keyed off the operator
+    home, so the launcher runs ONE trivial prompt under the isolated env
+    before any budget is spent. Returns an error string (refuse the
+    campaign) or None. Never silently falls back to the operator home."""
+    cmd = agent_cmd_campaign(agent, model, "Reply with exactly: ok")
+    try:
+        proc = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=180)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"auth probe failed to run under isolated env: {exc}"
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "").strip()[-400:]
+        return f"auth probe exited {proc.returncode} under isolated env: {tail}"
+    return None
+
+
+def run_session(
+    agent: str,
+    cmd: list[str],
+    wt: Path,
+    out: Path,
+    ceilings: dict,
+    env: dict | None = None,
+) -> dict:
     """Spawn the session, count token spend from the LIVE stdout pipe
     (issue #42: the on-disk log is a tee, never the count's source), kill
-    the process group at a ceiling. Returns the session record."""
+    the process group at a ceiling. `env` (issue #96) replaces the child
+    environment — None inherits, for non-campaign callers. Returns the
+    session record."""
     import threading
 
     log_path = out / "session.jsonl"
@@ -383,6 +473,7 @@ def run_session(agent: str, cmd: list[str], wt: Path, out: Path, ceilings: dict)
         proc = subprocess.Popen(
             cmd,
             cwd=wt,
+            env=env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=err,
@@ -567,6 +658,16 @@ def main() -> int:
     prior_tokens = sum(s["tokens"] for s in sessions)
     prior_wall_s = sum(s["wall_s"] for s in sessions)
 
+    # issue #96 fail-closed (PR #98 review P1): probe auth under the
+    # ISOLATED env before ANY side effect — worktree creation, session
+    # dir, budget spend. An empty home that breaks credentials must
+    # refuse here with CON-8 JSON, never start a metered session.
+    probe_env, _ = isolated_session_env(args.out / "auth_probe")
+    probe_error = probe_agent_auth(args.agent, model, probe_env, args.out)
+    if probe_error:
+        print(json.dumps({"ok": False, "error": probe_error}))
+        return 1
+
     wt = args.out / "worktree"
     if not wt.exists():
         print(f"[h2] creating worktree at {oid[:8]}", file=sys.stderr)
@@ -578,6 +679,7 @@ def main() -> int:
     session_dir.mkdir(exist_ok=True)
     print(f"[h2] session {session_index} starting ({args.agent}/{model})", file=sys.stderr)
     t0_epoch = time.time()
+    session_env, session_isolation = isolated_session_env(session_dir)
     session = run_session(
         args.agent,
         cmd,
@@ -589,7 +691,9 @@ def main() -> int:
             "token_ceiling": token_ceiling,
             "wall_ceiling_s": wall_h * 3600.0,
         },
+        env=session_env,
     )
+    session["isolation"] = session_isolation
     session["t0_epoch"] = t0_epoch
     sessions.append(session)
 

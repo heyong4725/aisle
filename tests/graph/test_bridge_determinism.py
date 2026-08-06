@@ -40,9 +40,12 @@ TOPIC_HZ = {"joint_state": 100, "gripper_state": 100, "oracle_state": 30, "poses
 DRIVER_TICK_S = 0.05  # conftest wires the driver to dora/timer/millis/50
 EARLY_SPACING, LATE_SPACING = 40, 97
 TAIL_S = 8.0  # wall capture time after the second reset
-# a window must span at least this much SIM time to prove anything;
-# below it the machine is too loaded for a meaningful run (rtf < ~0.05)
-MIN_SPAN_NS = {0: int(0.1e9), 1: int(0.4e9)}
+# CON-5 layer (c): the NORMATIVE comparison window is the first 1.0 s
+# of sim time after each reset — enforced in full (a capture that does
+# not cover the window is inadmissible: rerun, not compare). Beyond
+# 1.0 s the comparison continues informatively at the same tolerance
+# while this fixture graph stays contact-free.
+NORMATIVE_WINDOW_NS = int(1.0e9)
 
 
 def _run_pair_member(tmp_path, dataflow, name: str, spacing_ticks: int) -> list[dict]:
@@ -130,48 +133,82 @@ def test_observation_stream_is_reset_anchored(tmp_path, dataflow):
         )
         # nothing but the BRG-6 startup announcement may precede the first
         # reset in the recorder's file order — a pre-reset physics row means
-        # the hold leaked (ADR-25 decision 1)
+        # the hold leaked (ADR-25 decision 1). Checked PER RUN (PR #88
+        # re-review: an earlier edit left this on the loop's stale tail).
         first_reset_pos = next(i for i, r in enumerate(records) if r["id"] == "reset_done")
         leaked = [r["id"] for r in records[:first_reset_pos] if r["id"] in PHYSICS_TOPICS]
         assert not leaked, f"{name}: physics published before the first reset: {leaked}"
 
-    # both reset windows (seed 7 and seed 11) must match run-to-run on the
-    # overlap of reset-relative stamps; the early run's seed-7 window is
-    # shorter (its second reset lands sooner), which caps the overlap
+    # CON-5 layer (a) (ADR-26): the FIRST post-reset snapshot is
+    # seed-derived and must be bit-identical across runs. The first reset
+    # lands at sim 0 in both runs (gate above), so its oracle_state/poses
+    # snapshot rows are exactly the stamp-0 rows — unambiguous here,
+    # unlike the reset-2 boundary the windows exclude.
+    for topic in ("oracle_state", "poses"):
+        snaps = []
+        for records in (early, late):
+            rows = [
+                r["sha256"]
+                for r in records
+                if r["id"] == topic and int(r["metadata"]["sim_time_ns"]) == 0
+            ]
+            assert rows, f"{topic}: no reset-1 snapshot at sim 0"
+            snaps.append(rows[0])
+        assert snaps[0] == snaps[1], (
+            f"{topic}: first post-reset snapshot differs across runs (CON-5 layer (a))"
+        )
+
+    # both reset windows (seed 7 and seed 11) must match run-to-run. The
+    # CON-5 layer (c) contract is enforced over the FULL normative window
+    # (first 1.0 sim-s post-reset); a capture that does not cover it is
+    # inadmissible. Shared stamps beyond the window are compared
+    # informatively at the same tolerance but do not gate.
     early_windows, late_windows = _windows(early), _windows(late)
+    beyond_window_diffs: list[str] = []
     for window_idx, seed in ((0, 7), (1, 11)):
         early_w = early_windows[window_idx]
         late_w = late_windows[window_idx]
         for topic in PHYSICS_TOPICS:
             shared = sorted(set(early_w[topic]) & set(late_w[topic]))
             assert shared, f"seed {seed} {topic}: no shared post-reset stamps"
-            span_ns = shared[-1] - shared[0]
-            assert span_ns >= MIN_SPAN_NS[window_idx], (
-                f"seed {seed} {topic}: shared window spans only {span_ns / 1e9:.3f} sim-s "
-                f"(need {MIN_SPAN_NS[window_idx] / 1e9:.1f}) — machine too loaded for a "
-                "meaningful comparison, rerun on an idler box"
+            assert shared[-1] >= NORMATIVE_WINDOW_NS, (
+                f"seed {seed} {topic}: shared coverage ends at "
+                f"{shared[-1] / 1e9:.3f} sim-s — the capture does not cover the "
+                "full 1.0 s normative window (CON-5 layer (c)): inadmissible, rerun"
             )
-            # density over the OBSERVED span: half nominal absorbs jitter
-            # while proving a real contiguous stretch was compared
-            floor = max(3, int(TOPIC_HZ[topic] * span_ns / 1e9 * 0.5))
-            assert len(shared) >= floor, (
-                f"seed {seed} {topic}: only {len(shared)} shared stamps across "
-                f"{span_ns / 1e9:.3f} sim-s, need {floor}"
+            normative = [t for t in shared if t <= NORMATIVE_WINDOW_NS]
+            # density over the normative window: half nominal absorbs
+            # jitter while proving a real contiguous stretch was compared
+            floor = max(3, int(TOPIC_HZ[topic] * (NORMATIVE_WINDOW_NS / 1e9) * 0.5))
+            assert len(normative) >= floor, (
+                f"seed {seed} {topic}: only {len(normative)} shared stamps inside "
+                f"the normative window, need {floor}"
             )
-            # cadence is reset-anchored in BOTH windows: over the shared
-            # span the two runs must publish on the identical stamp grid
+            # cadence is reset-anchored across the WHOLE shared span
             limit = shared[-1]
             assert {t for t in early_w[topic] if t <= limit} == {
                 t for t in late_w[topic] if t <= limit
             }, f"seed {seed} {topic}: stamp grids differ — cadence not reset-anchored"
             for rel_ns in shared:
                 a, b = early_w[topic][rel_ns], late_w[topic][rel_ns]
-                # GPU ULP-noise tolerance (see docstring); oracle_state and
-                # poses exceed the recorder's 64-element value cutoff, so
-                # they are covered by the cadence assertions above only
-                if "values" in a and "values" in b:
-                    for j, (u, v) in enumerate(zip(a["values"], b["values"], strict=True)):
-                        assert abs(u - v) < 1e-6, (
-                            f"seed {seed} {topic}[{j}] at t+{rel_ns} ns: "
-                            f"{u} vs {v} exceeds the GPU ULP-noise tolerance"
-                        )
+                # every desk-fixture physics payload is <= 64 elements, so
+                # the recorder records values for ALL four topics — their
+                # absence would silently void layer (c), so it fails loudly
+                assert "values" in a and "values" in b, (
+                    f"seed {seed} {topic}: recorder omitted values — layer (c) "
+                    "cannot be checked; fix the capture, do not skip"
+                )
+                worst = max(abs(u - v) for u, v in zip(a["values"], b["values"], strict=True))
+                if rel_ns <= NORMATIVE_WINDOW_NS:
+                    assert worst < 1e-6, (
+                        f"seed {seed} {topic} at t+{rel_ns} ns: diff {worst} exceeds "
+                        "the GPU ULP-noise tolerance inside the normative window"
+                    )
+                elif worst >= 1e-6:
+                    beyond_window_diffs.append(
+                        f"seed {seed} {topic} t+{rel_ns / 1e9:.2f}s diff {worst:.2e}"
+                    )
+    if beyond_window_diffs:
+        # informative only: divergence beyond the normative window is
+        # layer (d)'s regime (chaos), recorded for the log
+        print(f"beyond-window divergences (informative): {beyond_window_diffs[:10]}")

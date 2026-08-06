@@ -22,6 +22,7 @@ import numpy as np
 from aisle.nodes.budget_guard import fk_flange
 from aisle.nodes.grasp_topdown import plan_grasp
 from aisle.nodes.ik_trajectory import (
+    HAND_MOUNT_YAW,
     STAGING_Z,
     Stage,
     fk_tcp,
@@ -175,7 +176,13 @@ def place_stages(
     q_unwind = q_start.copy()
     best = None
     for residual in (0.0, math.pi, -math.pi):
-        j7 = q_start[6] - (yaw_cur - residual)
+        # `residual` is the physical FINGER yaw at place; the J7 target is
+        # the compensated FLANGE yaw so the unwound pose matches
+        # topdown_rotation(residual) exactly (PR #93 review: driving the
+        # flange to the bare residual left the transfer to absorb the
+        # 45-degree mount offset while loaded — the very creep mechanism
+        # the neutral-unwind stage exists to avoid)
+        j7 = q_start[6] - (yaw_cur - (residual + HAND_MOUNT_YAW))
         if -2.8973 <= j7 <= 2.8973:
             if best is None or abs(j7 - q_start[6]) < abs(best[0] - q_start[6]):
                 best = (j7, residual)
