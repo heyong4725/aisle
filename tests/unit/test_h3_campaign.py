@@ -622,7 +622,8 @@ def test_launch_requires_and_enforces_the_pin_era_hash(tmp_path, monkeypatch):
     env = {**os.environ, "PATH": f"{fake}:/usr/bin:/bin"}
     script = str(REPO_ROOT / "tools" / "h3_campaign.py")
 
-    # missing --expect-dora-sha256: argparse refuses outright
+    # missing --expect-dora-sha256: a CON-8 JSON refusal on stdout,
+    # exit nonzero — NOT an argparse usage error on stderr (round 6)
     missing = subprocess.run(
         [sys.executable, script, "--arms", "W", "--scenarios", "S1"],
         capture_output=True,
@@ -631,7 +632,8 @@ def test_launch_requires_and_enforces_the_pin_era_hash(tmp_path, monkeypatch):
         cwd=tmp_path,
     )
     assert missing.returncode != 0
-    assert "--expect-dora-sha256" in missing.stderr
+    refusal = _json.loads(missing.stdout)
+    assert refusal["ok"] is False and "--expect-dora-sha256" in refusal["error"]
 
     # wrong hash: refuses with the CON-8 error object, exit nonzero
     wrong = subprocess.run(
@@ -654,3 +656,30 @@ def test_launch_requires_and_enforces_the_pin_era_hash(tmp_path, monkeypatch):
     out = _json.loads(wrong.stdout)
     assert out["ok"] is False and "pin-era" in out["error"]
     assert out["found"]["sha256"] and out["found"]["sha256"] != "f" * 64
+
+
+def test_preflight_runtime_mismatch_refuses_before_the_session(tmp_path, monkeypatch):
+    """PR #90 round 6: a DETECTED preflight mismatch must abort before
+    the multi-hour session spends its budget — never record-and-run."""
+    import h3_campaign as h3
+
+    monkeypatch.setenv("PATH", str(_fake_dora(tmp_path, "drifted", "rev cd597e705")))
+
+    def session_must_not_launch(*a, **kw):
+        raise AssertionError("run_session launched despite preflight runtime drift")
+
+    monkeypatch.setattr(h3, "run_session", session_must_not_launch)
+    launch = {"path": "/pin/dora", "sha256": "a" * 64, "version": "dora-cli 1.0.0-rc.4"}
+    with pytest.raises(RuntimeError, match="runtime drift at scenario preflight"):
+        h3.run_scenario(
+            tmp_path,
+            "deadbeef",
+            "W",
+            {"tier": "S1", "tokens": 1000, "episodes": 8, "wall_h": 1.0},
+            tmp_path / "out",
+            "claude",
+            "m",
+            launch_runtime=launch,
+        )
+    # refused before ANY scenario side effect: no slot dir was created
+    assert not (tmp_path / "out").exists()

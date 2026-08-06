@@ -297,6 +297,22 @@ def run_scenario(
     attempt: int = 1,
     launch_runtime: dict | None = None,
 ) -> dict:
+    # BRACKETING runtime identity (rounds 5-6: preflight alone leaves
+    # the multi-hour session and holdout windows unguarded, and a
+    # DETECTED preflight mismatch must refuse BEFORE the budget is
+    # spent, not record-and-run) — captured here and re-captured after
+    # the session (before holdout scoring) and after holdout; every
+    # capture must match the launch binary
+    runtime = host_dora_runtime()
+    rt_baseline = launch_runtime or runtime
+    rechecks: dict[str, dict] = {}
+    preflight_drift = runtime_drift_check(rt_baseline, runtime)
+    if preflight_drift is not None:
+        # infra abort (protocol point 8): main() records the runner
+        # error, marks the campaign non-OK, and stops — the scenario
+        # re-runs after the operator restores the pinned runtime
+        raise RuntimeError(f"runtime drift at scenario preflight: {preflight_drift}")
+    rt_drift: dict | None = None
     tier = scenario["tier"]
     slot = scenario_slot(tier, attempt)
     session_dir = out / f"arm_{arm}" / slot
@@ -304,14 +320,6 @@ def run_scenario(
     if rotated is not None:
         print(f"[h3] occupied slot rotated to {rotated.name}", file=sys.stderr)
     session_dir.mkdir(parents=True, exist_ok=True)
-    # BRACKETING runtime identity (round-5 review: preflight alone leaves
-    # the multi-hour session and holdout windows unguarded) — captured
-    # before the session, after it (before holdout scoring), and after
-    # holdout; every capture must match the launch binary
-    runtime = host_dora_runtime()
-    rt_baseline = launch_runtime or runtime
-    rechecks: dict[str, dict] = {}
-    rt_drift = runtime_drift_check(rt_baseline, runtime)
     prior_skills = registered_skill_ids(wt)
     prompt = campaign_prompt(tier, scenario["tokens"], scenario["wall_h"], DEV_SEEDS, note=NUDGE)
     t0 = time.time()
@@ -386,12 +394,13 @@ def main() -> int:
     )
     parser.add_argument(
         "--expect-dora-sha256",
-        required=True,
+        default=None,
         help="sha256 of the pin-era dora CLI binary — the operator's "
         "assertion that the host CLI matches the campaign pin (cargo-"
         "install at the pin rev, then `shasum -a 256 $(which dora)`). "
-        "REQUIRED: an optional expectation let the S3-r3 mismatch class "
-        "self-certify clean (PR #90 round 5); a different or unresolved "
+        "REQUIRED (enforced as a CON-8 JSON refusal, not an argparse "
+        "error — round 6): an optional expectation let the S3-r3 "
+        "mismatch class self-certify clean; a different or unresolved "
         "host CLI refuses to launch (ADR-h3 amendment §5)",
     )
     args = parser.parse_args()
@@ -399,6 +408,19 @@ def main() -> int:
     error = validate_seed_ranges(DEV_SEEDS, HOLDOUT_SEEDS)
     if error:
         print(json.dumps({"ok": False, "error": error}))
+        return 1
+    if not args.expect_dora_sha256:
+        # CON-8: refusals are JSON on stdout, exit nonzero — argparse
+        # `required` wrote usage to stderr with empty stdout (round 6)
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "--expect-dora-sha256 is required: the operator must assert "
+                    "the pin-era dora CLI hash (ADR-h3 amendment §5)",
+                }
+            )
+        )
         return 1
     arms = [a for a in ARMS if a in args.arms.split(",")]
     tiers = [s["tier"] for s in SCENARIOS if s["tier"] in args.scenarios.split(",")]
