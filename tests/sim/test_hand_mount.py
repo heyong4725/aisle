@@ -54,3 +54,33 @@ def test_planned_grip_yaw_matches_physical_finger_axis():
             f"grip yaw {math.degrees(grip_yaw):.0f}: physical separation axis "
             f"{axis:.1f} deg, planner expects {expected:.1f} deg (off {error:.1f})"
         )
+
+
+def test_front_quat_fingers_are_physically_horizontal():
+    """Front-mode twin of the top-down gate (issue #92 follow-up): the
+    fingers realized in Genesis for FRONT_QUAT must separate
+    HORIZONTALLY (no y-z tilt) with the approach axis into the shelf —
+    the uncompensated Ry(pi/2) executed them 45 degrees diagonal."""
+    from aisle.nodes.grasp_topdown import FRONT_QUAT
+    from aisle.nodes.ik_trajectory import _CANONICAL_SEEDS, ik_solve, quat_to_rotation
+    from aisle.scenes.pharmacy import build_scene, to_numpy
+
+    handle = build_scene(seed=3, embodiment="franka", n_envs=1, headless=True)
+    robot = handle.robot
+    links = {link.name: link for link in robot.links}
+    rot = quat_to_rotation(FRONT_QUAT)
+    q = None
+    for seed in _CANONICAL_SEEDS:
+        q = ik_solve(np.array([0.40, -0.10, 0.20]), rot, seed)
+        if q is not None:
+            break
+    assert q is not None, "front-orientation IK failed at the probe pose"
+    full = np.concatenate([q, [0.04, 0.04]]).astype(np.float32)
+    robot.set_qpos(full[: robot.n_qs])
+    handle.scene.step()
+    lf = to_numpy(links["left_finger"].get_pos()).reshape(-1)
+    rf = to_numpy(links["right_finger"].get_pos()).reshape(-1)
+    d = lf - rf
+    tilt = math.degrees(math.atan2(d[2], d[1]))
+    tilt = min(abs(tilt), abs(180.0 - abs(tilt)))
+    assert tilt < 2.0, f"finger separation tilted {tilt:.1f} deg from horizontal"

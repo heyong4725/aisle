@@ -96,8 +96,8 @@ TRANSFER_TCP_Z = 0.30
 # the old ones). Uncompensated, every "axis-aligned" top-down grip was
 # a DIAGONAL pinch: the T10 "diagonal detents" at close and the seed-3
 # hand-corner topple of a taller neighbour both trace here. Front mode
-# (FRONT_QUAT in grasp_topdown) does NOT yet carry the compensation —
-# issue #92 follow-up before T1 work.
+# (FRONT_QUAT in grasp_topdown) composes the same offset about its own
+# local z (issue #92 follow-up, closed).
 HAND_MOUNT_YAW = -math.pi / 4
 
 _LIMITS = load_limits("franka")

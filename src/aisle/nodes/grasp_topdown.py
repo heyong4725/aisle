@@ -56,9 +56,19 @@ WRIST_CLEARANCE = 0.065
 MIN_FINGER_ON_BOX = 0.015
 
 
-# xyzw of Ry(pi/2): flange z horizontal (+x, into the shelf), gripper y
-# horizontal — the front-approach orientation
-FRONT_QUAT = (0.0, 0.7071067811865476, 0.0, 0.7071067811865476)
+# front-approach flange orientation: the intended HAND pose is Ry(pi/2)
+# (flange z horizontal +x into the shelf, finger travel horizontal), and
+# the flange target composes away the local hand mount —
+# Ry(pi/2) @ Rz(-HAND_MOUNT_YAW) (issue #92 follow-up: the bare Ry(pi/2)
+# executed the fingers 45 degrees DIAGONAL in the y-z plane, the
+# front-mode twin of the m0 seed-3 top-down bug; correction sign
+# verified in Genesis — tilt -45.1 -> -0.1 deg. Physical gate:
+# tests/sim/test_hand_mount.py).
+_FRONT_BASE = (0.0, 0.7071067811865476, 0.0, 0.7071067811865476)  # xyzw Ry(pi/2)
+
+
+def _qz(angle: float) -> tuple[float, float, float, float]:
+    return (0.0, 0.0, math.sin(angle / 2), math.cos(angle / 2))
 
 
 def needs_front(box_x: float, box_z: float, shelf: dict) -> bool:
@@ -90,6 +100,11 @@ def _quat_mul(a, b) -> tuple[float, float, float, float]:
         aw * bz + ax * by - ay * bx + az * bw,
         aw * bw - ax * bx - ay * by - az * bz,
     )
+
+
+# composed after _quat_mul is defined; the local (right-hand) factor
+# spins about the flange z so the hand lands on the intended pose
+FRONT_QUAT = _quat_mul(_FRONT_BASE, _qz(-HAND_MOUNT_YAW))
 
 
 def yaw_of(quat_xyzw) -> float:

@@ -137,6 +137,30 @@ class TestGraspTopdown:
         )
         assert_straddle(grasp[3:], 0.0)  # stays narrow (y)
 
+    def test_front_quat_fingers_straddle_horizontally(self):
+        """Issue #92 follow-up (front-mode mount compensation): the HAND
+        realized by FRONT_QUAT — flange rotation composed with the local
+        Rz(HAND_MOUNT_YAW) mount — must keep the approach axis +x AND the
+        finger-travel axis (hand y) HORIZONTAL. The uncompensated quat
+        executed the fingers 45 degrees diagonal in the y-z plane
+        (measured in Genesis), the front-mode twin of the m0 seed-3
+        top-down bug; the physical gate is tests/sim/test_hand_mount.py."""
+        import math
+
+        a = HAND_MOUNT_YAW
+        rz = np.array(
+            [
+                [math.cos(a), -math.sin(a), 0.0],
+                [math.sin(a), math.cos(a), 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+        from aisle.nodes.grasp_topdown import FRONT_QUAT
+
+        hand = quat_to_rotation(FRONT_QUAT) @ rz
+        assert hand[:, 2] == pytest.approx([1.0, 0.0, 0.0], abs=1e-6)  # into the shelf
+        assert abs(hand[2, 1]) < 1e-6  # finger travel horizontal (no z tilt)
+
     def test_front_mode_approaches_horizontally(self):
         """ADR-10: a box under a board is grasped from the shelf FRONT —
         wrist horizontal (approach axis +x), TCP at the box center, and
