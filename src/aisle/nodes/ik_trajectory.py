@@ -85,6 +85,20 @@ STAGING_Z = 0.56
 # toppled it)
 PLACE_TCP_Z = 0.125
 TRANSFER_TCP_Z = 0.30
+# flange-yaw correction realizing the planner's grip axis (issue #92).
+# The Franka hand is mounted -45 degrees about the flange z (measured
+# in-sim: neutral link7 yaw -45 vs hand yaw 0), so a flange-yaw target
+# psi_f executes the finger-separation axis at psi_f - 45 (the
+# m0-2-0d0773 seed-3 plan targeted flange yaw 90 and the executed axis
+# came out 46). The planner's grip axis u(psi) = (-sin psi, cos psi)
+# sits at 90 + psi; flange = psi + HAND_MOUNT_YAW makes the executed
+# axis coincide with u mod pi (the -45 branch keeps IK solutions near
+# the old ones). Uncompensated, every "axis-aligned" top-down grip was
+# a DIAGONAL pinch: the T10 "diagonal detents" at close and the seed-3
+# hand-corner topple of a taller neighbour both trace here. Front mode
+# (FRONT_QUAT in grasp_topdown) composes the same offset about its own
+# local z (issue #92 follow-up, closed).
+HAND_MOUNT_YAW = -math.pi / 4
 
 _LIMITS = load_limits("franka")
 _Q_MIN = np.asarray(_LIMITS.q_min[:7], dtype=np.float64)
@@ -149,8 +163,9 @@ def _slerp(qa: np.ndarray, qb: np.ndarray, t: float) -> np.ndarray:
 
 
 def topdown_rotation(yaw: float) -> np.ndarray:
-    """Rz(yaw) @ Rx(pi): flange z straight down."""
-    cy, sy = math.cos(yaw), math.sin(yaw)
+    """Rz(yaw + HAND_MOUNT_YAW) @ Rx(pi): flange z straight down, FINGER
+    axis at `yaw` — the mount offset maps finger yaw to flange yaw."""
+    cy, sy = math.cos(yaw + HAND_MOUNT_YAW), math.sin(yaw + HAND_MOUNT_YAW)
     rz = np.array([[cy, -sy, 0.0], [sy, cy, 0.0], [0.0, 0.0, 1.0]])
     rx = np.array([[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0]])
     return rz @ rx

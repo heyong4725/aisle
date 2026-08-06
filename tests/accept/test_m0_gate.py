@@ -83,13 +83,78 @@ def test_m0_1_pass1_at_least_95(m0_first_run):
     assert m0_first_run["pass1"] >= 0.95, m0_first_run["failures"]
 
 
-def test_m0_2_rerun_reproduces_status_vector(m0_first_run):
-    """SPEC 090 M0-2 (CON-5): re-running M0-1 with identical seeds
-    reproduces the identical per-episode status vector."""
-    rerun = rollout_50(f"m0-2-{uuid.uuid4().hex[:6]}")
-    first = [(e["seed"], e["status"]) for e in m0_first_run["episodes"]]
-    second = [(e["seed"], e["status"]) for e in rerun["episodes"]]
-    assert first == second
+def _episode_goal_bytes_sans_timing(run_id: str) -> list[bytes]:
+    """The run's RAW episode_goal payload bytes with only the timing-layer
+    reset_sim_ns field textually excised — CON-5 layer (a) promises the
+    seed-derived goal content BIT-identically (PR #88 re-review: parsed-
+    object equality would forgive key order, whitespace, and numeric-
+    representation drift), while layers (b)/(d) own the timing."""
+    import re
+
+    import pyarrow.ipc as ipc
+
+    path = REPO_ROOT / "runs" / run_id / "traces" / "rollout-client__episode_goal.arrow"
+    out = []
+    for row in ipc.open_stream(path).read_all().to_pylist():
+        stripped, n = re.subn(r',\s*"reset_sim_ns":\s*\d+', "", row["text"])
+        assert n == 1, f"goal payload missing reset_sim_ns: {row['text'][:120]}"
+        out.append(stripped.encode())
+    return out
+
+
+def test_m0_2_rerun_reproduces_the_gate_and_goal_content(m0_first_run):
+    """SPEC 090 M0-2 (CON-5 layers (a)/(d), ADR-26): the rerun MUST
+    independently satisfy M0-1's pass1 >= 0.95 — bounding the rate
+    difference at <= 0.04 by construction; non-rejection by a
+    significance test is NOT equivalence and does not gate (PR #88
+    review: 48/50 vs 40/50 gives Fisher p = 0.028, which must fail).
+    Episode goals MUST be bit-identical after stripping reset_sim_ns
+    (layer (a)). The replicate evidence — both success counts, the
+    per-seed flip set, and the Fisher p as context — is persisted to
+    runs/<rerun-id>/m0_2_replicate.json (the MUST-log requirement;
+    pytest capture hides passing-test stdout)."""
+    import json as _json
+
+    from aisle.harness.stats import fisher_exact_two_sided
+
+    rerun_id = f"m0-2-{uuid.uuid4().hex[:6]}"
+    rerun = rollout_50(rerun_id)
+
+    # layer (a): seed-derived goal content bit-identical across the pair
+    first_goals = _episode_goal_bytes_sans_timing(m0_first_run["run_id"])
+    rerun_goals = _episode_goal_bytes_sans_timing(rerun_id)
+    assert first_goals == rerun_goals, "seed-derived episode goals differ (CON-5 layer (a))"
+
+    # seed-list integrity BEFORE the dict conversion: a duplicate seed
+    # would silently collapse and let two identically malformed 50-row
+    # runs pass with n < 50 (PR #88 re-review)
+    for label, report in (("first", m0_first_run), ("rerun", rerun)):
+        seeds = [e["seed"] for e in report["episodes"]]
+        assert sorted(seeds) == list(range(50)), f"{label}: seed list is not exactly 0..49"
+
+    first = {e["seed"]: e["status"] for e in m0_first_run["episodes"]}
+    second = {e["seed"]: e["status"] for e in rerun["episodes"]}
+    assert first.keys() == second.keys()
+    flips = {s: (first[s], second[s]) for s in sorted(first) if first[s] != second[s]}
+    k1 = sum(1 for s in first.values() if s == "success")
+    k2 = sum(1 for s in second.values() if s == "success")
+    evidence = {
+        "first_run": m0_first_run["run_id"],
+        "rerun": rerun_id,
+        "success_counts": [k1, k2],
+        "n": len(first),
+        "per_seed_flips": {str(k): v for k, v in flips.items()},
+        "fisher_two_sided_p_context_only": fisher_exact_two_sided(k1, len(first), k2, len(second)),
+    }
+    evidence_path = REPO_ROOT / "runs" / rerun_id / "m0_2_replicate.json"
+    evidence_path.write_text(_json.dumps(evidence, indent=1) + "\n")
+    assert evidence_path.exists()
+
+    # the GATE: the rerun independently re-satisfies M0-1's threshold
+    assert rerun["pass1"] >= 0.95, (
+        f"rerun pass1 {rerun['pass1']} < 0.95 — the replicate does not re-satisfy "
+        f"M0-1; evidence at {evidence_path}; flips: {flips}"
+    )
 
 
 def test_m0_3_mutated_frozen_file_refuses_rollout():

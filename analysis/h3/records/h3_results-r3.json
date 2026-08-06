@@ -1,0 +1,138 @@
+{
+ "ok": true,
+ "treatment": {
+  "commit": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+  "agent": "claude",
+  "agent_cli_version": "2.1.221 (Claude Code)",
+  "model": "claude-fable-5",
+  "prompt_template_sha256": "0f7fb5d9ea5d45e771eea1de0db36475787c8ce8b1892393d4cae19b0b985b6d",
+  "dev_seeds": "0..49",
+  "holdout_seeds": "100..107",
+  "holdout_episodes": 8,
+  "claude_max_turns": null,
+  "runner_sha256": "89599f180c95bec9f245071310fd607442fa8ba77567e0c813e8185201713aaa",
+  "session_spawn": {
+   "stdin": "devnull",
+   "confinement": "none (ADR-h2 point 5)"
+  },
+  "protocol": "ADR-h3-campaign-protocol",
+  "nudge_sha256": "ddf2dba404a0f44b19956c2aa937c5c4ea5046f604a5c687f05e4d9004eddbed",
+  "budget_scale": 1.0,
+  "h3_runner_sha256": "d065d0814cecff35b8ceb0a3c60353445d04a3bc78c1328bec246ff664615228"
+ },
+ "records": [
+  {
+   "arm": "L",
+   "tier": "S3",
+   "attempt": 3,
+   "worktree_head": "809176aeff22cf3fa1d943c18cfdee374947cc6f",
+   "budgets": {
+    "tier": "S3",
+    "tokens": 750000,
+    "episodes": 60,
+    "wall_h": 5.0
+   },
+   "session": {
+    "stopped": "agent_done",
+    "rc": 0,
+    "tokens": 253776,
+    "wall_s": 4274.2
+   },
+   "frozen_drift": [],
+   "holdout": {
+    "ok": true,
+    "error": null,
+    "pass1": 0.0,
+    "pass8": 0.0,
+    "failures": {
+     "wrong_slot": 8
+    }
+   },
+   "first_success_wall_s": null,
+   "wrong_object_total": 0,
+   "rollouts": [
+    {
+     "run_id": "20260805-194534-070bb5",
+     "mtime": 1785960630.956677,
+     "episodes": 3,
+     "pass1": 1.0,
+     "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+     "env_baseline": "origin/main",
+     "env_baseline_oid": "452e271e2c0c910bac552783c9ecc3c9a8a413d6",
+     "env_attested": null
+    },
+    {
+     "run_id": "20260805-201040-4dd422",
+     "mtime": 1785961898.3242898,
+     "episodes": 3,
+     "pass1": 1.0,
+     "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+     "env_baseline": "origin/main",
+     "env_baseline_oid": "ef15bc315c11f990f3ddb35281c5cb621f743a9e",
+     "env_attested": null
+    },
+    {
+     "run_id": "20260805-203259-94a410",
+     "mtime": 1785963018.1691747,
+     "episodes": 1,
+     "pass1": 0.0,
+     "git_sha": "03da7469323eb39c5a917ce18d6f3710862c9e33",
+     "env_baseline": "origin/main",
+     "env_baseline_oid": "0c56f889b26b7c32630365653ac9e1557e9fcfa6",
+     "env_attested": null
+    },
+    {
+     "run_id": "campaign-holdout-L-S3-r3",
+     "mtime": 1785971189.9013712,
+     "episodes": 8,
+     "pass1": 0.0,
+     "git_sha": "809176aeff22cf3fa1d943c18cfdee374947cc6f",
+     "env_baseline": "local",
+     "env_baseline_oid": null,
+     "env_attested": null
+    }
+   ],
+   "prior_skills": [
+    "s1-driver-v2"
+   ],
+   "skills_after": [
+    "s1-driver-v2",
+    "s3-driver-v1"
+   ],
+   "skill_reuse_in_deliverable": []
+  }
+ ],
+ "wipes": [
+  {
+   "arm": "L",
+   "before": "S3-r3",
+   "removed": [
+    ".pytest_cache/",
+    ".ruff_cache/",
+    ".venv/",
+    "skills/s1-driver-v2/",
+    "skills/s3-driver-v1/",
+    "src/aisle/__pycache__/",
+    "src/aisle/harness/__pycache__/",
+    "src/aisle/mobility/__pycache__/",
+    "src/aisle/nodes/__pycache__/",
+    "src/aisle/reset/__pycache__/",
+    "src/aisle/scenes/__pycache__/",
+    "src/aisle/verifier/__pycache__/",
+    "tests/__pycache__/",
+    "tests/accept/__pycache__/",
+    "tests/graph/__pycache__/",
+    "tests/sim/__pycache__/",
+    "tests/unit/__pycache__/",
+    "tools/__pycache__/",
+    "runs/ideas/"
+   ],
+   "detached_from": "4a255912bad6856c67eea2cb5e38d134eb5a0ce2",
+   "kept_ref": "h3/keep-L-pre-S3-r3",
+   "kept_skills": [
+    "s1-driver-v2"
+   ],
+   "skipped_ids": []
+  }
+ ]
+}
