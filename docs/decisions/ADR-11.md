@@ -46,4 +46,21 @@ the FILE format needs a close-time footer and a killed recorder left
 unreadable files. (13) tools/env_hash.json is committed NOW (pre-M0)
 and ci.sh runs --check: the HAR-2 gate needs a committed hash, and any
 PR touching frozen files must regenerate it (CON-7's commit-at-M0 is
-treated as a deadline, not a start date).
+treated as a deadline, not a start date). (14) Clause (3) is
+AMENDED for the realistic verifier: with `AISLE_FRAME_CAPTURE_PERIOD_S`
+set, the recorder ALSO persists raw pixels as
+`frames/<camera>/<sim_time_ns>.npz` — one file per camera per judged
+instant, holding exactly the `{rgb, depth}` mapping
+`verifier.realistic.judge_frames` consumes. Clause (3)'s reasoning still
+holds for a per-FRAME table (30 Hz of 480x640 RGB would dwarf every
+other artifact), but the mp4 it chose is lossy, 10 fps and carries NO
+depth, so a run recorded under (3) alone cannot be replayed through the
+verifier at all: VER-6's offline comparison and VER-7's byte-equality
+both need the arrays the live judge saw. Capture is therefore opt-in and
+cadenced rather than continuous — the VER-9 judged-frame set (period
+checkpoints plus the terminal frame, forced when `episode_result`
+arrives) at ~250 KB per instant, ~30 MB for a 600 s episode at 5 s. The
+overhead rgb/depth pair is written only when both come from ONE render
+(BRG-2 co-renders them when both are due): the geometry stages fuse the
+two, so a mismatched pair would measure a scene that never existed, and
+a gap is the safe outcome.
