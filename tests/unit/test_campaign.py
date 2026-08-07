@@ -766,3 +766,54 @@ def test_missing_campaign_login_is_an_actionable_refusal(tmp_path, monkeypatch):
     rec, err = c.seed_session_credentials("claude", env)
     assert rec is None
     assert "no campaign login for 'claude'" in err and "claude" in err and "/login" in err
+
+
+def test_credential_copy_failure_is_a_refusal_not_a_traceback(tmp_path, monkeypatch):
+    """PR #100 review P1: an unreadable/uncopyable credential file must
+    surface through the (record, error) CON-8 path, never raise past
+    the launcher."""
+    import campaign as c
+
+    login = tmp_path / ".codex-campaign"
+    login.mkdir()
+    src = login / "auth.json"
+    src.write_text("{}")
+    src.chmod(0o000)  # unreadable
+    monkeypatch.setitem(c.CAMPAIGN_LOGIN, "codex", (login, "auth.json"))
+    env, _ = c.isolated_session_env(tmp_path / "out")
+    rec, err = c.seed_session_credentials("codex", env)
+    src.chmod(0o600)
+    assert rec is None and "credential seed failed" in err
+
+
+def test_seeded_credentials_are_scrubbed_and_rotation_scrubs_too(tmp_path, monkeypatch):
+    """PR #100 review P1: live tokens must not persist in runs/
+    artifacts — scrub removes them from the active home, and a rotated
+    (aborted-attempt) home is scrubbed at rotation while its other
+    artifacts survive for audit."""
+    import campaign as c
+
+    login = tmp_path / ".codex-campaign"
+    login.mkdir()
+    (login / "auth.json").write_text('{"token": "live"}')
+    monkeypatch.setitem(c.CAMPAIGN_LOGIN, "codex", (login, "auth.json"))
+    out = tmp_path / "session_00"
+    env, _ = c.isolated_session_env(out)
+    _, err = c.seed_session_credentials("codex", env)
+    assert err is None
+    (Path(env["CODEX_HOME"]) / "history.jsonl").write_text("audit artifact")
+
+    scrubbed = c.scrub_session_credentials(Path(env["HOME"]))
+    assert scrubbed == [str(Path(env["CODEX_HOME"]) / "auth.json")]
+    assert not (Path(env["CODEX_HOME"]) / "auth.json").exists()
+    assert (Path(env["CODEX_HOME"]) / "history.jsonl").exists()
+
+    # an ABORTED attempt (seeded, never scrubbed) must lose its token at
+    # rotation time, keeping the rest of the home for audit
+    env2, _ = c.isolated_session_env(out)
+    _, err = c.seed_session_credentials("codex", env2)
+    assert err is None
+    env3, rec3 = c.isolated_session_env(out)  # rotates the seeded home aside
+    rotated = Path(rec3["rotated_prior_home"])
+    assert not list(rotated.rglob("auth.json"))  # token gone
+    assert (rotated / ".codex").exists()  # audit shape preserved
