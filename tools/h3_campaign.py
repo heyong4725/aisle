@@ -38,6 +38,8 @@ from campaign import (  # noqa: E402
     resolve_commit,
     run_session,
     score_holdout,
+    scrub_session_credentials,
+    seed_session_credentials,
     sweep_worktree,
     validate_seed_ranges,
 )
@@ -358,20 +360,33 @@ def run_scenario(
     # issue #96: the session runs under an isolated home — operator
     # memory/config is not a treatment channel; recorded per scenario
     session_env, session_isolation = isolated_session_env(session_dir)
+    seed_rec, seed_error = seed_session_credentials(agent, session_env)
+    if seed_error:
+        # infra abort (protocol point 8), like the runtime preflight: a
+        # missing campaign login must never fall back to the operator's
+        raise RuntimeError(seed_error)
+    session_isolation.update(seed_rec)
     t0 = time.time()
-    session = run_session(
-        agent,
-        agent_cmd_campaign(agent, model, prompt),
-        wt,
-        session_dir,
-        {
-            "prior_tokens": 0,  # sub-budgets are per scenario (D2)
-            "prior_wall_s": 0.0,
-            "token_ceiling": scenario["tokens"],
-            "wall_ceiling_s": scenario["wall_h"] * 3600.0,
-        },
-        env=session_env,
-    )
+    try:
+        session = run_session(
+            agent,
+            agent_cmd_campaign(agent, model, prompt),
+            wt,
+            session_dir,
+            {
+                "prior_tokens": 0,  # sub-budgets are per scenario (D2)
+                "prior_wall_s": 0.0,
+                "token_ceiling": scenario["tokens"],
+                "wall_ceiling_s": scenario["wall_h"] * 3600.0,
+            },
+            env=session_env,
+        )
+    finally:
+        # PR #100 review P1: the seeded token must not outlive the
+        # session (holdout scoring below never needs agent credentials)
+        session_isolation["credentials_scrubbed"] = scrub_session_credentials(
+            Path(session_env["HOME"])
+        )
     sweep_worktree(wt)
     rechecks["post_session"] = host_dora_runtime()
     rt_drift = rt_drift or runtime_drift_check(rt_baseline, rechecks["post_session"])
@@ -508,7 +523,15 @@ def main() -> int:
     # silent fallback to the operator home would reopen the memory
     # channel the isolation exists to close
     probe_env, _ = isolated_session_env(args.out / "auth_probe")
-    probe_error = probe_agent_auth(agent, model, probe_env, args.out)
+    _, seed_error = seed_session_credentials(agent, probe_env)
+    if seed_error:
+        print(json.dumps({"ok": False, "error": seed_error}))
+        return 1
+    try:
+        probe_error = probe_agent_auth(agent, model, probe_env, args.out)
+    finally:
+        # tokens never persist, even past an unexpected probe exception
+        scrub_session_credentials(Path(probe_env["HOME"]))
     if probe_error:
         print(json.dumps({"ok": False, "error": probe_error}))
         return 1

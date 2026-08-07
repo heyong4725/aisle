@@ -694,6 +694,9 @@ def test_h2_launcher_probes_auth_before_any_side_effect(tmp_path, monkeypatch, c
 
     monkeypatch.setattr(c, "probe_agent_auth", lambda *a, **k: "auth probe exited 1: no creds")
     monkeypatch.setattr(
+        c, "seed_session_credentials", lambda *a, **k: ({"credential_seed": "t"}, None)
+    )
+    monkeypatch.setattr(
         _sys,
         "argv",
         ["campaign.py", "--agent", "claude", "--out", str(tmp_path / "h2")],
@@ -723,3 +726,156 @@ def test_isolation_pins_agent_home_overrides(tmp_path, monkeypatch):
     for var in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
         assert env[var].startswith(str(scratch)), var
     assert rec["codex_home"] == str(scratch / ".codex")
+
+
+def test_credential_seed_copies_only_the_campaign_login(tmp_path, monkeypatch):
+    """Issue #96 follow-up (live-launch finding): a custom
+    CLAUDE_CONFIG_DIR/CODEX_HOME reads credentials from the config dir,
+    not the keychain — so isolated sessions authenticate via a
+    DEDICATED campaign login whose credential file (and nothing else)
+    is copied into each scratch home, 0600."""
+    import campaign as c
+
+    fake_home = tmp_path / "operator"
+    login = fake_home / ".codex-campaign"
+    login.mkdir(parents=True)
+    (login / "auth.json").write_text('{"token": "campaign-secret"}')
+    (login / "history.jsonl").write_text("operator history — must NOT be copied")
+    monkeypatch.setattr(c.Path, "home", classmethod(lambda cls: fake_home))
+    monkeypatch.setitem(c.CAMPAIGN_LOGIN, "codex", (login, "auth.json"))
+
+    env, _ = c.isolated_session_env(tmp_path / "out")
+    rec, err = c.seed_session_credentials("codex", env)
+    assert err is None
+    dest = Path(env["CODEX_HOME"]) / "auth.json"
+    assert dest.read_text() == '{"token": "campaign-secret"}'
+    assert oct(dest.stat().st_mode & 0o777) == "0o600"
+    assert not (Path(env["CODEX_HOME"]) / "history.jsonl").exists()  # allow-list only
+    assert rec == {"credential_seed": "codex-campaign login (auth.json)"}
+
+
+def test_missing_campaign_login_is_an_actionable_refusal(tmp_path, monkeypatch):
+    """No campaign login → CON-8-grade error naming the one-time setup
+    command; never a silent fallback to the operator's own login."""
+    import campaign as c
+
+    monkeypatch.setitem(
+        c.CAMPAIGN_LOGIN, "claude", (tmp_path / "nope" / ".claude-campaign", ".credentials.json")
+    )
+    env, _ = c.isolated_session_env(tmp_path / "out")
+    rec, err = c.seed_session_credentials("claude", env)
+    assert rec is None
+    assert "no campaign login for 'claude'" in err and "claude" in err and "/login" in err
+
+
+def test_credential_copy_failure_is_a_refusal_not_a_traceback(tmp_path, monkeypatch):
+    """PR #100 review P1: an unreadable/uncopyable credential file must
+    surface through the (record, error) CON-8 path, never raise past
+    the launcher."""
+    import campaign as c
+
+    login = tmp_path / ".codex-campaign"
+    login.mkdir()
+    src = login / "auth.json"
+    src.write_text("{}")
+    src.chmod(0o000)  # unreadable
+    monkeypatch.setitem(c.CAMPAIGN_LOGIN, "codex", (login, "auth.json"))
+    env, _ = c.isolated_session_env(tmp_path / "out")
+    rec, err = c.seed_session_credentials("codex", env)
+    src.chmod(0o600)
+    assert rec is None and "credential seed failed" in err
+
+
+def test_seeded_credentials_are_scrubbed_and_rotation_scrubs_too(tmp_path, monkeypatch):
+    """PR #100 review P1: live tokens must not persist in runs/
+    artifacts — scrub removes them from the active home, and a rotated
+    (aborted-attempt) home is scrubbed at rotation while its other
+    artifacts survive for audit."""
+    import campaign as c
+
+    login = tmp_path / ".codex-campaign"
+    login.mkdir()
+    (login / "auth.json").write_text('{"token": "live"}')
+    monkeypatch.setitem(c.CAMPAIGN_LOGIN, "codex", (login, "auth.json"))
+    out = tmp_path / "session_00"
+    env, _ = c.isolated_session_env(out)
+    _, err = c.seed_session_credentials("codex", env)
+    assert err is None
+    (Path(env["CODEX_HOME"]) / "history.jsonl").write_text("audit artifact")
+
+    # a same-named file OUTSIDE the canonical credential path is an
+    # agent workspace artifact and must SURVIVE (PR #100 round 2: no
+    # recursive name matching)
+    decoy_dir = Path(env["HOME"]) / "workspace"
+    decoy_dir.mkdir()
+    (decoy_dir / "auth.json").write_text("agent audit artifact, not a token")
+
+    scrubbed = c.scrub_session_credentials(Path(env["HOME"]))
+    assert scrubbed == [str(Path(env["CODEX_HOME"]) / "auth.json")]
+    assert not (Path(env["CODEX_HOME"]) / "auth.json").exists()
+    assert (Path(env["CODEX_HOME"]) / "history.jsonl").exists()
+    assert (decoy_dir / "auth.json").exists()  # workspace decoy survives
+
+    # an ABORTED attempt (seeded, never scrubbed) must lose its token at
+    # rotation time, keeping the rest of the home for audit
+    env2, _ = c.isolated_session_env(out)
+    _, err = c.seed_session_credentials("codex", env2)
+    assert err is None
+    env3, rec3 = c.isolated_session_env(out)  # rotates the seeded home aside
+    rotated = Path(rec3["rotated_prior_home"])
+    assert not list(rotated.rglob("auth.json"))  # token gone
+    assert (rotated / ".codex").exists()  # audit shape preserved
+
+
+def test_credential_seed_is_private_from_creation_and_clean_on_failure(tmp_path, monkeypatch):
+    """PR #100 round 2 P1: the token file is 0600 FROM CREATION (no
+    write-then-chmod window), and a failed copy leaves NO file behind."""
+    import campaign as c
+
+    login = tmp_path / ".codex-campaign"
+    login.mkdir()
+    (login / "auth.json").write_text('{"token": "live"}')
+    monkeypatch.setitem(c.CAMPAIGN_LOGIN, "codex", (login, "auth.json"))
+    env, _ = c.isolated_session_env(tmp_path / "out")
+    rec, err = c.seed_session_credentials("codex", env)
+    assert err is None
+    dest = Path(env["CODEX_HOME"]) / "auth.json"
+    assert oct(dest.stat().st_mode & 0o777) == "0o600"
+
+    # failure path: an unwritable destination leaves nothing behind
+    env2, _ = c.isolated_session_env(tmp_path / "out")
+    dest_dir = Path(env2["CODEX_HOME"])
+    dest_dir.chmod(0o500)  # cannot create files
+    rec2, err2 = c.seed_session_credentials("codex", env2)
+    dest_dir.chmod(0o700)
+    assert rec2 is None and "credential seed failed" in err2
+    assert not (dest_dir / "auth.json").exists()
+
+
+def test_credential_seed_survives_short_writes(tmp_path, monkeypatch):
+    """PR #100 round 3: os.write may write fewer bytes than requested; a
+    short write must be continued to completion — one-byte-per-call
+    writes still yield the full token — and zero progress is a refusal
+    with no file left behind, never a truncated 'success'."""
+    import os as _os
+
+    import campaign as c
+
+    login = tmp_path / ".codex-campaign"
+    login.mkdir()
+    payload = '{"token": "0123456789abcdef"}'
+    (login / "auth.json").write_text(payload)
+    monkeypatch.setitem(c.CAMPAIGN_LOGIN, "codex", (login, "auth.json"))
+
+    real_write = _os.write
+    monkeypatch.setattr(c.os, "write", lambda fd, data: real_write(fd, bytes(data)[:1]))
+    env, _ = c.isolated_session_env(tmp_path / "out")
+    rec, err = c.seed_session_credentials("codex", env)
+    assert err is None
+    assert (Path(env["CODEX_HOME"]) / "auth.json").read_text() == payload
+
+    monkeypatch.setattr(c.os, "write", lambda fd, data: 0)
+    env2, _ = c.isolated_session_env(tmp_path / "out2")
+    rec2, err2 = c.seed_session_credentials("codex", env2)
+    assert rec2 is None and "credential seed failed" in err2
+    assert not (Path(env2["CODEX_HOME"]) / "auth.json").exists()

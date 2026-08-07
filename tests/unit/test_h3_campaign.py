@@ -749,6 +749,9 @@ def test_scenario_session_runs_under_the_isolated_home(tmp_path, monkeypatch):
         return {"stopped": "agent_done", "rc": 0, "tokens": 1, "wall_s": 1.0}
 
     monkeypatch.setattr(h3, "run_session", fake_run_session)
+    monkeypatch.setattr(
+        h3, "seed_session_credentials", lambda *a, **k: ({"credential_seed": "t"}, None)
+    )
     monkeypatch.setattr(h3, "sweep_worktree", lambda wt: None)
     monkeypatch.setattr(h3, "audit_frozen", lambda wt, oid: [])
     monkeypatch.setattr(h3, "score_holdout", lambda *a, **k: {"ok": True, "pass1": 0.0})
@@ -790,6 +793,9 @@ def test_launch_refuses_when_the_isolated_auth_probe_fails(tmp_path, monkeypatch
     sha = h3.host_dora_runtime()["sha256"]
     monkeypatch.setattr(h3, "probe_agent_auth", lambda *a, **k: "auth probe exited 1: no creds")
     monkeypatch.setattr(
+        h3, "seed_session_credentials", lambda *a, **k: ({"credential_seed": "t"}, None)
+    )
+    monkeypatch.setattr(
         _sys,
         "argv",
         [
@@ -818,6 +824,9 @@ def test_launch_refusal_prints_the_probe_error(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("PATH", f"{fake}:/usr/bin:/bin")
     sha = h3.host_dora_runtime()["sha256"]
     monkeypatch.setattr(h3, "probe_agent_auth", lambda *a, **k: "auth probe exited 1: no creds")
+    monkeypatch.setattr(
+        h3, "seed_session_credentials", lambda *a, **k: ({"credential_seed": "t"}, None)
+    )
     monkeypatch.setattr(
         _sys,
         "argv",
