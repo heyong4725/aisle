@@ -115,7 +115,15 @@ def test_rate_scheduler_is_deterministic():
 
 
 def test_bridge_info_shape():
-    """BRG-6: bridge_info carries exactly the contract fields as JSON."""
+    """BRG-6 + BRG-8: bridge_info carries exactly the contract fields as
+    JSON, including the VER-8 v1 `calibration` block (SPEC 040) built
+    from the REALIZED camera state — the verifier's stage 0 refuses
+    without it, so it is part of the exact shape."""
+    from aisle.verifier.calibration import build_calibration_v1
+
+    calibration = build_calibration_v1(
+        [0.55, 0.0, 1.20], [0.55, 0.0, 0.20], (640, 480), 55.0, [0.0, 0.0, 0.05], (320, 240), 70.0
+    )
     info = json.loads(
         make_bridge_info(
             embodiment="franka",
@@ -126,6 +134,7 @@ def test_bridge_info_shape():
             # required, not defaulted: a caller that forgot to wire the cfg
             # flag must fail loudly, not attest "off" while free-running
             step_without_reset=False,
+            calibration=calibration,
         )
     )
     assert info == {
@@ -138,8 +147,11 @@ def test_bridge_info_shape():
         "env_hash": "a" * 64,
         # ADR-25: bring-up mode leaves an attestation footprint in traces
         "step_without_reset": False,
+        # BRG-8: nested, verbatim — the verifier compares it field-wise
+        "calibration": calibration,
     }
     assert info["platform"]
+    assert info["calibration"]["calibration_version"] == 1
 
 
 def test_bridge_config_from_env():

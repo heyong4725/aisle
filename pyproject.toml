@@ -43,6 +43,9 @@ sim = [
     "genesis-world>=1.2.3",
     "pyarrow>=25.0.0",
     "torch>=2.13.0",
+    # realistic verifier (VER-5, ADR-realistic-verifier D1): OWLv2 via
+    # transformers, CPU inference only (D2) — CON-1: no CUDA-only pulls
+    "transformers>=4.57.0",
 ]
 
 [build-system]
