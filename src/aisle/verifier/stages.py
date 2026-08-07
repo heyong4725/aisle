@@ -50,16 +50,38 @@ def backproject_overhead(
 
 
 def project_to_pixels(
-    points_base: np.ndarray, calibration: dict, camera: str = "overhead"
+    points_base: np.ndarray,
+    calibration: dict,
+    camera: str = "overhead",
+    ee_to_base: tuple | None = None,
 ) -> np.ndarray:
-    """BASE-frame points -> (u, v) pixels for the tray ROI (VER-9)."""
+    """BASE-frame points -> (u, v) pixels (VER-9 tray ROI).
+
+    The overhead camera has a static `cam_to_base`. The WRIST camera does
+    NOT (it rides the EE): its calibration is the static `cam_to_ee`
+    mount, and the camera->base pose must be composed with the EE pose at
+    the matching joint_state stamp — `ee_to_base=(pos, quat_xyzw)` from
+    FK (VER-8). Treating the mount as a camera->base pose put every wrist
+    ROI in the wrong frame (PR #103 review), so wrist projection now
+    REQUIRES the EE pose rather than silently guessing."""
     cam = calibration[camera]
     k = cam["intrinsics"]
-    pose = cam["cam_to_base"] if camera == "overhead" else cam["cam_to_ee"]
-    rotation = rotation_from_quat_xyzw(pose["quat_xyzw"])
-    rel = np.asarray(points_base, dtype=np.float64).reshape(-1, 3) - np.asarray(
-        pose["pos"], dtype=np.float64
-    )
+    if camera == "overhead":
+        pose_pos = np.asarray(cam["cam_to_base"]["pos"], dtype=np.float64)
+        rotation = rotation_from_quat_xyzw(cam["cam_to_base"]["quat_xyzw"])
+    else:
+        if ee_to_base is None:
+            raise ValueError(
+                "wrist projection requires ee_to_base=(pos, quat_xyzw) at the frame's "
+                "joint_state stamp — cam_to_ee is a MOUNT, not a camera->base pose (VER-8)"
+            )
+        mount_pos = np.asarray(cam["cam_to_ee"]["pos"], dtype=np.float64)
+        mount_rot = rotation_from_quat_xyzw(cam["cam_to_ee"]["quat_xyzw"])
+        ee_pos = np.asarray(ee_to_base[0], dtype=np.float64)
+        ee_rot = rotation_from_quat_xyzw(ee_to_base[1])
+        rotation = ee_rot @ mount_rot
+        pose_pos = ee_pos + ee_rot @ mount_pos
+    rel = np.asarray(points_base, dtype=np.float64).reshape(-1, 3) - pose_pos
     cam_points = rel @ rotation  # world -> camera (R^T applied on the right)
     z = np.clip(cam_points[:, 2], 1e-9, None)
     u = cam_points[:, 0] / z * k["fx"] + k["cx"]
@@ -67,14 +89,16 @@ def project_to_pixels(
     return np.stack([u, v], axis=1)
 
 
-def tray_roi_pixels(tray_min, tray_max, calibration: dict, camera: str = "overhead") -> tuple:
+def tray_roi_pixels(
+    tray_min, tray_max, calibration: dict, camera: str = "overhead", ee_to_base: tuple | None = None
+) -> tuple:
     """Axis-aligned pixel bounds of the tray footprint (VER-9's "inside
     the tray region"). Projects the tray's top-rim corners and takes
     their bounding box."""
     x0, y0, z0 = tray_min
     x1, y1, z1 = tray_max
     corners = np.array([[x, y, z1] for x in (x0, x1) for y in (y0, y1)], dtype=np.float64)
-    uv = project_to_pixels(corners, calibration, camera)
+    uv = project_to_pixels(corners, calibration, camera, ee_to_base)
     return (
         float(uv[:, 0].min()),
         float(uv[:, 1].min()),
@@ -119,11 +143,21 @@ def identity_frame(
 
 
 def containment_vote(
-    target_points_base: np.ndarray, tray_min, tray_max, margin_m: float
+    target_points_base: np.ndarray,
+    tray_min,
+    tray_max,
+    margin_m: float,
+    resting_tolerance_m: float,
 ) -> StageVote:
     """VER-10: the target's back-projected points must sit inside the
-    tray footprint. The measurement is the SIGNED margin (m): positive
-    means inside with room, negative is the worst overhang."""
+    tray VOLUME — footprint AND height — and the target must be RESTING
+    on the tray floor, mirroring the oracle's VER-2 predicate.
+
+    XY-only containment passed an airborne box a metre above the tray
+    (PR #103 review): the footprint test alone cannot tell 'in the tray'
+    from 'passing over it', which is precisely the false-success
+    direction A7 cares about. The measurement is the signed footprint
+    margin (m) plus the lowest point's height above the tray floor."""
     points = np.asarray(target_points_base, dtype=np.float64).reshape(-1, 3)
     if points.size == 0:
         return StageVote("error", detail="no target points from overhead depth")
@@ -131,8 +165,19 @@ def containment_vote(
     hi = np.asarray(tray_max[:2], dtype=np.float64) + margin_m
     inside = np.minimum(points[:, :2] - lo, hi - points[:, :2])
     margin = float(inside.min())
-    status = "pass" if margin >= 0 else "fail"
-    return StageVote(status, measurement={"margin_m": round(margin, 6)})
+    floor = float(tray_min[2])
+    bottom = float(points[:, 2].min())
+    rest_gap = bottom - floor
+    measurement = {"margin_m": round(margin, 6), "rest_gap_m": round(rest_gap, 6)}
+    if margin < 0:
+        return StageVote("fail", measurement=measurement, detail="footprint overhang")
+    if not (-margin_m <= rest_gap <= resting_tolerance_m):
+        return StageVote(
+            "fail",
+            measurement=measurement,
+            detail="target is not resting on the tray floor (airborne or below it)",
+        )
+    return StageVote("pass", measurement=measurement)
 
 
 def tilt_from_mask_extent(mask_points_base: np.ndarray) -> float:

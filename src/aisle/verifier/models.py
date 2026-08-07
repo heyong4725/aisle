@@ -12,6 +12,7 @@ replays, and Metal inference is nondeterministic.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 from pathlib import Path
@@ -60,14 +61,102 @@ def snapshot_path(role: str, lock: dict | None = None) -> Path:
     return path
 
 
+@contextlib.contextmanager
+def cpu_inference():
+    """Run a forward pass entirely on CPU (D2, PR #103 review). Moving
+    the model AND the batch is still not enough: tensors CREATED inside
+    the forward pass (position ids, masks, buffers) inherit torch's
+    global default device, which Genesis sets to MPS — so outputs come
+    back as MPS tensors. This context makes CPU the default for
+    everything the pass constructs, and bundles no_grad."""
+    import torch
+
+    with torch.device(DEVICE), torch.no_grad():
+        yield
+
+
+def cpu_batch(inputs):
+    """Move a processor batch to CPU (D2, PR #103 review). Forcing the
+    MODEL to CPU is not enough: after Genesis sets an MPS default
+    device, freshly-created input tensors land on MPS and inference dies
+    ("Placeholder storage has not been allocated on MPS device"). Every
+    inference site passes its batch through here, so the CPU guarantee
+    covers inputs as well as weights."""
+    return {k: (v.to(DEVICE) if hasattr(v, "to") else v) for k, v in dict(inputs).items()}
+
+
 def load_pinned(role: str, lock: dict | None = None):
-    """(processor, model) for a pinned role, on CPU, in eval mode."""
+    """(processor, model) for a pinned role, on CPU, in eval mode.
+
+    CPU is forced DURING construction, not after (PR #103 review): once
+    Genesis initialises it sets an MPS default device, and
+    `from_pretrained` inherits it — the model is then built on MPS
+    (requiring accelerate, and reintroducing the nondeterminism D2
+    exists to prevent) before any `.to("cpu")` could move it. The
+    default-device context makes the CPU guarantee hold no matter what
+    ran earlier in the process, which is exactly the combined-sim-gate
+    case that caught this."""
     import torch
     from transformers import AutoModelForMaskGeneration, AutoProcessor, Owlv2ForObjectDetection
 
     path = snapshot_path(role, lock)
     processor = AutoProcessor.from_pretrained(path)
     factory = Owlv2ForObjectDetection if role == "identity" else AutoModelForMaskGeneration
-    model = factory.from_pretrained(path, dtype=torch.float32).to(DEVICE)
+    with torch.device(DEVICE):
+        model = factory.from_pretrained(path, dtype=torch.float32)
+    model = model.to(DEVICE)
     model.eval()
+    assert next(model.parameters()).device.type == DEVICE, (
+        f"{role}: model built on {next(model.parameters()).device}, not {DEVICE} (D2)"
+    )
     return processor, model
+
+
+def detect_meds(image, med_names: list[str], model_pair=None) -> list[dict]:
+    """OWLv2 identity adapter (VER-9): image + med vocabulary ->
+    [{label, score, box:[x0,y0,x1,y1]}] in PIXELS.
+
+    The whole call — processor, forward, post-processing — runs inside
+    the CPU default-device context (D2). Doing it here rather than at
+    call sites is deliberate: the SAM/OWLv2 processors themselves create
+    tensors on the default device, so a caller that merely moved the
+    batch would still break under Genesis's MPS default (PR #103
+    review)."""
+    import torch
+
+    processor, model = model_pair or load_pinned("identity")
+    queries = [[f"a photo of a {name}" for name in med_names]]
+    with cpu_inference():
+        inputs = cpu_batch(processor(text=queries, images=image, return_tensors="pt"))
+        outputs = model(**inputs)
+        sizes = torch.tensor([[image.shape[0], image.shape[1]]], device=DEVICE)
+        results = processor.post_process_grounded_object_detection(
+            outputs=outputs, target_sizes=sizes, threshold=0.0
+        )[0]
+    return [
+        {
+            "label": med_names[int(label)],
+            "score": float(score),
+            "box": [float(v) for v in box],
+        }
+        for score, label, box in zip(
+            results["scores"], results["labels"], results["boxes"], strict=True
+        )
+    ]
+
+
+def segment_mask(image, point_xy, model_pair=None):
+    """SlimSAM adapter (VER-11): image + a seed pixel -> the best mask as
+    a boolean array. Same CPU-context discipline as detect_meds."""
+    processor, model = model_pair or load_pinned("segmenter")
+    point = [[[int(point_xy[0]), int(point_xy[1])]]]
+    with cpu_inference():
+        inputs = cpu_batch(processor(images=image, input_points=point, return_tensors="pt"))
+        outputs = model(**inputs)
+        masks = processor.image_processor.post_process_masks(
+            outputs.pred_masks.cpu(),
+            inputs["original_sizes"].cpu(),
+            inputs["reshaped_input_sizes"].cpu(),
+        )[0]
+        best = int(outputs.iou_scores.reshape(-1).argmax())
+    return masks.reshape(-1, masks.shape[-2], masks.shape[-1])[best].numpy().astype(bool)

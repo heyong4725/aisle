@@ -241,7 +241,7 @@ def realized_calibration(handle, physics: dict, is_store: bool) -> dict:
     reflected), converted to the v1/OpenCV conventions by VER-8's own
     module. Store scenes use their own overhead nominals."""
     from aisle.scenes.pharmacy import to_numpy
-    from aisle.verifier.calibration import build_calibration_v1
+    from aisle.verifier.calibration import GL_TO_CV, build_calibration_v1
 
     cams = handle.cams
     cam_cfg = physics["cameras"]
@@ -249,6 +249,10 @@ def realized_calibration(handle, physics: dict, is_store: bool) -> dict:
     transform = np.asarray(to_numpy(overhead.transform)).reshape(4, 4)
     lookat = cam_cfg["store_overhead_lookat" if is_store else "overhead_lookat"]
     return build_calibration_v1(
+        # the REALIZED rotation, converted GL->CV — not a re-derivation
+        # from config (PR #103 review): stage 0 must be able to catch a
+        # camera that is rotated in place
+        overhead_rotation_cv=transform[:3, :3] @ GL_TO_CV,
         overhead_pos=transform[:3, 3].tolist(),
         overhead_lookat=lookat,
         overhead_resolution=overhead.res,

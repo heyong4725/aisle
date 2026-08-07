@@ -144,3 +144,59 @@ def test_sha256_is_canonical_and_order_independent():
     b = copy.deepcopy(a)
     b["overhead"] = dict(reversed(list(b["overhead"].items())))
     assert calibration_sha256(a) == calibration_sha256(b)
+
+
+def test_non_finite_and_non_unit_quaternions_fail_closed():
+    """PR #103 review: a NaN position passed every numeric comparison,
+    and doubling a quaternion's components read as a perfect rotation
+    match because the dot product was clamped. Stage 0 validates
+    structure, finiteness, and unit norm BEFORE comparing."""
+    nominal = nominal_block()
+
+    nan_pos = published_block()
+    nan_pos["overhead"]["cam_to_base"]["pos"] = [float("nan"), 0.0, 1.2]
+    assert "non-finite" in check_calibration(nan_pos, nominal, JITTER_M)
+
+    inf_depth = published_block()
+    inf_depth["overhead"]["depth_scale_m"] = float("inf")
+    assert "non-finite" in check_calibration(inf_depth, nominal, JITTER_M)
+
+    scaled = published_block()
+    scaled["overhead"]["cam_to_base"]["quat_xyzw"] = [
+        2 * v for v in scaled["overhead"]["cam_to_base"]["quat_xyzw"]
+    ]
+    refusal = check_calibration(scaled, nominal, JITTER_M)
+    assert "norm" in refusal, f"scaled quaternion accepted: {refusal}"
+
+    short = published_block()
+    short["overhead"]["cam_to_base"]["quat_xyzw"] = [0.0, 0.0, 1.0]
+    assert "4 components" in check_calibration(short, nominal, JITTER_M)
+
+    nan_intrinsic = published_block()
+    nan_intrinsic["overhead"]["intrinsics"]["fy"] = float("nan")
+    assert "non-finite" in check_calibration(nan_intrinsic, nominal, JITTER_M)
+
+
+def test_realized_rotation_is_published_not_rederived():
+    """BRG-8 (PR #103 review): the block must carry the REALIZED camera
+    rotation. If it re-derived the rotation from config, a camera
+    rotated in place would publish the expected pose and stage 0 could
+    never catch it — the exact VER-8 corruption case."""
+    spun = lookat_rotation_cv(OVERHEAD_POS, OVERHEAD_LOOKAT) @ np.array(
+        [
+            [math.cos(math.radians(10)), -math.sin(math.radians(10)), 0.0],
+            [math.sin(math.radians(10)), math.cos(math.radians(10)), 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    published = build_calibration_v1(
+        OVERHEAD_POS,
+        OVERHEAD_LOOKAT,
+        (640, 480),
+        55.0,
+        WRIST_OFFSET,
+        (320, 240),
+        70.0,
+        overhead_rotation_cv=spun,
+    )
+    assert "rotation" in check_calibration(published, nominal_block(), JITTER_M)

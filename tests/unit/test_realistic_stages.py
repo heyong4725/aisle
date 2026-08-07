@@ -94,18 +94,44 @@ def test_identity_frame_flags_target_and_non_target():
     assert not empty["target_in_tray"] and not empty["non_target_in_tray"]
 
 
-def test_containment_margin_sign_and_error():
-    inside = containment_vote(
-        np.array([[0.55, -0.05, 0.05], [0.60, 0.0, 0.05]]), TRAY_MIN, TRAY_MAX, 0.005
-    )
-    assert inside.status == "pass" and inside.measurement["margin_m"] > 0
+def test_containment_is_three_dimensional_and_requires_resting():
+    """VER-10 (PR #103 review): XY-only containment accepted a box a
+    metre ABOVE the tray. Containment is the tray VOLUME plus the
+    oracle's resting predicate — an airborne target is the false-success
+    direction A7 exists to measure."""
+    resting = np.array([[0.55, -0.05, 0.041], [0.60, 0.0, 0.045]])
+    ok = containment_vote(resting, TRAY_MIN, TRAY_MAX, 0.005, 0.01)
+    assert ok.status == "pass" and ok.measurement["margin_m"] > 0
 
-    overhanging = containment_vote(
-        np.array([[0.55, -0.05, 0.05], [0.75, 0.0, 0.05]]), TRAY_MIN, TRAY_MAX, 0.005
-    )
-    assert overhanging.status == "fail" and overhanging.measurement["margin_m"] < 0
+    airborne = resting + np.array([0.0, 0.0, 1.0])  # same footprint, 1 m up
+    vote = containment_vote(airborne, TRAY_MIN, TRAY_MAX, 0.005, 0.01)
+    assert vote.status == "fail", "an airborne box passed containment"
+    assert "resting" in vote.detail and vote.measurement["rest_gap_m"] > 0.9
 
-    assert containment_vote(np.empty((0, 3)), TRAY_MIN, TRAY_MAX, 0.005).status == "error"
+    overhanging = np.array([[0.55, -0.05, 0.041], [0.75, 0.0, 0.041]])
+    vote = containment_vote(overhanging, TRAY_MIN, TRAY_MAX, 0.005, 0.01)
+    assert vote.status == "fail" and vote.measurement["margin_m"] < 0
+
+    sunken = resting - np.array([0.0, 0.0, 0.05])  # below the tray floor
+    assert containment_vote(sunken, TRAY_MIN, TRAY_MAX, 0.005, 0.01).status == "fail"
+
+    assert containment_vote(np.empty((0, 3)), TRAY_MIN, TRAY_MAX, 0.005, 0.01).status == "error"
+
+
+def test_wrist_projection_requires_the_ee_pose():
+    """VER-8/VER-9 (PR #103 review): cam_to_ee is a MOUNT. Projecting
+    wrist pixels without the EE->base pose at the frame's stamp put the
+    ROI in the wrong frame; it now refuses rather than guessing, and
+    composing with the EE pose moves the ROI as the arm moves."""
+    points = np.array([[0.55, 0.0, 0.05]])
+    with pytest.raises(ValueError, match="cam_to_ee is a MOUNT"):
+        project_to_pixels(points, CALIB, "wrist")
+
+    ee_a = ([0.55, 0.0, 0.35], [1.0, 0.0, 0.0, 0.0])  # looking down at the tray
+    ee_b = ([0.75, 0.0, 0.35], [1.0, 0.0, 0.0, 0.0])  # same pose, shifted in x
+    uv_a = project_to_pixels(points, CALIB, "wrist", ee_to_base=ee_a)
+    uv_b = project_to_pixels(points, CALIB, "wrist", ee_to_base=ee_b)
+    assert not np.allclose(uv_a, uv_b), "wrist ROI ignored the EE pose"
 
 
 def test_upright_vote_uses_the_oracle_threshold_band():

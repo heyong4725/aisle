@@ -20,6 +20,8 @@ from collections.abc import Callable  # noqa: TC003 — used in a runtime annota
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
+
 # VER-13: the exact stage set the fusion requires. A missing stage is a
 # FAIL, not an implicit pass — dropping a stage must never loosen a
 # verdict.
@@ -203,6 +205,117 @@ def judge_episode(
     votes = dict(stage_votes)
     votes["identity_overhead"] = judge.identity_vote("overhead")
     votes["identity_wrist"] = judge.identity_vote("wrist")
+    record = sidecar_record(judge, votes)
+    record["success"] = fuse(votes)
+    if run_dir is not None:
+        append_sidecar(run_dir, record)
+    return record["success"], record
+
+
+def judge_frames(
+    goal_id: str,
+    target_med: str,
+    med_names: list[str],
+    frames: dict[str, dict[int, dict]],
+    calibration: dict,
+    nominal_calibration: dict,
+    jitter_bound_m: float,
+    tray_min,
+    tray_max,
+    joint_state,
+    home_qpos,
+    thresholds: dict,
+    ee_poses: dict[int, tuple] | None = None,
+    run_dir: Path | None = None,
+) -> tuple[bool, dict]:
+    """The composed five-stage verdict from RAW inputs (VER-5).
+
+    This is the production entry point: it runs stage 0 (VER-8), the
+    pinned models via the CPU-disciplined adapters, and the geometry
+    stages, then fuses (VER-13) and writes the sidecar (VER-14). The
+    remaining wiring — a dora node subscribing to the camera topics and
+    publishing `episode_result` with `verifier:"realistic"` — is
+    increment 1b; this function is what that node will call, and what
+    `harness/fidelity.py` replays offline.
+
+    `frames[camera][sim_time_ns]` carries `{"rgb": HxWx3, "depth": HxW}`
+    (depth overhead only). `ee_poses[sim_time_ns] = (pos, quat_xyzw)`
+    supplies the wrist FK composition (VER-8) when wrist frames exist.
+    """
+    from aisle.verifier.calibration import check_calibration
+    from aisle.verifier.models import detect_meds, load_pinned, segment_mask
+    from aisle.verifier.stages import (
+        backproject_overhead,
+        containment_vote,
+        home_vote,
+        identity_frame,
+        tray_roi_pixels,
+        upright_vote,
+    )
+
+    judge = EpisodeJudge(goal_id=goal_id)
+    realistic_cfg = thresholds["realistic"]
+    success_cfg = thresholds["success"]
+
+    # stage 0 first: a refused calibration fails the episode closed and
+    # never spends model time (VER-8/VER-13)
+    refusal = check_calibration(calibration, nominal_calibration, jitter_bound_m)
+    if refusal is not None:
+        votes = {"calibration": StageVote("error", detail=refusal)}
+        record = sidecar_record(judge, votes)
+        record["success"] = fuse(votes)
+        if run_dir is not None:
+            append_sidecar(run_dir, record)
+        return record["success"], record
+
+    identity_pair = load_pinned("identity")
+    for camera in CAMERAS:
+        available = sorted(frames.get(camera, {}))
+        if not available:
+            continue
+        for stamp in checkpoint_stamps(
+            available[0], available[-1], realistic_cfg["checkpoint_period_s"], available
+        ):
+            ee = (ee_poses or {}).get(stamp)
+            if camera == "wrist" and ee is None:
+                continue  # VER-8: no EE pose, no trustworthy wrist ROI
+            roi = tray_roi_pixels(tray_min, tray_max, calibration, camera, ee)
+            detections = detect_meds(frames[camera][stamp]["rgb"], med_names, identity_pair)
+            judge.observe(
+                camera,
+                identity_frame(
+                    detections,
+                    target_med,
+                    roi,
+                    realistic_cfg["identity_min_score"],
+                    stamp,
+                ),
+            )
+
+    votes: dict[str, StageVote] = {"calibration": StageVote("pass")}
+    votes["identity_overhead"] = judge.identity_vote("overhead")
+    votes["identity_wrist"] = judge.identity_vote("wrist")
+
+    terminal = sorted(frames.get("overhead", {}))
+    if terminal:
+        final = frames["overhead"][terminal[-1]]
+        mask = segment_mask(final["rgb"], (final["rgb"].shape[1] // 2, final["rgb"].shape[0] // 2))
+        pixels = np.argwhere(mask)[:, ::-1]  # (row, col) -> (u, v)
+        points = backproject_overhead(final["depth"], calibration, pixels)
+        votes["containment"] = containment_vote(
+            points,
+            tray_min,
+            tray_max,
+            success_cfg["tray_margin_m"],
+            success_cfg["resting_tolerance_m"],
+        )
+        votes["upright"] = upright_vote(points, success_cfg["upright_max_deg"])
+    else:
+        votes["containment"] = StageVote("error", detail="no overhead frames")
+        votes["upright"] = StageVote("error", detail="no overhead frames")
+
+    votes["home"] = home_vote(joint_state, home_qpos, success_cfg["robot_home_tolerance_rad"])
+
     record = sidecar_record(judge, votes)
     record["success"] = fuse(votes)
     if run_dir is not None:
