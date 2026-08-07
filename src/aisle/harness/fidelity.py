@@ -40,8 +40,17 @@ from pathlib import Path
 from aisle.verifier.realistic import SIDECAR_NAME, STAGES, StageVote, fuse
 
 VALID_VOTES = ("pass", "fail", "error")
-# stages whose records must carry a measurement when they voted at all
-MEASURED_STAGES = ("calibration", "containment", "upright", "home")
+# TC-7's closed status enum; TC-8 makes the ORACLE the only ground truth
+ORACLE_STATUSES = {"success": True, "fail": False}
+# the measurement key each stage must carry when it actually voted —
+# presence of the key was not enough: null and empty passed (PR #102
+# review round 2)
+REQUIRED_MEASUREMENTS = {
+    "containment": ("margin_m", "rest_gap_m"),
+    "upright": ("tilt_deg",),
+    "home": ("max_joint_residual_rad",),
+}
+IDENTITY_FRAME_FIELDS = ("sim_time_ns", "per_class_scores", "target_in_tray", "non_target_in_tray")
 
 
 class EvidenceError(ValueError):
@@ -56,35 +65,107 @@ def rate(numerator: int, denominator: int) -> float | None:
     return numerator / denominator
 
 
-def validate_sidecar_record(record: dict) -> bool:
+def _require_mapping(value, label: str) -> dict:
+    if not isinstance(value, dict):
+        raise EvidenceError(f"{label} is {type(value).__name__}, not an object")
+    return value
+
+
+def validate_identity_entry(goal_id: str, stage: str, entry: dict) -> None:
+    """VER-14 identity evidence: a real per-frame timeline, and a PASSING
+    vote must actually be supported by frames (PR #102 review round 2 —
+    an empty timeline previously supported a pass)."""
+    frames = entry.get("frames")
+    if not isinstance(frames, list):
+        raise EvidenceError(f"{goal_id}: stage {stage!r} has no frame timeline (VER-14)")
+    if entry["vote"] == "pass" and not frames:
+        raise EvidenceError(
+            f"{goal_id}: stage {stage!r} voted pass with an EMPTY timeline — no evidence"
+        )
+    for i, frame in enumerate(frames):
+        _require_mapping(frame, f"{goal_id}: {stage} frame {i}")
+        missing = [f for f in IDENTITY_FRAME_FIELDS if f not in frame]
+        if missing:
+            raise EvidenceError(f"{goal_id}: {stage} frame {i} missing {missing} (VER-14)")
+        if not isinstance(frame["sim_time_ns"], int):
+            raise EvidenceError(f"{goal_id}: {stage} frame {i} sim_time_ns is not an integer")
+        _require_mapping(
+            frame["per_class_scores"], f"{goal_id}: {stage} frame {i} per_class_scores"
+        )
+        for flag in ("target_in_tray", "non_target_in_tray"):
+            if not isinstance(frame[flag], bool):
+                raise EvidenceError(f"{goal_id}: {stage} frame {i} {flag} is not a boolean")
+
+
+def validate_measurement(goal_id: str, stage: str, entry: dict) -> None:
+    """A stage that VOTED must carry a stage-shaped, non-null measurement.
+    Key presence was not enough: `measurement: null` satisfied it."""
+    if entry["vote"] == "error":
+        return
+    measurement = entry.get("measurement")
+    if measurement is None:
+        raise EvidenceError(
+            f"{goal_id}: stage {stage!r} voted {entry['vote']!r} with no measurement"
+        )
+    _require_mapping(measurement, f"{goal_id}: stage {stage!r} measurement")
+    if stage == "calibration":
+        if not measurement:
+            raise EvidenceError(f"{goal_id}: calibration measurement is empty (no deviations)")
+        return
+    missing = [f for f in REQUIRED_MEASUREMENTS.get(stage, ()) if f not in measurement]
+    if missing:
+        raise EvidenceError(f"{goal_id}: stage {stage!r} measurement missing {missing}")
+
+
+def validate_latch(goal_id: str, record: dict) -> None:
+    """VER-14 latch object: present, with a consistent first_event."""
+    latch = record.get("latch")
+    _require_mapping(latch, f"{goal_id}: latch")
+    if not isinstance(latch.get("latched"), bool):
+        raise EvidenceError(f"{goal_id}: latch.latched is not a boolean")
+    event = latch.get("first_event", ...)
+    if event is ...:
+        raise EvidenceError(f"{goal_id}: latch has no first_event field (VER-14)")
+    if latch["latched"]:
+        _require_mapping(event, f"{goal_id}: latch.first_event")
+        for field in ("sim_time_ns", "camera"):
+            if field not in event:
+                raise EvidenceError(f"{goal_id}: latch.first_event missing {field!r}")
+    elif event is not None:
+        raise EvidenceError(f"{goal_id}: latch is clear but carries a first_event")
+
+
+def validate_sidecar_record(record) -> bool:
     """Strictly validate one VER-14 record and return its success bit.
 
-    Invalid evidence REFUSES (PR #102 review): a missing stage vote used
-    to default to `pass` in attribution, and `bool("false")` silently
-    turned the JSON string into True. Every stage must be present with a
-    valid vote, the identity stages must carry their frame timeline, the
-    measured stages must carry a measurement when they voted, and
-    `success` must be a real JSON Boolean that AGREES with fusing the
-    recorded votes."""
+    Invalid evidence REFUSES (PR #102 reviews). Every stage must exist
+    with a valid vote; identity stages need a real frame timeline whose
+    frames carry the VER-14 fields (and a pass must be supported by at
+    least one frame); voting stages need a non-null, stage-shaped
+    measurement; the latch object must be present and self-consistent;
+    the record must declare `verifier: "realistic"`; and `success` must
+    be a JSON Boolean that AGREES with fusing the recorded votes."""
+    _require_mapping(record, "sidecar record")
     goal_id = record.get("goal_id")
     if not isinstance(goal_id, str) or not goal_id:
-        raise EvidenceError(f"sidecar record has no goal_id: {record!r:.120}")
-    stages = record.get("stages")
-    if not isinstance(stages, dict):
-        raise EvidenceError(f"{goal_id}: stages is {type(stages).__name__}, not an object")
+        raise EvidenceError("sidecar record has no goal_id")
+    if record.get("verifier") != "realistic":
+        raise EvidenceError(
+            f"{goal_id}: verifier is {record.get('verifier')!r}, not 'realistic' (VER-5)"
+        )
+    stages = _require_mapping(record.get("stages"), f"{goal_id}: stages")
     votes = {}
     for stage in STAGES:
-        entry = stages.get(stage)
-        if not isinstance(entry, dict):
-            raise EvidenceError(f"{goal_id}: stage {stage!r} missing from the record")
+        entry = _require_mapping(stages.get(stage), f"{goal_id}: stage {stage!r}")
         vote = entry.get("vote")
         if vote not in VALID_VOTES:
             raise EvidenceError(f"{goal_id}: stage {stage!r} has invalid vote {vote!r}")
-        if stage.startswith("identity_") and not isinstance(entry.get("frames"), list):
-            raise EvidenceError(f"{goal_id}: stage {stage!r} has no frame timeline (VER-14)")
-        if stage in MEASURED_STAGES and vote != "error" and "measurement" not in entry:
-            raise EvidenceError(f"{goal_id}: stage {stage!r} voted {vote!r} with no measurement")
+        if stage.startswith("identity_"):
+            validate_identity_entry(goal_id, stage, entry)
+        else:
+            validate_measurement(goal_id, stage, entry)
         votes[stage] = StageVote(vote)
+    validate_latch(goal_id, record)
     success = record.get("success")
     if not isinstance(success, bool):
         raise EvidenceError(
@@ -155,14 +236,12 @@ def disagreement_records(
                 "realistic_success": realistic[goal_id],
                 "direction": "false_success" if realistic[goal_id] else "false_fail",
                 "latch": (records.get(goal_id) or {}).get("latch"),
-                "stages": {
-                    stage: {
-                        "vote": (stages.get(stage) or {}).get("vote"),
-                        "measurement": (stages.get(stage) or {}).get("measurement"),
-                        "detail": (stages.get(stage) or {}).get("detail"),
-                    }
-                    for stage in STAGES
-                },
+                # the FULL validated entry: identity evidence lives in
+                # `frames` (timestamps + per-class scores), not in
+                # `measurement`, and that is exactly what distinguishes an
+                # identity disagreement from a containment/upright one
+                # (PR #102 review round 2)
+                "stages": {stage: stages.get(stage) for stage in STAGES},
             }
         )
     return log
@@ -208,10 +287,14 @@ def load_sidecar(run_dir: Path) -> tuple[dict[str, dict], dict[str, bool]]:
 
 
 def load_oracle_results(run_dir: Path) -> dict[str, bool]:
-    """Oracle success bits from the rollout's episodes.jsonl. An explicit
-    unique `goal_id` is REQUIRED: the old `ep-{seed}` fallback did not
-    match the rollout client's `ep-{episode index}` convention, so absent
-    ids paired under the wrong key (PR #102 review)."""
+    """Oracle success bits from the rollout's episodes.jsonl, strictly
+    validated (PR #102 review round 2).
+
+    TC-7 defines a closed `success|fail` status enum and TC-8 makes the
+    ORACLE the only ground truth. Mapping "everything that is not
+    'success'" to False silently turned a missing or bogus status — or a
+    REALISTIC verdict dropped into this file — into an oracle failure,
+    which manufactures false-success rate out of malformed input."""
     path = Path(run_dir) / "episodes.jsonl"
     if not path.exists():
         raise EvidenceError(f"no oracle verdicts: {path} is missing")
@@ -219,23 +302,46 @@ def load_oracle_results(run_dir: Path) -> dict[str, bool]:
     for lineno, line in enumerate(path.read_text().splitlines(), 1):
         if not line.strip():
             continue
-        episode = json.loads(line)
+        try:
+            episode = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise EvidenceError(f"{path}:{lineno}: malformed JSON ({exc})") from exc
+        _require_mapping(episode, f"{path}:{lineno}: episode")
         goal_id = episode.get("goal_id")
         if not isinstance(goal_id, str) or not goal_id:
             raise EvidenceError(f"{path}:{lineno}: episode has no goal_id (cannot correlate)")
+        verifier = episode.get("verifier")
+        if verifier != "oracle":
+            raise EvidenceError(
+                f"{path}:{lineno}: {goal_id} verifier is {verifier!r}, not 'oracle' "
+                "— only the oracle verdict is ground truth (TC-8)"
+            )
+        status = episode.get("status")
+        if status not in ORACLE_STATUSES:
+            raise EvidenceError(
+                f"{path}:{lineno}: {goal_id} status {status!r} is outside the "
+                f"{sorted(ORACLE_STATUSES)} enum (TC-7)"
+            )
         if goal_id in results:
             raise EvidenceError(f"{path}:{lineno}: duplicate goal_id {goal_id!r}")
-        results[goal_id] = episode.get("status") == "success"
+        results[goal_id] = ORACLE_STATUSES[status]
     return results
 
 
-def write_manifest_metrics(run_dir: Path, report: dict) -> bool:
+def write_manifest_metrics(run_dir: Path, report: dict) -> None:
     """VER-6: the per-run manifest carries the four counts plus the three
-    rates. Returns whether a manifest was updated."""
+    rates. Persisting them is core behaviour, so a missing, malformed or
+    unwritable manifest REFUSES — `--no-manifest` is the explicit opt-out
+    (PR #102 review round 2: the CLI used to report success while
+    silently persisting nothing)."""
     path = Path(run_dir) / "manifest.json"
     if not path.exists():
-        return False
+        raise EvidenceError(
+            f"{path} is missing: cannot persist the VER-6 metrics "
+            "(pass --no-manifest to report without persisting)"
+        )
     manifest = json.loads(path.read_text())
+    _require_mapping(manifest, f"{path}: manifest")
     manifest["verifier_fidelity"] = {
         "n": report["n"],
         "counts": report["counts"],
@@ -244,7 +350,6 @@ def write_manifest_metrics(run_dir: Path, report: dict) -> bool:
         "false_fail_rate": report["false_fail_rate"],
     }
     path.write_text(json.dumps(manifest, indent=1) + "\n")
-    return True
 
 
 def fidelity_report(run_dir: Path, write_manifest: bool = True) -> dict:
@@ -256,7 +361,9 @@ def fidelity_report(run_dir: Path, write_manifest: bool = True) -> dict:
     report["stage_attribution"] = stage_attribution(records, disagreements)
     report["disagreements"] = disagreement_records(records, oracle, realistic, disagreements)
     report["run_dir"] = str(run_dir)
-    report["manifest_updated"] = write_manifest and write_manifest_metrics(run_dir, report)
+    if write_manifest:
+        write_manifest_metrics(run_dir, report)
+    report["manifest_updated"] = write_manifest
     return report
 
 
@@ -276,7 +383,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         report = fidelity_report(args.run_dir, write_manifest=not args.no_manifest)
-    except (OSError, ValueError, KeyError) as exc:
+    except Exception as exc:  # noqa: BLE001 — CON-8: never a traceback
         print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}))
         return 1
     print(json.dumps({"ok": True, **report}))
