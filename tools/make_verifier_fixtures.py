@@ -52,7 +52,8 @@ def main() -> int:
         calibration = realized_calibration(handle, physics, is_store=False)
 
         target_idx = 3
-        target = handle.entities[target_idx]
+        target_name = MED_NAMES[target_idx]
+        target = handle.boxes[target_name]
         tray = layout["tray"]
         tray_top = tray["pos"][2] + tray["size"][2] / 2
 
