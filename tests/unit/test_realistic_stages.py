@@ -267,3 +267,44 @@ def test_resting_height_is_robust_to_silhouette_outliers():
     assert (
         containment_vote(airborne, TRAY_MIN, TRAY_MAX, 0.005, 0.01, height, RANK).status == "fail"
     )
+
+
+def test_crop_to_roi_returns_the_window_and_its_offset():
+    """VER-9 detects on the tray window, not the whole frame. The offset
+    is what lets `detections_in_roi` keep judging in ONE coordinate
+    system (full-frame pixels)."""
+    from aisle.verifier.stages import crop_to_roi
+
+    image = np.arange(480 * 640 * 3, dtype=np.uint8).reshape(480, 640, 3)
+    window, offset = crop_to_roi(image, (100.4, 200.6, 160.2, 280.9), pad_px=10)
+
+    assert offset == (90.0, 190.0)
+    assert window.shape == (291 - 190, 171 - 90, 3)
+    assert np.array_equal(window, image[190:291, 90:171])
+
+
+def test_crop_to_roi_clamps_to_the_image_and_refuses_no_overlap():
+    """A tray partly outside the frame still yields the visible part; a
+    tray entirely outside yields None, so the caller can record "not
+    judgeable" rather than detect on an empty array."""
+    from aisle.verifier.stages import crop_to_roi
+
+    image = np.zeros((60, 80, 3), dtype=np.uint8)
+    window, offset = crop_to_roi(image, (-30.0, -30.0, 20.0, 20.0), pad_px=5)
+    assert offset == (0.0, 0.0)
+    assert window.shape == (25, 25, 3)
+
+    assert crop_to_roi(image, (200.0, 200.0, 260.0, 260.0), pad_px=5) is None
+
+
+def test_shift_detections_maps_crop_boxes_back_to_full_frame():
+    """The ROI test compares box CENTRES against full-frame ROI bounds —
+    an unshifted crop box would be judged against the wrong region."""
+    from aisle.verifier.stages import detections_in_roi, shift_detections
+
+    cropped = [{"label": "ibuprofen", "score": 0.15, "box": [10.0, 12.0, 30.0, 34.0]}]
+    shifted = shift_detections(cropped, (170.0, 369.0))
+
+    assert shifted[0]["box"] == [180.0, 381.0, 200.0, 403.0]
+    assert cropped[0]["box"] == [10.0, 12.0, 30.0, 34.0]  # inputs untouched
+    assert detections_in_roi(shifted, (182.0, 381.0, 274.0, 509.0), 0.05) == {"ibuprofen": 0.15}
