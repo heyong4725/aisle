@@ -38,6 +38,7 @@ from campaign import (  # noqa: E402
     resolve_commit,
     run_session,
     score_holdout,
+    seed_session_credentials,
     sweep_worktree,
     validate_seed_ranges,
 )
@@ -327,6 +328,12 @@ def run_scenario(
     # issue #96: the session runs under an isolated home — operator
     # memory/config is not a treatment channel; recorded per scenario
     session_env, session_isolation = isolated_session_env(session_dir)
+    seed_rec, seed_error = seed_session_credentials(agent, session_env)
+    if seed_error:
+        # infra abort (protocol point 8), like the runtime preflight: a
+        # missing campaign login must never fall back to the operator's
+        raise RuntimeError(seed_error)
+    session_isolation.update(seed_rec)
     t0 = time.time()
     session = run_session(
         agent,
@@ -477,6 +484,10 @@ def main() -> int:
     # silent fallback to the operator home would reopen the memory
     # channel the isolation exists to close
     probe_env, _ = isolated_session_env(args.out / "auth_probe")
+    _, seed_error = seed_session_credentials(agent, probe_env)
+    if seed_error:
+        print(json.dumps({"ok": False, "error": seed_error}))
+        return 1
     probe_error = probe_agent_auth(agent, model, probe_env, args.out)
     if probe_error:
         print(json.dumps({"ok": False, "error": probe_error}))

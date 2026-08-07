@@ -694,6 +694,9 @@ def test_h2_launcher_probes_auth_before_any_side_effect(tmp_path, monkeypatch, c
 
     monkeypatch.setattr(c, "probe_agent_auth", lambda *a, **k: "auth probe exited 1: no creds")
     monkeypatch.setattr(
+        c, "seed_session_credentials", lambda *a, **k: ({"credential_seed": "t"}, None)
+    )
+    monkeypatch.setattr(
         _sys,
         "argv",
         ["campaign.py", "--agent", "claude", "--out", str(tmp_path / "h2")],
@@ -723,3 +726,43 @@ def test_isolation_pins_agent_home_overrides(tmp_path, monkeypatch):
     for var in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
         assert env[var].startswith(str(scratch)), var
     assert rec["codex_home"] == str(scratch / ".codex")
+
+
+def test_credential_seed_copies_only_the_campaign_login(tmp_path, monkeypatch):
+    """Issue #96 follow-up (live-launch finding): a custom
+    CLAUDE_CONFIG_DIR/CODEX_HOME reads credentials from the config dir,
+    not the keychain — so isolated sessions authenticate via a
+    DEDICATED campaign login whose credential file (and nothing else)
+    is copied into each scratch home, 0600."""
+    import campaign as c
+
+    fake_home = tmp_path / "operator"
+    login = fake_home / ".codex-campaign"
+    login.mkdir(parents=True)
+    (login / "auth.json").write_text('{"token": "campaign-secret"}')
+    (login / "history.jsonl").write_text("operator history — must NOT be copied")
+    monkeypatch.setattr(c.Path, "home", classmethod(lambda cls: fake_home))
+    monkeypatch.setitem(c.CAMPAIGN_LOGIN, "codex", (login, "auth.json"))
+
+    env, _ = c.isolated_session_env(tmp_path / "out")
+    rec, err = c.seed_session_credentials("codex", env)
+    assert err is None
+    dest = Path(env["CODEX_HOME"]) / "auth.json"
+    assert dest.read_text() == '{"token": "campaign-secret"}'
+    assert oct(dest.stat().st_mode & 0o777) == "0o600"
+    assert not (Path(env["CODEX_HOME"]) / "history.jsonl").exists()  # allow-list only
+    assert rec == {"credential_seed": "codex-campaign login (auth.json)"}
+
+
+def test_missing_campaign_login_is_an_actionable_refusal(tmp_path, monkeypatch):
+    """No campaign login → CON-8-grade error naming the one-time setup
+    command; never a silent fallback to the operator's own login."""
+    import campaign as c
+
+    monkeypatch.setitem(
+        c.CAMPAIGN_LOGIN, "claude", (tmp_path / "nope" / ".claude-campaign", ".credentials.json")
+    )
+    env, _ = c.isolated_session_env(tmp_path / "out")
+    rec, err = c.seed_session_credentials("claude", env)
+    assert rec is None
+    assert "no campaign login for 'claude'" in err and "claude" in err and "/login" in err

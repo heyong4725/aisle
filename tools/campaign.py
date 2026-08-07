@@ -430,6 +430,41 @@ def isolated_session_env(out: Path) -> tuple[dict, dict]:
     return env, record
 
 
+# the dedicated campaign login (issue #96 follow-up): sessions never see
+# the operator's credentials — the operator logs the CAMPAIGN identity in
+# once (`CODEX_HOME=~/.codex-campaign codex login` /
+# `CLAUDE_CONFIG_DIR=~/.claude-campaign claude` + /login), and each
+# scratch home receives ONLY the credential file from that dir. An
+# explicit allow-list copy: credentials are not knowledge.
+CAMPAIGN_LOGIN = {
+    "claude": (Path.home() / ".claude-campaign", ".credentials.json"),
+    "codex": (Path.home() / ".codex-campaign", "auth.json"),
+}
+
+
+def seed_session_credentials(agent: str, env: dict) -> tuple[dict | None, str | None]:
+    """Copy the campaign login's credential file into the isolated home.
+    Returns (record_entry, error): a missing or unreadable campaign login
+    is an ERROR the launcher must refuse on (CON-8) with the setup
+    command — never a silent fallback to the operator's own login."""
+    login_dir, cred_name = CAMPAIGN_LOGIN[agent]
+    src = login_dir / cred_name
+    if not src.exists():
+        hint = (
+            f"CODEX_HOME={login_dir} codex login"
+            if agent == "codex"
+            else f"CLAUDE_CONFIG_DIR={login_dir} claude  # then /login"
+        )
+        return None, (
+            f"no campaign login for {agent!r}: {src} missing — create it once with: {hint}"
+        )
+    dest_dir = Path(env["CODEX_HOME"] if agent == "codex" else env["CLAUDE_CONFIG_DIR"])
+    dest = dest_dir / cred_name
+    dest.write_bytes(src.read_bytes())
+    dest.chmod(0o600)
+    return {"credential_seed": f"{agent}-campaign login ({cred_name})"}, None
+
+
 def probe_agent_auth(agent: str, model: str, env: dict, cwd: Path) -> str | None:
     """Issue #96 fail-closed companion to isolated_session_env: HOME/
     config isolation breaks credential stores keyed off the operator
@@ -663,6 +698,10 @@ def main() -> int:
     # dir, budget spend. An empty home that breaks credentials must
     # refuse here with CON-8 JSON, never start a metered session.
     probe_env, _ = isolated_session_env(args.out / "auth_probe")
+    _, seed_error = seed_session_credentials(args.agent, probe_env)
+    if seed_error:
+        print(json.dumps({"ok": False, "error": seed_error}))
+        return 1
     probe_error = probe_agent_auth(args.agent, model, probe_env, args.out)
     if probe_error:
         print(json.dumps({"ok": False, "error": probe_error}))
@@ -680,6 +719,11 @@ def main() -> int:
     print(f"[h2] session {session_index} starting ({args.agent}/{model})", file=sys.stderr)
     t0_epoch = time.time()
     session_env, session_isolation = isolated_session_env(session_dir)
+    seed_rec, seed_error = seed_session_credentials(args.agent, session_env)
+    if seed_error:
+        print(json.dumps({"ok": False, "error": seed_error}))
+        return 1
+    session_isolation.update(seed_rec)
     session = run_session(
         args.agent,
         cmd,
