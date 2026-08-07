@@ -22,3 +22,24 @@ jobs:
       - run: uv run ruff format --check . && uv run ruff check .
       - run: uv run pytest -m unit
       - run: uv run python tools/trace_check.py
+
+  # Linux unit PORTABILITY coverage (PR #83 review: this is NOT a CON-1
+  # runtime check — CON-1's Metal/MPS runtime half needs a macOS arm64
+  # sim job, and the locked-graph CUDA screen already lives in the
+  # bootstrap test). What this job proves: the default `uv sync`
+  # dependency set installs and the pure/CON-12 unit surface passes on
+  # a Linux CPU host — which caught #82's host-dependent git identity.
+  # Deliberately unit-only: ruff, trace_check and the PR-title gate are
+  # platform-independent, so ci/unit already covers them once.
+  unit-linux:
+    name: ci/unit-linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # same reason as ci/unit: the CON-11 mainline-subject test SKIPS on a
+          # shallow checkout, so depth-1 would silently under-run this job too
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run pytest -m unit
