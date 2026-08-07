@@ -309,3 +309,15 @@ invisible to the wipe machinery, and asymmetric in principle. Rules:
 3. **Grandfathering:** all cells recorded before this amendment
    predate the rule — documented context (the transcript annotation
    and post-mortem carry the disclosure), not a retroactive flag.
+4. **Credentials come from a DEDICATED campaign login, and never
+   persist** (PR #100). With a custom config home, agent CLIs read
+   credentials from the config dir — so the operator logs a campaign
+   identity in once (`CODEX_HOME=~/.codex-campaign codex login` /
+   `CLAUDE_CONFIG_DIR=~/.claude-campaign claude` + `/login`) and the
+   launcher copies ONLY that login's credential file into each scratch
+   home (allow-list, 0600; credentials are not knowledge). A missing
+   campaign login or a failed copy is a CON-8 refusal naming the setup
+   command — never a fallback to the operator's own login. The seeded
+   token is SCRUBBED after every probe and session (and from rotated
+   homes), so no live auth material persists in runs/ artifacts; the
+   scrub is recorded in `session_isolation.credentials_scrubbed`.

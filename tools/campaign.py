@@ -402,6 +402,9 @@ def isolated_session_env(out: Path) -> tuple[dict, dict]:
         while (dest := out / f"agent_home-superseded{n}").exists():
             n += 1
         home.rename(dest)
+        # the rotated home may hold an aborted attempt's live credential
+        # seed — scrub it NOW; audit artifacts persist, tokens do not
+        scrub_session_credentials(dest)
         rotated = str(dest)
     config = home / ".claude"
     config.mkdir(parents=True, exist_ok=True)
@@ -428,6 +431,80 @@ def isolated_session_env(out: Path) -> tuple[dict, dict]:
     if rotated:
         record["rotated_prior_home"] = rotated
     return env, record
+
+
+# the dedicated campaign login (issue #96 follow-up): sessions never see
+# the operator's credentials — the operator logs the CAMPAIGN identity in
+# once (`CODEX_HOME=~/.codex-campaign codex login` /
+# `CLAUDE_CONFIG_DIR=~/.claude-campaign claude` + /login), and each
+# scratch home receives ONLY the credential file from that dir. An
+# explicit allow-list copy: credentials are not knowledge.
+CAMPAIGN_LOGIN = {
+    "claude": (Path.home() / ".claude-campaign", ".credentials.json"),
+    "codex": (Path.home() / ".codex-campaign", "auth.json"),
+}
+
+
+def seed_session_credentials(agent: str, env: dict) -> tuple[dict | None, str | None]:
+    """Copy the campaign login's credential file into the isolated home.
+    Returns (record_entry, error): a missing or unreadable campaign login
+    is an ERROR the launcher must refuse on (CON-8) with the setup
+    command — never a silent fallback to the operator's own login."""
+    login_dir, cred_name = CAMPAIGN_LOGIN[agent]
+    src = login_dir / cred_name
+    if not src.exists():
+        hint = (
+            f"CODEX_HOME={login_dir} codex login"
+            if agent == "codex"
+            else f"CLAUDE_CONFIG_DIR={login_dir} claude  # then /login"
+        )
+        return None, (
+            f"no campaign login for {agent!r}: {src} missing — create it once with: {hint}"
+        )
+    dest_dir = Path(env["CODEX_HOME"] if agent == "codex" else env["CLAUDE_CONFIG_DIR"])
+    dest = dest_dir / cred_name
+    try:
+        # PR #100 rounds 1-2: failures surface as the CON-8 refusal, the
+        # file is PRIVATE FROM CREATION (0600 at open — a write-then-chmod
+        # left a world-readable window and, on chmod failure, a lingering
+        # token), and any failure removes whatever was written
+        payload = src.read_bytes()
+        fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            # PR #100 round 3: os.write may write FEWER bytes than asked
+            # (short write) — loop to completion, and treat zero progress
+            # as an error so a truncated token never reports success
+            view = memoryview(payload)
+            while view:
+                n = os.write(fd, view)
+                if n <= 0:
+                    raise OSError(f"short write seeding {dest} ({len(view)} bytes left)")
+                view = view[n:]
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        dest.unlink(missing_ok=True)  # never leave a partial token behind
+        return None, f"credential seed failed for {agent!r}: {exc}"
+    return {"credential_seed": f"{agent}-campaign login ({cred_name})"}, None
+
+
+def scrub_session_credentials(home: Path) -> list[str]:
+    """Remove the seeded credential files at their EXACT canonical
+    locations — home/.codex/auth.json and home/.claude/.credentials.json
+    (where the seed writes, and where a CLI's own token refresh rewrites).
+    Never a recursive name match: an agent's workspace may legitimately
+    contain same-named files that are audit artifacts (PR #100 round 2).
+    Called after every probe and session (and on home rotation, which
+    would otherwise preserve an aborted attempt's live token
+    indefinitely). Returns the scrubbed paths, recorded for audit; scrub
+    failures are NOT swallowed — a token we cannot delete is loud."""
+    scrubbed = []
+    for agent, (_, cred_name) in CAMPAIGN_LOGIN.items():
+        cred = home / (".codex" if agent == "codex" else ".claude") / cred_name
+        if cred.is_file():
+            cred.unlink()
+            scrubbed.append(str(cred))
+    return scrubbed
 
 
 def probe_agent_auth(agent: str, model: str, env: dict, cwd: Path) -> str | None:
@@ -663,7 +740,15 @@ def main() -> int:
     # dir, budget spend. An empty home that breaks credentials must
     # refuse here with CON-8 JSON, never start a metered session.
     probe_env, _ = isolated_session_env(args.out / "auth_probe")
-    probe_error = probe_agent_auth(args.agent, model, probe_env, args.out)
+    _, seed_error = seed_session_credentials(args.agent, probe_env)
+    if seed_error:
+        print(json.dumps({"ok": False, "error": seed_error}))
+        return 1
+    try:
+        probe_error = probe_agent_auth(args.agent, model, probe_env, args.out)
+    finally:
+        # tokens never persist, even past an unexpected probe exception
+        scrub_session_credentials(Path(probe_env["HOME"]))
     if probe_error:
         print(json.dumps({"ok": False, "error": probe_error}))
         return 1
@@ -680,19 +765,31 @@ def main() -> int:
     print(f"[h2] session {session_index} starting ({args.agent}/{model})", file=sys.stderr)
     t0_epoch = time.time()
     session_env, session_isolation = isolated_session_env(session_dir)
-    session = run_session(
-        args.agent,
-        cmd,
-        wt,
-        session_dir,
-        {
-            "prior_tokens": prior_tokens,
-            "prior_wall_s": prior_wall_s,
-            "token_ceiling": token_ceiling,
-            "wall_ceiling_s": wall_h * 3600.0,
-        },
-        env=session_env,
-    )
+    seed_rec, seed_error = seed_session_credentials(args.agent, session_env)
+    if seed_error:
+        print(json.dumps({"ok": False, "error": seed_error}))
+        return 1
+    session_isolation.update(seed_rec)
+    try:
+        session = run_session(
+            args.agent,
+            cmd,
+            wt,
+            session_dir,
+            {
+                "prior_tokens": prior_tokens,
+                "prior_wall_s": prior_wall_s,
+                "token_ceiling": token_ceiling,
+                "wall_ceiling_s": wall_h * 3600.0,
+            },
+            env=session_env,
+        )
+    finally:
+        # PR #100 review P1: the seeded token must not outlive the
+        # session — runs/ artifact directories persist indefinitely
+        session_isolation["credentials_scrubbed"] = scrub_session_credentials(
+            Path(session_env["HOME"])
+        )
     session["isolation"] = session_isolation
     session["t0_epoch"] = t0_epoch
     sessions.append(session)
