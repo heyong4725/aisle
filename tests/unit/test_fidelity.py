@@ -75,7 +75,7 @@ def _oracle(goal_id, success):
     }
 
 
-_DEFAULT_MANIFEST = {"run_id": "r1"}
+_DEFAULT_MANIFEST = {"run_id": "r1", "seeds": [0]}
 
 
 def _write_run(tmp_path, episodes, sidecar, manifest=_DEFAULT_MANIFEST):
@@ -180,17 +180,17 @@ def test_duplicate_goal_ids_refuse(tmp_path):
     silently replace contrary evidence (PR #102 review)."""
     _write_run(
         tmp_path,
-        [_oracle("ep-0001", True), _oracle("ep-0002", False)],
+        [_oracle("ep-0000", True), _oracle("ep-0001", False)],
         # both consistent records; the DUPLICATE key is what must refuse
-        [_record("ep-0001", True), _record("ep-0001", True)],
+        [_record("ep-0000", True), _record("ep-0000", True)],
     )
     with pytest.raises(EvidenceError, match="duplicate goal_id"):
         load_sidecar(tmp_path)
 
     _write_run(
         tmp_path,
-        [_oracle("ep-0001", True), _oracle("ep-0001", False)],
-        [_record("ep-0001", True)],
+        [_oracle("ep-0000", True), _oracle("ep-0000", False)],
+        [_record("ep-0000", True)],
     )
     with pytest.raises(EvidenceError, match="duplicate goal_id"):
         load_oracle_results(tmp_path)
@@ -202,7 +202,7 @@ def test_missing_goal_id_refuses_instead_of_guessing_a_key(tmp_path):
     _write_run(
         tmp_path,
         [{"seed": 7, "status": "success", "verifier": "oracle"}],
-        [_record("ep-0007", True)],
+        [_record("ep-0000", True)],
     )
     with pytest.raises(EvidenceError, match="no goal_id"):
         load_oracle_results(tmp_path)
@@ -236,16 +236,16 @@ def test_report_pairs_verdicts_and_persists_manifest_metrics(tmp_path):
     votes = dict.fromkeys(STAGES, "pass")
     _write_run(
         tmp_path,
-        [_oracle("ep-0001", True), _oracle("ep-0002", False)],
-        [_record("ep-0001", True, votes=votes), _record("ep-0002", True, votes=votes)],
-        manifest={"run_id": "r1"},
+        [_oracle("ep-0000", True), _oracle("ep-0001", False)],
+        [_record("ep-0000", True, votes=votes), _record("ep-0001", True, votes=votes)],
+        manifest={"run_id": "r1", "seeds": [0, 1]},
     )
     report = fidelity_report(tmp_path)
     assert report["n"] == 2
     assert report["counts"]["false_success"] == 1
     assert report["false_success_rate"] == 1.0
     assert report["manifest_updated"] is True
-    assert [d["goal_id"] for d in report["disagreements"]] == ["ep-0002"]
+    assert [d["goal_id"] for d in report["disagreements"]] == ["ep-0001"]
 
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     fidelity = manifest["verifier_fidelity"]
@@ -267,8 +267,8 @@ def test_cli_contract_including_argument_errors(tmp_path):
     which argparse previously reported as usage text on stderr."""
     _write_run(
         tmp_path,
-        [_oracle("ep-0001", True)],
-        [_record("ep-0001", True)],
+        [_oracle("ep-0000", True)],
+        [_record("ep-0000", True)],
     )
     ok = subprocess.run(
         [sys.executable, "-m", "aisle.harness.fidelity", "--run-dir", str(tmp_path)],
@@ -389,17 +389,19 @@ def test_disagreement_records_carry_identity_frames():
 def test_missing_manifest_refuses_unless_opted_out(tmp_path):
     """VER-6 (PR #102 review round 2): persisting the metrics is core
     behaviour; reporting ok while persisting nothing hid the failure."""
-    _write_run(tmp_path, [_oracle("ep-0001", True)], [_record("ep-0001", True)], manifest=None)
-    with pytest.raises(EvidenceError, match="cannot persist"):
+    _write_run(tmp_path, [_oracle("ep-0000", True)], [_record("ep-0000", True)], manifest=None)
+    # refuses without a manifest: completeness cannot be established and
+    # the metrics cannot be persisted
+    with pytest.raises(EvidenceError, match="manifest.json is missing"):
         fidelity_report(tmp_path)
-    report = fidelity_report(tmp_path, write_manifest=False)
+    report = fidelity_report(tmp_path, write_manifest=False, expect_episodes=1)
     assert report["manifest_updated"] is False and report["n"] == 1
 
 
 def test_malformed_json_shapes_still_produce_con8_refusals(tmp_path):
     """CON-8 (PR #102 review round 2): a top-level `[]` in either file
     raised AttributeError/TypeError with a traceback and empty stdout."""
-    _write_run(tmp_path, [_oracle("ep-0001", True)], [_record("ep-0001", True)])
+    _write_run(tmp_path, [_oracle("ep-0000", True)], [_record("ep-0000", True)])
     (tmp_path / SIDE).write_text("[]\n")
     bad_sidecar = subprocess.run(
         [sys.executable, "-m", "aisle.harness.fidelity", "--run-dir", str(tmp_path)],
@@ -408,7 +410,7 @@ def test_malformed_json_shapes_still_produce_con8_refusals(tmp_path):
     )
     assert bad_sidecar.returncode == 1 and json.loads(bad_sidecar.stdout)["ok"] is False
 
-    _write_run(tmp_path, [_oracle("ep-0001", True)], [_record("ep-0001", True)])
+    _write_run(tmp_path, [_oracle("ep-0000", True)], [_record("ep-0000", True)])
     (tmp_path / "manifest.json").write_text("[]")
     bad_manifest = subprocess.run(
         [sys.executable, "-m", "aisle.harness.fidelity", "--run-dir", str(tmp_path)],
@@ -416,3 +418,117 @@ def test_malformed_json_shapes_still_produce_con8_refusals(tmp_path):
         text=True,
     )
     assert bad_manifest.returncode == 1 and json.loads(bad_manifest.stdout)["ok"] is False
+
+
+def test_truncated_but_matching_evidence_refuses(tmp_path):
+    """PR #102 review round 3: a crash that truncated BOTH streams left a
+    matching short prefix that scored as a complete run. Completeness is
+    now checked against the manifest's requested episodes BEFORE scoring."""
+    _write_run(
+        tmp_path,
+        [_oracle("ep-0000", True)],
+        [_record("ep-0000", True)],
+        manifest={"run_id": "r1", "seeds": [0, 1, 2]},
+    )
+    with pytest.raises(EvidenceError, match="incomplete evidence"):
+        fidelity_report(tmp_path)
+
+    # the diagnostic path must state its expectation, or be labelled a subset
+    with pytest.raises(EvidenceError, match="incomplete evidence"):
+        fidelity_report(tmp_path, write_manifest=False, expect_episodes=3)
+    subset = fidelity_report(tmp_path, write_manifest=False)
+    assert subset["complete_run"] is False and "DIAGNOSTIC SUBSET" in subset["scope"]
+
+    full = fidelity_report(tmp_path, write_manifest=False, expect_episodes=1)
+    assert full["complete_run"] is True
+
+
+def test_identity_votes_must_agree_with_their_own_frames_and_latch():
+    """PR #102 review round 3: shape checks accepted votes contradicting
+    their evidence. These mirror the producer's invariants (VER-9)."""
+    # a pass whose frames all say the target was never in the tray
+    no_target = _record("ep-a", True)
+    for stage in ("identity_overhead", "identity_wrist"):
+        no_target["stages"][stage]["frames"][0]["target_in_tray"] = False
+    with pytest.raises(EvidenceError, match="no frame reports target_in_tray"):
+        validate_sidecar_record(no_target)
+
+    # a frame saw a non-target but the latch is clear
+    unlatched = _record("ep-b", True)
+    unlatched["stages"]["identity_overhead"]["frames"][0]["non_target_in_tray"] = True
+    with pytest.raises(EvidenceError, match="latch is clear"):
+        validate_sidecar_record(unlatched)
+
+    # the latch is set, yet identity still voted pass
+    votes = dict.fromkeys(STAGES, "pass")
+    latched = _record("ep-c", True, votes=votes)
+    latched["stages"]["identity_overhead"]["frames"][0]["non_target_in_tray"] = True
+    latched["latch"] = {
+        "latched": True,
+        "first_event": {"sim_time_ns": 0, "camera": "overhead", "med_class": "ibuprofen"},
+    }
+    with pytest.raises(EvidenceError, match="voted pass"):
+        validate_sidecar_record(latched)
+
+    # a set latch with no supporting frame
+    unsupported = _record(
+        "ep-d",
+        False,
+        votes={
+            **dict.fromkeys(STAGES, "pass"),
+            "identity_overhead": "fail",
+            "identity_wrist": "fail",
+        },
+    )
+    unsupported["latch"] = {
+        "latched": True,
+        "first_event": {"sim_time_ns": 0, "camera": "overhead", "med_class": "ibuprofen"},
+    }
+    with pytest.raises(EvidenceError, match="no frame reports non_target_in_tray"):
+        validate_sidecar_record(unsupported)
+
+
+def test_latch_event_and_measurements_must_be_typed():
+    """VER-14 requires the complete latch event; measurements must be
+    measured (PR #102 review round 3)."""
+    base = _record(
+        "ep-e",
+        False,
+        votes={
+            **dict.fromkeys(STAGES, "pass"),
+            "identity_overhead": "fail",
+            "identity_wrist": "fail",
+        },
+    )
+    base["stages"]["identity_overhead"]["frames"][0]["non_target_in_tray"] = True
+
+    no_class = json.loads(json.dumps(base))
+    no_class["latch"] = {"latched": True, "first_event": {"sim_time_ns": 0, "camera": "overhead"}}
+    with pytest.raises(EvidenceError, match="med_class"):
+        validate_sidecar_record(no_class)
+
+    bad_types = json.loads(json.dumps(base))
+    bad_types["latch"] = {
+        "latched": True,
+        "first_event": {"sim_time_ns": "late", "camera": "bogus", "med_class": "x"},
+    }
+    with pytest.raises(EvidenceError, match="sim_time_ns is not an integer"):
+        validate_sidecar_record(bad_types)
+
+    bad_camera = json.loads(json.dumps(base))
+    bad_camera["latch"] = {
+        "latched": True,
+        "first_event": {"sim_time_ns": 0, "camera": "bogus", "med_class": "x"},
+    }
+    with pytest.raises(EvidenceError, match="camera .* is unknown"):
+        validate_sidecar_record(bad_camera)
+
+    string_measure = _record("ep-f", True)
+    string_measure["stages"]["upright"]["measurement"] = {"tilt_deg": "flat"}
+    with pytest.raises(EvidenceError, match="not a finite number"):
+        validate_sidecar_record(string_measure)
+
+    nan_score = _record("ep-g", True)
+    nan_score["stages"]["identity_overhead"]["frames"][0]["per_class_scores"] = {"x": None}
+    with pytest.raises(EvidenceError, match="score for"):
+        validate_sidecar_record(nan_score)

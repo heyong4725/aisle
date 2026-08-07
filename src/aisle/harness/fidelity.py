@@ -34,10 +34,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
-from aisle.verifier.realistic import SIDECAR_NAME, STAGES, StageVote, fuse
+from aisle.verifier.realistic import CAMERAS, SIDECAR_NAME, STAGES, StageVote, fuse
 
 VALID_VOTES = ("pass", "fail", "error")
 # TC-7's closed status enum; TC-8 makes the ORACLE the only ground truth
@@ -71,6 +72,10 @@ def _require_mapping(value, label: str) -> dict:
     return value
 
 
+def _finite_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
 def validate_identity_entry(goal_id: str, stage: str, entry: dict) -> None:
     """VER-14 identity evidence: a real per-frame timeline, and a PASSING
     vote must actually be supported by frames (PR #102 review round 2 —
@@ -89,12 +94,26 @@ def validate_identity_entry(goal_id: str, stage: str, entry: dict) -> None:
             raise EvidenceError(f"{goal_id}: {stage} frame {i} missing {missing} (VER-14)")
         if not isinstance(frame["sim_time_ns"], int):
             raise EvidenceError(f"{goal_id}: {stage} frame {i} sim_time_ns is not an integer")
-        _require_mapping(
+        scores = _require_mapping(
             frame["per_class_scores"], f"{goal_id}: {stage} frame {i} per_class_scores"
         )
+        for med, score in scores.items():
+            if not _finite_number(score):
+                raise EvidenceError(
+                    f"{goal_id}: {stage} frame {i} score for {med!r} is {score!r}, "
+                    "not a finite number"
+                )
         for flag in ("target_in_tray", "non_target_in_tray"):
             if not isinstance(frame[flag], bool):
                 raise EvidenceError(f"{goal_id}: {stage} frame {i} {flag} is not a boolean")
+    # the PRODUCER's invariant (EpisodeJudge.identity_vote): a pass means
+    # some judged frame actually saw the target in the tray. Shape checks
+    # alone accepted a pass whose every frame said target_in_tray:false
+    # (PR #102 review round 3).
+    if entry["vote"] == "pass" and not any(f["target_in_tray"] for f in frames):
+        raise EvidenceError(
+            f"{goal_id}: stage {stage!r} voted pass but no frame reports target_in_tray"
+        )
 
 
 def validate_measurement(goal_id: str, stage: str, entry: dict) -> None:
@@ -115,24 +134,60 @@ def validate_measurement(goal_id: str, stage: str, entry: dict) -> None:
     missing = [f for f in REQUIRED_MEASUREMENTS.get(stage, ()) if f not in measurement]
     if missing:
         raise EvidenceError(f"{goal_id}: stage {stage!r} measurement missing {missing}")
+    # a MEASUREMENT must be measured: the required fields carry finite
+    # numbers, not strings or nulls (PR #102 review round 3)
+    for field in REQUIRED_MEASUREMENTS.get(stage, ()):
+        if not _finite_number(measurement[field]):
+            raise EvidenceError(
+                f"{goal_id}: stage {stage!r} measurement {field} is {measurement[field]!r}, "
+                "not a finite number"
+            )
 
 
-def validate_latch(goal_id: str, record: dict) -> None:
-    """VER-14 latch object: present, with a consistent first_event."""
-    latch = record.get("latch")
-    _require_mapping(latch, f"{goal_id}: latch")
+def validate_latch(goal_id: str, record: dict, stages: dict) -> None:
+    """VER-14 latch object, cross-checked against the frames and votes.
+
+    The producer's semantics (EpisodeJudge): the latch is set iff some
+    judged frame saw a non-target in the tray, and ONCE SET both identity
+    stages necessarily fail. Shape-only validation accepted a set latch
+    alongside two passing identity votes (PR #102 review round 3)."""
+    latch = _require_mapping(record.get("latch"), f"{goal_id}: latch")
     if not isinstance(latch.get("latched"), bool):
         raise EvidenceError(f"{goal_id}: latch.latched is not a boolean")
     event = latch.get("first_event", ...)
     if event is ...:
         raise EvidenceError(f"{goal_id}: latch has no first_event field (VER-14)")
+
+    saw_non_target = any(
+        frame["non_target_in_tray"]
+        for stage in STAGES
+        if stage.startswith("identity_")
+        for frame in stages[stage].get("frames", [])
+    )
     if latch["latched"]:
-        _require_mapping(event, f"{goal_id}: latch.first_event")
-        for field in ("sim_time_ns", "camera"):
-            if field not in event:
-                raise EvidenceError(f"{goal_id}: latch.first_event missing {field!r}")
-    elif event is not None:
-        raise EvidenceError(f"{goal_id}: latch is clear but carries a first_event")
+        ev = _require_mapping(event, f"{goal_id}: latch.first_event")
+        for field in ("sim_time_ns", "camera", "med_class"):
+            if field not in ev:
+                raise EvidenceError(f"{goal_id}: latch.first_event missing {field!r} (VER-14)")
+        if not isinstance(ev["sim_time_ns"], int):
+            raise EvidenceError(f"{goal_id}: latch.first_event sim_time_ns is not an integer")
+        if ev["camera"] not in CAMERAS:
+            raise EvidenceError(f"{goal_id}: latch.first_event camera {ev['camera']!r} is unknown")
+        if not saw_non_target:
+            raise EvidenceError(f"{goal_id}: latch is SET but no frame reports non_target_in_tray")
+        for stage in STAGES:
+            if stage.startswith("identity_") and stages[stage]["vote"] == "pass":
+                raise EvidenceError(
+                    f"{goal_id}: latch is SET but {stage} voted pass — the producer fails "
+                    "both identities once the wrong-object latch trips (VER-9)"
+                )
+    else:
+        if event is not None:
+            raise EvidenceError(f"{goal_id}: latch is clear but carries a first_event")
+        if saw_non_target:
+            raise EvidenceError(
+                f"{goal_id}: a frame reports non_target_in_tray but the latch is clear (VER-9)"
+            )
 
 
 def validate_sidecar_record(record) -> bool:
@@ -165,7 +220,7 @@ def validate_sidecar_record(record) -> bool:
         else:
             validate_measurement(goal_id, stage, entry)
         votes[stage] = StageVote(vote)
-    validate_latch(goal_id, record)
+    validate_latch(goal_id, record, stages)
     success = record.get("success")
     if not isinstance(success, bool):
         raise EvidenceError(
@@ -328,6 +383,37 @@ def load_oracle_results(run_dir: Path) -> dict[str, bool]:
     return results
 
 
+def expected_goal_ids(run_dir: Path) -> tuple[list[str], dict]:
+    """The episode set the RUN requested, from its manifest.
+
+    The rollout client keys episodes `ep-{index:04d}`, one per manifest
+    seed. Without this check a crash that truncated BOTH verdict streams
+    on the difficult suffix left a matching-but-short prefix that scored
+    as a complete run (PR #102 review round 3)."""
+    path = Path(run_dir) / "manifest.json"
+    if not path.exists():
+        raise EvidenceError(
+            f"{path} is missing: cannot establish how many episodes the run requested "
+            "(pass --no-manifest --expect-episodes N to score an explicit subset)"
+        )
+    manifest = _require_mapping(json.loads(path.read_text()), f"{path}: manifest")
+    seeds = manifest.get("seeds")
+    if not isinstance(seeds, list) or not seeds:
+        raise EvidenceError(f"{path}: manifest has no seeds list — cannot verify completeness")
+    return [f"ep-{i:04d}" for i in range(len(seeds))], manifest
+
+
+def require_complete(judged: set[str], expected: list[str]) -> None:
+    """Every requested episode must appear in BOTH verdict streams."""
+    missing = sorted(set(expected) - judged)
+    extra = sorted(judged - set(expected))
+    if missing or extra:
+        raise EvidenceError(
+            f"incomplete evidence: {len(judged)} of {len(expected)} requested episodes judged "
+            f"(missing: {missing[:8]}{'...' if len(missing) > 8 else ''}; unexpected: {extra[:8]})"
+        )
+
+
 def write_manifest_metrics(run_dir: Path, report: dict) -> None:
     """VER-6: the per-run manifest carries the four counts plus the three
     rates. Persisting them is core behaviour, so a missing, malformed or
@@ -340,8 +426,7 @@ def write_manifest_metrics(run_dir: Path, report: dict) -> None:
             f"{path} is missing: cannot persist the VER-6 metrics "
             "(pass --no-manifest to report without persisting)"
         )
-    manifest = json.loads(path.read_text())
-    _require_mapping(manifest, f"{path}: manifest")
+    manifest = _require_mapping(json.loads(path.read_text()), f"{path}: manifest")
     manifest["verifier_fidelity"] = {
         "n": report["n"],
         "counts": report["counts"],
@@ -352,15 +437,40 @@ def write_manifest_metrics(run_dir: Path, report: dict) -> None:
     path.write_text(json.dumps(manifest, indent=1) + "\n")
 
 
-def fidelity_report(run_dir: Path, write_manifest: bool = True) -> dict:
-    """The agreement report for one run directory holding both verdicts."""
+def fidelity_report(
+    run_dir: Path, write_manifest: bool = True, expect_episodes: int | None = None
+) -> dict:
+    """The agreement report for one run directory holding both verdicts.
+
+    Completeness is checked BEFORE scoring (PR #102 review round 3): the
+    default path validates the judged set against the run manifest's
+    requested episodes; the `--no-manifest` diagnostic path requires an
+    explicit `--expect-episodes N` and is labelled as a subset when the
+    caller declines to state one."""
     records, realistic = load_sidecar(run_dir)
     oracle = load_oracle_results(run_dir)
+    judged = set(oracle) & set(realistic)
+
+    complete = True
+    if write_manifest:
+        expected, _ = expected_goal_ids(run_dir)
+        require_complete(judged, expected)
+    elif expect_episodes is not None:
+        require_complete(judged, [f"ep-{i:04d}" for i in range(expect_episodes)])
+    else:
+        complete = False  # diagnostic subset: must not read as a run result
+
     report = compare(oracle, realistic)
     disagreements = report["false_success_ids"] + report["false_fail_ids"]
     report["stage_attribution"] = stage_attribution(records, disagreements)
     report["disagreements"] = disagreement_records(records, oracle, realistic, disagreements)
     report["run_dir"] = str(run_dir)
+    report["complete_run"] = complete
+    if not complete:
+        report["scope"] = (
+            "DIAGNOSTIC SUBSET — completeness unverified (no manifest, no --expect-episodes); "
+            "not a run-level fidelity result"
+        )
     if write_manifest:
         write_manifest_metrics(run_dir, report)
     report["manifest_updated"] = write_manifest
@@ -380,9 +490,19 @@ def main() -> int:
     parser = _JsonArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--no-manifest", action="store_true", help="do not update manifest.json")
+    parser.add_argument(
+        "--expect-episodes",
+        type=int,
+        default=None,
+        help="with --no-manifest: the episode count that must be judged by BOTH verifiers",
+    )
     args = parser.parse_args()
     try:
-        report = fidelity_report(args.run_dir, write_manifest=not args.no_manifest)
+        report = fidelity_report(
+            args.run_dir,
+            write_manifest=not args.no_manifest,
+            expect_episodes=args.expect_episodes,
+        )
     except Exception as exc:  # noqa: BLE001 — CON-8: never a traceback
         print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}))
         return 1
