@@ -10,6 +10,27 @@ tray_margin_m = 0.005
 resting_tolerance_m = 0.01
 robot_home_tolerance_rad = 0.15
 
+[realistic]
+# VER-9: judged-frame cadence — the terminal frame plus a checkpoint
+# every this many sim-seconds from goal receipt. The wrong-object latch
+# can only see what it samples: a transient entirely BETWEEN checkpoints
+# is the cadence-bounded residual VER-6's false-success rate measures.
+checkpoint_period_s = 5.0
+# VER-9: per-class detection score below which a box is not "in the tray"
+identity_min_score = 0.30
+# VER-10/11: the minimum target-detection score that may SEED the
+# segmenter. Below it the geometry stages record `error` rather than
+# measuring whatever the mask happened to cover (PR #103 review).
+grounding_min_score = 0.10
+# VER-10/11: mask points within this depth band of the median are the
+# target's visible lid; the rest is background bleed at the silhouette.
+# This decides which points reach BOTH geometry stages.
+surface_band_m = 0.01
+# a mask must genuinely span two dimensions to define a plane: the
+# second singular value must be at least this fraction of the first.
+# Collinear points otherwise yield an arbitrary "normal".
+surface_min_rank_ratio = 0.02
+
 [failure]
 # below this center height a box can only be resting on the floor: floor-
 # resting centers span 0.015-0.055 m while tray/shelf resting centers start

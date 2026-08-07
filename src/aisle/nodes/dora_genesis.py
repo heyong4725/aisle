@@ -207,12 +207,19 @@ def make_bridge_info(
     genesis_version: str,
     env_hash: str,
     step_without_reset: bool,
+    calibration: dict,
 ) -> str:
-    """BRG-6: the startup contract announcement, as a JSON string.
+    """BRG-6 + BRG-8: the startup contract announcement, as a JSON string.
 
     step_without_reset is surfaced so a run whose bridge free-ran before the
     first reset (ADR-25 bring-up mode) is auditable from its traces — the
-    env var alone would leave no attestation footprint (issue #71)."""
+    env var alone would leave no attestation footprint (issue #71).
+
+    calibration is the VER-8 v1 block (SPEC 040) built from the REALIZED
+    camera state — post-DR-jitter, the same values the render path uses.
+    Required, not defaulted: the realistic verifier's stage 0 refuses to
+    judge without it, so a bridge that forgot to wire it must fail loudly
+    rather than publish a judgeable-looking run with no calibration."""
     return json.dumps(
         {
             "contract": "v0",
@@ -223,7 +230,36 @@ def make_bridge_info(
             "platform": f"{platform.system().lower()}-{platform.machine()}",
             "env_hash": env_hash,
             "step_without_reset": step_without_reset,
+            "calibration": calibration,
         }
+    )
+
+
+def realized_calibration(handle, physics: dict, is_store: bool) -> dict:
+    """BRG-8: the v1 calibration block from the BUILT scene — the
+    overhead pose is read back from the camera transform (so DR jitter is
+    reflected), converted to the v1/OpenCV conventions by VER-8's own
+    module. Store scenes use their own overhead nominals."""
+    from aisle.scenes.pharmacy import to_numpy
+    from aisle.verifier.calibration import GL_TO_CV, build_calibration_v1
+
+    cams = handle.cams
+    cam_cfg = physics["cameras"]
+    overhead = cams["overhead"]
+    transform = np.asarray(to_numpy(overhead.transform)).reshape(4, 4)
+    lookat = cam_cfg["store_overhead_lookat" if is_store else "overhead_lookat"]
+    return build_calibration_v1(
+        # the REALIZED rotation, converted GL->CV — not a re-derivation
+        # from config (PR #103 review): stage 0 must be able to catch a
+        # camera that is rotated in place
+        overhead_rotation_cv=transform[:3, :3] @ GL_TO_CV,
+        overhead_pos=transform[:3, 3].tolist(),
+        overhead_lookat=lookat,
+        overhead_resolution=overhead.res,
+        overhead_fov_deg=overhead.fov,
+        wrist_offset_m=cam_cfg["wrist_offset_m"],
+        wrist_resolution=cams["wrist"].res,
+        wrist_fov_deg=cams["wrist"].fov,
     )
 
 
@@ -328,6 +364,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     genesis_version=genesis.__version__,
                     env_hash=compute_env_hash(root),
                     step_without_reset=cfg.step_without_reset,
+                    calibration=realized_calibration(handle, physics, is_store),
                 )
             ]
         ),
