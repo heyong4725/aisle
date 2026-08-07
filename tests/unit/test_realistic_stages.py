@@ -308,3 +308,64 @@ def test_shift_detections_maps_crop_boxes_back_to_full_frame():
     assert shifted[0]["box"] == [180.0, 381.0, 200.0, 403.0]
     assert cropped[0]["box"] == [10.0, 12.0, 30.0, 34.0]  # inputs untouched
     assert detections_in_roi(shifted, (182.0, 381.0, 274.0, 509.0), 0.05) == {"ibuprofen": 0.15}
+
+
+def test_med_box_area_limit_scales_footprints_into_pixels():
+    """VER-9: the gate is DERIVED from the tray and med footprints, not
+    fitted to a run. Largest med 0.07x0.035 m in a 0.20x0.28 m tray is
+    0.0437 of it; at slack 3 the limit is 0.131 of the ROI's pixel area."""
+    from aisle.verifier.stages import med_box_area_limit
+
+    limit = med_box_area_limit(
+        (0.40, -0.14, 0.04),
+        (0.60, 0.14, 0.10),
+        {"metformin": [0.07, 0.035, 0.095]},
+        (0.0, 0.0, 100.0, 100.0),
+        3.0,
+    )
+    assert limit == pytest.approx(0.1312 * 10_000, rel=1e-3)
+
+
+def test_size_gate_rejects_a_tray_sized_detection_and_keeps_a_med():
+    """The measured failure mode (PR #104 review, finding 1): the model
+    labels the WHOLE TRAY with a med class. On identity-calib-I2 the
+    genuine ibuprofen box covered 0.077 of the tray ROI at score 0.1182
+    while a 'cetirizine' artifact covered 0.774 at 0.0474 — with the gate
+    only the real box survives, so the wrong-object latch cannot fire on
+    a correct delivery."""
+    from aisle.verifier.stages import detections_in_roi, med_box_area_limit
+
+    roi = (182.6, 381.0, 273.9, 508.8)
+    limit = med_box_area_limit(TRAY_MIN, TRAY_MAX, {"m": [0.07, 0.035, 0.095]}, roi, 3.0)
+    detections = [
+        {"label": "ibuprofen", "score": 0.1182, "box": [223.8, 408.4, 246.4, 448.1]},
+        {"label": "cetirizine", "score": 0.0474, "box": [199.1, 369.5, 284.8, 474.8]},
+    ]
+
+    # judged at 0.04, BELOW the artifact's score, so the gate alone decides
+    assert detections_in_roi(detections, roi, 0.04, limit) == {"ibuprofen": 0.1182}
+    # ungated, the artifact is indistinguishable from a real wrong object
+    assert set(detections_in_roi(detections, roi, 0.04)) == {"ibuprofen", "cetirizine"}
+
+
+def test_size_gate_keeps_a_genuine_second_med_so_the_latch_still_fires():
+    """The gate bounds size UPWARD only — VER-3's safety asymmetry must
+    survive it. A real non-target box in the tray is med-sized, so it
+    still sets `non_target_in_tray`."""
+    from aisle.verifier.stages import identity_frame, med_box_area_limit
+
+    roi = (182.6, 381.0, 273.9, 508.8)
+    limit = med_box_area_limit(TRAY_MIN, TRAY_MAX, {"m": [0.07, 0.035, 0.095]}, roi, 3.0)
+    frame = identity_frame(
+        [
+            {"label": "omeprazole", "score": 0.20, "box": [200.0, 400.0, 222.0, 440.0]},
+            {"label": "metformin", "score": 0.14, "box": [235.0, 450.0, 257.0, 490.0]},
+        ],
+        "omeprazole",
+        roi,
+        0.05,
+        42,
+        limit,
+    )
+
+    assert frame["target_in_tray"] and frame["non_target_in_tray"]

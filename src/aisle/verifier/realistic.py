@@ -270,6 +270,7 @@ def judge_frames(
         dominant_surface,
         home_vote,
         identity_frame,
+        med_box_area_limit,
         shift_detections,
         tray_roi_pixels,
         upright_vote,
@@ -350,7 +351,18 @@ def judge_frames(
                     judge.observe(
                         camera,
                         identity_frame(
-                            detections, target_med, roi, realistic_cfg["identity_min_score"], stamp
+                            detections,
+                            target_med,
+                            roi,
+                            realistic_cfg["identity_min_score"],
+                            stamp,
+                            med_box_area_limit(
+                                tray_min,
+                                tray_max,
+                                med_sizes,
+                                roi,
+                                realistic_cfg["identity_max_box_area_slack"],
+                            ),
                         ),
                     )
             except Exception as exc:  # noqa: BLE001 — VER-13, this camera only

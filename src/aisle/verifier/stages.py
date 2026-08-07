@@ -157,16 +157,44 @@ def shift_detections(detections: list[dict], offset: tuple) -> list[dict]:
     ]
 
 
-def detections_in_roi(detections: list[dict], roi: tuple, min_score: float) -> dict[str, float]:
+def med_box_area_limit(tray_min, tray_max, med_sizes: dict, roi: tuple, slack: float) -> float:
+    """The largest pixel area a single med box may cover inside the tray
+    ROI (VER-9), derived from the footprints rather than fitted.
+
+    The detector's dominant false positive is labelling the WHOLE TRAY
+    with a med class: on the five-class run identity-calib-I2 every
+    genuine med box covered <= 0.105 of the tray ROI while every
+    non-target artifact covered >= 0.284, mostly ~0.77. Since the largest
+    med footprint is a known fraction of the tray footprint, that ratio
+    scales to pixels without projecting anything — `slack` covers the
+    side faces a tall box shows under perspective.
+
+    This bounds size UPWARD only, so a real second med in the tray stays
+    detectable and VER-9's wrong-object latch keeps its teeth."""
+    tray_area = abs((tray_max[0] - tray_min[0]) * (tray_max[1] - tray_min[1]))
+    med_area = max(float(size[0]) * float(size[1]) for size in med_sizes.values())
+    roi_area = abs((roi[2] - roi[0]) * (roi[3] - roi[1]))
+    if tray_area <= 0:
+        raise ValueError("tray footprint has no area")
+    return slack * (med_area / tray_area) * roi_area
+
+
+def detections_in_roi(
+    detections: list[dict], roi: tuple, min_score: float, max_box_area: float | None = None
+) -> dict[str, float]:
     """Per-class max score among detections whose box CENTER falls inside
-    the tray ROI and clears the threshold (VER-9)."""
+    the tray ROI, clears the threshold, and is small enough to BE a med
+    (VER-9). `max_box_area` comes from `med_box_area_limit`; None keeps
+    the pre-gate behaviour for callers that judge without geometry."""
     u0, v0, u1, v1 = roi
     scores: dict[str, float] = {}
     for det in detections:
         if float(det["score"]) < min_score:
             continue
-        cu = (float(det["box"][0]) + float(det["box"][2])) / 2
-        cv = (float(det["box"][1]) + float(det["box"][3])) / 2
+        box = [float(v) for v in det["box"]]
+        if max_box_area is not None and abs((box[2] - box[0]) * (box[3] - box[1])) > max_box_area:
+            continue
+        cu, cv = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
         if u0 <= cu <= u1 and v0 <= cv <= v1:
             label = det["label"]
             scores[label] = max(scores.get(label, 0.0), float(det["score"]))
@@ -179,10 +207,11 @@ def identity_frame(
     roi: tuple,
     min_score: float,
     sim_time_ns: int,
+    max_box_area: float | None = None,
 ) -> dict:
     """One judged frame for the VER-9 timeline (the VER-14 frame shape).
     `detections` are the model's boxes for THIS camera+frame."""
-    scores = detections_in_roi(detections, roi, min_score)
+    scores = detections_in_roi(detections, roi, min_score, max_box_area)
     return {
         "sim_time_ns": int(sim_time_ns),
         "per_class_scores": scores,

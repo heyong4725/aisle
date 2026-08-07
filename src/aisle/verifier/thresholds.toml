@@ -17,15 +17,36 @@ robot_home_tolerance_rad = 0.15
 # is the cadence-bounded residual VER-6's false-success rate measures.
 checkpoint_period_s = 5.0
 # VER-9: per-class detection score below which a box is not "in the tray".
-# CALIBRATED from measured separation on the golden frames (2026-08-07),
-# not guessed. With the colour-word query vocabulary, on the overhead
-# camera where a med is only ~21x19 px:
-#   target present in tray : 0.1331   (non-target noise in ROI <= 0.0199)
-#   target absent          : 0.0001   (non-target noise in ROI <= 0.0093)
-# 0.05 sits ~2.7x above the noise ceiling and ~2.7x below the true
-# positive, and classifies both golden moments correctly. The former
-# 0.30 was a guess that rejected every real detection.
+# CALIBRATED on the five-class live run identity-calib-I2 (2026-08-07,
+# one episode per med class, all five scored success by the oracle),
+# judging every checkpoint of every episode. WITH the size gate below,
+# the best target detection per episode is
+#   0.1844 amoxicillin | 0.2497 ibuprofen | 0.1373 cetirizine
+#   0.2038 omeprazole  | 0.0541 metformin
+# and NO non-target detection survives at any score, on any frame. So
+# the score threshold no longer separates target from non-target — the
+# size gate does — and 0.05 only has to sit below the weakest true
+# positive (0.0541, metformin).
+#
+# It is calibrated in THAT order deliberately: without the size gate the
+# separation is 0.0474 (a non-target artifact) against 0.0541 (the
+# weakest target), a 1.14x band with the threshold inside the noise, and
+# no value of this number is safe (PR #104 review, finding 1).
 identity_min_score = 0.05
+# VER-9: a detection is only a MED if its box could be one. The rejected
+# detections are the model labelling the WHOLE TRAY with a med class:
+# measured on identity-calib-I2, every genuine med box covers <= 0.105 of
+# the tray ROI while every non-target artifact covers >= 0.284 (usually
+# ~0.77 — the tray itself). The limit is derived from geometry, not
+# fitted: the largest med footprint is 0.0437 of the tray footprint, and
+# this slack covers the side faces a 9.5 cm-tall box shows under
+# perspective. 3.0 -> a gate at 0.131 of the ROI, above every true
+# detection and 2.2x below every artifact.
+#
+# It bounds the box size UPWARD only. A real second med in the tray is
+# med-sized, so VER-9's wrong-object latch keeps seeing it — this rejects
+# a detection that is too big to be any med, never a plausible one.
+identity_max_box_area_slack = 3.0
 # VER-10/11: the minimum target-detection score that may SEED the
 # segmenter. Below it the geometry stages record `error` rather than
 # measuring whatever the mask happened to cover (PR #103 review).
