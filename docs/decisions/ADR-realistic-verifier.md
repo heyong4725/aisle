@@ -170,3 +170,13 @@ commits; sequencing after the H3 campaign is natural.
 
 IDs: VER-6 (fidelity contract), CON-5 (D2), CON-7 (frozen-set
 process), CON-1 (no CUDA-only deps), CON-15 (this ADR).
+
+## Addendum (spec-change PR #101, CON-15): hardware calibration artifact
+
+Phase 4's measured calibration enters the VER-8 contract through a
+dedicated per-device artifact, `env/calibration.toml` — NOT the sim
+scene files. It carries the same v1 fields/conventions as the sim
+block (SPEC 040 VER-8); acquisition and maintenance follow the same
+owner sign-off discipline as other hardware-provenance assets. ADR-6
+records simulator/asset provenance only and is not the governing
+reference for this artifact.
