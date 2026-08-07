@@ -59,7 +59,8 @@ verifier at all: VER-6's offline comparison and VER-7's byte-equality
 both need the arrays the live judge saw. Capture is therefore opt-in and
 cadenced rather than continuous — the VER-9 judged-frame set (period
 checkpoints plus the terminal frame, forced when `episode_result`
-arrives) at ~250 KB per instant, ~30 MB for a 600 s episode at 5 s. The
+arrives) at 140 KB per instant measured live, ~17 MB for a 600 s episode
+at 5 s. The
 overhead rgb/depth pair is written only when both come from ONE render
 (BRG-2 co-renders them when both are due): the geometry stages fuse the
 two, so a mismatched pair would measure a scene that never existed, and

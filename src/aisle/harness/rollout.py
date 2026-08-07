@@ -385,7 +385,14 @@ def instrumented_graph(
             # run dir otherwise kills the dataflow at startup, zero episodes
             "path": str((root / "src" / "aisle" / "harness" / "trace_recorder.py").resolve()),
             "inputs": inputs,
-            "env": {"AISLE_TRACE_DIR": str(trace_dir if trace_dir else run_dir / "traces")},
+            # frame capture is declared IN THE GRAPH, not inherited from the
+            # runner's process env: the graph hash then attests whether a run
+            # recorded replayable frames (the same reasoning as ADR-25's
+            # bring-up scrub, in the opposite direction)
+            "env": {
+                "AISLE_TRACE_DIR": str(trace_dir if trace_dir else run_dir / "traces"),
+                "AISLE_FRAME_CAPTURE_PERIOD_S": os.environ.get("AISLE_FRAME_CAPTURE_PERIOD_S", "0"),
+            },
         }
     )
     out_path = run_dir / name

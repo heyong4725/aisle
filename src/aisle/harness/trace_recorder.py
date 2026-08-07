@@ -18,8 +18,9 @@ is lossy, 10 fps and carries no depth at all, so a run recorded without
 this captures NOTHING the realistic verifier can replay (VER-5/VER-6):
 its containment and upright stages need the overhead depth, and byte
 equality is what makes a replay a replay. Capture is opt-in because it is
-expensive: ~250 KB per instant (480x640 RGB + depth, 240x320 wrist), so a
-600 s episode at the VER-9 5 s cadence costs ~30 MB.
+expensive: 140 KB per instant measured over a live two-episode run
+(480x640 RGB + depth, 240x320 wrist), so a 600 s episode at the VER-9
+5 s cadence costs ~17 MB.
 """
 
 from __future__ import annotations
