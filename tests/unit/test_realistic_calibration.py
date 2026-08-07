@@ -200,3 +200,15 @@ def test_realized_rotation_is_published_not_rederived():
         overhead_rotation_cv=spun,
     )
     assert "rotation" in check_calibration(published, nominal_block(), JITTER_M)
+
+
+def test_absent_or_non_mapping_calibration_refuses_without_raising():
+    """VER-8 (PR #103 review round 3): an ABSENT block must refuse like
+    any other malformed calibration — `.get` on None previously raised
+    AttributeError straight out of the judge, so no verdict and no
+    sidecar were produced."""
+    nominal = nominal_block()
+    for absent in (None, [], "calibration", 42):
+        refusal = check_calibration(absent, nominal, JITTER_M)
+        assert refusal is not None and "not an object" in refusal, absent
+    assert check_calibration(published_block(), None, JITTER_M) is not None

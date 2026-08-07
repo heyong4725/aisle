@@ -22,6 +22,14 @@ identity_min_score = 0.30
 # segmenter. Below it the geometry stages record `error` rather than
 # measuring whatever the mask happened to cover (PR #103 review).
 grounding_min_score = 0.10
+# VER-10/11: mask points within this depth band of the median are the
+# target's visible lid; the rest is background bleed at the silhouette.
+# This decides which points reach BOTH geometry stages.
+surface_band_m = 0.01
+# a mask must genuinely span two dimensions to define a plane: the
+# second singular value must be at least this fraction of the first.
+# Collinear points otherwise yield an arbitrary "normal".
+surface_min_rank_ratio = 0.02
 
 [failure]
 # below this center height a box can only be resting on the floor: floor-

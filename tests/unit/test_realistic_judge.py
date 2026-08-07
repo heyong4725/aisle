@@ -10,6 +10,7 @@ import json
 import pytest
 
 from aisle.verifier.realistic import (
+    STAGES,
     EpisodeJudge,
     StageVote,
     fuse,
@@ -99,7 +100,9 @@ def test_latch_is_cross_camera_and_episode_scoped():
     """Either camera can set the latch; a fresh episode starts clean."""
     judge = EpisodeJudge(goal_id="ep-0012")
     judge.observe("wrist", frame(2_000_000_000, target=True, non_target=True))
-    assert judge.identity_vote("overhead").status == "fail"  # latch is episode-wide
+    # a KNOWN wrong-object dominates this camera's missing evidence:
+    # VER-3's safety asymmetry outranks unable-to-judge
+    assert judge.identity_vote("overhead").status == "fail"
     assert judge.first_latch_event["camera"] == "wrist"
     fresh = EpisodeJudge(goal_id="ep-0013")
     fresh.observe("overhead", frame(1_000_000_000, target=True))
@@ -112,7 +115,8 @@ def test_identity_requires_the_target_on_that_camera():
     judge = EpisodeJudge(goal_id="ep-0014")
     judge.observe("overhead", frame(1_000_000_000, target=True))
     assert judge.identity_vote("overhead").status == "pass"
-    assert judge.identity_vote("wrist").status == "fail"  # no frames at all
+    # VER-13: no frames at all is unable-to-judge, not a negative finding
+    assert judge.identity_vote("wrist").status == "error"
 
 
 def test_sidecar_record_carries_the_full_timeline_and_latch():
@@ -274,4 +278,17 @@ def test_judge_episode_fails_closed_when_a_camera_has_no_frames(tmp_path):
         roi={"overhead": (0.0, 0.0, 100.0, 100.0), "wrist": (0.0, 0.0, 100.0, 100.0)},
     )
     assert success is False
-    assert record["stages"]["identity_wrist"]["vote"] == "fail"
+    assert record["stages"]["identity_wrist"]["vote"] == "error"
+
+
+def test_missing_camera_evidence_is_error_not_fail():
+    """VER-13 (PR #103 review round 3): a camera with no judged frames is
+    UNABLE TO JUDGE. The Boolean is false either way, but the sidecar and
+    the D5 stage attribution must not record it as a negative finding."""
+    judge = EpisodeJudge(goal_id="ep-0030")
+    judge.observe("overhead", frame(1_000_000_000, target=True))
+    assert judge.identity_vote("overhead").status == "pass"
+    wrist = judge.identity_vote("wrist")
+    assert wrist.status == "error", "missing wrist frames recorded as a fail"
+    assert "no judged frames" in wrist.detail
+    assert fuse({**{s: StageVote("pass") for s in STAGES}, "identity_wrist": wrist}) is False

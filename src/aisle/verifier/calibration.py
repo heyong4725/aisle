@@ -223,6 +223,13 @@ def calibration_report(
     """
     deviations: dict = {}
     try:
+        # VER-8: an ABSENT or non-mapping block refuses like any other
+        # malformed calibration — `.get` on None raised AttributeError
+        # straight out of the judge (PR #103 review round 3)
+        if not isinstance(published, dict):
+            return f"calibration block is {type(published).__name__}, not an object", deviations
+        if not isinstance(nominal, dict):
+            return f"nominal calibration is {type(nominal).__name__}, not an object", deviations
         if published.get("calibration_version") != CALIBRATION_VERSION:
             return (
                 f"unsupported calibration_version {published.get('calibration_version')!r}",
@@ -317,6 +324,6 @@ def calibration_report(
             return "wrist: cam_to_ee.pos differs from nominal mount", deviations
         if quat_angle_deg(pub_w["cam_to_ee"]["quat_xyzw"], nom_w["cam_to_ee"]["quat_xyzw"]) > 1e-6:
             return "wrist: cam_to_ee rotation differs from nominal mount", deviations
-    except (KeyError, TypeError, ValueError) as exc:
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError) as exc:
         return f"malformed calibration block: {exc!r}", deviations
     return None, deviations

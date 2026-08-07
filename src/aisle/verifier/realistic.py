@@ -93,14 +93,22 @@ class EpisodeJudge:
         """VER-9: pass iff this camera saw the TARGET in the tray on some
         judged frame AND the episode latch is clear."""
         frames = self.frames[camera]
-        if not frames:
-            return StageVote("fail", detail=f"{camera}: no judged frames")
+        # ORDER MATTERS: a set latch is a KNOWN wrong-object finding and
+        # dominates missing evidence on this camera — VER-3's safety
+        # asymmetry outranks unable-to-judge. Only with the latch clear
+        # is an empty camera an error (VER-13, PR #103 review round 3).
         if self.latched:
             return StageVote(
                 "fail",
                 detail="wrong-object latch set (VER-9)",
                 measurement={"latched_at_ns": self.first_latch_event["sim_time_ns"]},
             )
+        if not frames:
+            # VER-13: missing camera evidence is UNABLE TO JUDGE, not a
+            # negative finding — the Boolean verdict is false either way,
+            # but the sidecar and D5 stage attribution must say which
+            # (PR #103 review round 3)
+            return StageVote("error", detail=f"{camera}: no judged frames")
         if not any(f.get("target_in_tray") for f in frames):
             return StageVote("fail", detail=f"{camera}: target never detected in tray")
         return StageVote("pass")
@@ -277,50 +285,76 @@ def judge_frames(
             append_sidecar(run_dir, record)
         return record["success"], record
 
-    # stage 0 first: a refused calibration fails the episode closed and
-    # never spends model time (VER-8/VER-13)
-    refusal, deviations = calibration_report(calibration, nominal_calibration, jitter_bound_m)
+    def independent_home() -> None:
+        """VER-12 needs no pixels and no models, so it is computed even
+        when everything upstream failed — per-stage attribution is what
+        VER-14/D5 consume (PR #103 review round 3)."""
+        try:
+            votes["home"] = home_vote(
+                joint_state, home_qpos, success_cfg["robot_home_tolerance_rad"]
+            )
+        except Exception as exc:  # noqa: BLE001 — VER-13
+            votes["home"] = StageVote(
+                "error", detail=f"home stage raised {type(exc).__name__}: {exc}"
+            )
+
+    # ---- stage 0 (VER-8) --------------------------------------------
+    # calibration_report is itself fail-closed on absent/malformed blocks
+    try:
+        refusal, deviations = calibration_report(calibration, nominal_calibration, jitter_bound_m)
+    except Exception as exc:  # noqa: BLE001 — VER-13, belt and braces
+        refusal, deviations = f"calibration check raised {type(exc).__name__}: {exc}", {}
     if refusal is not None:
         votes["calibration"] = StageVote("error", measurement=deviations, detail=refusal)
+        for stage in ("identity_overhead", "identity_wrist", "containment", "upright"):
+            votes[stage] = StageVote("error", detail="calibration refused: frames not judged")
+        independent_home()
         return finish()
     votes["calibration"] = StageVote("pass", measurement=deviations)
 
+    # ---- stage 1 identity, PER CAMERA (VER-9) -----------------------
     terminal_detections: list[dict] = []
+    identity_pair = None
     try:
         identity_pair = load_pinned("identity")
+    except Exception as exc:  # noqa: BLE001 — VER-13
+        detail = f"identity model load raised {type(exc).__name__}: {exc}"
         for camera in CAMERAS:
-            available = sorted(frames.get(camera, {}))
-            if not available:
-                continue
-            for stamp in checkpoint_stamps(
-                available[0], available[-1], realistic_cfg["checkpoint_period_s"], available
-            ):
-                ee = (ee_poses or {}).get(stamp)
-                if camera == "wrist" and ee is None:
-                    continue  # VER-8: no EE pose, no trustworthy wrist ROI
-                roi = tray_roi_pixels(tray_min, tray_max, calibration, camera, ee)
-                detections = detect_meds(frames[camera][stamp]["rgb"], med_names, identity_pair)
-                if camera == "overhead" and stamp == available[-1]:
-                    terminal_detections = detections
-                judge.observe(
-                    camera,
-                    identity_frame(
-                        detections, target_med, roi, realistic_cfg["identity_min_score"], stamp
-                    ),
+            votes[f"identity_{camera}"] = StageVote("error", detail=detail)
+
+    if identity_pair is not None:
+        for camera in CAMERAS:
+            try:
+                available = sorted(frames.get(camera, {}))
+                for stamp in (
+                    checkpoint_stamps(
+                        available[0], available[-1], realistic_cfg["checkpoint_period_s"], available
+                    )
+                    if available
+                    else []
+                ):
+                    ee = (ee_poses or {}).get(stamp)
+                    if camera == "wrist" and ee is None:
+                        continue  # VER-8: no EE pose, no trustworthy wrist ROI
+                    roi = tray_roi_pixels(tray_min, tray_max, calibration, camera, ee)
+                    detections = detect_meds(frames[camera][stamp]["rgb"], med_names, identity_pair)
+                    if camera == "overhead" and stamp == available[-1]:
+                        terminal_detections = detections
+                    judge.observe(
+                        camera,
+                        identity_frame(
+                            detections, target_med, roi, realistic_cfg["identity_min_score"], stamp
+                        ),
+                    )
+            except Exception as exc:  # noqa: BLE001 — VER-13, this camera only
+                votes[f"identity_{camera}"] = StageVote(
+                    "error", detail=f"{camera} identity raised {type(exc).__name__}: {exc}"
                 )
-    except Exception as exc:  # noqa: BLE001 — VER-13: model errors fail closed
-        detail = f"identity stage raised {type(exc).__name__}: {exc}"
-        votes["identity_overhead"] = StageVote("error", detail=detail)
-        votes["identity_wrist"] = StageVote("error", detail=detail)
-        votes["containment"] = StageVote("error", detail="not reached")
-        votes["upright"] = StageVote("error", detail="not reached")
-        votes["home"] = StageVote("error", detail="not reached")
-        return finish()
+        for camera in CAMERAS:
+            votes.setdefault(f"identity_{camera}", judge.identity_vote(camera))
 
-    votes["identity_overhead"] = judge.identity_vote("overhead")
-    votes["identity_wrist"] = judge.identity_vote("wrist")
-
-    # ---- grounded geometry (VER-10/VER-11) --------------------------
+    # ---- stages 2-3 geometry, INDEPENDENTLY (VER-10/VER-11) ---------
+    points = None
     try:
         overhead_stamps = sorted(frames.get("overhead", {}))
         seed = grounding_point
@@ -336,37 +370,50 @@ def judge_frames(
                 x0, y0, x1, y1 = best["box"]
                 seed = ((x0 + x1) / 2, (y0 + y1) / 2)
         if not overhead_stamps:
-            votes["containment"] = StageVote("error", detail="no overhead frames")
-            votes["upright"] = StageVote("error", detail="no overhead frames")
+            detail = "no overhead frames"
         elif seed is None:
             detail = "no grounded target detection: geometry stages cannot be trusted (VER-9/10)"
-            votes["containment"] = StageVote("error", detail=detail)
-            votes["upright"] = StageVote("error", detail=detail)
         else:
+            detail = None
             final = frames["overhead"][overhead_stamps[-1]]
             mask = segment_mask(final["rgb"], seed)
             pixels = np.argwhere(mask)[:, ::-1]  # (row, col) -> (u, v)
-            raw_points = backproject_overhead(final["depth"], calibration, pixels)
-            # mask edges bleed onto the background: measure the lid only
-            points = dominant_surface(raw_points)
-            height = float(med_sizes[target_med][2])
+            points = dominant_surface(
+                backproject_overhead(final["depth"], calibration, pixels),
+                realistic_cfg["surface_band_m"],
+            )
+        if detail is not None:
+            votes["containment"] = StageVote("error", detail=detail)
+            votes["upright"] = StageVote("error", detail=detail)
+    except Exception as exc:  # noqa: BLE001 — VER-13: mask/back-projection
+        detail = f"target reconstruction raised {type(exc).__name__}: {exc}"
+        votes["containment"] = StageVote("error", detail=detail)
+        votes["upright"] = StageVote("error", detail=detail)
+
+    if points is not None:
+        rank_ratio = realistic_cfg["surface_min_rank_ratio"]
+        try:
             votes["containment"] = containment_vote(
                 points,
                 tray_min,
                 tray_max,
                 success_cfg["tray_margin_m"],
                 success_cfg["resting_tolerance_m"],
-                height,
+                float(med_sizes[target_med][2]),
+                rank_ratio,
             )
-            votes["upright"] = upright_vote(points, success_cfg["upright_max_deg"])
-    except Exception as exc:  # noqa: BLE001 — VER-13
-        detail = f"geometry stage raised {type(exc).__name__}: {exc}"
-        votes["containment"] = StageVote("error", detail=detail)
-        votes["upright"] = StageVote("error", detail=detail)
+        except Exception as exc:  # noqa: BLE001 — VER-13, containment only
+            votes["containment"] = StageVote(
+                "error", detail=f"containment raised {type(exc).__name__}: {exc}"
+            )
+        try:
+            # independent of containment: an upright failure must not
+            # overwrite an already-computed containment vote
+            votes["upright"] = upright_vote(points, success_cfg["upright_max_deg"], rank_ratio)
+        except Exception as exc:  # noqa: BLE001 — VER-13, upright only
+            votes["upright"] = StageVote(
+                "error", detail=f"upright raised {type(exc).__name__}: {exc}"
+            )
 
-    try:
-        votes["home"] = home_vote(joint_state, home_qpos, success_cfg["robot_home_tolerance_rad"])
-    except Exception as exc:  # noqa: BLE001 — VER-13
-        votes["home"] = StageVote("error", detail=f"home stage raised {type(exc).__name__}: {exc}")
-
+    independent_home()
     return finish()
