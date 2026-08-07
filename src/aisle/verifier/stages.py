@@ -49,23 +49,22 @@ def backproject_overhead(
     return cam_points @ rotation.T + np.asarray(cam["cam_to_base"]["pos"], dtype=np.float64)
 
 
-def project_to_pixels(
+# a point at or behind the image plane has no pixel: projecting it anyway
+# produces a huge finite coordinate, which downstream code cannot tell from
+# a legitimate one (PR #104 review round 2 follow-up — the wrist ROI came
+# back at ~1e10 px and crop_to_roi then clamped it to the WHOLE frame)
+MIN_CAMERA_DEPTH_M = 1e-3
+
+
+def camera_frame_points(
     points_base: np.ndarray,
     calibration: dict,
     camera: str = "overhead",
     ee_to_base: tuple | None = None,
 ) -> np.ndarray:
-    """BASE-frame points -> (u, v) pixels (VER-9 tray ROI).
-
-    The overhead camera has a static `cam_to_base`. The WRIST camera does
-    NOT (it rides the EE): its calibration is the static `cam_to_ee`
-    mount, and the camera->base pose must be composed with the EE pose at
-    the matching joint_state stamp — `ee_to_base=(pos, quat_xyzw)` from
-    FK (VER-8). Treating the mount as a camera->base pose put every wrist
-    ROI in the wrong frame (PR #103 review), so wrist projection now
-    REQUIRES the EE pose rather than silently guessing."""
+    """BASE-frame points expressed in the CAMERA frame (VER-8). Column 2
+    is depth along the optical axis: positive is in front of the camera."""
     cam = calibration[camera]
-    k = cam["intrinsics"]
     if camera == "overhead":
         pose_pos = np.asarray(cam["cam_to_base"]["pos"], dtype=np.float64)
         rotation = rotation_from_quat_xyzw(cam["cam_to_base"]["quat_xyzw"])
@@ -82,7 +81,26 @@ def project_to_pixels(
         rotation = ee_rot @ mount_rot
         pose_pos = ee_pos + ee_rot @ mount_pos
     rel = np.asarray(points_base, dtype=np.float64).reshape(-1, 3) - pose_pos
-    cam_points = rel @ rotation  # world -> camera (R^T applied on the right)
+    return rel @ rotation  # world -> camera (R^T applied on the right)
+
+
+def project_to_pixels(
+    points_base: np.ndarray,
+    calibration: dict,
+    camera: str = "overhead",
+    ee_to_base: tuple | None = None,
+) -> np.ndarray:
+    """BASE-frame points -> (u, v) pixels (VER-9 tray ROI).
+
+    The overhead camera has a static `cam_to_base`. The WRIST camera does
+    NOT (it rides the EE): its calibration is the static `cam_to_ee`
+    mount, and the camera->base pose must be composed with the EE pose at
+    the matching joint_state stamp — `ee_to_base=(pos, quat_xyzw)` from
+    FK (VER-8). Treating the mount as a camera->base pose put every wrist
+    ROI in the wrong frame (PR #103 review), so wrist projection now
+    REQUIRES the EE pose rather than silently guessing."""
+    k = calibration[camera]["intrinsics"]
+    cam_points = camera_frame_points(points_base, calibration, camera, ee_to_base)
     z = np.clip(cam_points[:, 2], 1e-9, None)
     u = cam_points[:, 0] / z * k["fx"] + k["cx"]
     v = cam_points[:, 1] / z * k["fy"] + k["cy"]
@@ -93,11 +111,18 @@ def tray_roi_pixels(
     tray_min, tray_max, calibration: dict, camera: str = "overhead", ee_to_base: tuple | None = None
 ) -> tuple:
     """Axis-aligned pixel bounds of the tray footprint (VER-9's "inside
-    the tray region"). Projects the tray's top-rim corners and takes
-    their bounding box."""
+    the tray region"), or None when the tray is not wholly IN FRONT of
+    the camera. Projects the tray's top-rim corners and takes their
+    bounding box."""
     x0, y0, z0 = tray_min
     x1, y1, z1 = tray_max
     corners = np.array([[x, y, z1] for x in (x0, x1) for y in (y0, y1)], dtype=np.float64)
+    depths = camera_frame_points(corners, calibration, camera, ee_to_base)[:, 2]
+    if not np.all(depths > MIN_CAMERA_DEPTH_M):
+        # any corner at or behind the image plane makes the bounding box
+        # meaningless — the tray is not judgeable from this camera on this
+        # frame, which is NOT the same as an empty tray (VER-13)
+        return None
     uv = project_to_pixels(corners, calibration, camera, ee_to_base)
     return (
         float(uv[:, 0].min()),

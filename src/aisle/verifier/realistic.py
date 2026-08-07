@@ -340,9 +340,11 @@ def judge_frames(
                     if camera == "wrist" and ee is None:
                         continue  # VER-8: no EE pose, no trustworthy wrist ROI
                     roi = tray_roi_pixels(tray_min, tray_max, calibration, camera, ee)
+                    if roi is None:
+                        continue  # the tray is not in front of this camera
                     window = crop_to_roi(frames[camera][stamp]["rgb"], roi)
                     if window is None:
-                        continue  # the tray is out of this camera's view
+                        continue  # the tray projects outside this frame
                     detections = shift_detections(
                         detect_meds(window[0], med_names, identity_pair), window[1]
                     )

@@ -378,3 +378,25 @@ def test_size_gate_keeps_a_genuine_second_med_so_the_latch_still_fires():
     )
 
     assert frame["target_in_tray"] and frame["non_target_in_tray"]
+
+
+def test_tray_roi_refuses_when_the_tray_is_behind_the_camera():
+    """A point behind the image plane has NO pixel. Projecting it anyway
+    produced coordinates around 1e10, which `crop_to_roi` then clamped to
+    the whole frame — so a camera pointing AWAY from the tray reported the
+    tray as visible and identity ran on the entire image (found while
+    measuring #107). Not judgeable is None, which is not an empty tray."""
+    from aisle.verifier.calibration import build_calibration_v1
+    from aisle.verifier.stages import tray_roi_pixels
+
+    calibration = build_calibration_v1(
+        [0.55, 0.0, 1.20], [0.55, 0.0, 0.20], (640, 480), 55.0, [0.0, 0.0, 0.05], (320, 240), 70.0
+    )
+    # the wrist mount looks along -Z of the EE; put the EE BELOW the tray
+    # so the tray falls behind the camera
+    below = ((0.55, -0.05, -0.40), (0.0, 0.0, 0.0, 1.0))
+    assert tray_roi_pixels(TRAY_MIN, TRAY_MAX, calibration, "wrist", below) is None
+
+    above = ((0.55, -0.05, 0.90), (0.0, 0.0, 0.0, 1.0))
+    roi = tray_roi_pixels(TRAY_MIN, TRAY_MAX, calibration, "wrist", above)
+    assert roi is not None and all(abs(v) < 1e5 for v in roi)
