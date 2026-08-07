@@ -16,6 +16,21 @@ robot_home_tolerance_rad = 0.15
 # can only see what it samples: a transient entirely BETWEEN checkpoints
 # is the cadence-bounded residual VER-6's false-success rate measures.
 checkpoint_period_s = 5.0
+# CALIBRATED ENVELOPE (VER-9, overhead camera only).
+# These identity values are calibrated for, and only for:
+#   * the OVERHEAD camera. The wrist camera has no validated operating
+#     point and cannot get one — the tray is out of its view at every
+#     terminal frame, so identity_wrist can never pass (issue #107).
+#   * scenes whose SCN-6 randomization does not perturb the identity
+#     signal. Measured clean on nominal, lighting, textures,
+#     camera_jitter and lighting+textures; the composed
+#     lighting+textures+camera_jitter configuration misclassifies a
+#     correct delivery and sets the permanent wrong-object latch, and no
+#     threshold separates it (issue #108).
+# Every graph in graphs/ runs with DR off — SceneCfg is never built with
+# toggles outside tests and tools — so this envelope covers what is
+# actually executed today, and NOT the full space SCN-6 permits.
+
 # VER-9: per-class detection score below which a box is not "in the tray".
 # CALIBRATED on the five-class live run identity-calib-I2 (2026-08-07,
 # one episode per med class, all five scored success by the oracle),
