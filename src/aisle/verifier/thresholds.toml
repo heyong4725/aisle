@@ -16,12 +16,23 @@ robot_home_tolerance_rad = 0.15
 # can only see what it samples: a transient entirely BETWEEN checkpoints
 # is the cadence-bounded residual VER-6's false-success rate measures.
 checkpoint_period_s = 5.0
-# VER-9: per-class detection score below which a box is not "in the tray"
-identity_min_score = 0.30
+# VER-9: per-class detection score below which a box is not "in the tray".
+# CALIBRATED from measured separation on the golden frames (2026-08-07),
+# not guessed. With the colour-word query vocabulary, on the overhead
+# camera where a med is only ~21x19 px:
+#   target present in tray : 0.1331   (non-target noise in ROI <= 0.0199)
+#   target absent          : 0.0001   (non-target noise in ROI <= 0.0093)
+# 0.05 sits ~2.7x above the noise ceiling and ~2.7x below the true
+# positive, and classifies both golden moments correctly. The former
+# 0.30 was a guess that rejected every real detection.
+identity_min_score = 0.05
 # VER-10/11: the minimum target-detection score that may SEED the
 # segmenter. Below it the geometry stages record `error` rather than
 # measuring whatever the mask happened to cover (PR #103 review).
-grounding_min_score = 0.10
+# same signal as the identity vote, so the same operating point: a seed
+# below it means no trustworthy target location and the geometry stages
+# record `error` rather than measuring an arbitrary mask
+grounding_min_score = 0.05
 # VER-10/11: mask points within this depth band of the median are the
 # target's visible lid; the rest is background bleed at the silhouette.
 # This decides which points reach BOTH geometry stages.
