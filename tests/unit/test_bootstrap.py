@@ -64,8 +64,9 @@ def test_no_cuda_in_default_dependencies():
     """CON-1: CUDA-only dependencies MUST NOT enter the DEFAULT dependency
     set — checked over the resolved lock closure reachable from the
     declared default dependencies, so a transitive CUDA pull-in fails.
-    Optional extras (sim) MAY carry platform-markered CUDA wheels; CON-1
-    explicitly permits CUDA behind optional extras."""
+    CON-1 explicitly permits CUDA behind an optional extra: `cuda` is that
+    extra and the only path by which a CUDA wheel may enter the lock. The
+    `sim` extra resolves the CPU torch on Linux and stays clean."""
     forbidden = ("cuda", "nvidia", "cu11", "cu12")
     project = load_pyproject()["project"]
     for dep in project.get("dependencies", []):
@@ -94,10 +95,43 @@ def test_no_cuda_in_default_dependencies():
     assert closure, "default dependency closure resolved to nothing — check lock parsing"
     for name in sorted(closure):
         assert not any(k in name.lower() for k in forbidden), name
-    # stronger invariant now that linux torch resolves from the CPU index:
-    # no CUDA/NVIDIA package anywhere in the lock, any extra, any platform
-    for name in graph:
-        assert not any(k in name.lower() for k in forbidden), f"{name} (in lock universe)"
+    # CUDA/NVIDIA wheels are confined to the `cuda` extra, which CON-1
+    # explicitly sanctions. The lock keys torch variants by version
+    # (2.13.0+cpu vs 2.13.0+cu130), so the invariant is: the ONLY package
+    # that may pull a forbidden wheel is a +cu torch. `sim` resolves the
+    # +cpu variant on linux and therefore stays clean.
+    cuda_parents = {
+        (p["name"], p["version"])
+        for p in lock.get("package", [])
+        for d in p.get("dependencies", [])
+        if any(k in d["name"].lower() for k in forbidden)
+    }
+    offenders = sorted(
+        (name, version)
+        for name, version in cuda_parents
+        if not any(k in name.lower() for k in forbidden)
+        and not (name == "torch" and "+cu" in version)
+    )
+    assert not offenders, f"CUDA wheels reachable outside the cuda extra: {offenders}"
+    assert any(name == "torch" and "+cu" in version for name, version in cuda_parents), (
+        "no CUDA torch in the lock — the cuda extra is inert"
+    )
+
+
+def test_cuda_extra_provisions_gpu_torch():
+    """CON-1: CUDA-only dependencies MAY live behind an optional `cuda`
+    extra. The extra MUST actually provision a GPU torch, otherwise
+    `scenes.pharmacy.select_genesis_backend` can never resolve to cuda on
+    Linux — the default CPU index would silently win."""
+    pyproject = load_pyproject()
+    extras = pyproject["project"].get("optional-dependencies", {})
+    assert "cuda" in extras, "CON-1 names `cuda` as the sanctioned GPU extra"
+    assert any("torch" in dep.lower() for dep in extras["cuda"]), extras["cuda"]
+
+    # the extra is inert unless torch resolves from a CUDA index on linux
+    indexes = {i["name"]: i["url"] for i in pyproject["tool"]["uv"].get("index", [])}
+    cuda_indexes = [n for n, url in indexes.items() if "/cu" in url]
+    assert cuda_indexes, f"no CUDA wheel index declared: {indexes}"
 
 
 def test_ci_script_gate_order():
