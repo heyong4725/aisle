@@ -129,13 +129,44 @@ def wipe_library(wt: Path, oid: str, keep_ref: str | None = None) -> dict:
         # file is recoverable via `git show <keep_ref>:<path>`. runs/ is
         # gitignored and stays out of the snapshot.
         with tempfile.TemporaryDirectory() as td:
-            env = {**os.environ, "GIT_INDEX_FILE": str(Path(td) / "index")}
+            # PR #82 review: GIT_AUTHOR_*/GIT_COMMITTER_* OUTRANK `-c`
+            # config, so ambient values (or empty ones — commit-tree
+            # still exits 128 on an empty ident) must never reach the
+            # machinery commit. All four identity variables are pinned
+            # in the subprocess env; the snapshot's identity is the
+            # campaign's, not whoever exported variables in this shell.
+            env = {
+                **os.environ,
+                "GIT_INDEX_FILE": str(Path(td) / "index"),
+                "GIT_AUTHOR_NAME": "aisle-h3-campaign",
+                "GIT_AUTHOR_EMAIL": "h3-campaign@aisle.invalid",
+                "GIT_COMMITTER_NAME": "aisle-h3-campaign",
+                "GIT_COMMITTER_EMAIL": "h3-campaign@aisle.invalid",
+            }
             subprocess.run(["git", "add", "-A"], cwd=wt, env=env, check=True)
             tree = subprocess.run(
                 ["git", "write-tree"], cwd=wt, env=env, capture_output=True, text=True, check=True
             ).stdout.strip()
+            # commit-tree needs a committer identity, and this snapshot is
+            # campaign machinery rather than anyone's authorship. Pin one
+            # instead of inheriting the operator's: a host with no global git
+            # config (a CI runner, a fresh clone) has no identity to inherit
+            # and `commit-tree` exits 128 — losing the residue evidence the
+            # keep-ref exists to preserve.
             snap = subprocess.run(
-                ["git", "commit-tree", tree, "-p", head, "-m", f"pre-wipe snapshot ({keep_ref})"],
+                [
+                    "git",
+                    "-c",
+                    "user.name=aisle-h3-campaign",
+                    "-c",
+                    "user.email=h3-campaign@aisle.invalid",
+                    "commit-tree",
+                    tree,
+                    "-p",
+                    head,
+                    "-m",
+                    f"pre-wipe snapshot ({keep_ref})",
+                ],
                 cwd=wt,
                 env=env,
                 capture_output=True,
