@@ -118,8 +118,16 @@ def test_grounded_delivery_produces_the_expected_geometry_votes(tmp_path):
     a near-zero resting gap and near-zero tilt (PR #103 review round 2:
     the old centre prompt segmented the wrong region and both failed)."""
     ctx = _inputs()
-    _, record = _judge(ctx, tmp_path, grounding_point=_target_pixel(ctx))
+    # NO grounding override: the REAL detector must locate the target
+    # (colour-word queries + the calibrated threshold, 2026-08-07)
+    _, record = _judge(ctx, tmp_path)
 
+    # the identity stage now votes on REAL detections: colour-word
+    # queries at the calibrated threshold (the old name-based query at
+    # 0.30 rejected every detection this scene can produce)
+    assert record["stages"]["identity_overhead"]["vote"] == "pass", record["stages"][
+        "identity_overhead"
+    ]
     containment = record["stages"]["containment"]
     upright = record["stages"]["upright"]
     assert containment["vote"] == "pass", containment

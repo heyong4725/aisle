@@ -112,7 +112,45 @@ def load_pinned(role: str, lock: dict | None = None):
     return processor, model
 
 
-def detect_meds(image, med_names: list[str], model_pair=None) -> list[dict]:
+# VER-9 query vocabulary (ADR section 7 legibility, measured 2026-08-07).
+# A med occupies ~21x19 px in the overhead frame, so a printed label
+# would render ~2 px tall — unreadable by any detector, which is why the
+# planned texture pass cannot help at this camera geometry. What the
+# model CAN see at 20 px is colour, and the queries are worded
+# accordingly. Measured best score on the golden delivered frame:
+#   "a photo of a {med}"                    0.036
+#   "a photo of a {med} medicine box"       0.021
+#   "a {colour} box"                        0.155   <- chosen
+#   "a small {colour} cardboard box ..."    0.020
+# The colour word is derived from the med's own catalogue RGB, so no
+# scene file changes and the verifier stays the single source.
+COLOR_WORDS = (
+    ("red", (0.85, 0.15, 0.15)),
+    ("orange", (0.95, 0.6, 0.1)),
+    ("yellow", (0.95, 0.9, 0.2)),
+    ("green", (0.25, 0.7, 0.35)),
+    ("blue", (0.2, 0.55, 0.85)),
+    ("purple", (0.55, 0.3, 0.7)),
+    ("white", (0.95, 0.95, 0.95)),
+    ("black", (0.05, 0.05, 0.05)),
+)
+
+
+def color_word(rgb) -> str:
+    """The nearest basic colour name to a catalogue RGB — the identity
+    query's discriminative feature at this resolution."""
+    r, g, b = (float(c) for c in list(rgb)[:3])
+    return min(
+        COLOR_WORDS, key=lambda cw: sum((a - v) ** 2 for a, v in zip(cw[1], (r, g, b), strict=True))
+    )[0]
+
+
+def med_queries(med_names: list[str], med_colors: dict) -> list[str]:
+    """VER-9 free-text queries, one per med class, in `med_names` order."""
+    return [f"a {color_word(med_colors[name])} box" for name in med_names]
+
+
+def detect_meds(image, med_names: list[str], model_pair=None, med_colors=None) -> list[dict]:
     """OWLv2 identity adapter (VER-9): image + med vocabulary ->
     [{label, score, box:[x0,y0,x1,y1]}] in PIXELS.
 
@@ -125,7 +163,11 @@ def detect_meds(image, med_names: list[str], model_pair=None) -> list[dict]:
     import torch
 
     processor, model = model_pair or load_pinned("identity")
-    queries = [[f"a photo of a {name}" for name in med_names]]
+    if med_colors is None:
+        from aisle.scenes.pharmacy import load_meds
+
+        med_colors = {name: spec["color"] for name, spec in load_meds().items()}
+    queries = [med_queries(med_names, med_colors)]
     with cpu_inference():
         inputs = cpu_batch(processor(text=queries, images=image, return_tensors="pt"))
         outputs = model(**inputs)
