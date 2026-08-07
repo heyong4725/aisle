@@ -136,7 +136,10 @@ def crop_to_roi(image: np.ndarray, roi: tuple, pad_px: int = ROI_PAD_PX):
     v1 = min(h, int(math.ceil(roi[3])) + pad_px)
     if u1 <= u0 or v1 <= v0:
         return None
-    return image[v0:v1, u0:u1], (float(u0), float(v0))
+    # CONTIGUOUS: a render can arrive as a negative-stride view, and the
+    # processor refuses those ("at least one stride ... is negative") —
+    # the crop is small, so the copy is cheap insurance
+    return np.ascontiguousarray(image[v0:v1, u0:u1]), (float(u0), float(v0))
 
 
 def shift_detections(detections: list[dict], offset: tuple) -> list[dict]:
@@ -157,26 +160,51 @@ def shift_detections(detections: list[dict], offset: tuple) -> list[dict]:
     ]
 
 
-def med_box_area_limit(tray_min, tray_max, med_sizes: dict, roi: tuple, slack: float) -> float:
-    """The largest pixel area a single med box may cover inside the tray
-    ROI (VER-9), derived from the footprints rather than fitted.
+def med_box_area_limit(
+    tray_min,
+    tray_max,
+    med_sizes: dict,
+    calibration: dict,
+    slack: float,
+    camera: str = "overhead",
+    ee_to_base: tuple | None = None,
+) -> float:
+    """The largest pixel area a single med box may cover (VER-9): the
+    largest med footprint PROJECTED at the tray's rim height, times
+    `slack`.
 
     The detector's dominant false positive is labelling the WHOLE TRAY
     with a med class: on the five-class run identity-calib-I2 every
     genuine med box covered <= 0.105 of the tray ROI while every
-    non-target artifact covered >= 0.284, mostly ~0.77. Since the largest
-    med footprint is a known fraction of the tray footprint, that ratio
-    scales to pixels without projecting anything — `slack` covers the
-    side faces a tall box shows under perspective.
+    non-target artifact covered >= 0.284, mostly ~0.77 — the tray itself.
+    `slack` covers the side faces a tall box shows under perspective.
+
+    The limit is projected rather than taken as a FRACTION of the tray
+    ROI's pixel area, because that ROI is a projection of the whole tray
+    even when most of it lies off-image: a partially visible tray then
+    inflated the gate (2491.8 px^2 against a nominal 1531.5) and let the
+    tray-sized artifacts back through — PR #104 review round 2. A
+    projected footprint does not depend on how much of the tray the
+    camera happens to see.
 
     This bounds size UPWARD only, so a real second med in the tray stays
     detectable and VER-9's wrong-object latch keeps its teeth."""
-    tray_area = abs((tray_max[0] - tray_min[0]) * (tray_max[1] - tray_min[1]))
-    med_area = max(float(size[0]) * float(size[1]) for size in med_sizes.values())
-    roi_area = abs((roi[2] - roi[0]) * (roi[3] - roi[1]))
-    if tray_area <= 0:
-        raise ValueError("tray footprint has no area")
-    return slack * (med_area / tray_area) * roi_area
+    if not med_sizes:
+        raise ValueError("no med sizes to size the gate from")
+    width, depth = max(
+        ((float(size[0]), float(size[1])) for size in med_sizes.values()),
+        key=lambda wd: wd[0] * wd[1],
+    )
+    cx = (float(tray_min[0]) + float(tray_max[0])) / 2
+    cy = (float(tray_min[1]) + float(tray_max[1])) / 2
+    z = float(tray_max[2])
+    corners = np.array(
+        [[cx + sx * width / 2, cy + sy * depth / 2, z] for sx in (-1, 1) for sy in (-1, 1)],
+        dtype=np.float64,
+    )
+    uv = project_to_pixels(corners, calibration, camera, ee_to_base)
+    area = (uv[:, 0].max() - uv[:, 0].min()) * (uv[:, 1].max() - uv[:, 1].min())
+    return float(slack * area)
 
 
 def detections_in_roi(

@@ -16,6 +16,7 @@ protects VER-3's safety asymmetry:
 Marker `sim`: needs the pinned weights and the committed fixture.
 """
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -35,6 +36,7 @@ def ctx():
     from aisle.verifier.stages import med_box_area_limit
 
     data = np.load(FIXTURE, allow_pickle=False)
+    calibration = json.loads(str(data["calibration"]))
     meds, physics = load_meds(), load_physics()
     cfg = build_judge_cfg(
         physics,
@@ -57,7 +59,7 @@ def ctx():
             cfg.tray_min,
             cfg.tray_max,
             {name: spec["size"] for name, spec in meds.items()},
-            roi,
+            calibration,
             thresholds["identity_max_box_area_slack"],
         ),
     }

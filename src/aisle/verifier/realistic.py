@@ -360,8 +360,10 @@ def judge_frames(
                                 tray_min,
                                 tray_max,
                                 med_sizes,
-                                roi,
+                                calibration,
                                 realistic_cfg["identity_max_box_area_slack"],
+                                camera,
+                                ee,
                             ),
                         ),
                     )

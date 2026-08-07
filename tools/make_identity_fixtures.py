@@ -66,7 +66,12 @@ def main() -> int:
     pair = load_pinned("identity")
     frames = {int(p.stem): p for p in sorted((traces / "frames" / "overhead").glob("*.npz"))}
 
-    arrays: dict[str, np.ndarray] = {"roi": np.asarray(roi, dtype=np.float64)}
+    arrays: dict[str, np.ndarray] = {
+        "roi": np.asarray(roi, dtype=np.float64),
+        # the size gate projects through the calibration, so the fixture
+        # must carry the one these frames were rendered with
+        "calibration": np.asarray(json.dumps(calibration)),
+    }
     report = []
     low = 0
     for goal, high in zip(goals, ends, strict=True):
