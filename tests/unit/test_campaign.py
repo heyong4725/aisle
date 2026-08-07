@@ -850,3 +850,32 @@ def test_credential_seed_is_private_from_creation_and_clean_on_failure(tmp_path,
     dest_dir.chmod(0o700)
     assert rec2 is None and "credential seed failed" in err2
     assert not (dest_dir / "auth.json").exists()
+
+
+def test_credential_seed_survives_short_writes(tmp_path, monkeypatch):
+    """PR #100 round 3: os.write may write fewer bytes than requested; a
+    short write must be continued to completion — one-byte-per-call
+    writes still yield the full token — and zero progress is a refusal
+    with no file left behind, never a truncated 'success'."""
+    import os as _os
+
+    import campaign as c
+
+    login = tmp_path / ".codex-campaign"
+    login.mkdir()
+    payload = '{"token": "0123456789abcdef"}'
+    (login / "auth.json").write_text(payload)
+    monkeypatch.setitem(c.CAMPAIGN_LOGIN, "codex", (login, "auth.json"))
+
+    real_write = _os.write
+    monkeypatch.setattr(c.os, "write", lambda fd, data: real_write(fd, bytes(data)[:1]))
+    env, _ = c.isolated_session_env(tmp_path / "out")
+    rec, err = c.seed_session_credentials("codex", env)
+    assert err is None
+    assert (Path(env["CODEX_HOME"]) / "auth.json").read_text() == payload
+
+    monkeypatch.setattr(c.os, "write", lambda fd, data: 0)
+    env2, _ = c.isolated_session_env(tmp_path / "out2")
+    rec2, err2 = c.seed_session_credentials("codex", env2)
+    assert rec2 is None and "credential seed failed" in err2
+    assert not (Path(env2["CODEX_HOME"]) / "auth.json").exists()

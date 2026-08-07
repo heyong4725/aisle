@@ -471,7 +471,15 @@ def seed_session_credentials(agent: str, env: dict) -> tuple[dict | None, str | 
         payload = src.read_bytes()
         fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
-            os.write(fd, payload)
+            # PR #100 round 3: os.write may write FEWER bytes than asked
+            # (short write) — loop to completion, and treat zero progress
+            # as an error so a truncated token never reports success
+            view = memoryview(payload)
+            while view:
+                n = os.write(fd, view)
+                if n <= 0:
+                    raise OSError(f"short write seeding {dest} ({len(view)} bytes left)")
+                view = view[n:]
         finally:
             os.close(fd)
     except OSError as exc:
