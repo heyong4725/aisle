@@ -464,31 +464,36 @@ def seed_session_credentials(agent: str, env: dict) -> tuple[dict | None, str | 
     dest_dir = Path(env["CODEX_HOME"] if agent == "codex" else env["CLAUDE_CONFIG_DIR"])
     dest = dest_dir / cred_name
     try:
-        # PR #100 review P1: a copy/read failure (permissions, disk) must
-        # surface as the CON-8 refusal, never a traceback past it
-        dest.write_bytes(src.read_bytes())
-        dest.chmod(0o600)
+        # PR #100 rounds 1-2: failures surface as the CON-8 refusal, the
+        # file is PRIVATE FROM CREATION (0600 at open — a write-then-chmod
+        # left a world-readable window and, on chmod failure, a lingering
+        # token), and any failure removes whatever was written
+        payload = src.read_bytes()
+        fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, payload)
+        finally:
+            os.close(fd)
     except OSError as exc:
+        dest.unlink(missing_ok=True)  # never leave a partial token behind
         return None, f"credential seed failed for {agent!r}: {exc}"
     return {"credential_seed": f"{agent}-campaign login ({cred_name})"}, None
 
 
-# every credential filename a seed can place, for scrubbing (PR #100
-# review P1: live auth material must not persist in runs/ artifacts)
-_CREDENTIAL_NAMES = tuple(name for _, name in CAMPAIGN_LOGIN.values())
-
-
 def scrub_session_credentials(home: Path) -> list[str]:
-    """Remove seeded credential files under a scratch home tree. Called
-    after every probe and session (and on home rotation, which would
-    otherwise preserve an aborted attempt's live token indefinitely).
-    Returns the scrubbed paths, recorded for audit; scrub failures are
-    NOT swallowed — a token we cannot delete is worth a loud error."""
+    """Remove the seeded credential files at their EXACT canonical
+    locations — home/.codex/auth.json and home/.claude/.credentials.json
+    (where the seed writes, and where a CLI's own token refresh rewrites).
+    Never a recursive name match: an agent's workspace may legitimately
+    contain same-named files that are audit artifacts (PR #100 round 2).
+    Called after every probe and session (and on home rotation, which
+    would otherwise preserve an aborted attempt's live token
+    indefinitely). Returns the scrubbed paths, recorded for audit; scrub
+    failures are NOT swallowed — a token we cannot delete is loud."""
     scrubbed = []
-    if not home.exists():
-        return scrubbed
-    for cred in sorted(home.rglob("*")):
-        if cred.is_file() and cred.name in _CREDENTIAL_NAMES:
+    for agent, (_, cred_name) in CAMPAIGN_LOGIN.items():
+        cred = home / (".codex" if agent == "codex" else ".claude") / cred_name
+        if cred.is_file():
             cred.unlink()
             scrubbed.append(str(cred))
     return scrubbed
@@ -731,8 +736,11 @@ def main() -> int:
     if seed_error:
         print(json.dumps({"ok": False, "error": seed_error}))
         return 1
-    probe_error = probe_agent_auth(args.agent, model, probe_env, args.out)
-    scrub_session_credentials(Path(probe_env["HOME"]))  # tokens never persist
+    try:
+        probe_error = probe_agent_auth(args.agent, model, probe_env, args.out)
+    finally:
+        # tokens never persist, even past an unexpected probe exception
+        scrub_session_credentials(Path(probe_env["HOME"]))
     if probe_error:
         print(json.dumps({"ok": False, "error": probe_error}))
         return 1

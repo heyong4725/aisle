@@ -496,8 +496,11 @@ def main() -> int:
     if seed_error:
         print(json.dumps({"ok": False, "error": seed_error}))
         return 1
-    probe_error = probe_agent_auth(agent, model, probe_env, args.out)
-    scrub_session_credentials(Path(probe_env["HOME"]))  # tokens never persist
+    try:
+        probe_error = probe_agent_auth(agent, model, probe_env, args.out)
+    finally:
+        # tokens never persist, even past an unexpected probe exception
+        scrub_session_credentials(Path(probe_env["HOME"]))
     if probe_error:
         print(json.dumps({"ok": False, "error": probe_error}))
         return 1

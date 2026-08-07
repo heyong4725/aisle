@@ -803,10 +803,18 @@ def test_seeded_credentials_are_scrubbed_and_rotation_scrubs_too(tmp_path, monke
     assert err is None
     (Path(env["CODEX_HOME"]) / "history.jsonl").write_text("audit artifact")
 
+    # a same-named file OUTSIDE the canonical credential path is an
+    # agent workspace artifact and must SURVIVE (PR #100 round 2: no
+    # recursive name matching)
+    decoy_dir = Path(env["HOME"]) / "workspace"
+    decoy_dir.mkdir()
+    (decoy_dir / "auth.json").write_text("agent audit artifact, not a token")
+
     scrubbed = c.scrub_session_credentials(Path(env["HOME"]))
     assert scrubbed == [str(Path(env["CODEX_HOME"]) / "auth.json")]
     assert not (Path(env["CODEX_HOME"]) / "auth.json").exists()
     assert (Path(env["CODEX_HOME"]) / "history.jsonl").exists()
+    assert (decoy_dir / "auth.json").exists()  # workspace decoy survives
 
     # an ABORTED attempt (seeded, never scrubbed) must lose its token at
     # rotation time, keeping the rest of the home for audit
@@ -817,3 +825,28 @@ def test_seeded_credentials_are_scrubbed_and_rotation_scrubs_too(tmp_path, monke
     rotated = Path(rec3["rotated_prior_home"])
     assert not list(rotated.rglob("auth.json"))  # token gone
     assert (rotated / ".codex").exists()  # audit shape preserved
+
+
+def test_credential_seed_is_private_from_creation_and_clean_on_failure(tmp_path, monkeypatch):
+    """PR #100 round 2 P1: the token file is 0600 FROM CREATION (no
+    write-then-chmod window), and a failed copy leaves NO file behind."""
+    import campaign as c
+
+    login = tmp_path / ".codex-campaign"
+    login.mkdir()
+    (login / "auth.json").write_text('{"token": "live"}')
+    monkeypatch.setitem(c.CAMPAIGN_LOGIN, "codex", (login, "auth.json"))
+    env, _ = c.isolated_session_env(tmp_path / "out")
+    rec, err = c.seed_session_credentials("codex", env)
+    assert err is None
+    dest = Path(env["CODEX_HOME"]) / "auth.json"
+    assert oct(dest.stat().st_mode & 0o777) == "0o600"
+
+    # failure path: an unwritable destination leaves nothing behind
+    env2, _ = c.isolated_session_env(tmp_path / "out")
+    dest_dir = Path(env2["CODEX_HOME"])
+    dest_dir.chmod(0o500)  # cannot create files
+    rec2, err2 = c.seed_session_credentials("codex", env2)
+    dest_dir.chmod(0o700)
+    assert rec2 is None and "credential seed failed" in err2
+    assert not (dest_dir / "auth.json").exists()
