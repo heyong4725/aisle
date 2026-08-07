@@ -18,6 +18,10 @@ robot_home_tolerance_rad = 0.15
 checkpoint_period_s = 5.0
 # VER-9: per-class detection score below which a box is not "in the tray"
 identity_min_score = 0.30
+# VER-10/11: the minimum target-detection score that may SEED the
+# segmenter. Below it the geometry stages record `error` rather than
+# measuring whatever the mask happened to cover (PR #103 review).
+grounding_min_score = 0.10
 
 [failure]
 # below this center height a box can only be resting on the floor: floor-

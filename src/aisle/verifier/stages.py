@@ -142,22 +142,46 @@ def identity_frame(
     }
 
 
+def dominant_surface(points_base: np.ndarray, band_m: float = 0.01) -> np.ndarray:
+    """The mask's dominant depth layer — the target's visible lid.
+
+    A segmentation mask's boundary pixels straddle the silhouette and
+    pick up BACKGROUND depth: on the golden frame ~5% of the grounded
+    mask lands on the tray floor, 8 cm below the lid. Those outliers
+    dragged the plane fit almost vertical (89 deg tilt on a flat box) and
+    would also inflate the footprint. Keeping points within `band_m` of
+    the median depth isolates the lid before any geometry is measured."""
+    points = np.asarray(points_base, dtype=np.float64).reshape(-1, 3)
+    if len(points) == 0:
+        return points
+    median_z = float(np.median(points[:, 2]))
+    return points[np.abs(points[:, 2] - median_z) <= band_m]
+
+
+def surface_top_z(points_base: np.ndarray) -> float:
+    """The observed top-surface height (m). An overhead depth camera sees
+    the box LID, so this is the top plane, not the AABB bottom."""
+    return float(np.median(np.asarray(points_base, dtype=np.float64).reshape(-1, 3)[:, 2]))
+
+
 def containment_vote(
     target_points_base: np.ndarray,
     tray_min,
     tray_max,
     margin_m: float,
     resting_tolerance_m: float,
+    target_height_m: float,
 ) -> StageVote:
-    """VER-10: the target's back-projected points must sit inside the
-    tray VOLUME — footprint AND height — and the target must be RESTING
-    on the tray floor, mirroring the oracle's VER-2 predicate.
+    """VER-10: the target must sit inside the tray VOLUME and REST on its
+    floor, mirroring the oracle's VER-2 predicate.
 
-    XY-only containment passed an airborne box a metre above the tray
-    (PR #103 review): the footprint test alone cannot tell 'in the tray'
-    from 'passing over it', which is precisely the false-success
-    direction A7 cares about. The measurement is the signed footprint
-    margin (m) plus the lowest point's height above the tray floor."""
+    The reconstruction matters (PR #103 review round 2): a top-down depth
+    image observes the TOP surface, so the minimum visible z is not the
+    object's bottom — treating it as one reported a resting box as
+    airborne by exactly its own height. The bottom is reconstructed from
+    the observed top plane minus the target class's known height (product
+    catalogue knowledge, not oracle state), which is what a real system
+    would also have."""
     points = np.asarray(target_points_base, dtype=np.float64).reshape(-1, 3)
     if points.size == 0:
         return StageVote("error", detail="no target points from overhead depth")
@@ -165,51 +189,68 @@ def containment_vote(
     hi = np.asarray(tray_max[:2], dtype=np.float64) + margin_m
     inside = np.minimum(points[:, :2] - lo, hi - points[:, :2])
     margin = float(inside.min())
-    floor = float(tray_min[2])
-    bottom = float(points[:, 2].min())
-    rest_gap = bottom - floor
-    measurement = {"margin_m": round(margin, 6), "rest_gap_m": round(rest_gap, 6)}
+    top_z = surface_top_z(points)
+    bottom_z = top_z - float(target_height_m)
+    rest_gap = bottom_z - float(tray_min[2])
+    measurement = {
+        "margin_m": round(margin, 6),
+        "top_surface_z_m": round(top_z, 6),
+        "rest_gap_m": round(rest_gap, 6),
+    }
     if margin < 0:
         return StageVote("fail", measurement=measurement, detail="footprint overhang")
     if not (-margin_m <= rest_gap <= resting_tolerance_m):
         return StageVote(
             "fail",
             measurement=measurement,
-            detail="target is not resting on the tray floor (airborne or below it)",
+            detail="reconstructed bottom is not resting on the tray floor",
         )
     return StageVote("pass", measurement=measurement)
 
 
-def tilt_from_mask_extent(mask_points_base: np.ndarray) -> float:
-    """Uprightness from the segmented target's 3D extent (VER-11/D6):
-    the angle between the mask's principal axis and world +z."""
+def tilt_from_surface_normal(mask_points_base: np.ndarray) -> float:
+    """Uprightness from the segmented TOP surface (VER-11/D6): the angle
+    between that surface's normal and world +z.
+
+    The visible patch is a plane, so its principal axis carries no tilt
+    information — the plane NORMAL does (PR #103 review round 2). Fitted
+    by SVD: the smallest singular direction of the centred points."""
     points = np.asarray(mask_points_base, dtype=np.float64).reshape(-1, 3)
     centered = points - points.mean(axis=0)
-    # principal axis of the (tall) box mask
     _, _, vh = np.linalg.svd(centered, full_matrices=False)
-    axis = vh[0]
-    cos = abs(float(np.dot(axis, [0.0, 0.0, 1.0])) / np.linalg.norm(axis))
+    normal = vh[-1]
+    cos = abs(float(np.dot(normal, [0.0, 0.0, 1.0])) / np.linalg.norm(normal))
     return math.degrees(math.acos(min(1.0, cos)))
 
 
 def upright_vote(mask_points_base: np.ndarray, upright_max_deg: float) -> StageVote:
-    """VER-11: tilt within the SAME 30-degree band as VER-2."""
+    """VER-11: top-surface tilt within the SAME 30-degree band as VER-2."""
     points = np.asarray(mask_points_base, dtype=np.float64).reshape(-1, 3)
     if len(points) < 3:
-        return StageVote("error", detail="segmentation mask too small for an extent")
-    tilt = tilt_from_mask_extent(points)
+        return StageVote("error", detail="segmentation mask too small for a surface fit")
+    tilt = tilt_from_surface_normal(points)
     status = "pass" if tilt <= upright_max_deg else "fail"
     return StageVote(status, measurement={"tilt_deg": round(tilt, 4)})
 
 
-def home_vote(joint_state: np.ndarray, home_qpos: np.ndarray, tolerance_rad: float) -> StageVote:
-    """VER-12: joint_state within the SAME home tolerance as VER-2 — the
-    one stage that needs no pixels."""
+def home_vote(joint_state, home_qpos, tolerance_rad: float) -> StageVote:
+    """VER-12: joint_state within the SAME home tolerance as VER-2.
+
+    A TRUNCATED state is an unable-to-judge condition, not a pass (PR
+    #103 review round 2): comparing only the overlapping prefix let a
+    one-element array score a zero residual against the seven-joint home
+    vector."""
     current = np.asarray(joint_state, dtype=np.float64).reshape(-1)
     home = np.asarray(home_qpos, dtype=np.float64).reshape(-1)
-    n = min(len(current), len(home))
-    if n == 0:
-        return StageVote("error", detail="empty joint_state")
-    residual = float(np.abs(current[:n] - home[:n]).max())
+    if home.size == 0:
+        return StageVote("error", detail="empty home_qpos")
+    if current.size != home.size:
+        return StageVote(
+            "error",
+            detail=f"joint_state has {current.size} values, home has {home.size} (VER-12)",
+        )
+    if not (np.all(np.isfinite(current)) and np.all(np.isfinite(home))):
+        return StageVote("error", detail="non-finite joint values")
+    residual = float(np.abs(current - home).max())
     status = "pass" if residual <= tolerance_rad else "fail"
     return StageVote(status, measurement={"max_joint_residual_rad": round(residual, 6)})

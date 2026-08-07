@@ -216,6 +216,7 @@ def judge_frames(
     goal_id: str,
     target_med: str,
     med_names: list[str],
+    med_sizes: dict[str, list[float]],
     frames: dict[str, dict[int, dict]],
     calibration: dict,
     nominal_calibration: dict,
@@ -227,26 +228,37 @@ def judge_frames(
     thresholds: dict,
     ee_poses: dict[int, tuple] | None = None,
     run_dir: Path | None = None,
+    grounding_point: tuple | None = None,
 ) -> tuple[bool, dict]:
     """The composed five-stage verdict from RAW inputs (VER-5).
 
-    This is the production entry point: it runs stage 0 (VER-8), the
-    pinned models via the CPU-disciplined adapters, and the geometry
-    stages, then fuses (VER-13) and writes the sidecar (VER-14). The
-    remaining wiring — a dora node subscribing to the camera topics and
-    publishing `episode_result` with `verifier:"realistic"` — is
-    increment 1b; this function is what that node will call, and what
-    `harness/fidelity.py` replays offline.
+    Production entry point: stage 0 (VER-8), the pinned models via the
+    CPU-disciplined adapters, the geometry stages, the VER-13 fusion and
+    the VER-14 sidecar. The remaining wiring — a dora node subscribing to
+    the camera topics and publishing `episode_result` with
+    `verifier:"realistic"` — is increment 1b; this is what that node will
+    call and what `harness/fidelity.py` replays offline.
 
-    `frames[camera][sim_time_ns]` carries `{"rgb": HxWx3, "depth": HxW}`
-    (depth overhead only). `ee_poses[sim_time_ns] = (pos, quat_xyzw)`
-    supplies the wrist FK composition (VER-8) when wrist frames exist.
+    The segmenter is GROUNDED on the terminal overhead detection of the
+    target (PR #103 review round 2: prompting at the image centre
+    segmented whatever sat in the middle of the frame, so containment and
+    upright judged the wrong object). No sufficiently-scored target
+    detection means no grounded geometry: those stages record `error` and
+    the episode fails closed rather than measuring something arbitrary.
+    `grounding_point` overrides the detection-derived seed for tests that
+    isolate the geometry from detector quality.
+
+    EVERY model and geometry call runs inside an exception boundary
+    (VER-13): a raised model/geometry error becomes that stage's `error`
+    vote, a False verdict, and a written sidecar — never a traceback out
+    of the judge.
     """
-    from aisle.verifier.calibration import check_calibration
+    from aisle.verifier.calibration import calibration_report
     from aisle.verifier.models import detect_meds, load_pinned, segment_mask
     from aisle.verifier.stages import (
         backproject_overhead,
         containment_vote,
+        dominant_surface,
         home_vote,
         identity_frame,
         tray_roi_pixels,
@@ -256,68 +268,105 @@ def judge_frames(
     judge = EpisodeJudge(goal_id=goal_id)
     realistic_cfg = thresholds["realistic"]
     success_cfg = thresholds["success"]
+    votes: dict[str, StageVote] = {}
 
-    # stage 0 first: a refused calibration fails the episode closed and
-    # never spends model time (VER-8/VER-13)
-    refusal = check_calibration(calibration, nominal_calibration, jitter_bound_m)
-    if refusal is not None:
-        votes = {"calibration": StageVote("error", detail=refusal)}
+    def finish() -> tuple[bool, dict]:
         record = sidecar_record(judge, votes)
         record["success"] = fuse(votes)
         if run_dir is not None:
             append_sidecar(run_dir, record)
         return record["success"], record
 
-    identity_pair = load_pinned("identity")
-    for camera in CAMERAS:
-        available = sorted(frames.get(camera, {}))
-        if not available:
-            continue
-        for stamp in checkpoint_stamps(
-            available[0], available[-1], realistic_cfg["checkpoint_period_s"], available
-        ):
-            ee = (ee_poses or {}).get(stamp)
-            if camera == "wrist" and ee is None:
-                continue  # VER-8: no EE pose, no trustworthy wrist ROI
-            roi = tray_roi_pixels(tray_min, tray_max, calibration, camera, ee)
-            detections = detect_meds(frames[camera][stamp]["rgb"], med_names, identity_pair)
-            judge.observe(
-                camera,
-                identity_frame(
-                    detections,
-                    target_med,
-                    roi,
-                    realistic_cfg["identity_min_score"],
-                    stamp,
-                ),
-            )
+    # stage 0 first: a refused calibration fails the episode closed and
+    # never spends model time (VER-8/VER-13)
+    refusal, deviations = calibration_report(calibration, nominal_calibration, jitter_bound_m)
+    if refusal is not None:
+        votes["calibration"] = StageVote("error", measurement=deviations, detail=refusal)
+        return finish()
+    votes["calibration"] = StageVote("pass", measurement=deviations)
 
-    votes: dict[str, StageVote] = {"calibration": StageVote("pass")}
+    terminal_detections: list[dict] = []
+    try:
+        identity_pair = load_pinned("identity")
+        for camera in CAMERAS:
+            available = sorted(frames.get(camera, {}))
+            if not available:
+                continue
+            for stamp in checkpoint_stamps(
+                available[0], available[-1], realistic_cfg["checkpoint_period_s"], available
+            ):
+                ee = (ee_poses or {}).get(stamp)
+                if camera == "wrist" and ee is None:
+                    continue  # VER-8: no EE pose, no trustworthy wrist ROI
+                roi = tray_roi_pixels(tray_min, tray_max, calibration, camera, ee)
+                detections = detect_meds(frames[camera][stamp]["rgb"], med_names, identity_pair)
+                if camera == "overhead" and stamp == available[-1]:
+                    terminal_detections = detections
+                judge.observe(
+                    camera,
+                    identity_frame(
+                        detections, target_med, roi, realistic_cfg["identity_min_score"], stamp
+                    ),
+                )
+    except Exception as exc:  # noqa: BLE001 — VER-13: model errors fail closed
+        detail = f"identity stage raised {type(exc).__name__}: {exc}"
+        votes["identity_overhead"] = StageVote("error", detail=detail)
+        votes["identity_wrist"] = StageVote("error", detail=detail)
+        votes["containment"] = StageVote("error", detail="not reached")
+        votes["upright"] = StageVote("error", detail="not reached")
+        votes["home"] = StageVote("error", detail="not reached")
+        return finish()
+
     votes["identity_overhead"] = judge.identity_vote("overhead")
     votes["identity_wrist"] = judge.identity_vote("wrist")
 
-    terminal = sorted(frames.get("overhead", {}))
-    if terminal:
-        final = frames["overhead"][terminal[-1]]
-        mask = segment_mask(final["rgb"], (final["rgb"].shape[1] // 2, final["rgb"].shape[0] // 2))
-        pixels = np.argwhere(mask)[:, ::-1]  # (row, col) -> (u, v)
-        points = backproject_overhead(final["depth"], calibration, pixels)
-        votes["containment"] = containment_vote(
-            points,
-            tray_min,
-            tray_max,
-            success_cfg["tray_margin_m"],
-            success_cfg["resting_tolerance_m"],
-        )
-        votes["upright"] = upright_vote(points, success_cfg["upright_max_deg"])
-    else:
-        votes["containment"] = StageVote("error", detail="no overhead frames")
-        votes["upright"] = StageVote("error", detail="no overhead frames")
+    # ---- grounded geometry (VER-10/VER-11) --------------------------
+    try:
+        overhead_stamps = sorted(frames.get("overhead", {}))
+        seed = grounding_point
+        if seed is None and terminal_detections:
+            hits = [
+                d
+                for d in terminal_detections
+                if d["label"] == target_med
+                and d["score"] >= realistic_cfg.get("grounding_min_score", 0.0)
+            ]
+            if hits:
+                best = max(hits, key=lambda d: d["score"])
+                x0, y0, x1, y1 = best["box"]
+                seed = ((x0 + x1) / 2, (y0 + y1) / 2)
+        if not overhead_stamps:
+            votes["containment"] = StageVote("error", detail="no overhead frames")
+            votes["upright"] = StageVote("error", detail="no overhead frames")
+        elif seed is None:
+            detail = "no grounded target detection: geometry stages cannot be trusted (VER-9/10)"
+            votes["containment"] = StageVote("error", detail=detail)
+            votes["upright"] = StageVote("error", detail=detail)
+        else:
+            final = frames["overhead"][overhead_stamps[-1]]
+            mask = segment_mask(final["rgb"], seed)
+            pixels = np.argwhere(mask)[:, ::-1]  # (row, col) -> (u, v)
+            raw_points = backproject_overhead(final["depth"], calibration, pixels)
+            # mask edges bleed onto the background: measure the lid only
+            points = dominant_surface(raw_points)
+            height = float(med_sizes[target_med][2])
+            votes["containment"] = containment_vote(
+                points,
+                tray_min,
+                tray_max,
+                success_cfg["tray_margin_m"],
+                success_cfg["resting_tolerance_m"],
+                height,
+            )
+            votes["upright"] = upright_vote(points, success_cfg["upright_max_deg"])
+    except Exception as exc:  # noqa: BLE001 — VER-13
+        detail = f"geometry stage raised {type(exc).__name__}: {exc}"
+        votes["containment"] = StageVote("error", detail=detail)
+        votes["upright"] = StageVote("error", detail=detail)
 
-    votes["home"] = home_vote(joint_state, home_qpos, success_cfg["robot_home_tolerance_rad"])
+    try:
+        votes["home"] = home_vote(joint_state, home_qpos, success_cfg["robot_home_tolerance_rad"])
+    except Exception as exc:  # noqa: BLE001 — VER-13
+        votes["home"] = StageVote("error", detail=f"home stage raised {type(exc).__name__}: {exc}")
 
-    record = sidecar_record(judge, votes)
-    record["success"] = fuse(votes)
-    if run_dir is not None:
-        append_sidecar(run_dir, record)
-    return record["success"], record
+    return finish()

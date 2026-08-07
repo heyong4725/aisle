@@ -201,76 +201,122 @@ def calibration_sha256(block: dict) -> str:
 
 
 def check_calibration(published: dict, nominal: dict, jitter_bound_m: float) -> str | None:
-    """VER-8 stage-0 refusal predicate: None iff every check passes,
-    else the refusal reason. Each check independent, fail closed:
-    (a) well-formed + supported version; (b) intrinsics and depth scale
-    EXACTLY nominal; (c) overhead position within jitter_bound_m/2 per
-    axis; (d) overhead rotation within ROTATION_TOL_DEG of the
-    re-derived lookat rotation FROM the published position; (e) wrist
-    cam_to_ee exactly nominal."""
+    """VER-8 stage-0 refusal predicate: None iff every check passes."""
+    return calibration_report(published, nominal, jitter_bound_m)[0]
+
+
+def calibration_report(
+    published: dict, nominal: dict, jitter_bound_m: float
+) -> tuple[str | None, dict]:
+    """(refusal, deviations) for VER-8 stage 0.
+
+    The refusal is None iff every check passes; `deviations` carries the
+    measured nominal-vs-actual deltas that VER-14 records for the
+    calibration stage (PR #103 review round 2: a bare `vote: pass`
+    carried no measurement). Each check is independent and fails closed:
+    (a) structure, supported version, finiteness, unit quaternions;
+    (b) resolution, fov_deg, intrinsics and depth scale EXACTLY nominal
+    (DR never perturbs them); (c) overhead position within
+    jitter_bound_m/2 per axis; (d) overhead rotation within
+    ROTATION_TOL_DEG of the rotation re-derived FROM the published
+    position; (e) wrist cam_to_ee exactly nominal.
+    """
+    deviations: dict = {}
     try:
         if published.get("calibration_version") != CALIBRATION_VERSION:
-            return f"unsupported calibration_version {published.get('calibration_version')!r}"
+            return (
+                f"unsupported calibration_version {published.get('calibration_version')!r}",
+                deviations,
+            )
         pub_o, nom_o = published["overhead"], nominal["overhead"]
         pub_w, nom_w = published["wrist"], nominal["wrist"]
-        # (a) structural + finiteness validation BEFORE any comparison —
-        # a NaN position passed every numeric check silently, and a
-        # scaled quaternion read as a perfect rotation match (PR #103)
+
+        # (a) structure + finiteness BEFORE any comparison: a NaN position
+        # passed every numeric check, and a scaled quaternion read as a
+        # perfect rotation match once the dot product was clamped
         for cam, pub_c in (("overhead", pub_o), ("wrist", pub_w)):
             pose_key = "cam_to_base" if cam == "overhead" else "cam_to_ee"
+            if "fov_deg" not in pub_c:
+                return f"{cam}: calibration block is missing fov_deg", deviations
             pose = pub_c[pose_key]
-            for label, value, length in (
+            checks = [
+                (f"{cam}.fov_deg", pub_c["fov_deg"], 1),
                 (f"{cam}.intrinsics.fx", pub_c["intrinsics"]["fx"], 1),
                 (f"{cam}.intrinsics.fy", pub_c["intrinsics"]["fy"], 1),
                 (f"{cam}.intrinsics.cx", pub_c["intrinsics"]["cx"], 1),
                 (f"{cam}.intrinsics.cy", pub_c["intrinsics"]["cy"], 1),
                 (f"{cam}.{pose_key}.pos", pose["pos"], 3),
-            ):
+            ]
+            for label, value, length in checks:
                 bad = check_finite(value, label, length)
                 if bad:
-                    return bad
+                    return bad, deviations
             bad = check_quaternion(pose["quat_xyzw"], f"{cam}.{pose_key}")
             if bad:
-                return bad
+                return bad, deviations
         bad = check_finite(pub_o["depth_scale_m"], "overhead.depth_scale_m", 1)
         if bad:
-            return bad
-        # (b) intrinsics + depth scale EXACTLY nominal — DR never
-        # perturbs them, so equality is the specified test
+            return bad, deviations
+
+        # (b) the non-DR fields must be EXACTLY nominal
         for cam, pub_c, nom_c in (("overhead", pub_o, nom_o), ("wrist", pub_w, nom_w)):
             if list(pub_c["resolution"]) != list(nom_c["resolution"]):
-                return f"{cam}: resolution {pub_c['resolution']} != nominal {nom_c['resolution']}"
+                return (
+                    f"{cam}: resolution {pub_c['resolution']} != nominal {nom_c['resolution']}",
+                    deviations,
+                )
+            if float(pub_c["fov_deg"]) != float(nom_c["fov_deg"]):
+                return (
+                    f"{cam}: fov_deg {pub_c['fov_deg']} != nominal {nom_c['fov_deg']}",
+                    deviations,
+                )
             for k, v in nom_c["intrinsics"].items():
                 if float(pub_c["intrinsics"][k]) != float(v):
-                    return f"{cam}: intrinsics.{k} {pub_c['intrinsics'][k]} != nominal {v}"
+                    return (
+                        f"{cam}: intrinsics.{k} {pub_c['intrinsics'][k]} != nominal {v}",
+                        deviations,
+                    )
         if float(pub_o["depth_scale_m"]) != float(nom_o["depth_scale_m"]):
-            return f"overhead: depth_scale_m {pub_o['depth_scale_m']} != {nom_o['depth_scale_m']}"
+            return (
+                f"overhead: depth_scale_m {pub_o['depth_scale_m']} != {nom_o['depth_scale_m']}",
+                deviations,
+            )
+
         # (c) overhead position: per-axis uniform jitter is +/-bound/2
         pos = np.asarray(pub_o["cam_to_base"]["pos"], dtype=np.float64)
         nom_pos = np.asarray(nom_o["cam_to_base"]["pos"], dtype=np.float64)
         dev = np.abs(pos - nom_pos)
+        deviations["overhead_pos_dev_m"] = [round(float(v), 6) for v in dev]
+        deviations["overhead_pos_max_dev_m"] = round(float(dev.max()), 6)
         if np.any(dev > jitter_bound_m / 2 + 1e-12):
             return (
                 f"overhead: position deviates {dev.max():.4f} m from nominal "
-                f"(bound {jitter_bound_m / 2:.4f} m per axis)"
+                f"(bound {jitter_bound_m / 2:.4f} m per axis)",
+                deviations,
             )
-        # (d) rotation: re-derive from the PUBLISHED position, so jitter
+
+        # (d) rotation re-derived from the PUBLISHED position, so jitter
         # is accounted for but a rotated-in-place camera refuses
         lookat = nominal.get("_overhead_lookat")
         if lookat is None:
-            return "nominal block missing _overhead_lookat for the rotation predicate"
+            return "nominal block missing _overhead_lookat for the rotation predicate", deviations
         expected = quat_xyzw_from_rotation(lookat_rotation_cv(pos, lookat))
         angle = quat_angle_deg(pub_o["cam_to_base"]["quat_xyzw"], expected)
+        deviations["overhead_rotation_dev_deg"] = round(float(angle), 4)
         if angle > ROTATION_TOL_DEG:
-            return f"overhead: rotation {angle:.2f} deg from lookat-consistent pose (VER-8 d)"
+            return (
+                f"overhead: rotation {angle:.2f} deg from lookat-consistent pose (VER-8 d)",
+                deviations,
+            )
+
         # (e) wrist mount EXACT
         if not np.array_equal(
             np.asarray(pub_w["cam_to_ee"]["pos"], dtype=np.float64),
             np.asarray(nom_w["cam_to_ee"]["pos"], dtype=np.float64),
         ):
-            return "wrist: cam_to_ee.pos differs from nominal mount"
+            return "wrist: cam_to_ee.pos differs from nominal mount", deviations
         if quat_angle_deg(pub_w["cam_to_ee"]["quat_xyzw"], nom_w["cam_to_ee"]["quat_xyzw"]) > 1e-6:
-            return "wrist: cam_to_ee rotation differs from nominal mount"
+            return "wrist: cam_to_ee rotation differs from nominal mount", deviations
     except (KeyError, TypeError, ValueError) as exc:
-        return f"malformed calibration block: {exc!r}"
-    return None
+        return f"malformed calibration block: {exc!r}", deviations
+    return None, deviations
