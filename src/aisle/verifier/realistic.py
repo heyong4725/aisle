@@ -16,6 +16,7 @@ publishes a Boolean success bit plus the stage record.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable  # noqa: TC003 — used in a runtime annotation
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -139,3 +140,71 @@ def append_sidecar(run_dir: Path, record: dict) -> Path:
     with open(path, "a") as f:
         f.write(json.dumps(record) + "\n")
     return path
+
+
+def checkpoint_stamps(
+    start_ns: int, end_ns: int, period_s: float, frames_available: list[int] | None = None
+) -> list[int]:
+    """VER-9's judged-frame set: checkpoints every `period_s` from goal
+    receipt PLUS the terminal frame. With `frames_available`, each stamp
+    snaps to the nearest available frame at or before it (renders are
+    rate-limited, BRG-2 — the exact stamp rarely exists), and the
+    terminal frame is always judged."""
+    if end_ns < start_ns:
+        raise ValueError("episode ends before it starts")
+    period_ns = int(period_s * 1e9)
+    wanted = list(range(start_ns, end_ns, period_ns)) + [end_ns] if period_ns > 0 else [end_ns]
+    if frames_available is None:
+        return sorted(set(wanted))
+    available = sorted(frames_available)
+    if not available:
+        return []
+    snapped = []
+    for stamp in wanted:
+        earlier = [f for f in available if f <= stamp]
+        snapped.append(earlier[-1] if earlier else available[0])
+    snapped.append(available[-1])  # the terminal frame is always judged
+    return sorted(set(snapped))
+
+
+def judge_episode(
+    goal_id: str,
+    target_med: str,
+    frames: dict[str, dict[int, dict]],
+    detect: Callable[[str, dict, int], list[dict]],
+    stage_votes: dict[str, StageVote],
+    period_s: float,
+    min_score: float,
+    roi: dict[str, tuple],
+    run_dir: Path | None = None,
+) -> tuple[bool, dict]:
+    """One episode's realistic verdict (VER-5): run the identity stage
+    over the judged-frame set per camera, fuse with the non-identity
+    stage votes the caller computed, and write the VER-14 sidecar.
+
+    `frames[camera][sim_time_ns]` holds the camera's RGB payloads;
+    `detect(camera, payload, sim_time_ns) -> [{label, score, box}]` is
+    the injected model call (models.load_pinned on the real path, a
+    recorded fixture in tests). Returns (success, sidecar_record).
+    """
+    from aisle.verifier.stages import identity_frame
+
+    judge = EpisodeJudge(goal_id=goal_id)
+    for camera in CAMERAS:
+        available = sorted(frames.get(camera, {}))
+        if not available:
+            continue
+        for stamp in checkpoint_stamps(available[0], available[-1], period_s, available):
+            detections = detect(camera, frames[camera][stamp], stamp)
+            judge.observe(
+                camera,
+                identity_frame(detections, target_med, roi[camera], min_score, stamp),
+            )
+    votes = dict(stage_votes)
+    votes["identity_overhead"] = judge.identity_vote("overhead")
+    votes["identity_wrist"] = judge.identity_vote("wrist")
+    record = sidecar_record(judge, votes)
+    record["success"] = fuse(votes)
+    if run_dir is not None:
+        append_sidecar(run_dir, record)
+    return record["success"], record

@@ -167,3 +167,111 @@ def test_clean_episode_sidecar_has_a_null_first_event():
     record = sidecar_record(judge, votes)
     assert record["latch"] == {"latched": False, "first_event": None}
     assert fuse(votes) is True
+
+
+def test_checkpoint_stamps_cover_the_cadence_and_the_terminal_frame():
+    """VER-9: checkpoints every period_s from goal receipt, PLUS the
+    terminal frame — the latch can only see what it samples."""
+    from aisle.verifier.realistic import checkpoint_stamps
+
+    stamps = checkpoint_stamps(0, 12_000_000_000, 5.0)
+    assert stamps == [0, 5_000_000_000, 10_000_000_000, 12_000_000_000]
+
+    # renders are rate-limited (BRG-2): stamps snap to the nearest
+    # available frame at or before them, and the last frame always judges
+    available = [0, 4_000_000_000, 9_000_000_000, 11_500_000_000]
+    snapped = checkpoint_stamps(0, 12_000_000_000, 5.0, available)
+    assert snapped == [0, 4_000_000_000, 9_000_000_000, 11_500_000_000]
+    assert all(s in available for s in snapped)
+
+    assert checkpoint_stamps(0, 1_000_000_000, 5.0, []) == []
+
+
+def test_judge_episode_runs_the_cadence_and_writes_the_sidecar(tmp_path):
+    """VER-5/VER-9/VER-14 end to end with an injected detector: the
+    transient wrong item is sampled at a checkpoint, so the episode
+    fails even though the terminal frame is clean — and the sidecar
+    records every judged frame."""
+    from aisle.verifier.realistic import judge_episode
+
+    frames = {
+        "overhead": {i * 5_000_000_000: {"frame": i} for i in range(4)},
+        "wrist": {i * 5_000_000_000: {"frame": i} for i in range(4)},
+    }
+    roi = {"overhead": (0.0, 0.0, 100.0, 100.0), "wrist": (0.0, 0.0, 100.0, 100.0)}
+
+    def detect(camera, payload, sim_time_ns):
+        box = [10, 10, 20, 20]
+        if payload["frame"] == 1:  # a wrong item, only at this checkpoint
+            return [{"label": "ibuprofen", "score": 0.8, "box": box}]
+        if payload["frame"] >= 2:
+            return [{"label": "omeprazole", "score": 0.9, "box": box}]
+        return []
+
+    clean_stages = {
+        "calibration": StageVote("pass"),
+        "containment": StageVote("pass"),
+        "upright": StageVote("pass"),
+        "home": StageVote("pass"),
+    }
+    success, record = judge_episode(
+        goal_id="ep-0042",
+        target_med="omeprazole",
+        frames=frames,
+        detect=detect,
+        stage_votes=clean_stages,
+        period_s=5.0,
+        min_score=0.3,
+        roi=roi,
+        run_dir=tmp_path,
+    )
+    assert success is False  # the latch caught the transient
+    assert record["latch"]["latched"] is True
+    assert record["latch"]["first_event"]["sim_time_ns"] == 5_000_000_000
+    assert len(record["stages"]["identity_overhead"]["frames"]) == 4
+
+    written = [
+        json.loads(line) for line in (tmp_path / "verifier_stages.jsonl").read_text().splitlines()
+    ]
+    assert written[0]["goal_id"] == "ep-0042" and written[0]["success"] is False
+
+
+def test_judge_episode_succeeds_on_a_clean_delivery(tmp_path):
+    from aisle.verifier.realistic import judge_episode
+
+    frames = {c: {0: {"f": 0}, 5_000_000_000: {"f": 1}} for c in ("overhead", "wrist")}
+    roi = {"overhead": (0.0, 0.0, 100.0, 100.0), "wrist": (0.0, 0.0, 100.0, 100.0)}
+    success, record = judge_episode(
+        goal_id="ep-0043",
+        target_med="omeprazole",
+        frames=frames,
+        detect=lambda c, p, t: [{"label": "omeprazole", "score": 0.95, "box": [10, 10, 20, 20]}],
+        stage_votes={
+            k: StageVote("pass") for k in ("calibration", "containment", "upright", "home")
+        },
+        period_s=5.0,
+        min_score=0.3,
+        roi=roi,
+        run_dir=tmp_path,
+    )
+    assert success is True and record["latch"]["latched"] is False
+
+
+def test_judge_episode_fails_closed_when_a_camera_has_no_frames(tmp_path):
+    """VER-13: a camera that produced nothing cannot be skipped over."""
+    from aisle.verifier.realistic import judge_episode
+
+    success, record = judge_episode(
+        goal_id="ep-0044",
+        target_med="omeprazole",
+        frames={"overhead": {0: {"f": 0}}, "wrist": {}},
+        detect=lambda c, p, t: [{"label": "omeprazole", "score": 0.95, "box": [10, 10, 20, 20]}],
+        stage_votes={
+            k: StageVote("pass") for k in ("calibration", "containment", "upright", "home")
+        },
+        period_s=5.0,
+        min_score=0.3,
+        roi={"overhead": (0.0, 0.0, 100.0, 100.0), "wrist": (0.0, 0.0, 100.0, 100.0)},
+    )
+    assert success is False
+    assert record["stages"]["identity_wrist"]["vote"] == "fail"
