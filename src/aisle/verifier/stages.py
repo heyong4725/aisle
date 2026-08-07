@@ -107,6 +107,56 @@ def tray_roi_pixels(
     )
 
 
+# margin around the tray ROI before detection: a box resting against the
+# rim must be WHOLLY visible to the detector, since a clipped box shifts
+# its own centre and the centre is what decides containment
+ROI_PAD_PX = 12
+
+
+def crop_to_roi(image: np.ndarray, roi: tuple, pad_px: int = ROI_PAD_PX):
+    """The padded ROI window of `image` and the (du, dv) that maps a
+    detection in that window back to full-frame pixels, or None when the
+    ROI does not overlap the image at all.
+
+    VER-9 detects on this window, NOT the whole frame. Measured on the
+    terminal frames of a live two-episode run (capture-smoke-I1, both
+    scored success by the oracle): full-frame detection finds the target
+    in the tray for 1 of 2, cropped detection for 2 of 2 — the orange
+    ibuprofen box is invisible to the detector at full frame and scores
+    0.150 cropped, while the red amoxicillin box goes 0.251 -> 0.460.
+    Upscaling the crop adds nothing (0.183 vs 0.169 on the golden frame),
+    which is what says the limit is the object\'s SHARE of the frame
+    rather than its resolution: the rendered meds are ~21 px in a 640 px
+    frame, and no threshold can separate signal that is not there.
+    """
+    h, w = image.shape[0], image.shape[1]
+    u0 = max(0, int(math.floor(roi[0])) - pad_px)
+    v0 = max(0, int(math.floor(roi[1])) - pad_px)
+    u1 = min(w, int(math.ceil(roi[2])) + pad_px)
+    v1 = min(h, int(math.ceil(roi[3])) + pad_px)
+    if u1 <= u0 or v1 <= v0:
+        return None
+    return image[v0:v1, u0:u1], (float(u0), float(v0))
+
+
+def shift_detections(detections: list[dict], offset: tuple) -> list[dict]:
+    """Re-express crop-frame detection boxes in FULL-frame pixels, so
+    `detections_in_roi` keeps comparing against one coordinate system."""
+    du, dv = offset
+    return [
+        {
+            **det,
+            "box": [
+                float(det["box"][0]) + du,
+                float(det["box"][1]) + dv,
+                float(det["box"][2]) + du,
+                float(det["box"][3]) + dv,
+            ],
+        }
+        for det in detections
+    ]
+
+
 def detections_in_roi(detections: list[dict], roi: tuple, min_score: float) -> dict[str, float]:
     """Per-class max score among detections whose box CENTER falls inside
     the tray ROI and clears the threshold (VER-9)."""
