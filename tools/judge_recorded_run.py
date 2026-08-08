@@ -76,6 +76,17 @@ def main() -> int:
             for r in _rows(traces, "dora-genesis__joint_state")
             if r["data"]
         ]
+        # each episode's frames start STRICTLY AFTER its reset completes.
+        # The frame AT the reset stamp still shows the PREVIOUS episode's
+        # scene -- the render happens before the teleport is applied -- so
+        # including it makes the previous delivery a wrong object in this
+        # episode's tray and latches VER-9 on frame one. Windowing from the
+        # previous episode_result (which is what this tool did first) is
+        # exactly that bug: it cost a 0.20 fidelity number and an issue
+        # blaming the detector for a correct detection.
+        resets = sorted(
+            r["sim_time_ns"] for r in _rows(traces, "dora-genesis__reset_done") if r["data"]
+        )
 
         meds, physics = load_meds(), load_physics()
         cam_cfg = physics["cameras"]
@@ -113,8 +124,11 @@ def main() -> int:
             )
 
         judged = []
-        low = 0
         for goal, (end_ns, result) in zip(goals, ends, strict=True):
+            before = [r for r in resets if r < end_ns]
+            if not before:
+                raise RuntimeError(f"no reset_done precedes {result['goal_id']}")
+            low = before[-1]
             window = {
                 camera: {s: f for s, f in per.items() if low < s <= end_ns}
                 for camera, per in frames.items()
