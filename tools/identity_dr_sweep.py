@@ -12,9 +12,11 @@ Reports, per cell, whether the target survives and whether any non-target
 does — the latter is the wrong-object latch firing on a correct delivery.
 
 CON-8: JSON to stdout, progress to stderr, **exit 0 iff ok** — and `ok` is
-the MEASURED property (no cell latched a wrong object), not "the script
-ran". A non-zero exit with an `error` key is a tool failure; a non-zero
-exit without one means the sweep found a false latch.
+the MEASURED property, not "the script ran": every cell must produce a
+usable VER-9 vote, i.e. the delivered target detects AND no non-target
+survives. A miss-only sweep is not a successful calibration. A non-zero
+exit with an `error` key is a tool failure; a non-zero exit without one
+means the sweep found misses, false latches, or both.
 
 Usage: uv run python tools/identity_dr_sweep.py [--seeds 3,9,11] [--out PATH]
 """
@@ -38,6 +40,15 @@ AXES = (
     ("lighting+textures", ("lighting", "textures")),
     ("all", ("lighting", "textures", "camera_jitter")),
 )
+
+
+def sweep_ok(results: list[dict]) -> bool:
+    """A VER-9 camera vote needs BOTH halves: the target detects, and no
+    non-target survives to set the latch. So a sweep in which every
+    delivery is missed is not a usable calibration even though nothing
+    latched — `ok` requires no misses AND no latches (PR #104 review
+    round 4)."""
+    return all(r["detected"] and not r["wrong_object"] for r in results)
 
 
 def main() -> int:
@@ -160,7 +171,7 @@ def main() -> int:
     missed = [r for r in results if not r["detected"]]
     latched = [r for r in results if r["wrong_object"]]
     report = {
-        "ok": not latched,
+        "ok": sweep_ok(results),
         "cells": len(results),
         "false_negatives": len(missed),
         "false_latches": len(latched),
@@ -172,7 +183,9 @@ def main() -> int:
     print(json.dumps({k: v for k, v in report.items() if k != "results"}))
     if not report["ok"]:
         print(
-            f"{len(latched)} cell(s) latched a wrong object on a correct delivery", file=sys.stderr
+            f"{len(latched)} cell(s) latched a wrong object on a correct delivery, "
+            f"{len(missed)} cell(s) missed the delivered target",
+            file=sys.stderr,
         )
     return 0 if report["ok"] else 1
 

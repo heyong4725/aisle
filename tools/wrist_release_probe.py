@@ -58,6 +58,32 @@ def _mat_to_quat_xyzw(rotation: np.ndarray) -> np.ndarray:
     )
 
 
+def target_delivered(state: np.ndarray, target_idx: int, cfg) -> bool:
+    """Is the target RESTING in the tray at this frame?
+
+    Deliberately the ORACLE's own predicate (`_aabb_inside_tray`), not a
+    re-implementation: it is rotation-aware, bounds the footprint on both
+    sides, and requires the box to rest on the tray floor. A hand-rolled
+    "centre inside x/y and z below a ceiling" test counts an airborne box
+    still in the gripper as delivered, which would let this tool certify
+    a wrist operating point that does not exist (PR #104 review round 4).
+    """
+    from aisle.verifier.oracle import _aabb_inside_tray
+
+    pos = np.asarray(state[target_idx * 7 : target_idx * 7 + 3], dtype=np.float64)
+    quat_xyzw = np.asarray(state[target_idx * 7 + 3 : target_idx * 7 + 7], dtype=np.float64)
+    return bool(_aabb_inside_tray(pos, cfg.box_half_extents[target_idx], quat_xyzw, cfg))
+
+
+def vote_passes(scores: dict, target: str, min_score: float) -> bool:
+    """VER-9's camera vote: the TARGET detects at or above threshold AND
+    no non-target does. A frame carrying a surviving wrong class sets the
+    episode latch, so it is not a passing candidate however well the
+    target scored."""
+    above = {label for label, score in scores.items() if score >= min_score}
+    return target in above and above == {target}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", required=True, type=Path)
@@ -127,12 +153,7 @@ def main() -> int:
             earlier = [state for s, state in oracle if s <= ns]
             if not earlier:
                 return False
-            idx = MED_NAMES.index(target)
-            pos = earlier[-1][idx * 7 : idx * 7 + 3]
-            return bool(
-                all(cfg.tray_min[i] <= pos[i] <= cfg.tray_max[i] for i in range(2))
-                and pos[2] <= cfg.tray_max[2] + 0.12
-            )
+            return target_delivered(earlier[-1], MED_NAMES.index(target), cfg)
 
         rows_out = []
         low = 0
@@ -140,7 +161,7 @@ def main() -> int:
             target = goal["target_med"]
             for ns in [s for s in stamps if low < s <= high]:
                 ee = ee_at(ns)
-                in_view, score = False, None
+                in_view, score, scores = False, None, {}
                 if ee is not None:
                     roi = tray_roi_pixels(cfg.tray_min, cfg.tray_max, calibration, "wrist", ee)
                     window = None
@@ -164,7 +185,8 @@ def main() -> int:
                             0.0,
                             limit,
                         )
-                        score = round(float(scores.get(target, 0.0)), 4)
+                        scores = {k: round(float(v), 4) for k, v in scores.items()}
+                        score = scores.get(target, 0.0)
                 rows_out.append(
                     {
                         "sim_time_ns": ns,
@@ -172,6 +194,12 @@ def main() -> int:
                         "tray_in_view": in_view,
                         "delivered": delivered_at(ns, target),
                         "target_score": score,
+                        "scores": scores,
+                        "wrong_object": sorted(
+                            label
+                            for label, value in scores.items()
+                            if label != target and value >= thresholds["identity_min_score"]
+                        ),
                     }
                 )
             low = high
@@ -181,7 +209,9 @@ def main() -> int:
 
     candidates = [r for r in rows_out if r["tray_in_view"] and r["delivered"]]
     passing = [
-        r for r in candidates if (r["target_score"] or 0.0) >= thresholds["identity_min_score"]
+        r
+        for r in candidates
+        if vote_passes(r["scores"], r["target"], thresholds["identity_min_score"])
     ]
     report = {
         "ok": bool(passing),
@@ -189,7 +219,8 @@ def main() -> int:
         "tray_in_view": sum(1 for r in rows_out if r["tray_in_view"]),
         "delivered": sum(1 for r in rows_out if r["delivered"]),
         "candidates_in_view_and_delivered": len(candidates),
-        "candidates_above_threshold": len(passing),
+        "candidates_passing_ver9_vote": len(passing),
+        "candidates_with_wrong_object": sum(1 for r in candidates if r["wrong_object"]),
         "best_candidate_score": max((r["target_score"] or 0.0 for r in candidates), default=None),
         "threshold": thresholds["identity_min_score"],
     }
@@ -204,9 +235,10 @@ def main() -> int:
     print(json.dumps(report))
     if not report["ok"]:
         print(
-            f"no wrist frame both sees the tray and scores >= {report['threshold']} "
-            f"({len(candidates)} in-view-and-delivered frames, best "
-            f"{report['best_candidate_score']})",
+            f"no wrist frame yields a VER-9 vote: {len(candidates)} frame(s) saw the tray "
+            f"with the med delivered, best target score {report['best_candidate_score']} "
+            f"against a {report['threshold']} threshold, "
+            f"{report['candidates_with_wrong_object']} carrying a surviving non-target",
             file=sys.stderr,
         )
     return 0 if report["ok"] else 1
