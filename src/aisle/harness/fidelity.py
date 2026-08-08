@@ -175,12 +175,29 @@ def validate_latch(goal_id: str, record: dict, stages: dict) -> None:
             raise EvidenceError(f"{goal_id}: latch.first_event camera {ev['camera']!r} is unknown")
         if not saw_non_target:
             raise EvidenceError(f"{goal_id}: latch is SET but no frame reports non_target_in_tray")
+        # PER-CAMERA since issue #107: a non-target seen by one camera fails
+        # THAT camera's vote, so a wrist latch with a passing overhead is now
+        # the expected shape — the previous global check rejected exactly the
+        # records the amendment exists to produce. Deriving each camera's
+        # latch from ITS OWN frames is also stricter than the old rule: it
+        # catches a producer that latched camera X and still passed X, which
+        # the global form missed unless X happened to be first_event.camera.
         for stage in STAGES:
-            if stage.startswith("identity_") and stages[stage]["vote"] == "pass":
+            if not stage.startswith("identity_"):
+                continue
+            frames = stages[stage].get("frames") or []
+            if any(f.get("non_target_in_tray") for f in frames) and stages[stage]["vote"] == "pass":
                 raise EvidenceError(
-                    f"{goal_id}: latch is SET but {stage} voted pass — the producer fails "
-                    "both identities once the wrong-object latch trips (VER-9)"
+                    f"{goal_id}: {stage} saw a non-target in the tray but voted pass — the "
+                    "producer fails a camera's own identity vote once it latches (VER-9)"
                 )
+        named = ev["camera"]
+        named_frames = stages.get(f"identity_{named}", {}).get("frames") or []
+        if not any(f.get("non_target_in_tray") for f in named_frames):
+            raise EvidenceError(
+                f"{goal_id}: latch.first_event names {named!r} but none of that camera's frames "
+                "reports non_target_in_tray (VER-14)"
+            )
     else:
         if event is not None:
             raise EvidenceError(f"{goal_id}: latch is clear but carries a first_event")
@@ -228,8 +245,14 @@ def validate_sidecar_record(record) -> bool:
         )
     fused = fuse(votes)
     if fused != success:
+        # the common cause is a sidecar recorded under a DIFFERENT fusion rule
+        # (issue #107 stopped identity_wrist gating), not a corrupt record. Say
+        # so, because "disagrees with fusing its own stages" sends the reader
+        # looking for a producer bug that is not there.
         raise EvidenceError(
-            f"{goal_id}: recorded success {success} disagrees with fusing its own stages ({fused})"
+            f"{goal_id}: recorded success {success} disagrees with fusing its own stages "
+            f"({fused}) — if this run predates a VER-13 fusion change, re-judge it with "
+            "tools/judge_recorded_run.py rather than mixing rules in one VER-6 number"
         )
     return success
 
