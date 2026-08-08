@@ -18,7 +18,11 @@ reports three independent facts:
 The frames where the first two are BOTH true are option 3's candidates;
 their scores say whether a usable operating point exists there.
 
-CON-8: JSON to stdout, progress to stderr.
+CON-8: JSON to stdout, progress to stderr, **exit 0 iff ok** — and `ok`
+is the question this tool asks: does at least one wrist frame see the tray
+with the med delivered AND score at or above the identity threshold? A
+non-zero exit carrying an `error` key is a tool failure; a non-zero exit
+without one is the honest answer "no such frame exists".
 Usage: uv run python tools/wrist_release_probe.py --run runs/<id>
 """
 
@@ -60,119 +64,127 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
-    sys.path.insert(0, str(REPO_ROOT / "src"))
-    from aisle.nodes.budget_guard import fk_flange
-    from aisle.scenes.pharmacy import MED_NAMES, load_meds, load_physics
-    from aisle.verifier.models import detect_meds, load_pinned
-    from aisle.verifier.oracle import build_judge_cfg, load_thresholds
-    from aisle.verifier.stages import (
-        crop_to_roi,
-        detections_in_roi,
-        med_box_area_limit,
-        shift_detections,
-        tray_roi_pixels,
-    )
-
-    traces = args.run / "traces"
-    calibration = json.loads(
-        next(r["text"] for r in _rows(traces, "dora-genesis__bridge_info") if r["text"])
-    )["calibration"]
-    goals = [
-        json.loads(r["text"]) for r in _rows(traces, "rollout-client__episode_goal") if r["text"]
-    ]
-    ends = [r["sim_time_ns"] for r in _rows(traces, "verifier-oracle__episode_result") if r["text"]]
-    joints = [
-        (r["sim_time_ns"], np.asarray(r["data"], dtype=float))
-        for r in _rows(traces, "dora-genesis__joint_state")
-        if r["data"]
-    ]
-    oracle = [
-        (r["sim_time_ns"], np.asarray(r["data"], dtype=float))
-        for r in _rows(traces, "dora-genesis__oracle_state")
-        if r["data"]
-    ]
-
-    meds, physics = load_meds(), load_physics()
-    thresholds = load_thresholds()["realistic"]
-    cfg = build_judge_cfg(
-        physics,
-        meds,
-        "franka",
-        timeout_s=60.0,
-        initial_positions=[(0.0, 0.0, 0.0)] * len(meds),
-        robot_home_error_rad=0.0,
-    )
-    med_sizes = {name: spec["size"] for name, spec in meds.items()}
-    pair = load_pinned("identity")
-    wrist_dir = traces / "frames" / "wrist"
-    stamps = sorted(int(p.stem) for p in wrist_dir.glob("*.npz"))
-
-    def ee_at(ns: int):
-        earlier = [q for s, q in joints if s <= ns]
-        if not earlier:
-            return None
-        pos, rot = fk_flange(earlier[-1][:7])
-        return (pos, _mat_to_quat_xyzw(rot))
-
-    def delivered_at(ns: int, target: str) -> bool:
-        earlier = [state for s, state in oracle if s <= ns]
-        if not earlier:
-            return False
-        idx = MED_NAMES.index(target)
-        pos = earlier[-1][idx * 7 : idx * 7 + 3]
-        return bool(
-            all(cfg.tray_min[i] <= pos[i] <= cfg.tray_max[i] for i in range(2))
-            and pos[2] <= cfg.tray_max[2] + 0.12
+    try:
+        sys.path.insert(0, str(REPO_ROOT / "src"))
+        from aisle.nodes.budget_guard import fk_flange
+        from aisle.scenes.pharmacy import MED_NAMES, load_meds, load_physics
+        from aisle.verifier.models import detect_meds, load_pinned
+        from aisle.verifier.oracle import build_judge_cfg, load_thresholds
+        from aisle.verifier.stages import (
+            crop_to_roi,
+            detections_in_roi,
+            med_box_area_limit,
+            shift_detections,
+            tray_roi_pixels,
         )
 
-    rows_out = []
-    low = 0
-    for goal, high in zip(goals, ends, strict=True):
-        target = goal["target_med"]
-        for ns in [s for s in stamps if low < s <= high]:
-            ee = ee_at(ns)
-            in_view, score = False, None
-            if ee is not None:
-                roi = tray_roi_pixels(cfg.tray_min, cfg.tray_max, calibration, "wrist", ee)
-                window = None
-                if roi is not None:
-                    with np.load(wrist_dir / f"{ns:020d}.npz") as data:
-                        window = crop_to_roi(data["rgb"], roi)
-                if window is not None:
-                    in_view = True
-                    limit = med_box_area_limit(
-                        cfg.tray_min,
-                        cfg.tray_max,
-                        med_sizes,
-                        calibration,
-                        thresholds["identity_max_box_area_slack"],
-                        "wrist",
-                        ee,
-                    )
-                    scores = detections_in_roi(
-                        shift_detections(detect_meds(window[0], MED_NAMES, pair), window[1]),
-                        roi,
-                        0.0,
-                        limit,
-                    )
-                    score = round(float(scores.get(target, 0.0)), 4)
-            rows_out.append(
-                {
-                    "sim_time_ns": ns,
-                    "target": target,
-                    "tray_in_view": in_view,
-                    "delivered": delivered_at(ns, target),
-                    "target_score": score,
-                }
+        traces = args.run / "traces"
+        calibration = json.loads(
+            next(r["text"] for r in _rows(traces, "dora-genesis__bridge_info") if r["text"])
+        )["calibration"]
+        goals = [
+            json.loads(r["text"])
+            for r in _rows(traces, "rollout-client__episode_goal")
+            if r["text"]
+        ]
+        ends = [
+            r["sim_time_ns"] for r in _rows(traces, "verifier-oracle__episode_result") if r["text"]
+        ]
+        joints = [
+            (r["sim_time_ns"], np.asarray(r["data"], dtype=float))
+            for r in _rows(traces, "dora-genesis__joint_state")
+            if r["data"]
+        ]
+        oracle = [
+            (r["sim_time_ns"], np.asarray(r["data"], dtype=float))
+            for r in _rows(traces, "dora-genesis__oracle_state")
+            if r["data"]
+        ]
+
+        meds, physics = load_meds(), load_physics()
+        thresholds = load_thresholds()["realistic"]
+        cfg = build_judge_cfg(
+            physics,
+            meds,
+            "franka",
+            timeout_s=60.0,
+            initial_positions=[(0.0, 0.0, 0.0)] * len(meds),
+            robot_home_error_rad=0.0,
+        )
+        med_sizes = {name: spec["size"] for name, spec in meds.items()}
+        pair = load_pinned("identity")
+        wrist_dir = traces / "frames" / "wrist"
+        stamps = sorted(int(p.stem) for p in wrist_dir.glob("*.npz"))
+
+        def ee_at(ns: int):
+            earlier = [q for s, q in joints if s <= ns]
+            if not earlier:
+                return None
+            pos, rot = fk_flange(earlier[-1][:7])
+            return (pos, _mat_to_quat_xyzw(rot))
+
+        def delivered_at(ns: int, target: str) -> bool:
+            earlier = [state for s, state in oracle if s <= ns]
+            if not earlier:
+                return False
+            idx = MED_NAMES.index(target)
+            pos = earlier[-1][idx * 7 : idx * 7 + 3]
+            return bool(
+                all(cfg.tray_min[i] <= pos[i] <= cfg.tray_max[i] for i in range(2))
+                and pos[2] <= cfg.tray_max[2] + 0.12
             )
-        low = high
+
+        rows_out = []
+        low = 0
+        for goal, high in zip(goals, ends, strict=True):
+            target = goal["target_med"]
+            for ns in [s for s in stamps if low < s <= high]:
+                ee = ee_at(ns)
+                in_view, score = False, None
+                if ee is not None:
+                    roi = tray_roi_pixels(cfg.tray_min, cfg.tray_max, calibration, "wrist", ee)
+                    window = None
+                    if roi is not None:
+                        with np.load(wrist_dir / f"{ns:020d}.npz") as data:
+                            window = crop_to_roi(data["rgb"], roi)
+                    if window is not None:
+                        in_view = True
+                        limit = med_box_area_limit(
+                            cfg.tray_min,
+                            cfg.tray_max,
+                            med_sizes,
+                            calibration,
+                            thresholds["identity_max_box_area_slack"],
+                            "wrist",
+                            ee,
+                        )
+                        scores = detections_in_roi(
+                            shift_detections(detect_meds(window[0], MED_NAMES, pair), window[1]),
+                            roi,
+                            0.0,
+                            limit,
+                        )
+                        score = round(float(scores.get(target, 0.0)), 4)
+                rows_out.append(
+                    {
+                        "sim_time_ns": ns,
+                        "target": target,
+                        "tray_in_view": in_view,
+                        "delivered": delivered_at(ns, target),
+                        "target_score": score,
+                    }
+                )
+            low = high
+    except Exception as exc:  # noqa: BLE001 — CON-8: report, never traceback
+        print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}))
+        return 1
 
     candidates = [r for r in rows_out if r["tray_in_view"] and r["delivered"]]
     passing = [
         r for r in candidates if (r["target_score"] or 0.0) >= thresholds["identity_min_score"]
     ]
     report = {
-        "ok": True,
+        "ok": bool(passing),
         "wrist_frames": len(rows_out),
         "tray_in_view": sum(1 for r in rows_out if r["tray_in_view"]),
         "delivered": sum(1 for r in rows_out if r["delivered"]),
@@ -190,7 +202,14 @@ def main() -> int:
             file=sys.stderr,
         )
     print(json.dumps(report))
-    return 0
+    if not report["ok"]:
+        print(
+            f"no wrist frame both sees the tray and scores >= {report['threshold']} "
+            f"({len(candidates)} in-view-and-delivered frames, best "
+            f"{report['best_candidate_score']})",
+            file=sys.stderr,
+        )
+    return 0 if report["ok"] else 1
 
 
 if __name__ == "__main__":
