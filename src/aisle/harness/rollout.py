@@ -387,8 +387,16 @@ def realistic_verifier_node(root: Path, run_dir: Path, doc: dict, timeout_s: flo
     return {
         "id": "verifier-realistic",
         "path": str((root / "src" / "aisle" / "nodes" / "verifier_realistic.py").resolve()),
+        # joint_state is STATE, not a command stream: latest-wins, the same
+        # reasoning graphs/expert_t0.yaml gives for the executor. With a deep
+        # queue the node reads STALE poses after falling behind during a
+        # judge, and a wrist ROI composed from one describes a different arm
+        # than the pixels show (VER-8).
         "inputs": {
-            topic: {"source": producers[topic], "queue_size": 100}
+            topic: {
+                "source": producers[topic],
+                "queue_size": 1 if topic == "joint_state" else 100,
+            }
             for topic in wanted
             if topic in producers
         },
@@ -444,7 +452,17 @@ def instrumented_graph(
         }
     )
     if verifier == "both":
-        doc["nodes"].append(realistic_verifier_node(root, run_dir, doc, episode_timeout_s))
+        realistic = realistic_verifier_node(root, run_dir, doc, episode_timeout_s)
+        doc["nodes"].append(realistic)
+        # the recorder's inputs were computed BEFORE this node existed, so its
+        # verdicts were absent from every trace — add them explicitly rather
+        # than leaving the node's own output the one unrecorded endpoint
+        recorder = next(n for n in doc["nodes"] if n["id"] == "trace-recorder")
+        for topic in realistic["outputs"]:
+            recorder["inputs"][f"{realistic['id']}__{topic}"] = {
+                "source": f"{realistic['id']}/{topic}",
+                "queue_size": 100,
+            }
     out_path = run_dir / name
     out_path.write_text(yaml.safe_dump(doc, sort_keys=False))
     return out_path
