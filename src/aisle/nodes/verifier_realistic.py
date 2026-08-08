@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import json
 import os
+import signal
+import sys
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -203,35 +205,64 @@ def main() -> None:  # pragma: no cover — dora runtime
             )
         )
 
-    for event in node:
-        if event["type"] != "INPUT":
-            continue
-        topic, metadata = event["id"], (event.get("metadata") or {})
-        sim_time_ns = int(metadata.get("sim_time_ns", 0))
-        if topic == "bridge_info":
-            published = json.loads(event["value"][0].as_py())["calibration"]
-        elif topic == "episode_goal":
-            goal = json.loads(event["value"][0].as_py())
-            schedule = CaptureSchedule(period_ns)
-            schedule.start(sim_time_ns)
-            episode = EpisodeBuffer(
-                goal_id=goal.get("goal_id", f"ep-{sim_time_ns}"),
-                target_med=goal["target_med"],
-                start_ns=sim_time_ns,
-                timeout_ns=timeout_ns,
-                schedule=schedule,
-            )
-        elif topic == "joint_state" and episode is not None:
-            episode.observe_joints(
-                sim_time_ns, np.asarray(event["value"].to_numpy(zero_copy_only=False))
-            )
-        elif topic in CAMERA_STREAMS and episode is not None:
-            frame = decode_frame(metadata, event["value"])
-            if frame is not None:
-                episode.observe_frame(topic, sim_time_ns, frame)
-            if episode.expired(sim_time_ns):
-                finish(episode, sim_time_ns, "timeout")
-                episode = None
+    # judging the LAST episode takes seconds, and the runner tears the
+    # dataflow down as soon as the client exits -- without this the final
+    # episode loses the race and every run silently drops one record from
+    # its VER-6 comparison (observed: 2 records for 3 episodes)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    last_sim_time_ns = 0
+    try:
+        for event in node:
+            if event["type"] != "INPUT":
+                continue
+            topic, metadata = event["id"], (event.get("metadata") or {})
+            sim_time_ns = int(metadata.get("sim_time_ns", 0)) or last_sim_time_ns
+            last_sim_time_ns = max(last_sim_time_ns, sim_time_ns)
+            if topic == "bridge_info":
+                published = json.loads(event["value"][0].as_py())["calibration"]
+            elif topic == "episode_goal":
+                # the arrival of the NEXT goal is this node's episode-end
+                # signal. It cannot wait for the oracle's episode_result (A7
+                # holds the oracle out), and its own sim-time budget never
+                # fires on an episode the robot finishes early -- which is
+                # every successful one, so the first live run judged NOTHING.
+                if episode is not None:
+                    finish(episode, sim_time_ns, "never_delivered")
+                    episode = None
+                # goal_id rides the METADATA, not the payload (TC-7's goal
+                # pattern, set by the rollout client as ep-NNNN). Reading it
+                # from the payload silently produced ids like
+                # "ep-21370000000", and VER-6 correlates realistic records to
+                # oracle episodes BY goal_id -- so a wrong one makes the
+                # comparison quietly EMPTY rather than obviously wrong.
+                goal_id = metadata.get("goal_id")
+                if not goal_id:
+                    print("episode_goal without goal_id: cannot correlate (TC-7)", file=sys.stderr)
+                    continue
+                goal = json.loads(event["value"][0].as_py())
+                schedule = CaptureSchedule(period_ns)
+                schedule.start(sim_time_ns)
+                episode = EpisodeBuffer(
+                    goal_id=goal_id,
+                    target_med=goal["target_med"],
+                    start_ns=sim_time_ns,
+                    timeout_ns=timeout_ns,
+                    schedule=schedule,
+                )
+            elif topic == "joint_state" and episode is not None:
+                episode.observe_joints(
+                    sim_time_ns, np.asarray(event["value"].to_numpy(zero_copy_only=False))
+                )
+            elif topic in CAMERA_STREAMS and episode is not None:
+                frame = decode_frame(metadata, event["value"])
+                if frame is not None:
+                    episode.observe_frame(topic, sim_time_ns, frame)
+                if episode.expired(sim_time_ns):
+                    finish(episode, sim_time_ns, "timeout")
+                    episode = None
+    finally:
+        if episode is not None:
+            finish(episode, last_sim_time_ns, "never_delivered")
 
 
 if __name__ == "__main__":  # pragma: no cover

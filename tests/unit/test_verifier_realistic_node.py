@@ -138,3 +138,51 @@ def test_result_uses_the_oracle_schema_with_a_realistic_tag():
         "verifier": "realistic",
     }
     assert bad["status"] == "fail" and bad["failure"] == "timeout"
+
+
+def test_sidecar_node_never_subscribes_to_oracle_state(tmp_path):
+    """A7's premise is that the realistic verdict never saw privileged
+    state. The node is injected into the rollout's INSTRUMENTED graph, which
+    VAL-6's oracle-isolation check does not police (ADR-11 clause 1), so
+    nothing structural stops a future edit from wiring `oracle_state` in.
+    This is that guard."""
+    import yaml
+
+    from aisle.harness.rollout import instrumented_graph
+
+    root = __import__("pathlib").Path(__file__).resolve().parents[2]
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    out = instrumented_graph(
+        root / "graphs" / "expert_t0.yaml", root, run_dir, verifier="both", episode_timeout_s=60.0
+    )
+    node = next(
+        n for n in yaml.safe_load(out.read_text())["nodes"] if n["id"] == "verifier-realistic"
+    )
+
+    assert "oracle_state" not in node["inputs"]
+    assert not any("oracle" in src["source"] for src in node["inputs"].values())
+    # and it must actually receive what it needs to judge
+    assert {"bridge_info", "episode_goal", "joint_state", "rgb_overhead", "depth_overhead"} <= set(
+        node["inputs"]
+    )
+
+
+def test_sidecar_node_is_absent_unless_asked_for():
+    """`--verifier oracle` is the default and must produce the graph it
+    always produced — the judge costs seconds per episode."""
+    import yaml
+
+    from aisle.harness.rollout import instrumented_graph
+
+    root = __import__("pathlib").Path(__file__).resolve().parents[2]
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        run_dir = __import__("pathlib").Path(d) / "run"
+        run_dir.mkdir()
+        out = instrumented_graph(root / "graphs" / "expert_t0.yaml", root, run_dir)
+        ids = [n["id"] for n in yaml.safe_load(out.read_text())["nodes"]]
+
+    assert "verifier-realistic" not in ids
+    assert "trace-recorder" in ids
