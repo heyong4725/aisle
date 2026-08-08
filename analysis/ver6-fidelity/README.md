@@ -7,19 +7,35 @@ REALISTIC verifier (VER-5, pixels only) on identical episodes.
 
 ## Result
 
-Run `fidelity-I9` — `graphs/expert_t0.yaml`, tier T0, 5 episodes, seeds 3..7,
-DR off, recorded with `AISLE_FRAME_CAPTURE_PERIOD_S=5` (VER-9's checkpoint
-cadence), judged offline by `tools/judge_recorded_run.py`, compared by
-`harness/fidelity.py`.
+**Headline, over 31 episodes:**
+
+| metric | value |
+|---|---|
+| **agreement** | **0.29** |
+| **false SUCCESS rate** | **0.00** (0 of 6) |
+| **false FAIL rate** | **0.88** (22 of 25) |
+
+`graphs/expert_t0.yaml`, tier T0, DR off, recorded with
+`AISLE_FRAME_CAPTURE_PERIOD_S=5` (VER-9's checkpoint cadence), judged offline
+by `tools/judge_recorded_run.py`, compared by `harness/fidelity.py`. Positives
+are 25 oracle successes (seeds 3..7 and 10..29); negatives are 6 induced
+failures (below).
+
+### The first 5-episode subset, kept because the attribution below is read off it
+
+Run `fidelity-I9` — seeds 3..7:
 
 | metric | value |
 |---|---|
 | episodes | 5 |
 | oracle success | 5 |
 | realistic success | 2 |
-| **agreement** | **0.40** |
-| false SUCCESS rate | n/a — no oracle failures in this run |
-| **false FAIL rate** | **0.60** |
+| agreement (this subset only) | 0.40 |
+| false FAIL rate (this subset only) | 0.60 |
+
+**This subset is not representative** — seeds 10..29 scored 1/20. It is
+retained only because the per-stage discussion below traces specific
+episodes. Quote the 31-episode figures above, not these.
 
 **Every disagreement is a false FAIL.** The realistic verifier never claimed
 success where the oracle said failure — conservative, which is the direction
