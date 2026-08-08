@@ -39,8 +39,10 @@ MUST honor it byte-for-byte.
 | `episode_result` | out (verifier) | JSON utf8 | per episode | see §3 |
 
 - TC-5: The bridge MUST publish `joint_state` and accept `joint_cmd` for BOTH
-  embodiment profiles (`franka` n_dof=7+2, `so101` n_dof=6+1) with identical
-  semantics; `names` metadata disambiguates.
+  embodiment profiles (`franka` n_dof=7+2, `so101` n_dof=5+1) with identical
+  semantics; `names` metadata disambiguates. The SO-101 arm-joint order MUST
+  match the official follower model: `shoulder_pan`, `shoulder_lift`,
+  `elbow_flex`, `wrist_flex`, `wrist_roll`, followed by `gripper` (ADR-27).
 
 ## 3. Services and actions (dora patterns)
 
