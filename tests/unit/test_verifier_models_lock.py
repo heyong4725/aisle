@@ -90,3 +90,39 @@ def test_unsupported_lock_version_refuses(tmp_path):
     path.write_text(json.dumps({"lock_version": 99, "models": {}}))
     with pytest.raises(ModelPinError, match="unsupported"):
         load_lock(path)
+
+
+def test_color_words_are_derived_from_catalogue_rgb():
+    """VER-9 query vocabulary (measured 2026-08-07): a med is only ~21x19
+    px in the overhead frame, so printed labels would render ~2 px tall
+    and no detector can read them — but colour IS visible at that size.
+    The word comes from the med's own catalogue RGB, so the verifier
+    needs no scene-file changes."""
+    from aisle.verifier.models import color_word, med_queries
+
+    assert color_word([0.85, 0.20, 0.20]) == "red"  # amoxicillin
+    assert color_word([0.20, 0.55, 0.85]) == "blue"  # cetirizine
+    assert color_word([0.55, 0.30, 0.70]) == "purple"  # omeprazole
+    assert color_word([0.25, 0.70, 0.35]) == "green"  # metformin
+    assert color_word([0.95, 0.60, 0.10]) == "orange"  # ibuprofen
+    assert color_word((0.9, 0.9, 0.9, 1.0)) == "white"  # alpha ignored
+
+    colors = {"omeprazole": [0.55, 0.30, 0.70], "metformin": [0.25, 0.70, 0.35]}
+    assert med_queries(["omeprazole", "metformin"], colors) == ["a purple box", "a green box"]
+
+
+def test_identity_threshold_sits_between_the_measured_noise_and_signal():
+    """The threshold is calibrated, not guessed: measured on the golden
+    frames, a present target scores 0.1331 while in-ROI non-target noise
+    peaks at 0.0199 (absent target: 0.0001). The operating point must
+    separate those with margin on both sides."""
+    import tomllib
+    from pathlib import Path
+
+    thresholds = tomllib.loads(
+        (Path(__file__).resolve().parents[2] / "src/aisle/verifier/thresholds.toml").read_text()
+    )
+    threshold = thresholds["realistic"]["identity_min_score"]
+    assert 0.0199 < threshold < 0.1331, "threshold does not separate measured noise from signal"
+    assert threshold >= 2 * 0.0199, "less than 2x margin above the measured noise ceiling"
+    assert thresholds["realistic"]["grounding_min_score"] <= threshold

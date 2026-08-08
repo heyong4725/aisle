@@ -267,3 +267,147 @@ def test_resting_height_is_robust_to_silhouette_outliers():
     assert (
         containment_vote(airborne, TRAY_MIN, TRAY_MAX, 0.005, 0.01, height, RANK).status == "fail"
     )
+
+
+def test_crop_to_roi_returns_the_window_and_its_offset():
+    """VER-9 detects on the tray window, not the whole frame. The offset
+    is what lets `detections_in_roi` keep judging in ONE coordinate
+    system (full-frame pixels)."""
+    from aisle.verifier.stages import crop_to_roi
+
+    image = np.arange(480 * 640 * 3, dtype=np.uint8).reshape(480, 640, 3)
+    window, offset = crop_to_roi(image, (100.4, 200.6, 160.2, 280.9), pad_px=10)
+
+    assert offset == (90.0, 190.0)
+    assert window.shape == (291 - 190, 171 - 90, 3)
+    assert np.array_equal(window, image[190:291, 90:171])
+
+
+def test_crop_to_roi_clamps_to_the_image_and_refuses_no_overlap():
+    """A tray partly outside the frame still yields the visible part; a
+    tray entirely outside yields None, so the caller can record "not
+    judgeable" rather than detect on an empty array."""
+    from aisle.verifier.stages import crop_to_roi
+
+    image = np.zeros((60, 80, 3), dtype=np.uint8)
+    window, offset = crop_to_roi(image, (-30.0, -30.0, 20.0, 20.0), pad_px=5)
+    assert offset == (0.0, 0.0)
+    assert window.shape == (25, 25, 3)
+
+    assert crop_to_roi(image, (200.0, 200.0, 260.0, 260.0), pad_px=5) is None
+
+
+def test_shift_detections_maps_crop_boxes_back_to_full_frame():
+    """The ROI test compares box CENTRES against full-frame ROI bounds —
+    an unshifted crop box would be judged against the wrong region."""
+    from aisle.verifier.stages import detections_in_roi, shift_detections
+
+    cropped = [{"label": "ibuprofen", "score": 0.15, "box": [10.0, 12.0, 30.0, 34.0]}]
+    shifted = shift_detections(cropped, (170.0, 369.0))
+
+    assert shifted[0]["box"] == [180.0, 381.0, 200.0, 403.0]
+    assert cropped[0]["box"] == [10.0, 12.0, 30.0, 34.0]  # inputs untouched
+    assert detections_in_roi(shifted, (182.0, 381.0, 274.0, 509.0), 0.05) == {"ibuprofen": 0.15}
+
+
+def test_med_box_area_limit_projects_the_largest_footprint():
+    """VER-9: the gate is the largest med footprint PROJECTED at the tray
+    rim, not a fraction of anything — and it is the LARGEST med, so a
+    legitimate big box is never gated out."""
+    from aisle.verifier.stages import med_box_area_limit, project_to_pixels
+
+    sizes = {"small": [0.03, 0.02, 0.05], "metformin": [0.07, 0.035, 0.095]}
+    limit = med_box_area_limit(TRAY_MIN, TRAY_MAX, sizes, CALIB, 3.0)
+
+    cx, cy = (TRAY_MIN[0] + TRAY_MAX[0]) / 2, (TRAY_MIN[1] + TRAY_MAX[1]) / 2
+    corners = np.array(
+        [[cx + sx * 0.035, cy + sy * 0.0175, TRAY_MAX[2]] for sx in (-1, 1) for sy in (-1, 1)]
+    )
+    uv = project_to_pixels(corners, CALIB)
+    expected = 3.0 * np.ptp(uv[:, 0]) * np.ptp(uv[:, 1])
+    assert limit == pytest.approx(expected)
+    assert med_box_area_limit(
+        TRAY_MIN, TRAY_MAX, {"metformin": sizes["metformin"]}, CALIB, 3.0
+    ) == (pytest.approx(limit))
+
+
+def test_size_gate_rejects_a_tray_sized_detection_and_keeps_a_med():
+    """The measured failure mode (PR #104 review, finding 1): the model
+    labels the WHOLE TRAY with a med class. On identity-calib-I2 the
+    genuine ibuprofen box covered 0.077 of the tray ROI at score 0.1182
+    while a 'cetirizine' artifact covered 0.774 at 0.0474 — with the gate
+    only the real box survives, so the wrong-object latch cannot fire on
+    a correct delivery."""
+    from aisle.verifier.stages import detections_in_roi, med_box_area_limit
+
+    roi = tray_roi_pixels(TRAY_MIN, TRAY_MAX, CALIB)
+    limit = med_box_area_limit(TRAY_MIN, TRAY_MAX, {"m": [0.07, 0.035, 0.095]}, CALIB, 3.0)
+    cu, cv = (roi[0] + roi[2]) / 2, (roi[1] + roi[3]) / 2
+    med_box = [cu - 11.0, cv - 20.0, cu + 11.0, cv + 20.0]  # ~23x40 px, a real box
+    tray_box = [roi[0] + 1, roi[1] + 1, roi[2] - 1, roi[3] - 1]  # the tray itself
+    detections = [
+        {"label": "ibuprofen", "score": 0.1182, "box": med_box},
+        {"label": "cetirizine", "score": 0.0474, "box": tray_box},
+    ]
+
+    # judged at 0.04, BELOW the artifact's score, so the gate alone decides
+    assert detections_in_roi(detections, roi, 0.04, limit) == {"ibuprofen": 0.1182}
+    # ungated, the artifact is indistinguishable from a real wrong object
+    assert set(detections_in_roi(detections, roi, 0.04)) == {"ibuprofen", "cetirizine"}
+
+
+def test_size_gate_keeps_a_genuine_second_med_so_the_latch_still_fires():
+    """The gate bounds size UPWARD only — VER-3's safety asymmetry must
+    survive it. A real non-target box in the tray is med-sized, so it
+    still sets `non_target_in_tray`."""
+    from aisle.verifier.stages import identity_frame, med_box_area_limit
+
+    roi = tray_roi_pixels(TRAY_MIN, TRAY_MAX, CALIB)
+    limit = med_box_area_limit(TRAY_MIN, TRAY_MAX, {"m": [0.07, 0.035, 0.095]}, CALIB, 3.0)
+    cu, cv = (roi[0] + roi[2]) / 2, (roi[1] + roi[3]) / 2
+    frame = identity_frame(
+        [
+            {"label": "omeprazole", "score": 0.20, "box": [cu - 20, cv - 12, cu - 2, cv + 12]},
+            {"label": "metformin", "score": 0.14, "box": [cu + 2, cv - 12, cu + 20, cv + 12]},
+        ],
+        "omeprazole",
+        roi,
+        0.05,
+        42,
+        limit,
+    )
+
+    assert frame["target_in_tray"] and frame["non_target_in_tray"]
+
+
+def test_tray_roi_refuses_when_the_tray_is_behind_the_camera():
+    """A point behind the image plane has NO pixel. Projecting it anyway
+    produced coordinates around 1e10, which `crop_to_roi` then clamped to
+    the whole frame — so a camera pointing AWAY from the tray reported the
+    tray as visible and identity ran on the entire image (found while
+    measuring #107). Not judgeable is None, which is not an empty tray.
+
+    Since #110 the wrist mount aims the camera along the EE link's +Z
+    approach axis, so `cam_to_ee` in the OpenCV convention is identity: an
+    EE with identity orientation looks along world +Z."""
+    from aisle.verifier.calibration import build_calibration_v1
+    from aisle.verifier.stages import tray_roi_pixels
+
+    calibration = build_calibration_v1(
+        [0.55, 0.0, 1.20],
+        [0.55, 0.0, 0.20],
+        (640, 480),
+        55.0,
+        [0.0, 0.0, 0.05],
+        (320, 240),
+        70.0,
+        WRIST_MOUNT,
+    )
+    # looking UP from above the tray puts it behind the image plane
+    above = ((0.55, -0.05, 0.90), (0.0, 0.0, 0.0, 1.0))
+    assert tray_roi_pixels(TRAY_MIN, TRAY_MAX, calibration, "wrist", above) is None
+
+    # looking UP from below it, the tray is in front and projects finitely
+    below = ((0.55, -0.05, -0.40), (0.0, 0.0, 0.0, 1.0))
+    roi = tray_roi_pixels(TRAY_MIN, TRAY_MAX, calibration, "wrist", below)
+    assert roi is not None and all(abs(v) < 1e5 for v in roi)

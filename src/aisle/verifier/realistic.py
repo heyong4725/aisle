@@ -266,9 +266,12 @@ def judge_frames(
     from aisle.verifier.stages import (
         backproject_overhead,
         containment_vote,
+        crop_to_roi,
         dominant_surface,
         home_vote,
         identity_frame,
+        med_box_area_limit,
+        shift_detections,
         tray_roi_pixels,
         upright_vote,
     )
@@ -337,13 +340,33 @@ def judge_frames(
                     if camera == "wrist" and ee is None:
                         continue  # VER-8: no EE pose, no trustworthy wrist ROI
                     roi = tray_roi_pixels(tray_min, tray_max, calibration, camera, ee)
-                    detections = detect_meds(frames[camera][stamp]["rgb"], med_names, identity_pair)
+                    if roi is None:
+                        continue  # the tray is not in front of this camera
+                    window = crop_to_roi(frames[camera][stamp]["rgb"], roi)
+                    if window is None:
+                        continue  # the tray projects outside this frame
+                    detections = shift_detections(
+                        detect_meds(window[0], med_names, identity_pair), window[1]
+                    )
                     if camera == "overhead" and stamp == available[-1]:
                         terminal_detections = detections
                     judge.observe(
                         camera,
                         identity_frame(
-                            detections, target_med, roi, realistic_cfg["identity_min_score"], stamp
+                            detections,
+                            target_med,
+                            roi,
+                            realistic_cfg["identity_min_score"],
+                            stamp,
+                            med_box_area_limit(
+                                tray_min,
+                                tray_max,
+                                med_sizes,
+                                calibration,
+                                realistic_cfg["identity_max_box_area_slack"],
+                                camera,
+                                ee,
+                            ),
                         ),
                     )
             except Exception as exc:  # noqa: BLE001 — VER-13, this camera only

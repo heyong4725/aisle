@@ -49,23 +49,22 @@ def backproject_overhead(
     return cam_points @ rotation.T + np.asarray(cam["cam_to_base"]["pos"], dtype=np.float64)
 
 
-def project_to_pixels(
+# a point at or behind the image plane has no pixel: projecting it anyway
+# produces a huge finite coordinate, which downstream code cannot tell from
+# a legitimate one (PR #104 review round 2 follow-up — the wrist ROI came
+# back at ~1e10 px and crop_to_roi then clamped it to the WHOLE frame)
+MIN_CAMERA_DEPTH_M = 1e-3
+
+
+def camera_frame_points(
     points_base: np.ndarray,
     calibration: dict,
     camera: str = "overhead",
     ee_to_base: tuple | None = None,
 ) -> np.ndarray:
-    """BASE-frame points -> (u, v) pixels (VER-9 tray ROI).
-
-    The overhead camera has a static `cam_to_base`. The WRIST camera does
-    NOT (it rides the EE): its calibration is the static `cam_to_ee`
-    mount, and the camera->base pose must be composed with the EE pose at
-    the matching joint_state stamp — `ee_to_base=(pos, quat_xyzw)` from
-    FK (VER-8). Treating the mount as a camera->base pose put every wrist
-    ROI in the wrong frame (PR #103 review), so wrist projection now
-    REQUIRES the EE pose rather than silently guessing."""
+    """BASE-frame points expressed in the CAMERA frame (VER-8). Column 2
+    is depth along the optical axis: positive is in front of the camera."""
     cam = calibration[camera]
-    k = cam["intrinsics"]
     if camera == "overhead":
         pose_pos = np.asarray(cam["cam_to_base"]["pos"], dtype=np.float64)
         rotation = rotation_from_quat_xyzw(cam["cam_to_base"]["quat_xyzw"])
@@ -82,7 +81,26 @@ def project_to_pixels(
         rotation = ee_rot @ mount_rot
         pose_pos = ee_pos + ee_rot @ mount_pos
     rel = np.asarray(points_base, dtype=np.float64).reshape(-1, 3) - pose_pos
-    cam_points = rel @ rotation  # world -> camera (R^T applied on the right)
+    return rel @ rotation  # world -> camera (R^T applied on the right)
+
+
+def project_to_pixels(
+    points_base: np.ndarray,
+    calibration: dict,
+    camera: str = "overhead",
+    ee_to_base: tuple | None = None,
+) -> np.ndarray:
+    """BASE-frame points -> (u, v) pixels (VER-9 tray ROI).
+
+    The overhead camera has a static `cam_to_base`. The WRIST camera does
+    NOT (it rides the EE): its calibration is the static `cam_to_ee`
+    mount, and the camera->base pose must be composed with the EE pose at
+    the matching joint_state stamp — `ee_to_base=(pos, quat_xyzw)` from
+    FK (VER-8). Treating the mount as a camera->base pose put every wrist
+    ROI in the wrong frame (PR #103 review), so wrist projection now
+    REQUIRES the EE pose rather than silently guessing."""
+    k = calibration[camera]["intrinsics"]
+    cam_points = camera_frame_points(points_base, calibration, camera, ee_to_base)
     z = np.clip(cam_points[:, 2], 1e-9, None)
     u = cam_points[:, 0] / z * k["fx"] + k["cx"]
     v = cam_points[:, 1] / z * k["fy"] + k["cy"]
@@ -93,11 +111,18 @@ def tray_roi_pixels(
     tray_min, tray_max, calibration: dict, camera: str = "overhead", ee_to_base: tuple | None = None
 ) -> tuple:
     """Axis-aligned pixel bounds of the tray footprint (VER-9's "inside
-    the tray region"). Projects the tray's top-rim corners and takes
-    their bounding box."""
+    the tray region"), or None when the tray is not wholly IN FRONT of
+    the camera. Projects the tray's top-rim corners and takes their
+    bounding box."""
     x0, y0, z0 = tray_min
     x1, y1, z1 = tray_max
     corners = np.array([[x, y, z1] for x in (x0, x1) for y in (y0, y1)], dtype=np.float64)
+    depths = camera_frame_points(corners, calibration, camera, ee_to_base)[:, 2]
+    if not np.all(depths > MIN_CAMERA_DEPTH_M):
+        # any corner at or behind the image plane makes the bounding box
+        # meaningless — the tray is not judgeable from this camera on this
+        # frame, which is NOT the same as an empty tray (VER-13)
+        return None
     uv = project_to_pixels(corners, calibration, camera, ee_to_base)
     return (
         float(uv[:, 0].min()),
@@ -107,16 +132,122 @@ def tray_roi_pixels(
     )
 
 
-def detections_in_roi(detections: list[dict], roi: tuple, min_score: float) -> dict[str, float]:
+# margin around the tray ROI before detection: a box resting against the
+# rim must be WHOLLY visible to the detector, since a clipped box shifts
+# its own centre and the centre is what decides containment
+ROI_PAD_PX = 12
+
+
+def crop_to_roi(image: np.ndarray, roi: tuple, pad_px: int = ROI_PAD_PX):
+    """The padded ROI window of `image` and the (du, dv) that maps a
+    detection in that window back to full-frame pixels, or None when the
+    ROI does not overlap the image at all.
+
+    VER-9 detects on this window, NOT the whole frame. Measured on the
+    terminal frames of a live two-episode run (capture-smoke-I1, both
+    scored success by the oracle): full-frame detection finds the target
+    in the tray for 1 of 2, cropped detection for 2 of 2 — the orange
+    ibuprofen box is invisible to the detector at full frame and scores
+    0.150 cropped, while the red amoxicillin box goes 0.251 -> 0.460.
+    Upscaling the crop adds nothing (0.183 vs 0.169 on the golden frame),
+    which is what says the limit is the object\'s SHARE of the frame
+    rather than its resolution: the rendered meds are ~21 px in a 640 px
+    frame, and no threshold can separate signal that is not there.
+    """
+    h, w = image.shape[0], image.shape[1]
+    u0 = max(0, int(math.floor(roi[0])) - pad_px)
+    v0 = max(0, int(math.floor(roi[1])) - pad_px)
+    u1 = min(w, int(math.ceil(roi[2])) + pad_px)
+    v1 = min(h, int(math.ceil(roi[3])) + pad_px)
+    if u1 <= u0 or v1 <= v0:
+        return None
+    # CONTIGUOUS: a render can arrive as a negative-stride view, and the
+    # processor refuses those ("at least one stride ... is negative") —
+    # the crop is small, so the copy is cheap insurance
+    return np.ascontiguousarray(image[v0:v1, u0:u1]), (float(u0), float(v0))
+
+
+def shift_detections(detections: list[dict], offset: tuple) -> list[dict]:
+    """Re-express crop-frame detection boxes in FULL-frame pixels, so
+    `detections_in_roi` keeps comparing against one coordinate system."""
+    du, dv = offset
+    return [
+        {
+            **det,
+            "box": [
+                float(det["box"][0]) + du,
+                float(det["box"][1]) + dv,
+                float(det["box"][2]) + du,
+                float(det["box"][3]) + dv,
+            ],
+        }
+        for det in detections
+    ]
+
+
+def med_box_area_limit(
+    tray_min,
+    tray_max,
+    med_sizes: dict,
+    calibration: dict,
+    slack: float,
+    camera: str = "overhead",
+    ee_to_base: tuple | None = None,
+) -> float:
+    """The largest pixel area a single med box may cover (VER-9): the
+    largest med footprint PROJECTED at the tray's rim height, times
+    `slack`.
+
+    The detector's dominant false positive is labelling the WHOLE TRAY
+    with a med class: on the five-class run identity-calib-I2 every
+    genuine med box covered <= 0.105 of the tray ROI while every
+    non-target artifact covered >= 0.284, mostly ~0.77 — the tray itself.
+    `slack` covers the side faces a tall box shows under perspective.
+
+    The limit is projected rather than taken as a FRACTION of the tray
+    ROI's pixel area, because that ROI is a projection of the whole tray
+    even when most of it lies off-image: a partially visible tray then
+    inflated the gate (2491.8 px^2 against a nominal 1531.5) and let the
+    tray-sized artifacts back through — PR #104 review round 2. A
+    projected footprint does not depend on how much of the tray the
+    camera happens to see.
+
+    This bounds size UPWARD only, so a real second med in the tray stays
+    detectable and VER-9's wrong-object latch keeps its teeth."""
+    if not med_sizes:
+        raise ValueError("no med sizes to size the gate from")
+    width, depth = max(
+        ((float(size[0]), float(size[1])) for size in med_sizes.values()),
+        key=lambda wd: wd[0] * wd[1],
+    )
+    cx = (float(tray_min[0]) + float(tray_max[0])) / 2
+    cy = (float(tray_min[1]) + float(tray_max[1])) / 2
+    z = float(tray_max[2])
+    corners = np.array(
+        [[cx + sx * width / 2, cy + sy * depth / 2, z] for sx in (-1, 1) for sy in (-1, 1)],
+        dtype=np.float64,
+    )
+    uv = project_to_pixels(corners, calibration, camera, ee_to_base)
+    area = (uv[:, 0].max() - uv[:, 0].min()) * (uv[:, 1].max() - uv[:, 1].min())
+    return float(slack * area)
+
+
+def detections_in_roi(
+    detections: list[dict], roi: tuple, min_score: float, max_box_area: float | None = None
+) -> dict[str, float]:
     """Per-class max score among detections whose box CENTER falls inside
-    the tray ROI and clears the threshold (VER-9)."""
+    the tray ROI, clears the threshold, and is small enough to BE a med
+    (VER-9). `max_box_area` comes from `med_box_area_limit`; None keeps
+    the pre-gate behaviour for callers that judge without geometry."""
     u0, v0, u1, v1 = roi
     scores: dict[str, float] = {}
     for det in detections:
         if float(det["score"]) < min_score:
             continue
-        cu = (float(det["box"][0]) + float(det["box"][2])) / 2
-        cv = (float(det["box"][1]) + float(det["box"][3])) / 2
+        box = [float(v) for v in det["box"]]
+        if max_box_area is not None and abs((box[2] - box[0]) * (box[3] - box[1])) > max_box_area:
+            continue
+        cu, cv = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
         if u0 <= cu <= u1 and v0 <= cv <= v1:
             label = det["label"]
             scores[label] = max(scores.get(label, 0.0), float(det["score"]))
@@ -129,10 +260,11 @@ def identity_frame(
     roi: tuple,
     min_score: float,
     sim_time_ns: int,
+    max_box_area: float | None = None,
 ) -> dict:
     """One judged frame for the VER-9 timeline (the VER-14 frame shape).
     `detections` are the model's boxes for THIS camera+frame."""
-    scores = detections_in_roi(detections, roi, min_score)
+    scores = detections_in_roi(detections, roi, min_score, max_box_area)
     return {
         "sim_time_ns": int(sim_time_ns),
         "per_class_scores": scores,
