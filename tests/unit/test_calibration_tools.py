@@ -121,3 +121,30 @@ def test_sweep_ok_requires_both_halves_of_the_vote():
     assert sweep.sweep_ok(clean)
     assert not sweep.sweep_ok(miss_only)
     assert not sweep.sweep_ok(latch_only)
+
+
+def test_vote_does_not_round_a_score_up_to_the_threshold():
+    """0.04996 is BELOW a 0.05 threshold. The probe used to store scores
+    rounded to 4 dp and then compare, so a score that fails the gate
+    passed it (PR #104 review round 5). The comparison is on raw floats."""
+    assert not probe.vote_passes({"ibuprofen": 0.04996}, "ibuprofen", 0.05)
+    assert probe.vote_passes({"ibuprofen": 0.05}, "ibuprofen", 0.05)
+
+
+def test_ee_rotation_round_trips_through_a_180_degree_pose():
+    """The probe converts the FK rotation matrix to a quaternion for the
+    wrist ROI. A hand-rolled `w = sqrt(1 + trace) / 2` collapses EVERY
+    180-degree rotation to identity (trace = -1 -> w = 0), and a top-down
+    grasp is close to 180 degrees — so every ROI it produced was computed
+    at the wrong EE orientation. The tool now delegates to the repo's
+    branch-stable conversion; this pins the case that broke."""
+    from aisle.verifier.calibration import quat_xyzw_from_rotation, rotation_from_quat_xyzw
+
+    for rotation in (
+        np.diag([1.0, -1.0, -1.0]),  # 180 about x
+        np.diag([-1.0, 1.0, -1.0]),  # 180 about y
+        np.diag([-1.0, -1.0, 1.0]),  # 180 about z
+    ):
+        quat = quat_xyzw_from_rotation(rotation)
+        assert np.allclose(rotation_from_quat_xyzw(quat), rotation, atol=1e-12)
+        assert not np.allclose(rotation_from_quat_xyzw(quat), np.eye(3))

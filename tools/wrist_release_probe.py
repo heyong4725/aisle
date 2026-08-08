@@ -44,20 +44,6 @@ def _rows(traces: Path, topic: str) -> list[dict]:
         return [row for batch in reader for row in batch.to_pylist()]
 
 
-def _mat_to_quat_xyzw(rotation: np.ndarray) -> np.ndarray:
-    w = np.sqrt(max(0.0, 1.0 + rotation[0, 0] + rotation[1, 1] + rotation[2, 2])) / 2
-    if w < 1e-8:
-        return np.array([0.0, 0.0, 0.0, 1.0])
-    return np.array(
-        [
-            (rotation[2, 1] - rotation[1, 2]) / (4 * w),
-            (rotation[0, 2] - rotation[2, 0]) / (4 * w),
-            (rotation[1, 0] - rotation[0, 1]) / (4 * w),
-            w,
-        ]
-    )
-
-
 def target_delivered(state: np.ndarray, target_idx: int, cfg) -> bool:
     """Is the target RESTING in the tray at this frame?
 
@@ -94,6 +80,7 @@ def main() -> int:
         sys.path.insert(0, str(REPO_ROOT / "src"))
         from aisle.nodes.budget_guard import fk_flange
         from aisle.scenes.pharmacy import MED_NAMES, load_meds, load_physics
+        from aisle.verifier.calibration import quat_xyzw_from_rotation
         from aisle.verifier.models import detect_meds, load_pinned
         from aisle.verifier.oracle import build_judge_cfg, load_thresholds
         from aisle.verifier.stages import (
@@ -147,7 +134,7 @@ def main() -> int:
             if not earlier:
                 return None
             pos, rot = fk_flange(earlier[-1][:7])
-            return (pos, _mat_to_quat_xyzw(rot))
+            return (pos, quat_xyzw_from_rotation(rot))
 
         def delivered_at(ns: int, target: str) -> bool:
             earlier = [state for s, state in oracle if s <= ns]
@@ -185,7 +172,9 @@ def main() -> int:
                             0.0,
                             limit,
                         )
-                        scores = {k: round(float(v), 4) for k, v in scores.items()}
+                        # NO rounding before the threshold: 0.04996 rounded
+                        # to 4 dp passes a 0.05 gate (review round 5)
+                        scores = {k: float(v) for k, v in scores.items()}
                         score = scores.get(target, 0.0)
                 rows_out.append(
                     {
@@ -221,7 +210,9 @@ def main() -> int:
         "candidates_in_view_and_delivered": len(candidates),
         "candidates_passing_ver9_vote": len(passing),
         "candidates_with_wrong_object": sum(1 for r in candidates if r["wrong_object"]),
-        "best_candidate_score": max((r["target_score"] or 0.0 for r in candidates), default=None),
+        "best_candidate_score": (
+            round(max(r["target_score"] or 0.0 for r in candidates), 6) if candidates else None
+        ),
         "threshold": thresholds["identity_min_score"],
     }
     if args.out:
@@ -229,7 +220,7 @@ def main() -> int:
     for r in candidates[:40]:
         print(
             f"  candidate @{r['sim_time_ns'] / 1e9:6.2f}s {r['target']:12s} "
-            f"score={r['target_score']}",
+            f"score={r['target_score']:.6f}",
             file=sys.stderr,
         )
     print(json.dumps(report))
