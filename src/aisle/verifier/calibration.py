@@ -153,12 +153,19 @@ def build_calibration_v1(
     wrist_resolution: tuple[int, int],
     wrist_fov_deg: float,
     overhead_rotation_cv=None,
+    wrist_mount_rotation_gl=None,
 ) -> dict:
     """The v1 block from realized camera state (VER-8 schema). The bridge
     calls this with the BUILT scene's post-jitter overhead position
     (BRG-8); nominals come from the frozen scene config via the same
-    function. The wrist mount rotation is the identity mount expressed in
-    the OpenCV convention (GL->CV of the identity GL mount)."""
+    function.
+
+    `wrist_mount_rotation_gl` is the scene's GL-convention camera->EE
+    mount (SCN-5, `wrist_rotation_xyzw`); `cam_to_ee` is it converted to
+    OpenCV. It is a parameter rather than a constant because the two must
+    move together: the block previously hard-coded the GL->CV of an
+    IDENTITY mount, which faithfully described a camera aimed back up the
+    arm — the projection was right and the scene was wrong (issue #109)."""
     return {
         "calibration_version": CALIBRATION_VERSION,
         "overhead": {
@@ -187,7 +194,14 @@ def build_calibration_v1(
             "intrinsics": intrinsics_v1(wrist_resolution, wrist_fov_deg),
             "cam_to_ee": {
                 "pos": [float(v) for v in wrist_offset_m],
-                "quat_xyzw": quat_xyzw_from_rotation(np.eye(3) @ GL_TO_CV),
+                "quat_xyzw": quat_xyzw_from_rotation(
+                    (
+                        np.eye(3)
+                        if wrist_mount_rotation_gl is None
+                        else np.asarray(wrist_mount_rotation_gl, dtype=np.float64)
+                    )
+                    @ GL_TO_CV
+                ),
             },
         },
     }

@@ -240,7 +240,7 @@ def realized_calibration(handle, physics: dict, is_store: bool) -> dict:
     overhead pose is read back from the camera transform (so DR jitter is
     reflected), converted to the v1/OpenCV conventions by VER-8's own
     module. Store scenes use their own overhead nominals."""
-    from aisle.scenes.pharmacy import to_numpy
+    from aisle.scenes.pharmacy import to_numpy, wrist_mount_rotation
     from aisle.verifier.calibration import GL_TO_CV, build_calibration_v1
 
     cams = handle.cams
@@ -258,6 +258,7 @@ def realized_calibration(handle, physics: dict, is_store: bool) -> dict:
         overhead_resolution=overhead.res,
         overhead_fov_deg=overhead.fov,
         wrist_offset_m=cam_cfg["wrist_offset_m"],
+        wrist_mount_rotation_gl=wrist_mount_rotation(cam_cfg),
         wrist_resolution=cams["wrist"].res,
         wrist_fov_deg=cams["wrist"].fov,
     )

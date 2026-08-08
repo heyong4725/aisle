@@ -155,6 +155,14 @@ reach_margin_frac = 0.92
 overhead_pos = [0.55, 0.0, 1.20]
 overhead_lookat = [0.55, 0.0, 0.20]
 wrist_offset_m = [0.0, 0.0, 0.05]
+# SCN-5: the wrist camera's mount ORIENTATION, as a GL-convention rotation
+# of the camera frame relative to the EE link (quaternion x, y, z, w).
+# 180 degrees about X maps the GL camera's -Z viewing axis onto the link's
+# +Z, which is the gripper's APPROACH direction — the camera looks where
+# the hand is going. It was implicitly identity, which pointed the camera
+# straight back up the arm: every recorded wrist frame showed the robot's
+# own link and never the workspace (issue #109).
+wrist_rotation_xyzw = [1.0, 0.0, 0.0, 0.0]
 # T12 store scene (RS-2): a high overhead covering the whole store floor
 store_overhead_pos = [0.75, 0.0, 3.0]
 store_overhead_lookat = [0.75, 0.0, 0.0]
