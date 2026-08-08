@@ -35,6 +35,15 @@ from aisle.harness.trace_recorder import CaptureSchedule, decode_frame
 
 # the wrist judged-frame set needs the EE pose at each frame's stamp (VER-8);
 # joints arrive at 100 Hz, so only the latest is kept and sampled per frame
+# a wrist frame's EE pose must come from a joint_state sampled at
+# essentially the SAME instant (VER-8). joint_state is 100 Hz and cameras
+# 30 Hz, so a fresh pairing is within ~10 ms; anything beyond this means the
+# node fell behind (the live run dropped joint_state during a 3-5 s judge)
+# and the pose describes a different arm configuration than the pixels show.
+# VER-8's rule is no EE pose, no trustworthy wrist ROI -- so a stale one is
+# DROPPED rather than used, and judge_frames skips that wrist frame.
+EE_POSE_MAX_SKEW_NS = 50_000_000
+
 CAMERA_STREAMS = {
     "rgb_overhead": ("overhead", "rgb"),
     "depth_overhead": ("overhead", "depth"),
@@ -92,7 +101,7 @@ class EpisodeBuffer:
         wrist = self.latest.get("rgb_wrist")
         if wrist is not None:
             self.frames.setdefault("wrist", {})[wrist[0]] = {"rgb": wrist[1]}
-            if self.joints is not None:
+            if self.joints is not None and abs(self.joints[0] - wrist[0]) <= EE_POSE_MAX_SKEW_NS:
                 self.ee_poses[wrist[0]] = ee_pose_from_joints(self.joints[1])
         return True
 

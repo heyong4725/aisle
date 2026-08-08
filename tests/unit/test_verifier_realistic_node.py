@@ -92,9 +92,10 @@ def test_wrist_frames_carry_the_ee_pose_at_their_own_stamp():
     """VER-8: the wrist ROI composes `cam_to_ee` with the EE pose from FK at
     the frame's stamp, so the buffer must sample joints per judged frame."""
     buf = _buffer()
-    buf.observe_joints(900_000_000, np.zeros(9))
-    _feed(buf, 1_000_000_000)
-    _feed(buf, 6_000_000_000)
+    # joints arrive at 100 Hz, so each judged frame has one within ~10 ms
+    for stamp in (1_000_000_000, 6_000_000_000):
+        buf.observe_joints(stamp - 5_000_000, np.zeros(9))
+        _feed(buf, stamp)
     buf.promote_terminal()
 
     assert 6_000_000_000 in buf.ee_poses
@@ -186,3 +187,45 @@ def test_sidecar_node_is_absent_unless_asked_for():
 
     assert "verifier-realistic" not in ids
     assert "trace-recorder" in ids
+
+
+def test_stale_joint_state_is_not_attached_to_a_wrist_frame():
+    """VER-8: no EE pose, no trustworthy wrist ROI. The node fell behind
+    during a 3-5 s judge on the live run and dropped `joint_state`, so the
+    latest pose can describe a different arm configuration than the pixels
+    show. A stale pose is dropped rather than used, and `judge_frames` then
+    skips that wrist frame instead of projecting in the wrong place."""
+    fresh = _buffer()
+    fresh.observe_joints(6_000_000_000, np.zeros(9))
+    _feed(fresh, 1_000_000_000)
+    _feed(fresh, 6_000_000_000)
+    fresh.promote_terminal()
+    assert 6_000_000_000 in fresh.ee_poses
+
+    stale = _buffer()
+    stale.observe_joints(4_000_000_000, np.zeros(9))  # 2 s behind the frame
+    _feed(stale, 1_000_000_000)
+    _feed(stale, 6_000_000_000)
+    stale.promote_terminal()
+    assert 6_000_000_000 in stale.frames["wrist"]
+    assert 6_000_000_000 not in stale.ee_poses
+
+
+def test_recorder_subscribes_to_the_realistic_verdicts(tmp_path):
+    """The recorder's inputs are built before the sidecar node is appended,
+    so the node's own `episode_result` was the one unrecorded endpoint in
+    every run (HAR-4 says EVERY wired topic is traced)."""
+    import yaml
+
+    from aisle.harness.rollout import instrumented_graph
+
+    root = __import__("pathlib").Path(__file__).resolve().parents[2]
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    out = instrumented_graph(
+        root / "graphs" / "expert_t0.yaml", root, run_dir, verifier="both", episode_timeout_s=60.0
+    )
+    nodes = {n["id"]: n for n in yaml.safe_load(out.read_text())["nodes"]}
+
+    assert "verifier-realistic__episode_result" in nodes["trace-recorder"]["inputs"]
+    assert nodes["verifier-realistic"]["inputs"]["joint_state"]["queue_size"] == 1
