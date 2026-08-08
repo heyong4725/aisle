@@ -532,3 +532,50 @@ def test_latch_event_and_measurements_must_be_typed():
     nan_score["stages"]["identity_overhead"]["frames"][0]["per_class_scores"] = {"x": None}
     with pytest.raises(EvidenceError, match="score for"):
         validate_sidecar_record(nan_score)
+
+
+def _per_camera_latch_record(wrist_vote="fail", named="wrist", wrist_sees_target=False):
+    """The shape the amended producer emits (issue #107): the WRIST latched on
+    a non-target, the OVERHEAD passed on its own merits."""
+    rec = _record("ep-0007", True)
+    rec["latch"] = {
+        "latched": True,
+        "first_event": {"sim_time_ns": 2, "camera": named, "med_class": "metformin"},
+    }
+    rec["stages"]["identity_wrist"] = {
+        "vote": wrist_vote,
+        "frames": [
+            {
+                "sim_time_ns": 2,
+                "per_class_scores": {"metformin": 0.2},
+                "target_in_tray": wrist_sees_target,
+                "non_target_in_tray": True,
+            }
+        ],
+    }
+    return rec
+
+
+def test_a_wrist_latch_with_a_passing_overhead_is_valid_evidence():
+    """Regression for the defect this PR nearly shipped: the latch cross-check
+    required EVERY identity stage to fail once anything latched, so the
+    comparator refused exactly the records issue #107's amendment produces —
+    a wrist latch with a healthy overhead vote. VER-6 would have raised
+    EvidenceError on the very episodes the change exists to fix."""
+    assert validate_sidecar_record(_per_camera_latch_record()) is True
+
+
+def test_a_camera_that_latched_may_not_also_pass():
+    """Stricter than the rule it replaced: each camera's latch is derived from
+    ITS OWN frames, so a producer that latched a camera and still passed it is
+    caught even when that camera is not the one named in first_event."""
+    bad = _per_camera_latch_record(wrist_vote="pass", wrist_sees_target=True)
+    with pytest.raises(EvidenceError, match="saw a non-target in the tray but voted pass"):
+        validate_sidecar_record(bad)
+
+
+def test_first_event_must_name_a_camera_that_actually_saw_a_non_target():
+    """VER-14: the latch event is attribution evidence. Naming a camera whose
+    frames contain no non-target makes the sidecar self-inconsistent."""
+    with pytest.raises(EvidenceError, match="none of that camera's frames"):
+        validate_sidecar_record(_per_camera_latch_record(named="overhead"))
