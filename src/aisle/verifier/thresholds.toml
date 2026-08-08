@@ -16,17 +16,27 @@ robot_home_tolerance_rad = 0.15
 # can only see what it samples: a transient entirely BETWEEN checkpoints
 # is the cadence-bounded residual VER-6's false-success rate measures.
 checkpoint_period_s = 5.0
-# CALIBRATED ENVELOPE (VER-9, overhead camera only).
-# These identity values are calibrated for, and only for:
-#   * the OVERHEAD camera. The wrist camera has no validated operating
-#     point and cannot get one — the tray is out of its view at every
-#     terminal frame, so identity_wrist can never pass (issue #107).
-#   * scenes whose SCN-6 randomization does not perturb the identity
-#     signal. Measured clean on nominal, lighting, textures,
-#     camera_jitter and lighting+textures; the composed
-#     lighting+textures+camera_jitter configuration misclassifies a
-#     correct delivery and sets the permanent wrong-object latch, and no
-#     threshold separates it (issue #108).
+# CALIBRATED ENVELOPE (VER-9). These identity values are calibrated for,
+# and only for, the OVERHEAD camera under exactly these SCN-6 toggle
+# combinations, each measured over 5 med classes x 2 seeds (70/70 cells
+# clean — correct target vote, no wrong-object latch):
+#   1 all off        2 lighting       3 textures      4 camera_jitter
+#   5 lighting+textures    6 lighting+camera_jitter
+#   7 textures+camera_jitter
+# EVERY OTHER SCN-6 configuration is OUT OF ENVELOPE, explicitly:
+#   * lighting+textures+camera_jitter — measured BROKEN. A correct
+#     delivery is detected as a different med class and sets the
+#     permanent latch, and no threshold separates it: genuine in-tray
+#     detections span 0.054-0.35 and the misclassification sits inside
+#     that band (issue #108).
+#   * anything enabling friction_jitter — NOT SWEPT. Unmeasured means
+#     outside; widening the envelope takes a sweep, not an argument.
+# The WRIST camera has no calibrated operating point of its own. Since the
+# mount was fixed (#110 — it used to point back up the arm) the wrist DOES
+# produce passing votes at this same threshold, but only in a ~1 s window
+# around release and measured on 3 episodes, and VER-9's 5 s checkpoint
+# cadence usually misses that window (#107). Do not treat this number as
+# calibrated for the wrist.
 # Every graph in graphs/ runs with DR off — SceneCfg is never built with
 # toggles outside tests and tools — so this envelope covers what is
 # actually executed today, and NOT the full space SCN-6 permits.
