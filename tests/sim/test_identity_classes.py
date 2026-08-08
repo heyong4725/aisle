@@ -16,15 +16,30 @@ protects VER-3's safety asymmetry:
 Marker `sim`: needs the pinned weights and the committed fixture.
 """
 
+import importlib.util
 import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-pytestmark = pytest.mark.sim
-
+# a missing optional dependency or fixture must SKIP, not error: `-m sim`
+# in a plain `uv sync` checkout otherwise reports 15 errors that look like
+# defects in main. Same guards the sibling model-bearing sim tests use.
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "verifier" / "identity_classes.npz"
+
+pytestmark = [
+    pytest.mark.sim,
+    pytest.mark.skipif(
+        importlib.util.find_spec("transformers") is None,
+        reason="transformers not installed (uv sync --extra sim)",
+    ),
+    pytest.mark.skipif(
+        not FIXTURE.exists(),
+        reason="identity fixture missing (uv run python tools/make_identity_fixtures.py --run ...)",
+    ),
+]
+
 MEDS = ("amoxicillin", "ibuprofen", "cetirizine", "omeprazole", "metformin")
 
 
