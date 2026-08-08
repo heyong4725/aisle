@@ -358,8 +358,56 @@ def run_gates(
     return {"ok": True, **gates, "idea": ideas[-1]["id"], "no_idea_gate": False}
 
 
+def realistic_verifier_node(root: Path, run_dir: Path, doc: dict, timeout_s: float) -> dict:
+    """The VER-5 judge as a SIDECAR node (increment 1b, `--verifier both`).
+
+    It publishes its own `episode_result` but nothing consumes it: the
+    rollout client advances on the ORACLE's result, and a second producer
+    on that edge would step its state machine twice per episode. What the
+    comparison actually needs is the VER-14 sidecar, which `judge_frames`
+    writes to the run dir — so `harness/fidelity.py` gets a LIVE number
+    without perturbing the loop's control flow.
+
+    ORACLE-FREE: subscribes to camera frames, joint_state, bridge_info and
+    episode_goal only. `oracle_state` is deliberately absent, and a test
+    asserts that — A7's whole premise is that this verdict never saw it."""
+    producers = {
+        topic: f"{node['id']}/{topic}"
+        for node in doc["nodes"]
+        for topic in (node.get("outputs") or [])
+    }
+    wanted = (
+        "bridge_info",
+        "episode_goal",
+        "joint_state",
+        "rgb_overhead",
+        "depth_overhead",
+        "rgb_wrist",
+    )
+    return {
+        "id": "verifier-realistic",
+        "path": str((root / "src" / "aisle" / "nodes" / "verifier_realistic.py").resolve()),
+        "inputs": {
+            topic: {"source": producers[topic], "queue_size": 100}
+            for topic in wanted
+            if topic in producers
+        },
+        "outputs": ["episode_result"],
+        "env": {
+            "AISLE_RESULTS_DIR": str(run_dir.resolve()),
+            "AISLE_TIMEOUT_S": str(timeout_s),
+        },
+    }
+
+
 def instrumented_graph(
-    graph: Path, root: Path, run_dir: Path, trace_dir: Path | None = None, name: str = "graph.yaml"
+    graph: Path,
+    root: Path,
+    run_dir: Path,
+    trace_dir: Path | None = None,
+    name: str = "graph.yaml",
+    verifier: str = "oracle",
+    episode_timeout_s: float = 60.0,
 ) -> Path:
     """The input graph plus a trace-recorder node (HAR-4) with absolutized
     node paths, written under the run dir (dora's cwd becomes the run dir,
@@ -395,6 +443,8 @@ def instrumented_graph(
             },
         }
     )
+    if verifier == "both":
+        doc["nodes"].append(realistic_verifier_node(root, run_dir, doc, episode_timeout_s))
     out_path = run_dir / name
     out_path.write_text(yaml.safe_dump(doc, sort_keys=False))
     return out_path
@@ -422,6 +472,27 @@ def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict) -> subprocess.Popen:
         text=True,
         start_new_session=True,
     )
+
+
+def await_realistic_sidecar(run_dir: Path, expected: int, timeout_s: float = 45.0) -> int:
+    """Wait (bounded) for the realistic verifier's VER-14 sidecar to carry
+    one record per episode before teardown, and return how many it has.
+
+    The node judges an episode when the NEXT goal arrives; the LAST episode
+    has no next goal, so its only chance is the dataflow stopping — and
+    `judge_frames` takes seconds, which it loses to teardown. Observed: 2
+    records for 3 episodes, twice. Waiting here is the fix that does not
+    require the node to win a race, and a bounded wait cannot hang a run:
+    on timeout the count is simply short and the caller reports it."""
+    sidecar = run_dir / "verifier_stages.jsonl"
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        lines = sidecar.read_text().splitlines() if sidecar.exists() else []
+        if len([ln for ln in lines if ln.strip()]) >= expected:
+            return expected
+        time.sleep(1.0)
+    lines = sidecar.read_text().splitlines() if sidecar.exists() else []
+    return len([ln for ln in lines if ln.strip()])
 
 
 def _terminate(proc: subprocess.Popen) -> None:
@@ -462,8 +533,17 @@ def rollout(
     root = root.resolve()
     if reset_mode != "teleport":
         return {"ok": False, "error": "behavioral reset is Phase 2 (RST-2)"}
-    if verifier != "oracle":
-        return {"ok": False, "error": "realistic verifier is Phase 2"}
+    if verifier == "realistic":
+        # A7 mode drives the LOOP from the realistic verdict, which means
+        # rewiring the rollout client's episode_result source away from the
+        # oracle. That changes control flow and is a separate change;
+        # `both` runs the realistic judge ALONGSIDE without touching it.
+        return {
+            "ok": False,
+            "error": "verifier=realistic (A7 mode) needs the client rewired; use --verifier both",
+        }
+    if verifier not in ("oracle", "both"):
+        return {"ok": False, "error": f"unknown verifier {verifier!r}"}
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", run_id):
         return {"ok": False, "error": f"unsafe run_id {run_id!r}"}
     if (root / "runs" / run_id).exists():
@@ -485,7 +565,13 @@ def rollout(
     run_dir = root / "runs" / run_id
     traces_dir = run_dir / "traces"
     traces_dir.mkdir(parents=True, exist_ok=True)
-    exec_graph = instrumented_graph(graph, root, run_dir)
+    # budgets before the graph: the realistic verifier node needs the episode
+    # SIM timeout declared in the graph, since it ends episodes on its own
+    # budget rather than waiting for the oracle (VER-5, increment 1b)
+    episode_timeout_s, per_episode_budget_s = tier_budgets(tier)
+    exec_graph = instrumented_graph(
+        graph, root, run_dir, verifier=verifier, episode_timeout_s=episode_timeout_s
+    )
     results_path = run_dir / "episodes.jsonl"
 
     git_sha = subprocess.run(
@@ -493,7 +579,6 @@ def rollout(
     ).stdout.strip()
     env_hash = gates["env_hash"]
 
-    episode_timeout_s, per_episode_budget_s = tier_budgets(tier)
     env = scrub_bringup_env(
         {
             **os.environ,
@@ -606,6 +691,8 @@ def rollout(
                     run_dir,
                     trace_dir=relaunch_traces,
                     name=f"graph-r{relaunches}.yaml",
+                    verifier=verifier,
+                    episode_timeout_s=episode_timeout_s,
                 )
                 # each relaunch pays a fresh build: extend the deadline by
                 # the build grace (still bounded by the campaign wall cap),
@@ -621,12 +708,23 @@ def rollout(
                 continue
             time.sleep(2.0)
     finally:
+        # let the realistic judge finish the LAST episode before teardown
+        # (it judges on the next goal, and the last episode has none)
+        if verifier == "both":
+            await_realistic_sidecar(run_dir, episodes)
         # ADR-21 round 3: reconcile the reservation with actuals no matter
         # how the run ended — crash paths settle too
         if reservation is not None:
             settle_budget(root, run_id, len(episode_records), time.monotonic() - started)
         _terminate(proc)
         reap_orphans(run_dir)
+        if verifier == "both":
+            # count AFTER teardown, not before: the node can still land the
+            # last record during the SIGTERM grace, and reporting the
+            # pre-teardown count said "2/3" for a run that ended with 3/3
+            judged = await_realistic_sidecar(run_dir, episodes, timeout_s=0.0)
+            if judged < episodes:
+                print(f"realistic sidecar has {judged}/{episodes} records", file=sys.stderr)
 
     if results_path.exists():
         episode_records = [
