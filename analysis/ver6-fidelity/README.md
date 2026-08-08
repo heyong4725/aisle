@@ -42,40 +42,67 @@ Episodes in which each stage did not pass:
 | `calibration` | 0 / 5 | stage 0 accepts the published block |
 | `home` | 0 / 5 | |
 
-Three findings, in descending order of how much they change what we do next.
+**Every one of the four false fails traces to one of two causes, and the
+`detail` field in the sidecar is what distinguishes them — reading stage
+votes alone gives the wrong story (it gave me one; see the correction note
+at the end).**
 
-### 1. `identity_wrist` is the dominant blocker — and it now has a second failure mode
+| episode | cause |
+|---|---|
+| `ep-0001` | false wrong-object latch (wrist saw `metformin`) |
+| `ep-0002` | wrist never detected the target + containment resting-gap fail |
+| `ep-0003` | false wrong-object latch (**overhead** saw `cetirizine`) |
+| `ep-0004` | false wrong-object latch (**overhead** saw `omeprazole`) |
 
-Expected from #107: the wrist sees the tray only in a ~1 s window around
-release, so a 5 s checkpoint cadence usually misses it. Confirmed — but
-`ep-0000` passed **all six stages**, so the cadence is not hopeless; it is
-lossy. 1 of 5 episodes happened to sample the window.
+### 1. Three of four false fails are FALSE WRONG-OBJECT LATCHES, and two came from the OVERHEAD camera
 
-The unexpected part is `ep-0001`, where the wrist set the **wrong-object
-latch on `metformin`** while the correct med was being delivered. This is
-the close-range hazard flagged as a prediction in #107 — the wrist sees
-neighbouring boxes the overhead camera never has in frame — now observed in
-a real run rather than argued. It is a false FAIL caused by the wrist
-*working*, not by it being blind.
+At each latching frame **exactly one** class is detected inside the tray ROI
+and it is the wrong one, with no target detection on that frame:
 
-### 2. `identity_overhead` fails more often on real deliveries than the DR sweep predicted
+| episode | target (colour) | latched on | score | camera |
+|---|---|---|---|---|
+| `ep-0003` | omeprazole (purple) | cetirizine (blue) | 0.1485 | overhead |
+| `ep-0004` | metformin (green) | omeprazole (purple) | 0.2361 | overhead |
+| `ep-0001` | ibuprofen (orange) | metformin (green) | 0.1845 | wrist |
 
-The five-class calibration sweep (PR #104) detected the target in 5 of 5
-cells; here the same stage fails 3 of 5. The sweep teleported each med to
-the tray **centre, upright**; a real delivery lands off-centre and tilted.
+So the detector puts a single confident box in the tray and labels it wrong.
+This is **colour confusion on the delivered object** — the same failure mode
+#108 recorded for composed SCN-6 randomization, except **domain
+randomization is OFF here**, and it happens in 3 of 5 episodes.
 
-So the sweep's operating point is measured under easier conditions than
-production. That is a methodology finding about our own evidence, and the
-fix is to calibrate against recorded deliveries — which this run now makes
-possible — rather than against teleported placements.
+That matters because it contradicts the evidence the operating point was
+calibrated on. PR #104's sweep reported 70/70 cells clean with no surviving
+non-target anywhere, but it **teleported each med to the tray centre,
+upright, and settled it**. A real delivery arrives off-centre, tilted, and
+sometimes still near the gripper. The calibration distribution was easier
+than production, and the envelope in `verifier/thresholds.toml` and VER-9
+inherits that optimism. Filed as its own issue.
 
-### 3. The geometry stages contribute independently
+### 2. `identity_overhead`'s three "failures" are latch inheritance, not detection failures
 
-`containment` blocks 2 and `upright` 1. Both are grounded on the terminal
-overhead detection, so some of that is downstream of finding 2 (no grounded
-detection means those stages record `error` and fail closed by design). The
-sidecar distinguishes `fail` from `error`, so the two causes are separable
-per episode in `runs/<id>/verifier_stages.jsonl`.
+The latch is episode-global and cross-camera by design (VER-9), so one
+camera's false positive fails BOTH identity votes. Overhead target scores on
+these episodes are healthy where the latch did not preempt them: 0.3284
+(`ep-0000`), 0.1480 (`ep-0002`), and 0.2272 / 0.2629 measured on
+`ep-0003` / `ep-0004` frames before their latches. Overhead **detection** is
+working; overhead **classification** is what fails.
+
+### 3. The wrist is a contributor, not the dominant cause
+
+`identity_wrist` blocked 4 of 5, but 3 of those are the shared latch. Its
+own independent failure is `ep-0002` ("target never detected in tray"), and
+its own independent false positive is `ep-0001`'s latch. The cadence
+problem (#107) is real but is NOT what dominates this number — and
+`ep-0000` passed all six stages, so the ~1 s release window is lossy rather
+than hopeless.
+
+### 4. Geometry stages: one genuine failure
+
+`containment` fails once for a real reason — `ep-0002`, "reconstructed
+bottom is not resting on the tray floor" — and errors once (`ep-0001`)
+downstream of the latch, because no grounded target detection means the
+geometry stages fail closed by design. `upright` measured 20.7 deg tilt on
+`ep-0002`, under the 30 deg threshold, so it passed.
 
 ## What this does NOT establish
 
@@ -103,3 +130,18 @@ uv run python -m aisle.harness.fidelity --run-dir runs/<id>
 
 The frames are bytes on disk, so a verifier change can be re-scored against
 the SAME episodes without re-simulating — which is the point of #105.
+
+
+## Correction
+
+The first version of this note claimed `identity_overhead` failed 3/5
+because real deliveries land off-centre versus the sweep's centred
+placements. That was wrong: those three failures are **latch inheritance**,
+and the latches were false wrong-object detections — two of them from the
+overhead camera itself. I had read the stage `vote` fields without reading
+the `detail` and `latch` fields next to them, which is the same mistake in
+kind as calibrating on a whole-frame maximum instead of the ROI-filtered
+score. The sidecar records the cause; the vote alone does not.
+
+The substantive consequence changed too: the fidelity gap is dominated by
+**false wrong-object latches with DR off**, not by wrist cadence.
