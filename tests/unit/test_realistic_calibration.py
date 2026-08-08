@@ -12,6 +12,7 @@ import pytest
 from aisle.verifier.calibration import (
     GL_TO_CV,
     build_calibration_v1,
+    calibration_report,
     calibration_sha256,
     check_calibration,
     intrinsics_v1,
@@ -20,6 +21,12 @@ from aisle.verifier.calibration import (
 )
 
 pytestmark = pytest.mark.unit
+
+# the production wrist mount (SCN-5 `wrist_rotation_xyzw`, 180 deg about
+# X): tests pass it explicitly because build_calibration_v1 requires it —
+# a default would let a nominal block describe a different camera than the
+# published one and stage 0 would refuse every episode (#110 review)
+WRIST_MOUNT = np.diag([1.0, -1.0, -1.0])
 
 # the desk scene's SCN-5 + physics.toml [cameras] nominals
 OVERHEAD_POS = [0.55, 0.0, 1.20]
@@ -30,7 +37,7 @@ JITTER_M = 0.04
 
 def nominal_block():
     block = build_calibration_v1(
-        OVERHEAD_POS, OVERHEAD_LOOKAT, (640, 480), 55.0, WRIST_OFFSET, (320, 240), 70.0
+        OVERHEAD_POS, OVERHEAD_LOOKAT, (640, 480), 55.0, WRIST_OFFSET, (320, 240), 70.0, WRIST_MOUNT
     )
     block["_overhead_lookat"] = OVERHEAD_LOOKAT
     return block
@@ -45,6 +52,7 @@ def published_block(**overrides):
         WRIST_OFFSET,
         (320, 240),
         70.0,
+        WRIST_MOUNT,
     )
 
 
@@ -197,6 +205,7 @@ def test_realized_rotation_is_published_not_rederived():
         WRIST_OFFSET,
         (320, 240),
         70.0,
+        WRIST_MOUNT,
         overhead_rotation_cv=spun,
     )
     assert "rotation" in check_calibration(published, nominal_block(), JITTER_M)
@@ -212,3 +221,34 @@ def test_absent_or_non_mapping_calibration_refuses_without_raising():
         refusal = check_calibration(absent, nominal, JITTER_M)
         assert refusal is not None and "not an object" in refusal, absent
     assert check_calibration(published_block(), None, JITTER_M) is not None
+
+
+def test_stage0_accepts_the_scene_mount_and_refuses_a_different_one():
+    """VER-8: a published block carrying the SCENE's wrist mount must be
+    ACCEPTED against a nominal built from the same config, and refused
+    against one built from a different mount.
+
+    The mount used to default to identity inside `build_calibration_v1`,
+    so a nominal builder that omitted it kept describing the old camera
+    while the bridge published the new one — stage 0 then refused every
+    episode with `wrist: cam_to_ee rotation differs from nominal mount`.
+    Requiring the argument is only half the fix; this is the half that
+    proves the contract comparison passes (PR #110 review)."""
+    scene_mount = np.diag([1.0, -1.0, -1.0])
+    published = build_calibration_v1(
+        OVERHEAD_POS, OVERHEAD_LOOKAT, (640, 480), 55.0, WRIST_OFFSET, (320, 240), 70.0, scene_mount
+    )
+    nominal = build_calibration_v1(
+        OVERHEAD_POS, OVERHEAD_LOOKAT, (640, 480), 55.0, WRIST_OFFSET, (320, 240), 70.0, scene_mount
+    )
+    nominal["_overhead_lookat"] = OVERHEAD_LOOKAT
+
+    refusal, _ = calibration_report(published, nominal, 0.05)
+    assert refusal is None, refusal
+
+    stale = build_calibration_v1(
+        OVERHEAD_POS, OVERHEAD_LOOKAT, (640, 480), 55.0, WRIST_OFFSET, (320, 240), 70.0, np.eye(3)
+    )
+    stale["_overhead_lookat"] = OVERHEAD_LOOKAT
+    refusal, _ = calibration_report(published, stale, 0.05)
+    assert refusal is not None and "cam_to_ee" in refusal, refusal
