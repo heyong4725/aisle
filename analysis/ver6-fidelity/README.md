@@ -75,6 +75,54 @@ latch — no grounded target detection means the geometry stages fail closed
 by design, and the sidecar distinguishes `error` from `fail` so the two are
 separable.
 
+## The false-SUCCESS half (the safety-relevant direction)
+
+The positive run above contains no oracle failures, so it cannot test VER-6's
+headline risk: the realistic verifier passing an episode the oracle failed.
+T0 is too reliable to supply failures by volume — a separate 20-episode run
+(`fidelity-neg-I1`, seeds 10..29) came back **20/20 success**.
+
+Induced instead, honestly and reproducibly: `AISLE_MAX_JOINT_VEL=0.08`
+(the trajectory executor's own env knob — no graph edit, no frozen file
+touched) makes the arm too slow to finish inside the 60 s sim timeout.
+
+Run `fidelity-neg2-I2` — 6 episodes, seeds 3..8, same graph and cadence:
+
+| metric | value |
+|---|---|
+| oracle outcome | **6 / 6 fail**, all class `timeout` |
+| realistic outcome | **6 / 6 fail** |
+| agreement | **1.00** |
+| **false SUCCESS rate** | **0.00** (0 of 6) |
+
+**The realistic verifier never passed an episode the oracle failed.** These
+frames include the box still on the shelf and mid-transit above the tray, so
+they exercise the airborne case containment is meant to reject — and
+`containment` recorded a genuine `fail` (not `error`) on two of them,
+meaning it had a grounded detection and rejected the geometry on its merits.
+`home` failed on all six, correctly: the arm is mid-motion at timeout.
+
+**Statistical honesty:** 0 of 6 is consistent with a true false-success rate
+up to roughly 40% (rule of three). This establishes that the failure mode is
+not rampant; it does not establish a small rate. Treat it as a floor to
+build on, not a clean bill.
+
+## Combined result
+
+| | episodes | agreement | false success | false fail |
+|---|---|---|---|---|
+| positives (`fidelity-I9`) | 5 | 0.40 | n/a | 0.60 |
+| negatives (`fidelity-neg2-I2`, induced) | 6 | 1.00 | 0.00 | n/a |
+| **combined** | **11** | **0.73** | **0.00 (0/6)** | **0.60 (3/5)** |
+
+The asymmetry is the point, and it is the one VER-3 and VER-13 were designed
+to produce: this verifier **rejects correct behaviour** more often than we
+would like, and so far **never accepts incorrect behaviour**. For A7 — the
+loop driven by the realistic verifier with the oracle held out — that is the
+safer failure direction, but a 0.60 false-fail rate would still have the
+agent optimising against a verifier that rejects most of what works. The
+false-fail cause is entirely the wrist (#107).
+
 ## What this does NOT establish
 
 - **No false-success measurement.** All five episodes were oracle successes,
