@@ -32,12 +32,17 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# every SCN-6 combination of the three axes that affect the identity
+# signal, so the envelope can be an ALLOWLIST of measured configurations
+# rather than a semantic phrase a reader has to interpret (#111 review)
 AXES = (
     ("nominal", ()),
     ("lighting", ("lighting",)),
     ("textures", ("textures",)),
     ("camera_jitter", ("camera_jitter",)),
     ("lighting+textures", ("lighting", "textures")),
+    ("lighting+camera_jitter", ("lighting", "camera_jitter")),
+    ("textures+camera_jitter", ("textures", "camera_jitter")),
     ("all", ("lighting", "textures", "camera_jitter")),
 )
 
@@ -54,12 +59,22 @@ def sweep_ok(results: list[dict]) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--seeds", default="3,9,11")
+    parser.add_argument(
+        "--configs",
+        default=None,
+        help="comma-separated DR configuration names to run (default: all)",
+    )
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
     try:
         seeds = [int(s) for s in args.seeds.split(",")]
     except ValueError as exc:  # CON-8: refuse with JSON, never a traceback
         print(json.dumps({"ok": False, "error": f"--seeds must be integers: {exc}"}))
+        return 1
+    wanted = set(args.configs.split(",")) if args.configs else None
+    axes = [a for a in AXES if wanted is None or a[0] in wanted]
+    if not axes:
+        print(json.dumps({"ok": False, "error": f"no DR configuration matches {args.configs!r}"}))
         return 1
 
     sys.path.insert(0, str(REPO_ROOT / "src"))
@@ -103,8 +118,8 @@ def main() -> int:
 
         results = []
         for seed in seeds:
-            for axis_name, axes in AXES:
-                toggles = {a: DRToggle(enabled=True, seed=seed) for a in axes}
+            for axis_name, axis_set in axes:
+                toggles = {a: DRToggle(enabled=True, seed=seed) for a in axis_set}
                 handle = build_scene(
                     seed=seed, embodiment="franka", n_envs=1, headless=True, cfg=SceneCfg(**toggles)
                 )
