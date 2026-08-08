@@ -385,18 +385,29 @@ def test_tray_roi_refuses_when_the_tray_is_behind_the_camera():
     produced coordinates around 1e10, which `crop_to_roi` then clamped to
     the whole frame — so a camera pointing AWAY from the tray reported the
     tray as visible and identity ran on the entire image (found while
-    measuring #107). Not judgeable is None, which is not an empty tray."""
+    measuring #107). Not judgeable is None, which is not an empty tray.
+
+    Since #110 the wrist mount aims the camera along the EE link's +Z
+    approach axis, so `cam_to_ee` in the OpenCV convention is identity: an
+    EE with identity orientation looks along world +Z."""
     from aisle.verifier.calibration import build_calibration_v1
     from aisle.verifier.stages import tray_roi_pixels
 
     calibration = build_calibration_v1(
-        [0.55, 0.0, 1.20], [0.55, 0.0, 0.20], (640, 480), 55.0, [0.0, 0.0, 0.05], (320, 240), 70.0
+        [0.55, 0.0, 1.20],
+        [0.55, 0.0, 0.20],
+        (640, 480),
+        55.0,
+        [0.0, 0.0, 0.05],
+        (320, 240),
+        70.0,
+        WRIST_MOUNT,
     )
-    # the wrist mount looks along -Z of the EE; put the EE BELOW the tray
-    # so the tray falls behind the camera
-    below = ((0.55, -0.05, -0.40), (0.0, 0.0, 0.0, 1.0))
-    assert tray_roi_pixels(TRAY_MIN, TRAY_MAX, calibration, "wrist", below) is None
-
+    # looking UP from above the tray puts it behind the image plane
     above = ((0.55, -0.05, 0.90), (0.0, 0.0, 0.0, 1.0))
-    roi = tray_roi_pixels(TRAY_MIN, TRAY_MAX, calibration, "wrist", above)
+    assert tray_roi_pixels(TRAY_MIN, TRAY_MAX, calibration, "wrist", above) is None
+
+    # looking UP from below it, the tray is in front and projects finitely
+    below = ((0.55, -0.05, -0.40), (0.0, 0.0, 0.0, 1.0))
+    roi = tray_roi_pixels(TRAY_MIN, TRAY_MAX, calibration, "wrist", below)
     assert roi is not None and all(abs(v) < 1e5 for v in roi)
