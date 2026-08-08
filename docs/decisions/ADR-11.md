@@ -60,7 +60,12 @@ both need the arrays the live judge saw. Capture is therefore opt-in and
 cadenced rather than continuous — the VER-9 judged-frame set (period
 checkpoints plus the terminal frame, forced when `episode_result`
 arrives) at 140 KB per instant measured live, ~17 MB for a 600 s episode
-at 5 s. The
+at 5 s. The selector matches `checkpoint_stamps` in both respects that
+decide WHICH frame is persisted: each checkpoint takes the last frame AT
+OR BEFORE the boundary (a frame after it is a different frame, and VER-7
+compares bytes), and the schedule is re-based on each `episode_goal`
+stamp rather than running process-global, since VER-9 counts checkpoints
+from goal receipt (PR #105 review). The
 overhead rgb/depth pair is written only when both come from ONE render
 (BRG-2 co-renders them when both are due): the geometry stages fuse the
 two, so a mismatched pair would measure a scene that never existed, and

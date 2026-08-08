@@ -7,9 +7,9 @@ import pyarrow as pa
 import pytest
 
 from aisle.harness.trace_recorder import (
+    CaptureSchedule,
     capture_frames,
     decode_frame,
-    due_for_capture,
     load_frames,
 )
 
@@ -59,20 +59,6 @@ def test_decode_frame_refuses_undeclared_payloads(metadata):
     recorded and nothing wrong is persisted as pixels."""
     _, _, value = rgb_payload()
     assert decode_frame(metadata, value) is None
-
-
-def test_due_for_capture_is_off_at_period_zero():
-    """ADR-11 clause 14: capture is opt-in — the default run records the
-    mp4 and nothing else."""
-    assert not due_for_capture(10**12, 0, 0)
-
-
-def test_due_for_capture_fires_at_the_period_boundary():
-    """VER-9's judged-frame cadence: the first frame at or after each
-    boundary (renders are rate-limited, so the exact stamp rarely
-    exists)."""
-    assert not due_for_capture(4_000_000_000, 5_000_000_000, 5_000_000_000)
-    assert due_for_capture(5_033_000_000, 5_000_000_000, 5_000_000_000)
 
 
 def test_capture_round_trips_into_the_judge_frames_mapping(tmp_path):
@@ -127,3 +113,87 @@ def test_load_frames_is_empty_for_a_run_recorded_without_capture(tmp_path):
     recorded and empty" without raising on the ordinary run layout."""
     (tmp_path / "overhead.mp4").write_bytes(b"")
     assert load_frames(tmp_path) == {}
+
+
+def _drive(schedule, frames_dir, stamps, period_start=None):
+    """Feed synchronized overhead pairs through the same order main() uses:
+    check the boundary against the RETAINED frame, then retain this one."""
+    if period_start is not None:
+        schedule.start(period_start)
+    latest, written = {}, []
+    for stamp in stamps:
+        if schedule.crossed(stamp):
+            if capture_frames(frames_dir, latest) is not None:
+                written.append(latest["rgb_overhead"][0])
+                schedule.advance(stamp)
+        rgb, _, _ = rgb_payload()
+        depth, _, _ = depth_payload()
+        latest = {"rgb_overhead": (stamp, rgb), "depth_overhead": (stamp, depth)}
+    return written
+
+
+def test_capture_selects_the_frame_at_or_before_the_checkpoint(tmp_path):
+    """VER-9 via `checkpoint_stamps()` snaps each checkpoint to the nearest
+    rendered frame AT OR BEFORE it. With renders bracketing a 5.000 s
+    boundary at 4.967 s and 5.033 s, the verifier judges 4.967 s — so that
+    is the frame the recorder must persist, or VER-7 byte equality and
+    VER-6 replay compare different pixels (PR #105 review)."""
+    schedule = CaptureSchedule(5_000_000_000)
+    written = _drive(
+        schedule,
+        tmp_path / "frames",
+        [4_933_000_000, 4_967_000_000, 5_033_000_000, 5_100_000_000],
+        period_start=0,
+    )
+    assert 4_967_000_000 in written
+    assert 5_033_000_000 not in written
+
+
+def test_capture_matches_checkpoint_stamps_on_the_same_frame_set(tmp_path):
+    """The strongest form of the requirement: the recorder's ONLINE choice
+    equals what the production selector picks OFFLINE over the same
+    rendered stamps. Only the terminal frame is missing, because the
+    recorder cannot know an episode has ended until `episode_result`
+    arrives — main() forces that one separately."""
+    from aisle.verifier.realistic import checkpoint_stamps
+
+    stamps = [70_000_000 + i * 33_000_000 for i in range(400)]  # ~30 Hz renders
+    written = _drive(
+        CaptureSchedule(5_000_000_000), tmp_path / "frames", stamps, period_start=stamps[0]
+    )
+    expected = checkpoint_stamps(stamps[0], stamps[-1], 5.0, stamps)
+
+    assert written == expected[: len(written)]
+    assert expected[len(written) :] == [stamps[-1]]
+
+
+def test_schedule_is_goal_relative_not_process_global(tmp_path):
+    """VER-9 counts checkpoints from GOAL RECEIPT. A process-global
+    schedule phase-shifts every episode that does not start on a boundary,
+    so two episodes at different phases would get different checkpoint
+    offsets from their own goals."""
+    period = 5_000_000_000
+    first = _drive(
+        CaptureSchedule(period),
+        tmp_path / "a",
+        [i * 1_000_000_000 for i in range(1, 14)],
+        period_start=1_000_000_000,
+    )
+    second = _drive(
+        CaptureSchedule(period),
+        tmp_path / "b",
+        [23_400_000_000 + i * 1_000_000_000 for i in range(13)],
+        period_start=23_400_000_000,
+    )
+
+    # both episodes capture  their checkpoints at the same OFFSETS from their goals
+    assert [s - 1_000_000_000 for s in first] == [s - 23_400_000_000 for s in second]
+
+
+def test_capture_is_off_at_period_zero(tmp_path):
+    """ADR-11 clause 14: capture is opt-in — the default run records the
+    mp4 and nothing else."""
+    schedule = CaptureSchedule(0)
+    assert not schedule.enabled
+    assert not schedule.crossed(10**12)
+    assert _drive(schedule, tmp_path / "frames", [1, 2, 3], period_start=0) == []

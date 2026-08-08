@@ -13,7 +13,10 @@ graph that the HAR-2 validation gate checks — VAL-6's oracle isolation
 governs the composed graph, not the harness's own recording (ADR-11).
 
 $AISLE_FRAME_CAPTURE_PERIOD_S (default 0 = off) additionally persists RAW
-pixels as `frames/<camera>/<sim_time_ns>.npz` — ADR-11 clause 14. The mp4
+pixels as `frames/<camera>/<sim_time_ns>.npz` at VER-9's judged-frame
+cadence — ADR-11 clause 14. `CaptureSchedule` reproduces
+`checkpoint_stamps`' choice online: last frame at or before each
+boundary, counted from each episode's goal receipt. The mp4
 is lossy, 10 fps and carries no depth at all, so a run recorded without
 this captures NOTHING the realistic verifier can replay (VER-5/VER-6):
 its containment and upright stages need the overhead depth, and byte
@@ -73,11 +76,58 @@ def decode_frame(metadata: dict, value) -> np.ndarray | None:
     return None
 
 
-def due_for_capture(sim_time_ns: int, next_capture_ns: int, period_ns: int) -> bool:
-    """Frame capture is off entirely at period 0 (HAR-4 records the mp4
-    either way); otherwise capture at the first frame at or after each
-    period boundary."""
-    return bool(period_ns) and sim_time_ns >= next_capture_ns
+class CaptureSchedule:
+    """VER-9's judged-frame selector, run online.
+
+    `checkpoint_stamps()` snaps each wanted stamp to the nearest rendered
+    frame AT OR BEFORE it, and counts checkpoints from GOAL RECEIPT. A
+    recorder cannot see future frames, so it reproduces the same choice by
+    retaining the newest frame and writing it once a later frame proves the
+    boundary has passed. Both details are what make the persisted set the
+    judged set rather than merely a periodic sample (PR #105 review):
+
+    * at-or-BEFORE: with renders at 4.967 s and 5.033 s around a 5.000 s
+      checkpoint, the verifier judges 4.967 s — writing the current frame
+      when the boundary is crossed would persist 5.033 s and no byte
+      comparison (VER-7) or replay (VER-6) could hold;
+    * goal-RELATIVE: a process-global schedule phase-shifts every episode
+      that does not start on a boundary, so `start()` re-bases it on each
+      `episode_goal` stamp.
+    """
+
+    def __init__(self, period_ns: int):
+        self.period_ns = int(period_ns)
+        self.next_boundary_ns: int | None = None
+
+    @property
+    def enabled(self) -> bool:
+        """Capture is off entirely at period 0 (HAR-4 records the mp4
+        either way)."""
+        return bool(self.period_ns)
+
+    def start(self, goal_sim_time_ns: int) -> None:
+        """Re-base the schedule on an episode's goal receipt (VER-9)."""
+        if self.enabled:
+            self.next_boundary_ns = int(goal_sim_time_ns)
+
+    def crossed(self, sim_time_ns: int) -> bool:
+        """True when `sim_time_ns` proves the pending boundary has passed,
+        so the RETAINED frame is the last one at or before it. A frame
+        landing exactly ON the boundary is itself the right frame, so it is
+        retained rather than triggering — the next frame writes it."""
+        return (
+            self.enabled
+            and self.next_boundary_ns is not None
+            and sim_time_ns > self.next_boundary_ns
+        )
+
+    def advance(self, sim_time_ns: int) -> None:
+        """Step past every boundary this frame has overtaken. Skipped
+        boundaries are gaps in the render stream, not recoverable frames."""
+        if not self.enabled or self.next_boundary_ns is None:
+            return
+        while sim_time_ns > self.next_boundary_ns:
+            self.next_boundary_ns += self.period_ns
 
 
 def capture_frames(frames_dir: Path, latest: dict[str, tuple[int, np.ndarray]]) -> int | None:
@@ -175,10 +225,11 @@ def main() -> None:
     frame_shape: tuple[int, int] | None = None
     last_flush = time.monotonic()
 
-    capture_period_ns = int(float(os.environ.get("AISLE_FRAME_CAPTURE_PERIOD_S", "0")) * 1e9)
+    schedule = CaptureSchedule(
+        int(float(os.environ.get("AISLE_FRAME_CAPTURE_PERIOD_S", "0")) * 1e9)
+    )
     frames_dir = trace_dir / "frames"
     latest: dict[str, tuple[int, np.ndarray]] = {}
-    next_capture_ns = 0
 
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # run finally
     node = Node()
@@ -200,6 +251,12 @@ def main() -> None:
                 frame = decode_frame(metadata, event["value"])
                 if frame is not None:
                     sim_time_ns = int(metadata.get("sim_time_ns", 0))
+                    # BEFORE retaining this frame: if it proves the pending
+                    # boundary has passed, the frame still retained is the
+                    # last one at or before it — the one VER-9 judges
+                    if schedule.crossed(sim_time_ns):
+                        if capture_frames(frames_dir, latest) is not None:
+                            schedule.advance(sim_time_ns)
                     latest[stream] = (sim_time_ns, frame)
                     if stream == "rgb_overhead":
                         h, w = frame.shape[0], frame.shape[1]
@@ -210,16 +267,17 @@ def main() -> None:
                             frame_shape = (h, w)
                         if (h, w) == frame_shape:
                             video.append_data(frame)
-                    if due_for_capture(sim_time_ns, next_capture_ns, capture_period_ns):
-                        if capture_frames(frames_dir, latest) is not None:
-                            next_capture_ns = sim_time_ns + capture_period_ns
                 buffer_row(topic, metadata, None, None)
                 continue
             value = event["value"]
             if pa.types.is_string(value.type) or pa.types.is_large_string(value.type):
                 # JSON payloads fill the text column of the same trace
                 buffer_row(topic, metadata, None, value[0].as_py())
-                if capture_period_ns and topic.endswith("__episode_result"):
+                if schedule.enabled and topic.endswith("__episode_goal"):
+                    # VER-9 counts checkpoints from GOAL RECEIPT, so the
+                    # schedule is re-based per episode rather than global
+                    schedule.start(int(metadata.get("sim_time_ns", 0)))
+                if schedule.enabled and topic.endswith("__episode_result"):
                     # the TERMINAL frame is always judged (VER-9), and it is
                     # the one a mid-period episode end would otherwise drop
                     capture_frames(frames_dir, latest)
