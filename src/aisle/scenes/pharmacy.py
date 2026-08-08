@@ -266,6 +266,22 @@ def to_numpy(tensor) -> np.ndarray:
     return np.asarray(tensor, dtype=np.float32)
 
 
+def wrist_mount_rotation(cam_cfg: dict) -> np.ndarray:
+    """The wrist camera's GL-convention mount rotation (SCN-5), from
+    `wrist_rotation_xyzw` in physics.toml. The verifier's calibration
+    derives `cam_to_ee` from the SAME value, so the published block and
+    the built scene cannot disagree (VER-8)."""
+    x, y, z, w = (float(v) for v in cam_cfg["wrist_rotation_xyzw"])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ],
+        dtype=np.float32,
+    )
+
+
 def build_scene(
     seed: int,
     embodiment: str = "franka",
@@ -417,6 +433,9 @@ def build_scene(
 
     ee_link = robot.get_link(FRANKA_EE_LINK) if embodiment == "franka" else robot.links[-1]
     offset = np.eye(4, dtype=np.float32)
+    # SCN-5: orientation as well as position. An identity mount aimed the
+    # camera along the link's -Z, i.e. straight back up the arm (#109).
+    offset[:3, :3] = wrist_mount_rotation(cam_cfg)
     offset[:3, 3] = cam_cfg["wrist_offset_m"]
     cams["wrist"].attach(ee_link, offset_T=offset)
 

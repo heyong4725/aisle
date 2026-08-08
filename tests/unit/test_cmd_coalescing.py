@@ -4,6 +4,7 @@ BRG-2, BRG-3, BRG-5, BRG-6) — sim mocked, no dora or genesis imports
 
 import json
 
+import numpy as np
 import pytest
 
 from aisle.nodes.dora_genesis import (
@@ -15,6 +16,12 @@ from aisle.nodes.dora_genesis import (
 )
 
 pytestmark = pytest.mark.unit
+
+# the production wrist mount (SCN-5 `wrist_rotation_xyzw`, 180 deg about
+# X): tests pass it explicitly because build_calibration_v1 requires it —
+# a default would let a nominal block describe a different camera than the
+# published one and stage 0 would refuse every episode (#110 review)
+WRIST_MOUNT = np.diag([1.0, -1.0, -1.0])
 
 
 def test_coalesce_keeps_latest_and_counts_dropped():
@@ -122,7 +129,14 @@ def test_bridge_info_shape():
     from aisle.verifier.calibration import build_calibration_v1
 
     calibration = build_calibration_v1(
-        [0.55, 0.0, 1.20], [0.55, 0.0, 0.20], (640, 480), 55.0, [0.0, 0.0, 0.05], (320, 240), 70.0
+        [0.55, 0.0, 1.20],
+        [0.55, 0.0, 0.20],
+        (640, 480),
+        55.0,
+        [0.0, 0.0, 0.05],
+        (320, 240),
+        70.0,
+        WRIST_MOUNT,
     )
     info = json.loads(
         make_bridge_info(

@@ -24,8 +24,21 @@ from aisle.verifier.stages import (
 
 pytestmark = pytest.mark.unit
 
+# the production wrist mount (SCN-5 `wrist_rotation_xyzw`, 180 deg about
+# X): tests pass it explicitly because build_calibration_v1 requires it —
+# a default would let a nominal block describe a different camera than the
+# published one and stage 0 would refuse every episode (#110 review)
+WRIST_MOUNT = np.diag([1.0, -1.0, -1.0])
+
 CALIB = build_calibration_v1(
-    [0.55, 0.0, 1.20], [0.55, 0.0, 0.20], (640, 480), 55.0, [0.0, 0.0, 0.05], (320, 240), 70.0
+    [0.55, 0.0, 1.20],
+    [0.55, 0.0, 0.20],
+    (640, 480),
+    55.0,
+    [0.0, 0.0, 0.05],
+    (320, 240),
+    70.0,
+    WRIST_MOUNT,
 )
 TRAY_MIN = (0.40, -0.20, 0.04)
 TRAY_MAX = (0.70, 0.10, 0.06)

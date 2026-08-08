@@ -152,13 +152,24 @@ def build_calibration_v1(
     wrist_offset_m,
     wrist_resolution: tuple[int, int],
     wrist_fov_deg: float,
+    wrist_mount_rotation_gl,
     overhead_rotation_cv=None,
 ) -> dict:
     """The v1 block from realized camera state (VER-8 schema). The bridge
     calls this with the BUILT scene's post-jitter overhead position
     (BRG-8); nominals come from the frozen scene config via the same
-    function. The wrist mount rotation is the identity mount expressed in
-    the OpenCV convention (GL->CV of the identity GL mount)."""
+    function.
+
+    `wrist_mount_rotation_gl` is the scene's GL-convention camera->EE
+    mount (SCN-5, `wrist_rotation_xyzw`); `cam_to_ee` is it converted to
+    OpenCV. It is REQUIRED, not defaulted: the block previously hard-coded
+    the GL->CV of an IDENTITY mount, which faithfully described a camera
+    aimed back up the arm — the projection was right and the scene was
+    wrong (issue #109). A default would let a nominal block keep
+    describing the old mount while the published block describes the new
+    one, and stage 0 would then refuse every episode (PR #110 review). Use
+    `nominal_calibration_v1(physics, ...)` for nominal blocks so both come
+    from the same config."""
     return {
         "calibration_version": CALIBRATION_VERSION,
         "overhead": {
@@ -187,7 +198,9 @@ def build_calibration_v1(
             "intrinsics": intrinsics_v1(wrist_resolution, wrist_fov_deg),
             "cam_to_ee": {
                 "pos": [float(v) for v in wrist_offset_m],
-                "quat_xyzw": quat_xyzw_from_rotation(np.eye(3) @ GL_TO_CV),
+                "quat_xyzw": quat_xyzw_from_rotation(
+                    np.asarray(wrist_mount_rotation_gl, dtype=np.float64) @ GL_TO_CV
+                ),
             },
         },
     }
