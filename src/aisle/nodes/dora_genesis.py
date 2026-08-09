@@ -30,7 +30,12 @@ from pathlib import Path
 
 import numpy as np
 
-from aisle.embodiment import profile_dof_indices, profile_joint_names
+from aisle.embodiment import (
+    from_wire_joint_order,
+    profile_dof_indices,
+    profile_joint_names,
+    to_wire_joint_order,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -434,17 +439,8 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         joint_names = list(configured_names)
     assert len(joint_names) == n_dof, (len(joint_names), n_dof)
 
-    def from_wire(values: np.ndarray) -> np.ndarray:
-        values = np.asarray(values, dtype=np.float32)
-        native = np.empty_like(values)
-        native[..., list(wire_dof_indices)] = values
-        return native
-
-    def to_wire(values: np.ndarray) -> np.ndarray:
-        return np.asarray(values)[..., list(wire_dof_indices)]
-
     home_hold = (
-        from_wire(np.asarray(profile["home_qpos"], dtype=np.float32))
+        from_wire_joint_order(np.asarray(profile["home_qpos"], dtype=np.float32), wire_dof_indices)
         if "home_qpos" in profile
         else None
     )
@@ -493,7 +489,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                 send(
                     topic,
                     env_id,
-                    to_wire(env_slice(qpos, env_id)),
+                    to_wire_joint_order(env_slice(qpos, env_id), wire_dof_indices),
                     names=joint_names,
                     dropped=dropped_counts["joint"].pop(env_id, 0),
                 )
@@ -550,7 +546,9 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         # command owns any overlapping dofs
         for kind, env_id, payload, dropped in commands.drain():
             if kind == "joint":
-                target = from_wire(np.asarray(payload, dtype=np.float32))
+                target = from_wire_joint_order(
+                    np.asarray(payload, dtype=np.float32), wire_dof_indices
+                )
                 if cfg.n_envs > 1:
                     robot.control_dofs_position(target[None, :], envs_idx=[env_id])
                 else:
@@ -591,7 +589,9 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     entity.set_quat(quat)
                 entity.zero_all_dofs_velocity()
         if "home_qpos" in profile:
-            home = from_wire(np.asarray(profile["home_qpos"], dtype=np.float32))
+            home = from_wire_joint_order(
+                np.asarray(profile["home_qpos"], dtype=np.float32), wire_dof_indices
+            )
             batched_home = home if cfg.n_envs == 1 else np.tile(home, (cfg.n_envs, 1))
             robot.set_qpos(batched_home)
             # re-latch the PD controller: a stale pre-reset target would

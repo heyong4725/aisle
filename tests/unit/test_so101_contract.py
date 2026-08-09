@@ -2,13 +2,17 @@ import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from aisle.embodiment import (
     SO101_ARM_JOINTS,
     SO101_GRIPPER_JOINTS,
     SO101_JOINTS,
+    from_wire_joint_order,
     profile_dof_indices,
+    profile_joint_names,
+    to_wire_joint_order,
 )
 
 pytestmark = pytest.mark.unit
@@ -42,9 +46,9 @@ def test_tc5_official_so101_joint_contract():
     assert len(SO101_JOINTS) == 5 + 1
 
 
-def test_tc5_profile_order_maps_by_name_not_parser_order():
-    """TC-5: wire ordering resolves through official joint names and does
-    not assume a URDF parser preserves XML declaration order."""
+def test_tc5_bridge_maps_publish_and_command_order_by_name():
+    """TC-5: the bridge resolves both joint_state and joint_cmd through the
+    official wire names instead of trusting the simulator's parser order."""
 
     class Joint:
         n_dofs = 1
@@ -56,7 +60,8 @@ def test_tc5_profile_order_maps_by_name_not_parser_order():
         n_dofs = 6
 
         def __init__(self):
-            self.by_name = {name: Joint(index) for index, name in enumerate(reversed(SO101_JOINTS))}
+            parser_order = tuple(reversed(SO101_JOINTS))
+            self.by_name = {name: Joint(index) for index, name in enumerate(parser_order)}
 
         def get_joint(self, name):
             return self.by_name[name]
@@ -65,7 +70,14 @@ def test_tc5_profile_order_maps_by_name_not_parser_order():
         "arm_joint_names": list(SO101_ARM_JOINTS),
         "gripper_joint_names": list(SO101_GRIPPER_JOINTS),
     }
-    assert profile_dof_indices(Robot(), profile) == (5, 4, 3, 2, 1, 0)
+    indices = profile_dof_indices(Robot(), profile)
+    assert profile_joint_names(profile) == SO101_JOINTS
+    assert indices == (5, 4, 3, 2, 1, 0)
+
+    wire_command = np.arange(6, dtype=np.float32)
+    native_command = from_wire_joint_order(wire_command, indices)
+    assert native_command.tolist() == [5, 4, 3, 2, 1, 0]
+    assert to_wire_joint_order(native_command, indices).tolist() == wire_command.tolist()
 
 
 def test_scn4_official_asset_provenance_and_mesh_closure():
