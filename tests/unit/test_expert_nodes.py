@@ -9,6 +9,7 @@ from aisle.nodes.grasp_topdown import (
     HAND_MOUNT_YAW,
     PLACE_DROP_GAP,
     finger_yaw_of,
+    neighbour_constraints,
     plan_grasp,
     topdown_quat,
     yaw_of,
@@ -216,3 +217,39 @@ class TestTaskStateMachine:
         machine.on_result()
         machine.on_goal({"target_med": "metformin"}, "ep-2")
         assert machine.on_tick()[0][1]["t"] == 1
+
+
+class TestNeighbourConstraints:
+    """The `neighbours` payload contract between both pose sources and the
+    grasp planner (TC-9): positional against MED_NAMES, with None slots for
+    neighbours the L1 estimator refused. Review finding: the planner's old
+    inline strict zip crashed on the shorter list L1's refusal path used to
+    publish — these tests drive the CONSUMER with the producer's payloads."""
+
+    MEDS = {name: {"size": [0.04, 0.03, 0.08]} for name in MED_NAMES}
+
+    def full_rows(self):
+        return [[0.5, -0.1 + 0.06 * i] for i in range(len(MED_NAMES))]
+
+    def test_l0_full_payload_yields_every_non_target_neighbour(self):
+        rows = self.full_rows()
+        out = neighbour_constraints(rows, MED_NAMES[1], MED_NAMES, self.MEDS)
+        assert len(out) == len(MED_NAMES) - 1
+        assert [c[:2] for c in out] == [r for i, r in enumerate(rows) if i != 1]
+        assert all(c[2:] == [0.02, 0.015] for c in out)
+
+    def test_l1_refused_slot_is_omitted_from_constraints_not_unpacked(self):
+        """A None row is a REFUSED neighbour (mask under the occlusion
+        floor): it must drop out of the constraints — a permissive plan —
+        rather than crash the planner's parse."""
+        rows = self.full_rows()
+        rows[2] = None
+        out = neighbour_constraints(rows, MED_NAMES[1], MED_NAMES, self.MEDS)
+        assert len(out) == len(MED_NAMES) - 2
+
+    def test_a_short_payload_is_a_producer_bug_and_fails_loudly(self):
+        """strict=True is the drift alarm: a producer that silently DROPS a
+        slot (the pre-review L1 behaviour) must fail the parse loudly, not
+        misattribute the remaining centres to the wrong meds."""
+        with pytest.raises(ValueError):
+            neighbour_constraints(self.full_rows()[:-1], MED_NAMES[0], MED_NAMES, self.MEDS)

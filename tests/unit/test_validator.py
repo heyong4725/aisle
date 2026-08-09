@@ -106,6 +106,43 @@ def test_expert_t0_is_good():
     assert report["warnings"] == []
 
 
+def test_expert_t1_is_good():
+    """VAL-7 for graphs/expert_t1.yaml, validated in place like expert_t0:
+    the T1 expert baseline at perception rung L1 (TC-9) passes NORMAL
+    validation with zero errors and zero warnings — the rung declaration on
+    the sim bridge, the absent `poses` topic, and the segmented-pose edges
+    (seg_overhead + depth_overhead in, target_pose out) all pass VAL-8 and
+    the schema checks together."""
+    code, report = run_validate(REPO_ROOT / "graphs" / "expert_t1.yaml")
+    assert code == 0, report
+    assert report["ok"] is True and report["errors"] == []
+    assert report["warnings"] == []
+
+
+def test_expert_t1_with_poses_routed_is_rejected(tmp_path):
+    """VAL-8/TC-9 mutation-proofing on the REAL graph: take expert_t1.yaml
+    verbatim, re-add the bridge's ground-truth `poses` output and route it
+    into segmented-pose — the exact quiet downgrade the rung exists to
+    prevent — and the validator must reject it with
+    PERCEPTION_RUNG_VIOLATION naming the offending edge."""
+    doc = yaml.safe_load((REPO_ROOT / "graphs" / "expert_t1.yaml").read_text())
+    for node in doc["nodes"]:
+        # keep node paths resolvable from the copy's location
+        node["path"] = str((REPO_ROOT / "graphs" / node["path"]).resolve())
+        if node["id"] == "dora-genesis":
+            node["outputs"].append("poses")
+        if node["id"] == "segmented-pose":
+            node["inputs"]["poses"] = {"source": "dora-genesis/poses", "queue_size": 100}
+    mutated = tmp_path / "expert_t1_poses_leak.yaml"
+    mutated.write_text(yaml.safe_dump(doc, sort_keys=False))
+
+    code, report = run_validate(mutated, "--root", str(REPO_ROOT))
+    assert code != 0 and report["ok"] is False
+    violations = [e for e in report["errors"] if e["code"] == "PERCEPTION_RUNG_VIOLATION"]
+    assert violations, report["errors"]
+    assert any("dora-genesis/poses" in e.get("edge", "") for e in violations), violations
+
+
 def test_hints_nonempty():
     """VAL-3: every error and warning across the whole bad corpus carries a
     non-empty hint naming a registry capability or concrete fix, and the

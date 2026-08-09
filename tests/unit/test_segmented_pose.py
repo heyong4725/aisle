@@ -154,11 +154,140 @@ def test_the_footprint_check_is_opt_in_so_callers_without_dimensions_still_work(
     assert estimate_pose(seg, depth, [17], BOX_H, _flat_backproject)["mask_pixels"] == 50 * 85
 
 
-def test_neighbour_estimation_omits_and_COUNTS_what_it_cannot_see():
+def _session():
+    from aisle.nodes.segmented_pose import L1Session
+
+    return L1Session(
+        meds={"ibuprofen": {"size": [0.05, 0.045, BOX_H]}},
+        backprojector=lambda calibration: _flat_backproject,
+    )
+
+
+def _armed_session():
+    s = _session()
+    s.on_bridge_info({"calibration": {"any": "thing"}, "segmentation_ids": {"ibuprofen": [17]}})
+    s.on_target_request({"target_med": "ibuprofen"})
+    return s
+
+
+def _good_frame(s, sim_time_ns=100):
+    seg, depth = _sized_scene(50, 45)
+    return s.on_depth(sim_time_ns, depth) or s.on_seg(sim_time_ns, seg)
+
+
+def test_session_reset_clears_the_active_target():
+    """TC-9 via T08's oracle-pose lesson: after reset_done a STALE target must
+    not keep emitting target_pose. ik-trajectory accepts a plan whenever it is
+    idle — post-reset it is exactly that — so one stale seg frame of the new
+    scene would seed a plan for the PREVIOUS episode's med before the new
+    target_request lands (wrong_object, the 10x penalty)."""
+    s = _armed_session()
+    s.on_reset_done()
+    assert _good_frame(s) is None
+
+
+def test_session_publishes_once_per_request():
+    """T08 parity with oracle-pose: ONE target_pose per target_request, so a
+    completed plan can never be re-triggered by the still-flowing seg stream
+    (the pipeline would replan and pick the placed box back out of the tray).
+    A new request re-arms it."""
+    s = _armed_session()
+    assert _good_frame(s, sim_time_ns=100)["target_med"] == "ibuprofen"
+    assert _good_frame(s, sim_time_ns=200) is None
+    s.on_target_request({"target_med": "ibuprofen"})
+    assert _good_frame(s, sim_time_ns=300) is not None
+
+
+def test_session_refusal_keeps_the_request_pending():
+    """TC-9: a refused estimate must not consume the request — a transient
+    occlusion retries on the next frame, while a persistent one publishes
+    nothing and the episode closes honestly on the verifier's timeout."""
+    s = _armed_session()
+    tiny_seg, tiny_depth = _scene(np.s_[20:25, 10:15])  # 25 px: under the floor
+    s.on_depth(100, tiny_depth)
+    with pytest.raises(PoseRefused):
+        s.on_seg(100, tiny_seg)
+    assert _good_frame(s, sim_time_ns=200) is not None
+
+
+def test_session_never_pairs_seg_and_depth_across_ticks():
+    """TC-9: seg and depth MUST come from ONE render pass and carry the SAME
+    sim stamp — masking one tick's segmentation over another tick's depth
+    measures a scene that never existed (the defect class that already reached
+    the trace recorder and the realistic verifier)."""
+    s = _armed_session()
+    seg, depth = _sized_scene(50, 45)
+    assert s.on_depth(100, depth) is None
+    assert s.on_seg(200, seg) is None  # mismatched stamps: wait, don't guess
+    assert s.on_depth(200, depth) is not None  # the seg's twin arrives
+
+
+def test_session_pairs_frames_in_either_arrival_order():
+    """TC-9's co-scheduled pair is a contract about stamps, not delivery
+    order: the bridge happens to publish depth before seg today because of
+    topic-table ordering, but the session must not starve if seg arrives
+    first (review finding: seg-only buffering made every publish depend on
+    that undocumented ordering)."""
+    s = _armed_session()
+    seg, depth = _sized_scene(50, 45)
+    assert s.on_seg(100, seg) is None  # seg first: buffered, not dropped
+    assert s.on_depth(100, depth) is not None
+
+
+def test_session_never_pairs_unstamped_frames():
+    """A frame with no sim_time_ns (decoded as a negative sentinel) must not
+    pair with another unstamped frame — two -1 stamps are equal but attest
+    nothing about a shared render pass."""
+    s = _armed_session()
+    seg, depth = _sized_scene(50, 45)
+    assert s.on_depth(-1, depth) is None
+    assert s.on_seg(-1, seg) is None
+
+
+def test_session_refuses_an_unknown_med_once_at_request_time():
+    """L0 parity with oracle-pose: an unknown target_med is refused ONCE at
+    request time (the caller logs it), never accepted into a state that
+    refuses per-frame at 15 Hz or KeyErrors on the meds lookup."""
+    s = _session()
+    s.on_bridge_info({"calibration": {}, "segmentation_ids": {"ibuprofen": [17]}})
+    assert s.on_target_request({"target_med": "paracetamol"}) is False
+    assert _good_frame(s) is None  # nothing armed, nothing published
+    assert s.on_target_request({"target_med": "ibuprofen"}) is True
+
+
+def test_session_estimate_carries_pose_and_neighbour_evidence():
+    """TC-9: the publishable payload holds the pose, its supporting mask size,
+    and the neighbour rows + refusal count the grasp planner needs for
+    fingertip clearance — the same evidence contract as the L0 path plus the
+    mask that produced it."""
+    s = _armed_session()
+    out = _good_frame(s)
+    assert out["pos"][2] == pytest.approx(TOP_Z - BOX_H / 2)
+    assert out["mask_pixels"] == 50 * 45
+    assert out["target_med"] == "ibuprofen"
+    assert len(out["neighbours"]) == 1 and out["neighbours_refused"] == 0
+
+
+def test_session_is_silent_until_calibration_and_target_arrive():
+    """Startup ordering: seg frames before bridge_info or before any request
+    must produce nothing rather than raise — the node subscribes to a live
+    15 Hz stream and boots in whatever order dora delivers."""
+    s = _session()
+    seg, depth = _sized_scene(50, 45)
+    s.on_depth(100, depth)
+    assert s.on_seg(100, seg) is None  # no calibration, no target yet
+    s.on_bridge_info({"calibration": {}, "segmentation_ids": {"ibuprofen": [17]}})
+    assert s.on_seg(100, seg) is None  # calibrated, but still no request
+
+
+def test_neighbour_estimation_keeps_slots_and_COUNTS_what_it_cannot_see():
     """The grasp planner uses neighbour (x, y) for fingertip clearance, so at L1
-    those must be estimated too or it silently loses the check. A neighbour
-    whose mask is too small is omitted and COUNTED — fewer constraints means a
-    permissive plan, not a safe one, so the count travels in the metadata."""
+    those must be estimated too or it silently loses the check. The payload is
+    POSITIONAL — the consumer zips it against MED_NAMES strict=True — so a
+    neighbour whose mask is too small keeps its slot as None and is COUNTED:
+    a SHORTER list crashes the planner mid-run (found in review), and fewer
+    constraints means a permissive plan, not a safe one, so the count travels
+    in the metadata."""
     from aisle.nodes.segmented_pose import estimate_neighbours
 
     seg = np.zeros((64, 64), dtype=np.int32)
@@ -175,4 +304,5 @@ def test_neighbour_estimation_omits_and_COUNTS_what_it_cannot_see():
         {"visible": {"size": [0.03, 0.025, BOX_H]}, "tiny": {"size": [0.03, 0.025, BOX_H]}},
         _flat_backproject,
     )
-    assert len(rows) == 1 and refused == 1
+    assert len(rows) == 2 and refused == 1
+    assert rows[0] is not None and rows[1] is None
