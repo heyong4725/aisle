@@ -563,13 +563,14 @@ def graph_perception_rung(nodes: list, manifests: dict) -> tuple[str, list[str],
     declared = {}
     for node in nodes:
         env = node.get("env") or {}
-        raw = env.get("AISLE_PERCEPTION")
-        if raw is None:
+        if "AISLE_PERCEPTION" not in env:
             continue
         # a PRESENT but blank value is an unknown rung, not an absent one:
         # skipping it fell through to the L0 default and permitted ground
-        # truth, so `AISLE_PERCEPTION: "   "` validated ok=true (Codex review)
-        declared[node["id"]] = str(raw).strip().upper()
+        # truth, so `AISLE_PERCEPTION: "   "` validated ok=true. Membership
+        # rather than `is None`, because `AISLE_PERCEPTION:` with no value
+        # parses from YAML as None and is still a graph DECLARING a rung.
+        declared[node["id"]] = str(env.get("AISLE_PERCEPTION") or "").strip().upper()
     # TC-9: the rung is declared on the SIM BRIDGE, because dora injects a
     # node's env into that node's process alone. A rung on any other node is
     # read by nobody at runtime: the validator would forbid `poses` graph-wide

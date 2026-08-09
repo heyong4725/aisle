@@ -59,10 +59,23 @@ BATCH_ROWS = 100
 # seconds of tail
 FLUSH_EVERY_S = 5.0
 # endpoints whose rows are METADATA-ONLY. Anything not listed here goes down the
-# generic numeric path, which calls .tolist() on the payload — for a 640x480
-# seg_overhead mask that is 307,200 values per frame at 15 Hz, buffered
-# BATCH_ROWS deep, against ADR-11's ~17 MB budget for an ENTIRE run's trace.
+# generic numeric path, which calls .tolist() on the payload: a 640x480
+# seg_overhead mask is 307,200 float64 list values per frame, ~2.5 MB, ~37 MB/s
+# at 15 Hz, buffered BATCH_ROWS deep. (Earlier revisions of this comment cited
+# "ADR-11's ~17 MB budget" — that figure is ADR-11's MEASUREMENT of the opt-in
+# npz capture set for a 600 s episode, as this module's own docstring states,
+# not a trace budget. The arithmetic above is what justifies the routing.)
 IMAGE_ENDPOINTS = ("__rgb_overhead", "__rgb_wrist", "__depth_overhead", "__seg_overhead")
+
+
+def is_image_endpoint(topic: str) -> bool:
+    """Whether this endpoint's row is METADATA-ONLY (ADR-11, TC-9).
+
+    A named function, not an inline `topic.endswith(IMAGE_ENDPOINTS)`, so the
+    routing decision itself is what a test binds: asserting only on the
+    constant left `IMAGE_ENDPOINTS[:-1]` at the call site green while masks went
+    back down the numeric path."""
+    return topic.endswith(IMAGE_ENDPOINTS)
 
 
 def decode_frame(metadata: dict, value) -> np.ndarray | None:
@@ -249,13 +262,12 @@ def main() -> None:
                 continue
             topic = event["id"]  # <producer>__<topic> endpoint key
             metadata = event.get("metadata") or {}
-            if topic.endswith(IMAGE_ENDPOINTS):
+            if is_image_endpoint(topic):
                 # image endpoints: metadata-only rows; overhead pixels go to
                 # the mp4 and, when capture is on, raw arrays (ADR-11).
                 # seg_overhead (TC-9, L1) belongs here or nowhere: the generic
                 # numeric path below would call .tolist() on 640x480 = 307,200
-                # float64s per frame at 15 Hz, buffered BATCH_ROWS deep, against
-                # ADR-11's ~17 MB budget for an entire run's trace. decode_frame
+                # float64s per frame, ~2.5 MB, ~37 MB/s at 15 Hz. decode_frame
                 # returns None for enc "seg_i32", so a mask cannot reach the mp4
                 # or the VER-9 capture set — the row stays metadata-only, which
                 # is what it should be: nothing judges a segmentation mask.

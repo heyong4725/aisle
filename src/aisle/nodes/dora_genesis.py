@@ -59,6 +59,19 @@ RENDER_TOPICS = ("rgb_overhead", "rgb_wrist", "depth_overhead", "seg_overhead")
 RESET_PUBLISH = ("oracle_state", "poses")
 
 
+def reset_publish_topics(topic_rates: dict) -> tuple[str, ...]:
+    """The reset path's direct publishes, filtered by the rung (TC-9).
+
+    Filtering HERE as well as inside `publish` is deliberate. The gate inside
+    publish() is the backstop for every call site, but a test can only reach it
+    through dora and genesis, so an INVERTED guard there (`if may_publish(...):
+    return`) passed every test while re-opening exactly the leak this fixes.
+    Inverting it now breaks every ordinary topic loudly instead, and the leak
+    that actually happened is prevented by this function, which a unit test
+    calls directly."""
+    return tuple(topic for topic in RESET_PUBLISH if may_publish(topic, topic_rates))
+
+
 def may_publish(topic: str, topic_rates: dict) -> bool:
     """TC-9: whether this bridge may put `topic` on the wire at its rung.
 
@@ -132,12 +145,17 @@ PERCEPTION_RUNGS = ("L0", "L1", "L2")
 
 def parse_bridge_config(env: dict) -> BridgeConfig:
     """BRG-1: node configuration from environment variables."""
-    # absent means L0; PRESENT-but-empty is an unknown rung, not an absent
-    # one. A trailing `or "L0"` here mapped `AISLE_PERCEPTION: ""` to L0 and
-    # defeated the refusal three lines below -- the same blank-value hole
-    # VAL-8 had on the validator side, written twice independently.
-    raw = env.get("AISLE_PERCEPTION")
-    perception = "L0" if raw is None else str(raw).strip().upper()
+    # only an ABSENT key defaults. Membership, not `is None` and not falsiness:
+    # `AISLE_PERCEPTION:` with no value parses from YAML as None, and
+    # `AISLE_PERCEPTION: ""` is the empty string -- both are a graph DECLARING a
+    # rung, so both must reach the refusal below rather than inherit L0. Each
+    # narrower version of this test let one more shape through: `or "L0"` let
+    # "" and "   " through, `is None` let YAML null through.
+    perception = (
+        str(env.get("AISLE_PERCEPTION") or "").strip().upper()
+        if "AISLE_PERCEPTION" in env
+        else "L0"
+    )
     if perception not in PERCEPTION_RUNGS:
         # TC-9: an unrecognized rung must not silently fall back to L0 — that
         # would publish ground-truth pose to a graph that asked not to have it
@@ -171,6 +189,32 @@ def require_single_env_for_mobile(embodiment: str, n_envs: int) -> None:
         )
 
 
+def require_usable_segmentation_ids(segmentation_ids: dict, perception: str) -> None:
+    """TC-9: at L1 the id map is LOAD-BEARING, so refuse an unusable one.
+
+    A consumer cannot derive these ids — they are genesis's own numbering — so
+    an EMPTY or PARTIAL map means every L1 pose estimate refuses, one stderr
+    line at a time, and the episode dies on a timeout that scores as a policy
+    failure. Fail at startup instead, the way BRG-8 requires calibration rather
+    than defaulting it.
+
+    Both shapes, not just the partial one: for an empty map the partial check is
+    vacuously satisfied, so the guard passed and bridge_info announced
+    `"segmentation_ids": {}` at L1 — attested-looking and unusable, the same
+    empty-vs-absent confusion as the rung parsing itself."""
+    if perception != "L1":
+        return
+    blank = sorted(name for name, ids in segmentation_ids.items() if not ids)
+    if not segmentation_ids or blank:
+        raise ValueError(
+            "perception rung L1 but no segmentation ids resolved for "
+            f"{blank or 'any object (the scene declared no graspables)'} — "
+            "the scene's segmentation_idx_dict did not yield entity indices for "
+            "them (check VisOptions.segmentation_level); an L1 run needs this map "
+            "to estimate pose at all (TC-9)"
+        )
+
+
 def require_supported_perception(cfg: BridgeConfig) -> None:
     """TC-9: refuse a rung this bridge cannot actually serve for the scene.
 
@@ -181,7 +225,19 @@ def require_supported_perception(cfg: BridgeConfig) -> None:
     refuse every pose, dying on a timeout that scores as a POLICY failure. The
     empty-entry guard cannot see it either: store ids resolve to real seg ids,
     they are just unaskable. Refuse at config time until a store L1 consumer
-    exists — a loud refusal beats a run that looks like bad luck."""
+    exists — a loud refusal beats a run that looks like bad luck. The refusal
+    reaches an operator through dora's per-node log
+    (`runs/<id>/out/<dataflow>/log_dora-genesis.jsonl`, which carries
+    `"stream":"stderr"` rows), not through the rollout result JSON."""
+    if cfg.perception == "L2":
+        # TC-9 calls L2 "(deferred; T2's rung)" and no node consumes rgb alone.
+        # rung_topic_rates pops BOTH pose sources at L2, so the bridge would
+        # start happily and publish no pose source at all -- the same
+        # unserviceable-config shape as the store case one line below.
+        raise ValueError(
+            "perception rung L2 is deferred (TC-9): no estimator consumes rgb alone yet, "
+            "so an L2 run would publish no pose source at all. Use L0 or L1."
+        )
     if cfg.perception == "L1" and cfg.scene == "store":
         raise ValueError(
             "perception rung L1 is not supported for the store scene: its id map is "
@@ -500,20 +556,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         if cfg.perception == "L1"
         else {}
     )
-    if cfg.perception == "L1":
-        # TC-9: at L1 this map is LOAD-BEARING — a consumer cannot derive the
-        # ids (they are genesis's own numbering) so an empty or partial map
-        # means every L1 pose estimate refuses. Fail here, the way BRG-8
-        # requires calibration rather than defaulting it, instead of running an
-        # episode that dies on a timeout with a stderr line as its only clue.
-        blank = sorted(name for name, ids in segmentation_ids.items() if not ids)
-        if blank:
-            raise ValueError(
-                f"perception rung L1 but no segmentation ids resolved for {blank} — "
-                "the scene's segmentation_idx_dict did not yield entity indices for "
-                "them (check VisOptions.segmentation_level); an L1 run needs this map "
-                "to estimate pose at all (TC-9)"
-            )
+    require_usable_segmentation_ids(segmentation_ids, cfg.perception)
 
     node = Node()
     node.send_output(
@@ -963,7 +1006,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             # before any physics step so the first oracle_state after reset
             # is a pure function of the seed (TC-A2, CON-5); reset_done was
             # already sent, so nothing interleaves the service pair (TC-6)
-            for topic in RESET_PUBLISH:
+            for topic in reset_publish_topics(topic_rates):
                 publish(topic)
 
 
