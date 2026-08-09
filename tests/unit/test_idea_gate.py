@@ -450,3 +450,20 @@ def test_rollout_scrubs_bringup_env():
     env = scrub_bringup_env({"AISLE_STEP_WITHOUT_RESET": "1", "AISLE_TIER": "S1"})
     assert "AISLE_STEP_WITHOUT_RESET" not in env
     assert env == {"AISLE_TIER": "S1"}
+
+
+def test_rollout_scrubs_the_perception_rung():
+    """TC-9: the rung MUST come from the graph, where the graph hash attests
+    it, and never from the ambient environment. The bridge reads it via
+    parse_bridge_config(os.environ), so an ambient AISLE_PERCEPTION=L1 would
+    set the rung of a run whose graph declared none — and the validator, which
+    sees only graph YAML, could never detect the divergence. Same hazard ADR-25
+    wrote this scrub for."""
+    from aisle.harness.rollout import scrub_bringup_env
+
+    scrubbed = scrub_bringup_env(
+        {"AISLE_PERCEPTION": "L1", "AISLE_STEP_WITHOUT_RESET": "1", "PATH": "/usr/bin"}
+    )
+    assert "AISLE_PERCEPTION" not in scrubbed
+    assert "AISLE_STEP_WITHOUT_RESET" not in scrubbed
+    assert scrubbed["PATH"] == "/usr/bin"
