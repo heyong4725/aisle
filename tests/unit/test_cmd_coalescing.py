@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from aisle.nodes.dora_genesis import (
+    BridgeConfig,
     CommandQueue,
     RateScheduler,
     ResetQuarantine,
@@ -262,6 +263,13 @@ def test_perception_rung_from_env_defaults_l0():
     assert parse_bridge_config({"AISLE_PERCEPTION": " L2 "}).perception == "L2"
     with pytest.raises(ValueError, match="unknown perception rung"):
         parse_bridge_config({"AISLE_PERCEPTION": "L3"})
+    # PRESENT but empty is an UNKNOWN rung, not an absent one. A trailing
+    # `or "L0"` mapped both onto the default and defeated this refusal — the
+    # same blank-value hole VAL-8 had on the validator side. Only a MISSING key
+    # defaults.
+    for blank in ("", "   ", "\t"):
+        with pytest.raises(ValueError, match="unknown perception rung"):
+            parse_bridge_config({"AISLE_PERCEPTION": blank})
 
 
 def test_bridge_publishes_only_what_the_rung_permits():
@@ -413,8 +421,11 @@ def test_publish_is_wired_to_the_gate_not_to_an_inline_check():
 
     from aisle.nodes import dora_genesis
 
+    # publish() is a closure inside main() and needs dora + genesis to call, so
+    # the wiring is checked structurally. Matched on the FUNCTION NAME only: an
+    # assertion carrying the argument list would break on a harmless rename.
     source = inspect.getsource(dora_genesis.main)
-    assert "may_publish(topic, topic_rates)" in source, "publish() bypasses the TC-9 gate"
+    assert "may_publish(" in source, "publish() bypasses the TC-9 gate"
 
 
 def test_bridge_info_requires_the_rung_rather_than_defaulting_it():
@@ -443,12 +454,19 @@ def test_seg_and_depth_publish_order_is_the_one_the_consumer_needs():
 
 def test_store_scene_refuses_the_l1_rung():
     """TC-9: the store keys graspables by item id (`slot#k`) while the L1
-    estimator asks by med name, so an L1 store run would refuse every pose and
-    die on a timeout scored as a policy failure. Refused at config time
-    instead. Structural check: the raise lives in main(), which needs genesis."""
-    import inspect
+    estimator asks by med name, so an L1 store run would announce a well-formed
+    id map and then refuse every pose, dying on a timeout that scores as a
+    POLICY failure. Refused at config time, loudly, instead."""
+    from aisle.nodes.dora_genesis import require_supported_perception
 
-    from aisle.nodes import dora_genesis
-
-    source = inspect.getsource(dora_genesis.main)
-    assert 'cfg.perception == "L1" and is_store' in source
+    store_l1 = BridgeConfig(seed=0, embodiment="mobile", n_envs=1, scene="store", perception="L1")
+    with pytest.raises(ValueError, match="not supported for the store scene"):
+        require_supported_perception(store_l1)
+    # the desk scene at L1 is the supported case, and the store at L0 is
+    # untouched — the refusal is about the id-map namespace, not about L1
+    require_supported_perception(
+        BridgeConfig(seed=0, embodiment="franka", n_envs=1, perception="L1")
+    )
+    require_supported_perception(
+        BridgeConfig(seed=0, embodiment="mobile", n_envs=1, scene="store", perception="L0")
+    )

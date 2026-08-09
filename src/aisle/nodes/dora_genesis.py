@@ -171,6 +171,26 @@ def require_single_env_for_mobile(embodiment: str, n_envs: int) -> None:
         )
 
 
+def require_supported_perception(cfg: BridgeConfig) -> None:
+    """TC-9: refuse a rung this bridge cannot actually serve for the scene.
+
+    The store scene keys its graspables by ITEM ID (`f"{slot_id}#{k}"`, plus
+    `f"bin#{category}"`) while the only L1 consumer asks by MED NAME
+    (segmented_pose's `seg_ids_for(id_map, target_med)`). Those namespaces never
+    intersect, so an L1 store run would announce a well-formed id map and then
+    refuse every pose, dying on a timeout that scores as a POLICY failure. The
+    empty-entry guard cannot see it either: store ids resolve to real seg ids,
+    they are just unaskable. Refuse at config time until a store L1 consumer
+    exists — a loud refusal beats a run that looks like bad luck."""
+    if cfg.perception == "L1" and cfg.scene == "store":
+        raise ValueError(
+            "perception rung L1 is not supported for the store scene: its id map is "
+            "keyed by item id and the L1 pose estimator asks by med name, so every "
+            "estimate would refuse (TC-9). Run the store at L0, or teach the "
+            "estimator the store namespace first."
+        )
+
+
 def require_valid_store_config(cfg: BridgeConfig) -> None:
     """T15/T16 (ADR-18/ADR-19): the store scene is mobile-only (fixed-base
     robots cannot reach across aisles) and single-env. Every scenario rolls
@@ -432,6 +452,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     cfg = parse_bridge_config(os.environ)
     require_single_env_for_mobile(cfg.embodiment, cfg.n_envs)
     require_valid_store_config(cfg)
+    require_supported_perception(cfg)
     root = Path(os.environ.get("AISLE_ROOT", _REPO_ROOT))
     physics = load_physics()
     profile = physics["embodiment"][cfg.embodiment]
@@ -479,21 +500,6 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         if cfg.perception == "L1"
         else {}
     )
-    if cfg.perception == "L1" and is_store:
-        # TC-9: the store scene keys its graspables by ITEM ID (`f"{slot_id}#{k}"`,
-        # plus `f"bin#{category}"`), while the only L1 consumer asks by MED NAME
-        # (segmented_pose's seg_ids_for(id_map, target_med)). Those namespaces
-        # never intersect, so an L1 store run would announce a well-formed map and
-        # then refuse every pose, dying on a timeout that scores as a policy
-        # failure. The blank-entry guard below cannot see it: store ids resolve to
-        # real seg ids, they are just unaskable. Refuse until a store L1 consumer
-        # exists and fixes the namespace.
-        raise ValueError(
-            "perception rung L1 is not supported for the store scene: its id map is "
-            "keyed by item id and the L1 pose estimator asks by med name, so every "
-            "estimate would refuse (TC-9). Run the store at L0, or teach the "
-            "estimator the store namespace first."
-        )
     if cfg.perception == "L1":
         # TC-9: at L1 this map is LOAD-BEARING — a consumer cannot derive the
         # ids (they are genesis's own numbering) so an empty or partial map

@@ -58,6 +58,11 @@ BATCH_ROWS = 100
 # read (PR #11 round 2) — periodic flushing bounds any loss to this many
 # seconds of tail
 FLUSH_EVERY_S = 5.0
+# endpoints whose rows are METADATA-ONLY. Anything not listed here goes down the
+# generic numeric path, which calls .tolist() on the payload — for a 640x480
+# seg_overhead mask that is 307,200 values per frame at 15 Hz, buffered
+# BATCH_ROWS deep, against ADR-11's ~17 MB budget for an ENTIRE run's trace.
+IMAGE_ENDPOINTS = ("__rgb_overhead", "__rgb_wrist", "__depth_overhead", "__seg_overhead")
 
 
 def decode_frame(metadata: dict, value) -> np.ndarray | None:
@@ -244,9 +249,7 @@ def main() -> None:
                 continue
             topic = event["id"]  # <producer>__<topic> endpoint key
             metadata = event.get("metadata") or {}
-            if topic.endswith(
-                ("__rgb_overhead", "__rgb_wrist", "__depth_overhead", "__seg_overhead")
-            ):
+            if topic.endswith(IMAGE_ENDPOINTS):
                 # image endpoints: metadata-only rows; overhead pixels go to
                 # the mp4 and, when capture is on, raw arrays (ADR-11).
                 # seg_overhead (TC-9, L1) belongs here or nowhere: the generic

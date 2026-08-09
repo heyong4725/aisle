@@ -209,13 +209,11 @@ def test_segmentation_endpoint_is_metadata_only():
     Routing also keeps masks out of the mp4 and the VER-9 capture set, which
     `decode_frame` enforces independently by declining the `seg_i32` encoding —
     nothing judges a segmentation mask."""
-    import inspect
+    from aisle.harness.trace_recorder import IMAGE_ENDPOINTS
 
-    from aisle.harness import trace_recorder
-
-    source = inspect.getsource(trace_recorder)
-    endpoints = source.split("topic.endswith(\n")[1].split(")")[0]
-    assert "__seg_overhead" in endpoints, "seg_overhead falls through to the numeric path"
-    # and the encoding is not decodable as pixels, so it cannot reach the mp4
+    # the routing decision the recorder makes, on the constant it makes it with
+    assert "dora-genesis__seg_overhead".endswith(IMAGE_ENDPOINTS)
+    # and the encoding is not decodable as pixels, so a mask cannot reach the
+    # mp4 or the VER-9 capture set even though it is routed as an image
     _, _, value = rgb_payload()
     assert decode_frame({"h": 480, "w": 640, "enc": "seg_i32"}, value) is None
