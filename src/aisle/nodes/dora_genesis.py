@@ -438,13 +438,14 @@ def realized_calibration(handle, physics: dict, is_store: bool) -> dict:
     overhead pose is read back from the camera transform (so DR jitter is
     reflected), converted to the v1/OpenCV conventions by VER-8's own
     module. Store scenes use their own overhead nominals."""
-    from aisle.scenes.pharmacy import to_numpy, wrist_mount_rotation
+    from aisle.scenes.pharmacy import to_numpy, wrist_mount_transform
     from aisle.verifier.calibration import GL_TO_CV, build_calibration_v1
 
     cams = handle.cams
     cam_cfg = physics["cameras"]
     overhead = cams["overhead"]
     transform = np.asarray(to_numpy(overhead.transform)).reshape(4, 4)
+    wrist_transform = wrist_mount_transform(cam_cfg, physics["embodiment"][handle.embodiment])
     lookat = cam_cfg["store_overhead_lookat" if is_store else "overhead_lookat"]
     return build_calibration_v1(
         # the REALIZED rotation, converted GL->CV — not a re-derivation
@@ -455,8 +456,8 @@ def realized_calibration(handle, physics: dict, is_store: bool) -> dict:
         overhead_lookat=lookat,
         overhead_resolution=overhead.res,
         overhead_fov_deg=overhead.fov,
-        wrist_offset_m=cam_cfg["wrist_offset_m"],
-        wrist_mount_rotation_gl=wrist_mount_rotation(cam_cfg),
+        wrist_offset_m=wrist_transform[:3, 3].tolist(),
+        wrist_mount_rotation_gl=wrist_transform[:3, :3],
         wrist_resolution=cams["wrist"].res,
         wrist_fov_deg=cams["wrist"].fov,
     )
@@ -650,8 +651,8 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         if "home_qpos" in profile
         else None
     )
-    gripper_open = profile.get("gripper_open_m", 0.04)
-    gripper_close = profile.get("gripper_close_m", 0.0)
+    gripper_open = profile.get("gripper_open_qpos", profile.get("gripper_open_m", 0.04))
+    gripper_close = profile.get("gripper_close_qpos", profile.get("gripper_close_m", 0.0))
     gripper_dofs = int(profile.get("gripper_dofs", 2))
     finger_idx = list(wire_dof_indices[-gripper_dofs:])
 

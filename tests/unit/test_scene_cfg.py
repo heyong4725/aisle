@@ -54,6 +54,22 @@ def test_physics_config():
             assert distance <= profile["reach_m"], (embodiment, key)
 
 
+def test_so101_profile_matches_official_joint_space():
+    """TC-5, SCN-2, SCN-4: the SO-101 profile uses the official 5+1
+    joint order and URDF gripper range, with a complete legal home pose."""
+    from aisle.embodiment import SO101_ARM_JOINTS, SO101_GRIPPER_JOINTS
+
+    profile = load_physics()["embodiment"]["so101"]
+    assert tuple(profile["arm_joint_names"]) == SO101_ARM_JOINTS
+    assert tuple(profile["gripper_joint_names"]) == SO101_GRIPPER_JOINTS
+    assert profile["ee_link"] == "gripper_link"
+    assert profile["ee_frame_offset_xyz"] == pytest.approx([-0.0079, -0.000218121, -0.0981274])
+    assert profile["ee_frame_offset_rpy"] == pytest.approx([0.0, 3.14159, 0.0])
+    assert len(profile["home_qpos"]) == 6
+    assert profile["gripper_open_qpos"] == pytest.approx(1.74533)
+    assert profile["gripper_close_qpos"] == pytest.approx(-0.174533)
+
+
 def test_dr_toggles_default_off():
     """SCN-6: every domain-randomization toggle defaults OFF and each is
     independently seedable; DR distribution constants live in physics.toml,

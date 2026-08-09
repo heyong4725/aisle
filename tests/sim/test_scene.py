@@ -162,17 +162,23 @@ def test_dr_toggles_are_effective_seeded_and_isolated(handle):
     assert shaken.dr_applied["overhead_pos"] != handle.dr_applied["overhead_pos"]
 
 
-def test_so101_requires_asset():
-    """SCN-4: the so101 embodiment builds from assets/so101/ with its own
-    layout profile; without the asset the failure is the explicit
-    FileNotFoundError (skipped until the asset lands, ADR-6)."""
-    from aisle.scenes.pharmacy import SO101_URDF
+def test_so101_official_profile_builds():
+    """SCN-1, SCN-3, SCN-4, SCN-5, TC-5: the official SO-101 asset builds
+    as five arm plus one gripper DOF, starts at its configured home, keeps
+    every placement reachable, and composes the official fixed TCP frame into
+    its explicit end-effector camera mount."""
+    from aisle.embodiment import SO101_JOINTS, profile_dof_indices
 
-    if not SO101_URDF.exists():
-        with pytest.raises(FileNotFoundError, match="so101 asset missing"):
-            build_scene(seed=7, embodiment="so101", headless=True)
-        pytest.skip("assets/so101 not present (acquisition pending human sign-off, ADR-6)")
     handle = build_scene(seed=7, embodiment="so101", headless=True)
+    profile = load_physics()["embodiment"]["so101"]
+    indices = profile_dof_indices(handle.robot, profile)
+    names = tuple(profile["arm_joint_names"] + profile["gripper_joint_names"])
+    assert handle.robot.n_dofs == len(SO101_JOINTS)
+    assert names == SO101_JOINTS
+    actual = to_numpy(handle.robot.get_qpos()).reshape(-1)[list(indices)]
+    assert np.allclose(actual, profile["home_qpos"])
+    assert handle.cams["wrist"]._attached_link.name == profile["ee_link"]
+    assert handle.reachability_errors == []
     assert list(handle.boxes) == MED_NAMES
 
 

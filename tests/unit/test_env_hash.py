@@ -1,6 +1,6 @@
 """Unit tests for tools/env_hash.py (CON-7, CON-5, CON-8).
 
-CON-7: the frozen set is src/aisle/{scenes,verifier,reset} and
+CON-7: the frozen set is src/aisle/{scenes,verifier,reset}, assets/so101, and
 graphs/expert_*.yaml; tools/env_hash.py fingerprints it so rollout can
 refuse on mismatch.
 """
@@ -30,6 +30,9 @@ def make_root(tmp_path: Path) -> Path:
     (tmp_path / "graphs").mkdir()
     (tmp_path / "graphs" / "expert_t0.yaml").write_text("nodes: []\n")
     (tmp_path / "graphs" / "scratch.yaml").write_text("nodes: []\n")
+    asset = tmp_path / "assets" / "so101"
+    asset.mkdir(parents=True)
+    (asset / "so101.urdf").write_text("<robot name='so101'/>\n")
     (tmp_path / "tools").mkdir()
     return tmp_path
 
@@ -71,6 +74,15 @@ def test_content_change_changes_hash(tmp_path):
     assert get_hash(root) != before
 
 
+def test_so101_asset_change_changes_hash(tmp_path):
+    """CON-5, CON-7, SCN-4: the pinned SO-101 URDF and mesh closure are
+    frozen inputs; changing an asset invalidates the environment hash."""
+    root = make_root(tmp_path)
+    before = get_hash(root)
+    (root / "assets" / "so101" / "so101.urdf").write_text("<robot name='changed'/>\n")
+    assert get_hash(root) != before
+
+
 def test_rename_changes_hash(tmp_path):
     """CON-7: file paths are part of the fingerprint, not just contents."""
     root = make_root(tmp_path)
@@ -81,8 +93,7 @@ def test_rename_changes_hash(tmp_path):
 
 
 def test_non_frozen_files_ignored(tmp_path):
-    """CON-7: only src/aisle/{scenes,verifier,reset} and graphs/expert_*.yaml
-    are fingerprinted; other files do not affect the hash."""
+    """CON-7: files outside the declared frozen paths do not affect the hash."""
     root = make_root(tmp_path)
     before = get_hash(root)
     (root / "graphs" / "scratch.yaml").write_text("nodes: [changed]\n")

@@ -57,3 +57,14 @@ mode this bridge keeps seq per (topic, env_id) so per-env consumers can
 detect drops without false gaps — the single-env case (the profile TC-2
 was written for) degenerates to exactly per-topic. Recorded as the
 multi-env extension rather than silently deviating.
+
+Issue #13 amendment (2026-08-08): (14) profiles may declare explicit arm
+and gripper joint names in TC-5 wire order. The bridge resolves Genesis DOF
+indices by those names, reorders `joint_state` and `joint_cmd` at the
+boundary, and addresses gripper DOFs by name; parser order and "last DOF"
+are no longer part of the SO-101 contract. (15) gripper endpoints are joint
+positions: metres for Franka's prismatic fingers and radians for SO-101's
+revolute jaw. The SO-101 values come from the pinned official URDF and map
+the normalized contract unchanged (`0` open, `1` closed). (16) SO-101's
+collapsed fixed TCP transform is included in both the actual wrist-camera
+attachment and the VER-8 calibration block.
