@@ -1,0 +1,16 @@
+# VAL-8 (TC-9): the graph declares perception rung L1 -- where pose must be
+# ESTIMATED from segmentation + depth -- and then consumes the ground-truth
+# `poses` shortcut anyway. Without this check the rung is advisory, and every
+# number reported as L1 would be silently unearned.
+nodes:
+- id: dora-genesis
+  env:
+    AISLE_PERCEPTION: L1
+  outputs:
+  - poses
+  - depth_overhead
+- id: oracle-pose
+  inputs:
+    poses: dora-genesis/poses
+  outputs:
+  - target_pose

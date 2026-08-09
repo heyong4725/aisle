@@ -910,3 +910,88 @@ def test_dist_state_present_on_early_graph_errors(tmp_path):
     code, report = run_validate(bad_graph, "--root", str(root))
     assert code != 0
     assert report["dist_state"] == {"aisle-review-absent-dist": None}
+
+
+def test_perception_rung_default_l0_allows_ground_truth_poses(tmp_path):
+    """VAL-8: a graph that declares NO rung is L0, where `poses` is the
+    sanctioned pose source. Every graph that existed before TC-9 is in this
+    class, so the check must be silent on them (see also
+    test_expert_t0_is_good, which validates the real T0 graph)."""
+    root = fixture_root(tmp_path, {"dora-genesis": {}, "oracle-pose": {}})
+    graph = write_graph(
+        root,
+        [
+            {"id": "dora-genesis", "outputs": ["poses"]},
+            {"id": "oracle-pose", "inputs": {"poses": "dora-genesis/poses"}},
+        ],
+    )
+    _, report = run_validate(graph, "--root", str(root))
+    assert "PERCEPTION_RUNG_VIOLATION" not in codes(report, "errors"), report
+
+
+def test_perception_rung_l1_forbids_ground_truth_poses():
+    """VAL-8, TC-9: at L1 the pose MUST be estimated from segmentation +
+    depth, so consuming `poses` is an error naming the edge and the rung —
+    otherwise a run labelled L1 would report grounding it never did."""
+    code, report = corpus_report("perception_rung_l1_uses_poses")
+    assert code != 0
+    leak = [e for e in report["errors"] if e["code"] == "PERCEPTION_RUNG_VIOLATION"]
+    assert len(leak) == 1, report
+    assert leak[0]["edge"] == "dora-genesis/poses -> oracle-pose/poses"
+    assert "L1" in leak[0]["detail"]
+    # VAL-3: the hint must name the fix, not just the violation
+    assert "seg_overhead" in leak[0]["hint"] and "L0" in leak[0]["hint"]
+
+
+def test_perception_rung_l1_allows_estimated_pose_path(tmp_path):
+    """VAL-8: L1 forbids ONLY the ground-truth pose shortcut. The rung's own
+    inputs — depth plus (with the bridge) segmentation — and the estimator's
+    `target_pose` output stay legal, or the rung would be unusable."""
+    root = fixture_root(tmp_path, {"dora-genesis": {}, "pose-estimator": {}})
+    graph = write_graph(
+        root,
+        [
+            {
+                "id": "dora-genesis",
+                "env": {"AISLE_PERCEPTION": "L1"},
+                "outputs": ["depth_overhead"],
+            },
+            {"id": "pose-estimator", "inputs": {"depth": "dora-genesis/depth_overhead"}},
+        ],
+    )
+    _, report = run_validate(graph, "--root", str(root))
+    assert "PERCEPTION_RUNG_VIOLATION" not in codes(report, "errors"), report
+
+
+def test_perception_rung_violation_not_hidden_by_schema_error(tmp_path):
+    """VAL-8 inherits VAL-6's rule: the rung violation is reported even when
+    the same edge also carries a schema error. A leak that only surfaces once
+    the graph is otherwise clean is a leak that ships."""
+    root = fixture_root(tmp_path, {"dora-genesis": {"outputs.poses": "mystery"}, "oracle-pose": {}})
+    graph = write_graph(
+        root,
+        [
+            {"id": "dora-genesis", "env": {"AISLE_PERCEPTION": "L1"}, "outputs": ["poses"]},
+            {"id": "oracle-pose", "inputs": {"poses": "dora-genesis/poses"}},
+        ],
+    )
+    code, report = run_validate(graph, "--root", str(root))
+    assert code != 0
+    assert {"PERCEPTION_RUNG_VIOLATION", "SCHEMA_UNKNOWN"} <= codes(report, "errors"), report
+
+
+def test_perception_rung_table_matches_tc9():
+    """VAL-8, TC-9's ladder as a table: L0 forbids nothing, L1 forbids the
+    ground-truth pose, L2 additionally forbids ground-truth segmentation
+    (pixels only). The L2 end-to-end edge case joins the golden corpus with
+    the PR that makes `seg_overhead` a real bridge port."""
+    from aisle.harness.validate import FORBIDDEN_BY_RUNG, graph_perception_rung
+
+    assert FORBIDDEN_BY_RUNG["L0"] == ()
+    assert FORBIDDEN_BY_RUNG["L1"] == ("poses",)
+    assert set(FORBIDDEN_BY_RUNG["L2"]) == {"poses", "seg_overhead"}
+    # declared on whichever node carries it, case-insensitively, defaulting to L0
+    assert (
+        graph_perception_rung([{"id": "a"}, {"id": "b", "env": {"AISLE_PERCEPTION": "l1"}}]) == "L1"
+    )
+    assert graph_perception_rung([{"id": "a", "env": {}}]) == "L0"

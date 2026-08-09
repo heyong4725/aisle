@@ -263,6 +263,8 @@ def validate_nodes(
     # franka arm on a base, so a franka-arm graph validates unchanged
     # under `mobile`. Arm nodes are checked against the resolved arm.
     arm_kind = EMBODIMENT_ARM.get(embodiment, embodiment)
+    # TC-9/VAL-8: the perception rung is a property of the GRAPH, read once
+    rung = graph_perception_rung(nodes)
     for node in nodes:
         node_id = node["id"]
         # ADR-25 (issue #71, PR #80 review): the bridge's reset-less
@@ -502,9 +504,43 @@ def validate_nodes(
 
         for port, source in (node.get("inputs") or {}).items():
             _validate_edge(
-                node, manifest, port, source, graph_nodes, manifests, vocabulary, errors, warnings
+                node,
+                manifest,
+                port,
+                source,
+                graph_nodes,
+                manifests,
+                vocabulary,
+                errors,
+                warnings,
+                rung,
             )
     return errors, warnings
+
+
+def graph_perception_rung(nodes: list) -> str:
+    """The graph's declared perception rung (TC-9), from the bridge node's env.
+
+    The rung rides the GRAPH so the graph hash attests which pose source a
+    result used — the same reasoning as ADR-25's bring-up scrub and ADR-11
+    clause 14's capture declaration. A graph that declares nothing is L0,
+    which is what every pre-TC-9 graph is: the check below then permits
+    `poses` exactly as before."""
+    for node in nodes:
+        env = node.get("env") or {}
+        rung = env.get("AISLE_PERCEPTION")
+        if rung:
+            return str(rung).upper()
+    return "L0"
+
+
+FORBIDDEN_BY_RUNG = {
+    "L0": (),
+    # TC-9: at L1 pose must be ESTIMATED from segmentation + depth, so the
+    # ground-truth shortcut is closed. At L2 segmentation goes too.
+    "L1": ("poses",),
+    "L2": ("poses", "seg_overhead"),
+}
 
 
 def _parse_timer_hz(source: str) -> float | None:
@@ -517,7 +553,7 @@ def _parse_timer_hz(source: str) -> float | None:
 
 
 def _validate_edge(
-    node, manifest, port, source, graph_nodes, manifests, vocabulary, errors, warnings
+    node, manifest, port, source, graph_nodes, manifests, vocabulary, errors, warnings, rung="L0"
 ) -> None:
     node_id = node["id"]
     if isinstance(source, dict):  # dora extended input form {source: ..., queue_size: N}
@@ -623,6 +659,22 @@ def _validate_edge(
             )
         )
         return
+
+    # VAL-8 before any schema-level return, for the same reason as VAL-6: a
+    # rung violation must not hide behind SCHEMA_* on the same edge. Without
+    # this the ladder is advisory — a graph could keep consuming ground-truth
+    # pose while its results were reported as L1, which would silently
+    # invalidate every L1 number published from it (TC-9).
+    if out_port in FORBIDDEN_BY_RUNG.get(rung, ()):
+        errors.append(
+            _entry(
+                "PERCEPTION_RUNG_VIOLATION",
+                edge,
+                f"{out_port!r} consumed by {node_id!r} under perception rung {rung} (VAL-8)",
+                f"at {rung} pose must be estimated from seg_overhead + depth_overhead — "
+                "use the segmented-pose provider, or declare L0 to use ground truth",
+            )
+        )
 
     # VAL-6 before any schema-level return: an oracle leak must never be
     # hidden behind SCHEMA_UNKNOWN/SCHEMA_MISMATCH on the same edge.
