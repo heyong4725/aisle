@@ -116,3 +116,63 @@ def test_the_pixel_floor_admits_every_unoccluded_med_measured():
     sit below that band and above a half-hidden box."""
     assert MIN_MASK_PIXELS < 433
     assert MIN_MASK_PIXELS > 100
+
+
+def _sized_scene(width_px, height_px, top_z=TOP_Z):
+    """A mask whose world extent is width_px/1000 x height_px/1000 metres under
+    the stand-in back-projection, so a footprint can be dialled in directly.
+    The canvas is sized to the request — a fixed 64x64 silently CLIPPED an
+    85 px mask to 44 px, which made the guard look broken when the fixture
+    was."""
+    shape = (40 + height_px, 30 + width_px)
+    return _scene(np.s_[20 : 20 + height_px, 10 : 10 + width_px], shape=shape, top_z=top_z)
+
+
+def test_a_tipped_box_is_refused_because_half_the_height_is_the_wrong_offset():
+    """MEASURED defect, not hypothetical: commanding a 30-45 degree tilt settles
+    omeprazole (0.05 x 0.045 x 0.085) on its side, and the z estimate came back
+    20.0 mm low — exactly half the difference between the height and the
+    dimension now vertical. A planner aiming 2 cm low collides. From one
+    top-down view the estimator cannot see WHICH face it sees, but it can
+    measure the face: upright shows 0.050x0.045, tipped shows 0.050x0.085."""
+    seg, depth = _sized_scene(50, 85)  # the tipped face
+    with pytest.raises(PoseRefused, match="not upright"):
+        estimate_pose(seg, depth, [17], BOX_H, _flat_backproject, footprint_m=(0.050, 0.045))
+
+
+def test_an_upright_box_passes_the_footprint_check():
+    """The same guard must not reject the case it exists to protect."""
+    seg, depth = _sized_scene(50, 45)
+    est = estimate_pose(seg, depth, [17], BOX_H, _flat_backproject, footprint_m=(0.050, 0.045))
+    assert est["pos"][2] == pytest.approx(TOP_Z - BOX_H / 2)
+
+
+def test_the_footprint_check_is_opt_in_so_callers_without_dimensions_still_work():
+    """`footprint_m=None` keeps the pre-guard behaviour: the neighbour estimator
+    and any caller lacking meds.toml dimensions is not forced to invent them."""
+    seg, depth = _sized_scene(50, 85)
+    assert estimate_pose(seg, depth, [17], BOX_H, _flat_backproject)["mask_pixels"] == 50 * 85
+
+
+def test_neighbour_estimation_omits_and_COUNTS_what_it_cannot_see():
+    """The grasp planner uses neighbour (x, y) for fingertip clearance, so at L1
+    those must be estimated too or it silently loses the check. A neighbour
+    whose mask is too small is omitted and COUNTED — fewer constraints means a
+    permissive plan, not a safe one, so the count travels in the metadata."""
+    from aisle.nodes.segmented_pose import estimate_neighbours
+
+    seg = np.zeros((64, 64), dtype=np.int32)
+    depth = np.full((64, 64), 0.40, dtype=np.float32)
+    seg[10:35, 5:35] = 17  # visible neighbour
+    depth[10:35, 5:35] = TOP_Z
+    seg[40:44, 40:44] = 18  # 16 px: under the floor
+    depth[40:44, 40:44] = TOP_Z
+
+    rows, refused = estimate_neighbours(
+        seg,
+        depth,
+        {"visible": [17], "tiny": [18]},
+        {"visible": {"size": [0.03, 0.025, BOX_H]}, "tiny": {"size": [0.03, 0.025, BOX_H]}},
+        _flat_backproject,
+    )
+    assert len(rows) == 1 and refused == 1

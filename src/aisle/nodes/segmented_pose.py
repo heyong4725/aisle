@@ -37,6 +37,18 @@ MIN_MASK_PIXELS = 200
 # the silhouette and pick up the shelf behind, exactly as VER-10's
 # dominant_surface found for the verifier's own masks
 TOP_SURFACE_QUANTILE = 0.85
+# the estimator places the centre half a box HEIGHT below the top surface,
+# which is only true for an UPRIGHT box. Measured: commanding a 30-45 degree
+# tilt settles the box on its side and the z estimate is 20.0 mm low --
+# exactly half the difference between the height and the dimension now
+# vertical. A planner aiming 2 cm low collides, and from one top-down view
+# the estimator cannot see which face it is looking at. It can, however, see
+# the FOOTPRINT: an upright box shows its (x, y) face, a tipped one shows a
+# face containing z. This is the fraction by which the observed top-face
+# extents may differ from the upright expectation before the pose is refused.
+# 0.4 admits discretisation and settling wobble; a tip changes the short
+# extent by ~3x in the desk meds, so the two are not close.
+UPRIGHT_FOOTPRINT_TOLERANCE = 0.4
 
 
 class PoseRefused(Exception):
@@ -66,13 +78,16 @@ def estimate_pose(
     box_height_m: float,
     backproject,
     min_mask_pixels: int = MIN_MASK_PIXELS,
+    footprint_m: tuple | None = None,
 ) -> dict:
     """(x, y, z) of the box CENTRE plus the evidence that produced it.
 
     `backproject(depth, pixels) -> (N, 3)` base-frame points is injected so
     this stays pure: the caller passes the VER-8 calibration already bound.
-    Returns {pos, mask_pixels, top_surface_z_m} — the mask size travels with
-    the estimate so a consumer can weigh it (TC-9)."""
+    `footprint_m` is the box's upright (x, y) face from meds.toml; passing it
+    enables the upright check that keeps a tipped box from being reported 20 mm
+    low. Returns {pos, mask_pixels, top_surface_z_m} — the mask size travels
+    with the estimate so a consumer can weigh it (TC-9)."""
     mask = np.isin(seg, ids)
     pixels = int(mask.sum())
     if pixels < min_mask_pixels:
@@ -86,11 +101,48 @@ def estimate_pose(
         raise PoseRefused("back-projected mask contains non-finite points")
     top = points[points[:, 2] >= np.quantile(points[:, 2], TOP_SURFACE_QUANTILE)]
     top_z = float(np.median(top[:, 2]))
+    if footprint_m is not None:
+        # 5-95 percentiles: stray silhouette pixels would otherwise inflate the
+        # extent and mask a genuine mismatch
+        observed = sorted(
+            float(np.percentile(top[:, i], 95) - np.percentile(top[:, i], 5)) for i in (0, 1)
+        )
+        expected = sorted(float(v) for v in footprint_m)
+        for obs, exp in zip(observed, expected, strict=True):
+            if exp > 0 and abs(obs - exp) / exp > UPRIGHT_FOOTPRINT_TOLERANCE:
+                raise PoseRefused(
+                    f"top face measures {observed[0]:.3f}x{observed[1]:.3f} m against an upright "
+                    f"{expected[0]:.3f}x{expected[1]:.3f} m — the box is not upright, so half the "
+                    "HEIGHT is the wrong offset to its centre (measured 20 mm low when tipped)"
+                )
     return {
         "pos": [float(top[:, 0].mean()), float(top[:, 1].mean()), top_z - box_height_m / 2],
         "mask_pixels": pixels,
         "top_surface_z_m": top_z,
     }
+
+
+def estimate_neighbours(seg, depth, id_map: dict, meds: dict, backproject) -> tuple[list, int]:
+    """Same-level neighbour (x, y) centres for the grasp planner's fingertip
+    clearance, estimated the same way as the target.
+
+    L0 hands the planner every neighbour from ground truth; without this the
+    planner silently loses `_fingertip_clearance` at L1 and picks grip axes
+    that close on a neighbour. Returns (rows, n_refused): a neighbour whose
+    mask is too small is OMITTED and counted, never guessed at — and the count
+    travels in the metadata, because fewer constraints means a permissive
+    plan, not a safe one."""
+    rows, refused = [], 0
+    for name, spec in meds.items():
+        try:
+            est = estimate_pose(
+                seg, depth, seg_ids_for(id_map, name), float(spec["size"][2]), backproject
+            )
+        except PoseRefused:
+            refused += 1
+            continue
+        rows.append([est["pos"][0], est["pos"][1]])
+    return rows, refused
 
 
 def main() -> None:  # pragma: no cover — dora runtime
@@ -101,14 +153,18 @@ def main() -> None:  # pragma: no cover — dora runtime
     from dora import Node
 
     from aisle.scenes.pharmacy import load_meds
+    from aisle.topics import make_sender
     from aisle.verifier.stages import backproject_overhead
 
     meds = load_meds()
     node = Node()
+    # TC-2's per-topic monotonic seq lives in one place for every AISLE node;
+    # hand-building metadata here dropped `seq` entirely
+    send = make_sender(node)
     calibration: dict | None = None
     id_map: dict = {}
     target: str | None = None
-    latest_depth: np.ndarray | None = None
+    latest_depth: tuple[int, np.ndarray] | None = None  # (sim_time_ns, array)
 
     for event in node:
         if event["type"] != "INPUT":
@@ -122,10 +178,20 @@ def main() -> None:  # pragma: no cover — dora runtime
             target = json.loads(event["value"][0].as_py())["target_med"]
         elif topic == "depth_overhead":
             h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
-            latest_depth = np.asarray(
-                event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
-            ).reshape(h, w)
+            latest_depth = (
+                int(metadata.get("sim_time_ns", -1)),
+                np.asarray(event["value"].to_numpy(zero_copy_only=False), dtype=np.float32).reshape(
+                    h, w
+                ),
+            )
         elif topic == "seg_overhead" and target and calibration and latest_depth is not None:
+            # TC-9: seg and depth come from ONE render and carry the SAME
+            # stamp. Pairing across ticks measures a scene that never existed
+            # -- the defect that already reached the trace recorder and the
+            # verifier node. Wait for the matching pair rather than guessing.
+            if latest_depth[0] != int(metadata.get("sim_time_ns", -2)):
+                continue
+            depth = latest_depth[1]
             h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
             seg = np.asarray(event["value"].to_numpy(zero_copy_only=False)).reshape(h, w)
 
@@ -137,10 +203,11 @@ def main() -> None:  # pragma: no cover — dora runtime
             try:
                 estimate = estimate_pose(
                     seg,
-                    latest_depth,
+                    depth,
                     seg_ids_for(id_map, target),
                     float(meds[target]["size"][2]),
                     project,
+                    footprint_m=tuple(meds[target]["size"][:2]),
                 )
             except PoseRefused as exc:
                 # TC-9: refuse rather than publish a biased pose. The episode
@@ -148,12 +215,18 @@ def main() -> None:  # pragma: no cover — dora runtime
                 # arm diving at a phantom.
                 print(f"L1 pose refused for {target}: {exc}", file=sys.stderr)
                 continue
-            node.send_output(
-                "object_pose",
+            # `target_pose` is the topic the graph's grasp planner consumes
+            # (oracle_pose publishes the same name at L0) -- an L1 node must be
+            # a drop-in replacement, not a new edge name
+            neighbours, refused = estimate_neighbours(seg, depth, id_map, meds, project)
+            send(
+                "target_pose",
                 pa.array(np.asarray(estimate["pos"] + [0.0, 0.0, 0.0, 1.0], dtype=np.float32)),
-                metadata={
-                    **{k: metadata[k] for k in ("sim_time_ns", "env_id") if k in metadata},
+                {
+                    **metadata,
                     "target_med": target,
+                    "neighbours": json.dumps(neighbours),
+                    "neighbours_refused": refused,
                     "mask_pixels": estimate["mask_pixels"],
                     "perception": "L1",
                 },
