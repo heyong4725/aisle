@@ -1001,11 +1001,13 @@ def test_perception_rung_table_matches_tc9():
     assert set(FORBIDDEN_BY_RUNG["L2"]) == {"poses", "seg_overhead"}
     # declared on whichever node carries it, case-insensitively, defaulting to
     # L0, and a clean read carries no errors
-    assert graph_perception_rung([{"id": "a"}, {"id": "b", "env": {"AISLE_PERCEPTION": "l1"}}]) == (
-        "L1",
-        [],
-    )
-    assert graph_perception_rung([{"id": "a", "env": {}}]) == ("L0", [])
+    # read from the sim_bridge node, case-insensitively, defaulting to L0 when
+    # nothing is declared; a clean read carries no errors
+    bridge = {"b": {"provides": ["sim_bridge"]}}
+    assert graph_perception_rung(
+        [{"id": "a"}, {"id": "b", "env": {"AISLE_PERCEPTION": "l1"}}], bridge
+    ) == ("L1", ["b"], [])
+    assert graph_perception_rung([{"id": "a", "env": {}}], bridge) == ("L0", [], [])
     # VAL-2/VAL-3: no rung's remedy may name a topic that SAME rung forbids —
     # an author who follows such a hint fails the next compile. The shared
     # hint did exactly that at L2, sending the author to seg_overhead.
@@ -1060,10 +1062,18 @@ def test_perception_rung_whitespace_is_normalized(tmp_path):
 
 
 def test_perception_rung_conflicting_declarations_are_refused(tmp_path):
-    """VAL-8: two nodes declaring DIFFERENT rungs is ambiguous, and node order
-    in a dataflow YAML is arbitrary — so first-wins let an L0 declaration
-    placed above the bridge's L1 silently downgrade the whole graph. A graph
-    with two rungs attests neither."""
+    """VAL-8: a rung declared on a node that does NOT provide sim_bridge is an
+    error. dora passes env to that node's process alone, so such a rung reaches
+    nobody: the validator would forbid `poses` graph-wide while the bridge
+    stayed at its default, published ground truth and rendered no
+    segmentation — an L1 run starved of every pose source rather than an L1 run.
+
+    Restricting the declaration to the bridge also makes a two-rung CONFLICT
+    unreachable through the registry (one manifest provides sim_bridge, and
+    node ids are unique), so the conflict branch is exercised at the function
+    level below rather than through a graph."""
+    from aisle.harness.validate import graph_perception_rung
+
     root = fixture_root(tmp_path, {"dora-genesis": {}, "oracle-pose": {}})
     graph = write_graph(
         root,
@@ -1078,7 +1088,18 @@ def test_perception_rung_conflicting_declarations_are_refused(tmp_path):
     )
     code, report = run_validate(graph, "--root", str(root))
     assert code != 0, report
-    assert any("conflicting perception rungs" in e["detail"] for e in report["errors"]), report
+    assert any("does not provide sim_bridge" in e["detail"] for e in report["errors"]), report
+    # kept as defense in depth for a future graph with two bridges: two rungs
+    # attest neither, and resolving the ambiguity by YAML position is not a fix
+    two_bridges = {"a": {"provides": ["sim_bridge"]}, "b": {"provides": ["sim_bridge"]}}
+    _, _, errors = graph_perception_rung(
+        [
+            {"id": "a", "env": {"AISLE_PERCEPTION": "L0"}},
+            {"id": "b", "env": {"AISLE_PERCEPTION": "L1"}},
+        ],
+        two_bridges,
+    )
+    assert any("conflicting perception rungs" in e["detail"] for e in errors), errors
 
 
 def test_perception_rung_binds_nodes_without_manifests(tmp_path):
@@ -1119,3 +1140,43 @@ def test_perception_rung_grants_verifiers_no_exemption(tmp_path):
     code, report = run_validate(graph, "--root", str(root))
     assert code != 0, report
     assert "PERCEPTION_RUNG_VIOLATION" in codes(report, "errors"), report
+
+
+def test_perception_rung_blank_declaration_is_not_absent(tmp_path):
+    """VAL-8: a PRESENT but blank AISLE_PERCEPTION is an unknown rung, not an
+    unset one. Skipping blanks fell through to the L0 default and permitted
+    ground truth, so `AISLE_PERCEPTION: "   "` validated ok=true (Codex
+    review) — the same silent-pass shape as the typo and whitespace cases."""
+    root = fixture_root(tmp_path, {"dora-genesis": {}, "oracle-pose": {}})
+    graph = write_graph(
+        root,
+        [
+            {"id": "dora-genesis", "env": {"AISLE_PERCEPTION": "   "}, "outputs": ["poses"]},
+            {"id": "oracle-pose", "inputs": {"poses": "dora-genesis/poses"}},
+        ],
+    )
+    code, report = run_validate(graph, "--root", str(root))
+    assert code != 0, report
+    assert any("unknown perception rung" in e["detail"] for e in report["errors"]), report
+
+
+def test_perception_rung_forbids_only_the_bridges_ground_truth(tmp_path):
+    """VAL-8: the rung forbids the BRIDGE's `poses`, not every port that shares
+    the name. An estimated pose published on a port called `poses` by a
+    non-bridge node is exactly what L1 asks for, and name-only matching
+    rejected it (Codex review). TC-9 says "the bridge's `poses` topic"."""
+    root = fixture_root(tmp_path, {"dora-genesis": {}, "pose-estimator": {}, "oracle-pose": {}})
+    graph = write_graph(
+        root,
+        [
+            {
+                "id": "dora-genesis",
+                "env": {"AISLE_PERCEPTION": "L1"},
+                "outputs": ["depth_overhead"],
+            },
+            {"id": "pose-estimator", "outputs": ["poses"]},
+            {"id": "oracle-pose", "inputs": {"poses": "pose-estimator/poses"}},
+        ],
+    )
+    _, report = run_validate(graph, "--root", str(root))
+    assert "PERCEPTION_RUNG_VIOLATION" not in codes(report, "errors"), report

@@ -264,7 +264,7 @@ def validate_nodes(
     # under `mobile`. Arm nodes are checked against the resolved arm.
     arm_kind = EMBODIMENT_ARM.get(embodiment, embodiment)
     # TC-9/VAL-8: the perception rung is a property of the GRAPH, read once
-    rung, rung_errors = graph_perception_rung(nodes)
+    rung, bridge_ids, rung_errors = graph_perception_rung(nodes, manifests)
     errors.extend(rung_errors)
     for node in nodes:
         node_id = node["id"]
@@ -329,13 +329,11 @@ def validate_nodes(
                 # unregistered consumer of `poses` reported MANIFEST_MISSING
                 # alone, where the byte-identical oracle_state graph reported
                 # MANIFEST_MISSING + ORACLE_LEAK.
-                if source.rpartition("/")[2] in FORBIDDEN_BY_RUNG.get(rung, ()):
+                producer, _, out_port = source.partition("/")
+                if producer in bridge_ids and out_port in FORBIDDEN_BY_RUNG.get(rung, ()):
                     errors.append(
                         _rung_entry(
-                            {"edge": f"{source} -> {node_id}/{port}"},
-                            source.rpartition("/")[2],
-                            node_id,
-                            rung,
+                            {"edge": f"{source} -> {node_id}/{port}"}, out_port, node_id, rung
                         )
                     )
             continue
@@ -533,12 +531,13 @@ def validate_nodes(
                 errors,
                 warnings,
                 rung,
+                bridge_ids,
             )
     return errors, warnings
 
 
-def graph_perception_rung(nodes: list) -> tuple[str, list[dict]]:
-    """The graph's declared perception rung (TC-9) and any errors reading it.
+def graph_perception_rung(nodes: list, manifests: dict) -> tuple[str, list[str], list[dict]]:
+    """The graph's perception rung (TC-9), its sim-bridge ids, and read errors.
 
     The rung rides the GRAPH so the graph hash attests which pose source a
     result used — the same reasoning as ADR-25's bring-up scrub and ADR-11
@@ -565,8 +564,38 @@ def graph_perception_rung(nodes: list) -> tuple[str, list[dict]]:
     for node in nodes:
         env = node.get("env") or {}
         raw = env.get("AISLE_PERCEPTION")
-        if raw is not None and str(raw).strip():
-            declared[node["id"]] = str(raw).strip().upper()
+        if raw is None:
+            continue
+        # a PRESENT but blank value is an unknown rung, not an absent one:
+        # skipping it fell through to the L0 default and permitted ground
+        # truth, so `AISLE_PERCEPTION: "   "` validated ok=true (Codex review)
+        declared[node["id"]] = str(raw).strip().upper()
+    # TC-9: the rung is declared on the SIM BRIDGE, because dora injects a
+    # node's env into that node's process alone. A rung on any other node is
+    # read by nobody at runtime: the validator would forbid `poses` graph-wide
+    # while the bridge stayed at its default, published ground truth and
+    # rendered no segmentation — an L1 run starved of every pose source.
+    bridge_ids = sorted(
+        node["id"]
+        for node in nodes
+        if "sim_bridge" in ((manifests.get(node["id"]) or {}).get("provides") or [])
+    )
+    for node_id in sorted(set(declared) - set(bridge_ids)):
+        errors.append(
+            _entry(
+                "PERCEPTION_RUNG_VIOLATION",
+                {"node": node_id},
+                f"{node_id!r} declares AISLE_PERCEPTION but does not provide sim_bridge (VAL-8)",
+                (
+                    f"move the declaration to {bridge_ids[0]!r}"
+                    if bridge_ids
+                    else "declare the rung on the sim_bridge node; this graph has none"
+                )
+                + " — dora passes env to that node's process only, so a rung declared "
+                "elsewhere never reaches the bridge that must act on it",
+            )
+        )
+        declared.pop(node_id)
     unknown = {n: r for n, r in declared.items() if r not in FORBIDDEN_BY_RUNG}
     for node_id, rung in sorted(unknown.items()):
         errors.append(
@@ -594,8 +623,9 @@ def graph_perception_rung(nodes: list) -> tuple[str, list[dict]]:
     # edge in it should still be named in the same report instead of surfacing
     # only after the declaration is fixed
     if errors:
-        return max(FORBIDDEN_BY_RUNG, key=lambda r: len(FORBIDDEN_BY_RUNG[r])), errors
-    return (distinct[0] if distinct else "L0"), errors
+        strictest = max(FORBIDDEN_BY_RUNG, key=lambda r: len(FORBIDDEN_BY_RUNG[r]))
+        return strictest, bridge_ids, errors
+    return (distinct[0] if distinct else "L0"), bridge_ids, errors
 
 
 FORBIDDEN_BY_RUNG = {
@@ -612,7 +642,7 @@ FORBIDDEN_BY_RUNG = {
 # own rung rejects — measured: following it produced a second
 # PERCEPTION_RUNG_VIOLATION. The remedy is per-rung for that reason.
 RUNG_REMEDY = {
-    "L1": "estimate pose from seg_overhead + depth_overhead (use the segmented-pose provider)",
+    "L1": "estimate pose from seg_overhead + depth_overhead",
     "L2": "estimate pose from rgb_overhead/rgb_wrist alone — L2 forbids segmentation too",
 }
 
@@ -644,7 +674,17 @@ def _parse_timer_hz(source: str) -> float | None:
 
 
 def _validate_edge(
-    node, manifest, port, source, graph_nodes, manifests, vocabulary, errors, warnings, rung
+    node,
+    manifest,
+    port,
+    source,
+    graph_nodes,
+    manifests,
+    vocabulary,
+    errors,
+    warnings,
+    rung,
+    bridge_ids,
 ) -> None:
     node_id = node["id"]
     if isinstance(source, dict):  # dora extended input form {source: ..., queue_size: N}
@@ -756,7 +796,12 @@ def _validate_edge(
     # this the ladder is advisory — a graph could keep consuming ground-truth
     # pose while its results were reported as L1, which would silently
     # invalidate every L1 number published from it (TC-9).
-    if out_port in FORBIDDEN_BY_RUNG.get(rung, ()):
+    # the rung forbids the BRIDGE's ground-truth topics, not every port that
+    # happens to share their name: an estimated pose published on a port
+    # called `poses` by some other node is exactly what L1 asks for, and
+    # name-only matching rejected it (Codex review). TC-9's wording is
+    # "the bridge's `poses` topic" — this makes the code say that.
+    if src_id in bridge_ids and out_port in FORBIDDEN_BY_RUNG.get(rung, ()):
         errors.append(_rung_entry(edge, out_port, node_id, rung))
 
     # VAL-6 before any schema-level return: an oracle leak must never be
