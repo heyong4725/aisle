@@ -244,9 +244,18 @@ def main() -> None:
                 continue
             topic = event["id"]  # <producer>__<topic> endpoint key
             metadata = event.get("metadata") or {}
-            if topic.endswith(("__rgb_overhead", "__rgb_wrist", "__depth_overhead")):
+            if topic.endswith(
+                ("__rgb_overhead", "__rgb_wrist", "__depth_overhead", "__seg_overhead")
+            ):
                 # image endpoints: metadata-only rows; overhead pixels go to
-                # the mp4 and, when capture is on, raw arrays (ADR-11)
+                # the mp4 and, when capture is on, raw arrays (ADR-11).
+                # seg_overhead (TC-9, L1) belongs here or nowhere: the generic
+                # numeric path below would call .tolist() on 640x480 = 307,200
+                # float64s per frame at 15 Hz, buffered BATCH_ROWS deep, against
+                # ADR-11's ~17 MB budget for an entire run's trace. decode_frame
+                # returns None for enc "seg_i32", so a mask cannot reach the mp4
+                # or the VER-9 capture set — the row stays metadata-only, which
+                # is what it should be: nothing judges a segmentation mask.
                 stream = topic.rsplit("__", 1)[-1]
                 frame = decode_frame(metadata, event["value"])
                 if frame is not None:

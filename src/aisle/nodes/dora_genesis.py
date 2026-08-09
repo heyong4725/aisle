@@ -59,6 +59,19 @@ RENDER_TOPICS = ("rgb_overhead", "rgb_wrist", "depth_overhead", "seg_overhead")
 RESET_PUBLISH = ("oracle_state", "poses")
 
 
+def may_publish(topic: str, topic_rates: dict) -> bool:
+    """TC-9: whether this bridge may put `topic` on the wire at its rung.
+
+    The rung's topic set is the single source of truth, and the gate is a
+    NAMED predicate rather than an inline check because the reset path
+    publishes directly, off the scheduler: `publish("poses")` after every
+    reset put ground-truth pose on an L1 wire once per episode. Naming it
+    also makes it testable -- the first version of the test for that fix
+    re-derived the gate from two module constants and stayed green when the
+    guard was deleted."""
+    return topic in topic_rates
+
+
 def rung_topic_rates(perception: str, is_mobile: bool) -> dict[str, int]:
     """TC-9: the bridge publishes only what the rung permits.
 
@@ -119,7 +132,12 @@ PERCEPTION_RUNGS = ("L0", "L1", "L2")
 
 def parse_bridge_config(env: dict) -> BridgeConfig:
     """BRG-1: node configuration from environment variables."""
-    perception = env.get("AISLE_PERCEPTION", "L0").strip().upper() or "L0"
+    # absent means L0; PRESENT-but-empty is an unknown rung, not an absent
+    # one. A trailing `or "L0"` here mapped `AISLE_PERCEPTION: ""` to L0 and
+    # defeated the refusal three lines below -- the same blank-value hole
+    # VAL-8 had on the validator side, written twice independently.
+    raw = env.get("AISLE_PERCEPTION")
+    perception = "L0" if raw is None else str(raw).strip().upper()
     if perception not in PERCEPTION_RUNGS:
         # TC-9: an unrecognized rung must not silently fall back to L0 — that
         # would publish ground-truth pose to a graph that asked not to have it
@@ -257,8 +275,8 @@ def make_bridge_info(
     env_hash: str,
     step_without_reset: bool,
     calibration: dict,
-    perception: str = "L0",
-    segmentation_ids: dict | None = None,
+    perception: str,
+    segmentation_ids: dict,
 ) -> str:
     """BRG-6 + BRG-8: the startup contract announcement, as a JSON string.
 
@@ -272,6 +290,12 @@ def make_bridge_info(
     judge without it, so a bridge that forgot to wire it must fail loudly
     rather than publish a judgeable-looking run with no calibration.
 
+    perception and segmentation_ids are REQUIRED for the same reason
+    calibration is: a caller that forgot `perception=` would attest "L0" in the
+    trace for a run that executed L1, which is exactly the recorded-vs-actual
+    divergence the rung refusal and the env scrub exist to prevent -- and no
+    test can catch it, because the defaulted value is a VALID one.
+
     perception is TC-9's rung, announced so a RECORDED run attests which pose
     source it used — the graph declares it, but a trace read on its own would
     otherwise not say. segmentation_ids maps med name -> the seg ids in
@@ -284,7 +308,7 @@ def make_bridge_info(
         {
             "contract": "v0",
             "perception": perception,
-            "segmentation_ids": segmentation_ids or {},
+            "segmentation_ids": segmentation_ids,
             "embodiment": embodiment,
             "n_dof": n_dof,
             "n_envs": n_envs,
@@ -455,6 +479,21 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         if cfg.perception == "L1"
         else {}
     )
+    if cfg.perception == "L1" and is_store:
+        # TC-9: the store scene keys its graspables by ITEM ID (`f"{slot_id}#{k}"`,
+        # plus `f"bin#{category}"`), while the only L1 consumer asks by MED NAME
+        # (segmented_pose's seg_ids_for(id_map, target_med)). Those namespaces
+        # never intersect, so an L1 store run would announce a well-formed map and
+        # then refuse every pose, dying on a timeout that scores as a policy
+        # failure. The blank-entry guard below cannot see it: store ids resolve to
+        # real seg ids, they are just unaskable. Refuse until a store L1 consumer
+        # exists and fixes the namespace.
+        raise ValueError(
+            "perception rung L1 is not supported for the store scene: its id map is "
+            "keyed by item id and the L1 pose estimator asks by med name, so every "
+            "estimate would refuse (TC-9). Run the store at L0, or teach the "
+            "estimator the store namespace first."
+        )
     if cfg.perception == "L1":
         # TC-9: at L1 this map is LOAD-BEARING — a consumer cannot derive the
         # ids (they are genesis's own numbering) so an empty or partial map
@@ -599,7 +638,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         # ground-truth `poses` reach an L1 wire once per reset — once per
         # episode, at the freshest possible moment, and into the trace the
         # recorder keeps. Every future direct call is gated by construction.
-        if topic not in topic_rates:
+        if not may_publish(topic, topic_rates):
             return
         oracle_cache = None
         frames = frames if frames is not None else render_due([topic])
