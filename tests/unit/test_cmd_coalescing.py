@@ -311,3 +311,71 @@ def test_segmentation_id_map_uses_the_scene_map_not_entity_indices():
     assert segmentation_id_map({7: (4, 7), 5: (4, 4)}, {"robot": 4}) == {"robot": [5, 7]}
     # an entity with no rendered geometry maps to an empty list, never a guess
     assert segmentation_id_map(idx_dict, {"tray": 99}) == {"tray": []}
+
+
+def test_reset_path_publishes_only_what_the_rung_permits():
+    """TC-9: the reset path publishes DIRECTLY, off the scheduler, so gating
+    only the scheduler is not enough. `publish` gates on the rung's topic set
+    itself, which is what makes every direct call safe by construction.
+
+    Before this, `publish("poses")` after each reset put ground-truth pose on
+    an L1 wire once per episode — at the freshest possible moment, and into the
+    trace the recorder keeps. `rung_topic_rates` was correct and the bug was
+    entirely in the path that bypassed it, which is why the rung test above
+    passed while the bridge leaked."""
+    from aisle.nodes.dora_genesis import RESET_PUBLISH
+
+    # oracle_state is verifier-only at every rung (ADR-26) and stays
+    assert "oracle_state" in RESET_PUBLISH
+    assert "oracle_state" in rung_topic_rates("L1", is_mobile=False)
+    # `poses` is published on the reset path at L0 and must be filtered out
+    # above it — the gate is membership in the rung's own topic set
+    assert "poses" in RESET_PUBLISH
+    permitted = {rung: set(rung_topic_rates(rung, is_mobile=False)) for rung in ("L0", "L1", "L2")}
+    assert {t for t in RESET_PUBLISH if t in permitted["L0"]} == {"oracle_state", "poses"}
+    assert {t for t in RESET_PUBLISH if t in permitted["L1"]} == {"oracle_state"}
+    assert {t for t in RESET_PUBLISH if t in permitted["L2"]} == {"oracle_state"}
+
+
+def test_segmentation_id_map_handles_every_genesis_segmentation_level():
+    """TC-9: the seg_key shape depends on `VisOptions.segmentation_level`, read
+    from genesis's own construction — `geom` -> (entity, link, geom), `link`
+    (the default) -> (entity, link), `entity` -> a BARE int. The entity index
+    is first in every shape, so all three resolve.
+
+    An earlier version required a tuple, so at `segmentation_level="entity"`
+    every object mapped to an empty id list, the L1 estimator refused every
+    pose, and the episode died on a timeout with one stderr line as the clue.
+    A silent downgrade to "refuse everything" is the worst of the three."""
+    entity_idx = {"amoxicillin": 5}
+    # link level (genesis default), as measured on the desk scene
+    assert segmentation_id_map({0: -1, 16: (5, 16)}, entity_idx) == {"amoxicillin": [16]}
+    # geom level
+    assert segmentation_id_map({0: -1, 16: (5, 16, 2)}, entity_idx) == {"amoxicillin": [16]}
+    # entity level: a bare int, not a tuple
+    assert segmentation_id_map({0: -1, 16: 5}, entity_idx) == {"amoxicillin": [16]}
+    # background (-1) is never an entity, at any level
+    assert segmentation_id_map({0: -1}, {"bg": -1}) == {"bg": []}
+    # numpy integers are ints too: genesis hands back its own scalar types
+    assert segmentation_id_map({16: np.int64(5)}, entity_idx) == {"amoxicillin": [16]}
+
+
+def test_bridge_info_carries_the_l1_id_map():
+    """TC-9/BRG-6: at L1 the id map travels in bridge_info, so a consumer never
+    derives genesis's numbering. Pinned separately from the L0 shape test
+    because the L1 path through the JSON was otherwise unexercised."""
+    info = json.loads(
+        make_bridge_info(
+            embodiment="franka",
+            n_dof=9,
+            n_envs=1,
+            genesis_version="1.2.3",
+            env_hash="a" * 64,
+            step_without_reset=False,
+            calibration={"calibration_version": 1},
+            perception="L1",
+            segmentation_ids={"amoxicillin": [16], "ibuprofen": [17]},
+        )
+    )
+    assert info["perception"] == "L1"
+    assert info["segmentation_ids"] == {"amoxicillin": [16], "ibuprofen": [17]}

@@ -51,6 +51,12 @@ TOPIC_RATES = {
     "seg_overhead": 15,
 }
 RENDER_TOPICS = ("rgb_overhead", "rgb_wrist", "depth_overhead", "seg_overhead")
+# published DIRECTLY on the reset path, off the scheduler: the injected state
+# IS the post-reset observation and must be snapshotted before any physics
+# step (TC-A2, CON-5). Named as data so a test can assert every one of them
+# still passes through the rung gate in `publish` (TC-9) — `poses` here on an
+# L1 run was ground truth on the wire once per episode.
+RESET_PUBLISH = ("oracle_state", "poses")
 
 
 def rung_topic_rates(perception: str, is_mobile: bool) -> dict[str, int]:
@@ -294,17 +300,29 @@ def make_bridge_info(
 def segmentation_id_map(idx_dict: dict, entity_idx: dict) -> dict[str, list[int]]:
     """TC-9: {med name: [seg ids]} from genesis's OWN segmentation map.
 
-    `idx_dict` is `scene.segmentation_idx_dict`: seg id -> (entity_idx,
-    link_idx), with a bare -1 for background. `entity_idx` is {name:
-    entity.idx}. The two are NOT the same numbering — measured on the desk
-    scene, entity 5 (amoxicillin) is seg id 16 — which is why a consumer must
-    be handed this map rather than masking on the entity index. A multi-link
-    entity contributes every one of its ids, sorted so the map is
-    deterministic (CON-5)."""
+    `idx_dict` is `scene.segmentation_idx_dict`: seg id -> genesis's seg_key,
+    with a bare -1 for background. `entity_idx` is {name: entity.idx}. The two
+    are NOT the same numbering — measured on the desk scene, entity 5
+    (amoxicillin) is seg id 16 — which is why a consumer must be handed this
+    map rather than masking on the entity index. A multi-link entity
+    contributes every one of its ids, sorted so the map is deterministic
+    (CON-5).
+
+    The seg_key SHAPE depends on `VisOptions.segmentation_level`, which the
+    scene does not currently set (genesis defaults to `link`). Read from
+    genesis's own construction: `geom` gives (entity, link, geom), `link`
+    gives (entity, link), and `entity` gives a BARE int. All three are handled
+    because the entity index is what this map needs and it is first in every
+    shape — an earlier version required a tuple, so at `segmentation_level=
+    "entity"` it would have returned an empty id list for every object,
+    making the L1 estimator refuse every pose with only a stderr line to say
+    why. A silent downgrade to "refuse everything" is the worst of the three
+    possible failures."""
     by_entity: dict[int, list[int]] = {}
     for seg_id, ref in idx_dict.items():
-        if isinstance(ref, (tuple, list)) and ref:
-            by_entity.setdefault(int(ref[0]), []).append(int(seg_id))
+        entity = ref[0] if isinstance(ref, (tuple, list)) and ref else ref
+        if isinstance(entity, (int, np.integer)) and int(entity) >= 0:
+            by_entity.setdefault(int(entity), []).append(int(seg_id))
     return {name: sorted(by_entity.get(int(idx), [])) for name, idx in entity_idx.items()}
 
 
@@ -426,6 +444,32 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     held_item: str | None = None  # carry latch (T15, ADR-18)
     held_offset = (0.0, 0.0, 0.0, 0.0)
 
+    # the graspable set is named `items` in the store scene and `boxes` on the
+    # desk; the id map itself is name -> seg ids either way
+    graspable = handle.items if is_store else handle.boxes
+    segmentation_ids = (
+        segmentation_id_map(
+            handle.scene.segmentation_idx_dict,
+            {name: entity.idx for name, entity in graspable.items()},
+        )
+        if cfg.perception == "L1"
+        else {}
+    )
+    if cfg.perception == "L1":
+        # TC-9: at L1 this map is LOAD-BEARING — a consumer cannot derive the
+        # ids (they are genesis's own numbering) so an empty or partial map
+        # means every L1 pose estimate refuses. Fail here, the way BRG-8
+        # requires calibration rather than defaulting it, instead of running an
+        # episode that dies on a timeout with a stderr line as its only clue.
+        blank = sorted(name for name, ids in segmentation_ids.items() if not ids)
+        if blank:
+            raise ValueError(
+                f"perception rung L1 but no segmentation ids resolved for {blank} — "
+                "the scene's segmentation_idx_dict did not yield entity indices for "
+                "them (check VisOptions.segmentation_level); an L1 run needs this map "
+                "to estimate pose at all (TC-9)"
+            )
+
     node = Node()
     node.send_output(
         "bridge_info",
@@ -440,22 +484,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     step_without_reset=cfg.step_without_reset,
                     calibration=realized_calibration(handle, physics, is_store),
                     perception=cfg.perception,
-                    segmentation_ids=(
-                        segmentation_id_map(
-                            handle.scene.segmentation_idx_dict,
-                            {
-                                name: entity.idx
-                                # the graspable set is named `items` in the
-                                # store scene and `boxes` on the desk; the map
-                                # itself is name -> ids either way
-                                for name, entity in (
-                                    handle.items if is_store else handle.boxes
-                                ).items()
-                            },
-                        )
-                        if cfg.perception == "L1"
-                        else {}
-                    ),
+                    segmentation_ids=segmentation_ids,
                 )
             ]
         ),
@@ -563,6 +592,15 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         return frames
 
     def publish(topic: str, frames: dict[str, np.ndarray] | None = None) -> None:
+        # TC-9: the rung's topic set is the SINGLE source of truth for what
+        # this bridge may put on the wire, and the gate belongs here rather
+        # than in the scheduler. The reset path publishes directly, off the
+        # scheduler (RESET_PUBLISH below), so gating the scheduler alone let
+        # ground-truth `poses` reach an L1 wire once per reset — once per
+        # episode, at the freshest possible moment, and into the trace the
+        # recorder keeps. Every future direct call is gated by construction.
+        if topic not in topic_rates:
+            return
         oracle_cache = None
         frames = frames if frames is not None else render_due([topic])
         qpos = robot.get_qpos() if topic in ("joint_state", "gripper_state") else None
@@ -880,8 +918,8 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             # before any physics step so the first oracle_state after reset
             # is a pure function of the seed (TC-A2, CON-5); reset_done was
             # already sent, so nothing interleaves the service pair (TC-6)
-            publish("oracle_state")
-            publish("poses")
+            for topic in RESET_PUBLISH:
+                publish(topic)
 
 
 if __name__ == "__main__":

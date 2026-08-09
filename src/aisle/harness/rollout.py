@@ -468,13 +468,29 @@ def instrumented_graph(
     return out_path
 
 
+# settings that MUST come from the graph, where the graph hash attests them,
+# and never from the ambient process environment
+SCRUBBED_ENV = (
+    # ADR-25 (issue #71): the bridge's bring-up opt-out
+    "AISLE_STEP_WITHOUT_RESET",
+    # TC-9: the perception rung. The bridge reads it via parse_bridge_config(
+    # os.environ), so an ambient AISLE_PERCEPTION=L1 would set the rung of a
+    # run whose graph never declared one — and the validator, which sees only
+    # graph YAML, could never detect the divergence. Scrubbed with the variable
+    # that introduced the same hazard rather than after the first bad run.
+    "AISLE_PERCEPTION",
+)
+
+
 def scrub_bringup_env(env: dict) -> dict:
-    """ADR-25 (issue #71): the bridge's bring-up opt-out must never reach a
-    measured rollout — an ambient AISLE_STEP_WITHOUT_RESET=1 would silently
-    restore the pre-reset startup race while git_sha/env_hash/graph_hash all
-    attest clean. Graph-YAML env stays visible in the graph hash; the
-    process environment does not, so it is scrubbed here."""
-    return {k: v for k, v in env.items() if k != "AISLE_STEP_WITHOUT_RESET"}
+    """ADR-25 (issue #71) + TC-9: settings the graph must own must never reach a
+    measured rollout from the ambient environment — an ambient
+    AISLE_STEP_WITHOUT_RESET=1 would silently restore the pre-reset startup
+    race, and an ambient AISLE_PERCEPTION would silently set the perception
+    rung, while git_sha/env_hash/graph_hash all attest clean. Graph-YAML env
+    stays visible in the graph hash; the process environment does not, so it is
+    scrubbed here."""
+    return {k: v for k, v in env.items() if k not in SCRUBBED_ENV}
 
 
 def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict) -> subprocess.Popen:
