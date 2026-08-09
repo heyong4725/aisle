@@ -264,7 +264,8 @@ def validate_nodes(
     # under `mobile`. Arm nodes are checked against the resolved arm.
     arm_kind = EMBODIMENT_ARM.get(embodiment, embodiment)
     # TC-9/VAL-8: the perception rung is a property of the GRAPH, read once
-    rung = graph_perception_rung(nodes)
+    rung, rung_errors = graph_perception_rung(nodes)
+    errors.extend(rung_errors)
     for node in nodes:
         node_id = node["id"]
         # ADR-25 (issue #71, PR #80 review): the bridge's reset-less
@@ -309,7 +310,9 @@ def validate_nodes(
             for port, source in (node.get("inputs") or {}).items():
                 if isinstance(source, dict):
                     source = source.get("source")
-                if isinstance(source, str) and source.endswith("/oracle_state"):
+                if not isinstance(source, str):
+                    continue
+                if source.endswith("/oracle_state"):
                     errors.append(
                         _entry(
                             "ORACLE_LEAK",
@@ -317,6 +320,22 @@ def validate_nodes(
                             f"oracle_state consumed by {node_id!r}, which has no "
                             "manifest and so cannot be an authorized verifier (VAL-6)",
                             "only verifier-* manifests may read ground truth",
+                        )
+                    )
+                # VAL-8 needs the same fallback for the same reason: the rung
+                # binds the GRAPH, not the registry, so an unregistered node —
+                # a hand-added one, or anything a harness injects — must not
+                # be exempt from it. Measured before this was added: at L1 an
+                # unregistered consumer of `poses` reported MANIFEST_MISSING
+                # alone, where the byte-identical oracle_state graph reported
+                # MANIFEST_MISSING + ORACLE_LEAK.
+                if source.rpartition("/")[2] in FORBIDDEN_BY_RUNG.get(rung, ()):
+                    errors.append(
+                        _rung_entry(
+                            {"edge": f"{source} -> {node_id}/{port}"},
+                            source.rpartition("/")[2],
+                            node_id,
+                            rung,
                         )
                     )
             continue
@@ -518,20 +537,65 @@ def validate_nodes(
     return errors, warnings
 
 
-def graph_perception_rung(nodes: list) -> str:
-    """The graph's declared perception rung (TC-9), from the bridge node's env.
+def graph_perception_rung(nodes: list) -> tuple[str, list[dict]]:
+    """The graph's declared perception rung (TC-9) and any errors reading it.
 
     The rung rides the GRAPH so the graph hash attests which pose source a
     result used — the same reasoning as ADR-25's bring-up scrub and ADR-11
     clause 14's capture declaration. A graph that declares nothing is L0,
     which is what every pre-TC-9 graph is: the check below then permits
-    `poses` exactly as before."""
+    `poses` exactly as before.
+
+    Two ways of reading this wrong both END IN A SILENT PASS, because an
+    unrecognized rung makes FORBIDDEN_BY_RUNG.get(...) empty and forbids
+    nothing, so both are errors rather than best-effort guesses:
+
+    * a value this table does not know (`L3`, a stray space in `"L1 "`).
+      Measured before this was fixed: `AISLE_PERCEPTION: "L1 "` on a graph
+      wiring ground-truth `poses` validated ok=true, exit 0. The bridge
+      normalizes with .strip().upper() and REFUSES an unknown rung, so the
+      un-stripped read also disagreed with the runtime about the same text.
+    * two nodes declaring DIFFERENT rungs. Node order in a dataflow YAML is
+      arbitrary, so first-wins let an L0 declaration sitting above the
+      bridge's L1 downgrade the whole graph. An ambiguous attestation is not
+      a thing to resolve by position; it is a thing to reject.
+    """
+    errors: list[dict] = []
+    declared = {}
     for node in nodes:
         env = node.get("env") or {}
-        rung = env.get("AISLE_PERCEPTION")
-        if rung:
-            return str(rung).upper()
-    return "L0"
+        raw = env.get("AISLE_PERCEPTION")
+        if raw is not None and str(raw).strip():
+            declared[node["id"]] = str(raw).strip().upper()
+    unknown = {n: r for n, r in declared.items() if r not in FORBIDDEN_BY_RUNG}
+    for node_id, rung in sorted(unknown.items()):
+        errors.append(
+            _entry(
+                "PERCEPTION_RUNG_VIOLATION",
+                {"node": node_id},
+                f"unknown perception rung {rung!r} declared by {node_id!r} (VAL-8)",
+                f"set AISLE_PERCEPTION to one of {sorted(FORBIDDEN_BY_RUNG)} — an "
+                "unrecognized rung would forbid nothing and silently pass the check",
+            )
+        )
+    distinct = sorted(set(declared.values()))
+    if len(distinct) > 1:
+        errors.append(
+            _entry(
+                "PERCEPTION_RUNG_VIOLATION",
+                {"node": sorted(declared)[0]},
+                f"conflicting perception rungs {distinct} declared by {sorted(declared)} (VAL-8)",
+                "declare AISLE_PERCEPTION once, on the sim-bridge node — node order "
+                "in the YAML is arbitrary, so a graph with two rungs attests neither",
+            )
+        )
+    # on any bad declaration, enforce the STRICTEST rung the table has rather
+    # than the most permissive: the graph is already rejected, and a forbidden
+    # edge in it should still be named in the same report instead of surfacing
+    # only after the declaration is fixed
+    if errors:
+        return max(FORBIDDEN_BY_RUNG, key=lambda r: len(FORBIDDEN_BY_RUNG[r])), errors
+    return (distinct[0] if distinct else "L0"), errors
 
 
 FORBIDDEN_BY_RUNG = {
@@ -541,6 +605,33 @@ FORBIDDEN_BY_RUNG = {
     "L1": ("poses",),
     "L2": ("poses", "seg_overhead"),
 }
+
+# VAL-2/VAL-3: a hint MUST NOT name an alternative that fails the NEXT
+# compile. The L1 remedy is segmentation + depth, but seg_overhead is itself
+# forbidden at L2, so a single shared hint sent an L2 author to a topic their
+# own rung rejects — measured: following it produced a second
+# PERCEPTION_RUNG_VIOLATION. The remedy is per-rung for that reason.
+RUNG_REMEDY = {
+    "L1": "estimate pose from seg_overhead + depth_overhead (use the segmented-pose provider)",
+    "L2": "estimate pose from rgb_overhead/rgb_wrist alone — L2 forbids segmentation too",
+}
+
+
+def _rung_entry(edge: dict, out_port: str, node_id: str, rung: str) -> dict:
+    """One PERCEPTION_RUNG_VIOLATION, phrased the same wherever it is raised.
+
+    The hint deliberately does NOT offer "or declare L0 to use ground truth".
+    SPEC 060's opening line is that these messages are the research agent's
+    learning signal, and the rung is self-declared in the graph the agent
+    authors — so naming the downgrade would hand it a one-token way to make
+    the error disappear without changing what the run actually measures.
+    Lowering a rung is a claim about a result, not a lint fix."""
+    return _entry(
+        "PERCEPTION_RUNG_VIOLATION",
+        edge,
+        f"{out_port!r} consumed by {node_id!r} under perception rung {rung} (VAL-8)",
+        f"at {rung}, {RUNG_REMEDY.get(rung, 'do not consume ground truth')}",
+    )
 
 
 def _parse_timer_hz(source: str) -> float | None:
@@ -553,7 +644,7 @@ def _parse_timer_hz(source: str) -> float | None:
 
 
 def _validate_edge(
-    node, manifest, port, source, graph_nodes, manifests, vocabulary, errors, warnings, rung="L0"
+    node, manifest, port, source, graph_nodes, manifests, vocabulary, errors, warnings, rung
 ) -> None:
     node_id = node["id"]
     if isinstance(source, dict):  # dora extended input form {source: ..., queue_size: N}
@@ -666,15 +757,7 @@ def _validate_edge(
     # pose while its results were reported as L1, which would silently
     # invalidate every L1 number published from it (TC-9).
     if out_port in FORBIDDEN_BY_RUNG.get(rung, ()):
-        errors.append(
-            _entry(
-                "PERCEPTION_RUNG_VIOLATION",
-                edge,
-                f"{out_port!r} consumed by {node_id!r} under perception rung {rung} (VAL-8)",
-                f"at {rung} pose must be estimated from seg_overhead + depth_overhead — "
-                "use the segmented-pose provider, or declare L0 to use ground truth",
-            )
-        )
+        errors.append(_rung_entry(edge, out_port, node_id, rung))
 
     # VAL-6 before any schema-level return: an oracle leak must never be
     # hidden behind SCHEMA_UNKNOWN/SCHEMA_MISMATCH on the same edge.

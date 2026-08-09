@@ -939,8 +939,13 @@ def test_perception_rung_l1_forbids_ground_truth_poses():
     assert len(leak) == 1, report
     assert leak[0]["edge"] == "dora-genesis/poses -> oracle-pose/poses"
     assert "L1" in leak[0]["detail"]
-    # VAL-3: the hint must name the fix, not just the violation
-    assert "seg_overhead" in leak[0]["hint"] and "L0" in leak[0]["hint"]
+    # VAL-3: the hint must name the fix, not just the violation — and it must
+    # NOT offer the downgrade. These messages are the research agent's
+    # learning signal (SPEC 060) and the rung is self-declared in the graph
+    # the agent authors, so "declare L0" would be a one-token way to silence
+    # the error without changing what the run measures.
+    assert "seg_overhead" in leak[0]["hint"]
+    assert "L0" not in leak[0]["hint"]
 
 
 def test_perception_rung_l1_allows_estimated_pose_path(tmp_path):
@@ -985,13 +990,132 @@ def test_perception_rung_table_matches_tc9():
     ground-truth pose, L2 additionally forbids ground-truth segmentation
     (pixels only). The L2 end-to-end edge case joins the golden corpus with
     the PR that makes `seg_overhead` a real bridge port."""
-    from aisle.harness.validate import FORBIDDEN_BY_RUNG, graph_perception_rung
+    from aisle.harness.validate import (
+        FORBIDDEN_BY_RUNG,
+        RUNG_REMEDY,
+        graph_perception_rung,
+    )
 
     assert FORBIDDEN_BY_RUNG["L0"] == ()
     assert FORBIDDEN_BY_RUNG["L1"] == ("poses",)
     assert set(FORBIDDEN_BY_RUNG["L2"]) == {"poses", "seg_overhead"}
-    # declared on whichever node carries it, case-insensitively, defaulting to L0
-    assert (
-        graph_perception_rung([{"id": "a"}, {"id": "b", "env": {"AISLE_PERCEPTION": "l1"}}]) == "L1"
+    # declared on whichever node carries it, case-insensitively, defaulting to
+    # L0, and a clean read carries no errors
+    assert graph_perception_rung([{"id": "a"}, {"id": "b", "env": {"AISLE_PERCEPTION": "l1"}}]) == (
+        "L1",
+        [],
     )
-    assert graph_perception_rung([{"id": "a", "env": {}}]) == "L0"
+    assert graph_perception_rung([{"id": "a", "env": {}}]) == ("L0", [])
+    # VAL-2/VAL-3: no rung's remedy may name a topic that SAME rung forbids —
+    # an author who follows such a hint fails the next compile. The shared
+    # hint did exactly that at L2, sending the author to seg_overhead.
+    for rung, remedy in RUNG_REMEDY.items():
+        named = [topic for topic in FORBIDDEN_BY_RUNG[rung] if topic in remedy]
+        assert not named, (rung, named, remedy)
+
+
+def test_perception_rung_unknown_value_is_refused_not_ignored(tmp_path):
+    """VAL-8: an AISLE_PERCEPTION value outside the table MUST be an error.
+
+    This is the failure mode the check is least able to survive: an
+    unrecognized rung forbids NOTHING, so before this was fixed a graph
+    declaring `L3` while consuming ground-truth `poses` validated ok=true,
+    exit 0 — the check silently absent rather than failing. The bridge
+    refuses an unknown rung at launch (TC-9), so the validator, which is the
+    earlier and cheaper gate, must refuse it too."""
+    root = fixture_root(tmp_path, {"dora-genesis": {}, "oracle-pose": {}})
+    graph = write_graph(
+        root,
+        [
+            {"id": "dora-genesis", "env": {"AISLE_PERCEPTION": "L3"}, "outputs": ["poses"]},
+            {"id": "oracle-pose", "inputs": {"poses": "dora-genesis/poses"}},
+        ],
+    )
+    code, report = run_validate(graph, "--root", str(root))
+    assert code != 0, report
+    rung_errors = [e for e in report["errors"] if e["code"] == "PERCEPTION_RUNG_VIOLATION"]
+    assert any("unknown perception rung" in e["detail"] for e in rung_errors), report
+    # and the forbidden edge is still named in the SAME report: a bad
+    # declaration falls back to the strictest rung, not the most permissive
+    assert any("consumed by" in e["detail"] for e in rung_errors), report
+
+
+def test_perception_rung_whitespace_is_normalized(tmp_path):
+    """VAL-8: `"L1 "` is L1. The bridge normalizes with .strip().upper(), so a
+    validator that did not would disagree with the runtime about the same
+    graph text — and disagree in the permissive direction, which is how a
+    trailing space alone used to make an L1 graph consuming `poses` pass."""
+    root = fixture_root(tmp_path, {"dora-genesis": {}, "oracle-pose": {}})
+    graph = write_graph(
+        root,
+        [
+            {"id": "dora-genesis", "env": {"AISLE_PERCEPTION": " l1 "}, "outputs": ["poses"]},
+            {"id": "oracle-pose", "inputs": {"poses": "dora-genesis/poses"}},
+        ],
+    )
+    code, report = run_validate(graph, "--root", str(root))
+    assert code != 0, report
+    assert "PERCEPTION_RUNG_VIOLATION" in codes(report, "errors"), report
+    assert not any("unknown perception rung" in e["detail"] for e in report["errors"]), report
+
+
+def test_perception_rung_conflicting_declarations_are_refused(tmp_path):
+    """VAL-8: two nodes declaring DIFFERENT rungs is ambiguous, and node order
+    in a dataflow YAML is arbitrary — so first-wins let an L0 declaration
+    placed above the bridge's L1 silently downgrade the whole graph. A graph
+    with two rungs attests neither."""
+    root = fixture_root(tmp_path, {"dora-genesis": {}, "oracle-pose": {}})
+    graph = write_graph(
+        root,
+        [
+            {
+                "id": "oracle-pose",
+                "env": {"AISLE_PERCEPTION": "L0"},
+                "inputs": {"poses": "dora-genesis/poses"},
+            },
+            {"id": "dora-genesis", "env": {"AISLE_PERCEPTION": "L1"}, "outputs": ["poses"]},
+        ],
+    )
+    code, report = run_validate(graph, "--root", str(root))
+    assert code != 0, report
+    assert any("conflicting perception rungs" in e["detail"] for e in report["errors"]), report
+
+
+def test_perception_rung_binds_nodes_without_manifests(tmp_path):
+    """VAL-8 inherits VAL-6's manifest-less fallback: the rung binds the
+    GRAPH, not the registry, so an unregistered node — hand-added, or injected
+    by a harness — is not exempt. Measured before this was added: at L1 an
+    unregistered consumer of `poses` reported MANIFEST_MISSING alone, where
+    the byte-identical `oracle_state` graph reported MANIFEST_MISSING +
+    ORACLE_LEAK."""
+    root = fixture_root(tmp_path, {"dora-genesis": {}})
+    graph = write_graph(
+        root,
+        [
+            {"id": "dora-genesis", "env": {"AISLE_PERCEPTION": "L1"}, "outputs": ["poses"]},
+            {"id": "my-unregistered-planner", "inputs": {"poses": "dora-genesis/poses"}},
+        ],
+    )
+    code, report = run_validate(graph, "--root", str(root))
+    assert code != 0, report
+    assert {"MANIFEST_MISSING", "PERCEPTION_RUNG_VIOLATION"} <= codes(report, "errors"), report
+
+
+def test_perception_rung_grants_verifiers_no_exemption(tmp_path):
+    """VAL-8 has NO verifier carve-out, unlike VAL-6 sitting directly below it
+    in the same function. TC-9 forbids `poses` to EVERY node at L1, and a
+    verifier reading estimated-vs-ground-truth pose would be judging with the
+    answer key. Pinned because the adjacent code's `not
+    node_id.startswith("verifier-")` is exactly what a future edit would copy
+    onto this check by analogy."""
+    root = fixture_root(tmp_path, {"dora-genesis": {}, "verifier-oracle": {}})
+    graph = write_graph(
+        root,
+        [
+            {"id": "dora-genesis", "env": {"AISLE_PERCEPTION": "L1"}, "outputs": ["poses"]},
+            {"id": "verifier-oracle", "inputs": {"oracle_state": "dora-genesis/poses"}},
+        ],
+    )
+    code, report = run_validate(graph, "--root", str(root))
+    assert code != 0, report
+    assert "PERCEPTION_RUNG_VIOLATION" in codes(report, "errors"), report
