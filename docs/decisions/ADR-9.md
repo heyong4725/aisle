@@ -58,6 +58,17 @@ frozen set; CON-7's enumeration is treated as a minimum, not a ceiling.
 section and load_limits refuses it, so claiming so101 support was a lie;
 restore when the so101 limits and kinematics land.
 
+Issue #13 amendment (2026-08-08): the owner-approved official SO-101 asset,
+URDF-derived FK, exact position/velocity limits, and normalized revolute-jaw
+mapping have landed (ADR-27). The guard now dispatches workspace FK by
+embodiment and both motion manifests may advertise SO-101; the deliberate
+restriction in (12) is lifted.
+
+M0-5 closed on 2026-08-08: the unchanged T0 graph with the SO-101 profile
+passed 50/50 seeds (`0..49`, `pass1=1.00`, run
+`m0-5-so101-final-v2`). The profile is supported rather than merely
+advertised.
+
 ## Amendments after PR #8 review round 2
 
 (13) The wall timer anchors AT THE RESET, not at the first command after

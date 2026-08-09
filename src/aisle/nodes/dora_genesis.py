@@ -61,6 +61,94 @@ RENDER_TOPICS = ("rgb_overhead", "rgb_wrist", "depth_overhead")
 RESET_SETTLE_TICKS = 20
 
 
+def _quat_matrix_wxyz(quat: np.ndarray) -> np.ndarray:
+    """Rotation matrix for a Genesis-order (w, x, y, z) quaternion."""
+    w, x, y, z = np.asarray(quat, dtype=np.float64)
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ],
+        dtype=np.float64,
+    )
+
+
+def frame_point_wxyz(
+    link_pos: np.ndarray, link_quat: np.ndarray, local_offset: np.ndarray
+) -> np.ndarray:
+    """Transform a fixed-frame point from a link into world coordinates."""
+    return np.asarray(link_pos, dtype=np.float64) + _quat_matrix_wxyz(link_quat) @ np.asarray(
+        local_offset, dtype=np.float64
+    )
+
+
+def _yaw_matrix_wxyz(quat: np.ndarray) -> np.ndarray:
+    """World-z rotation from a Genesis-order (w, x, y, z) quaternion."""
+    w, x, y, z = np.asarray(quat, dtype=np.float64)
+    yaw = float(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
+    c, s = np.cos(yaw), np.sin(yaw)
+    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
+
+
+@dataclass
+class CarryLatch:
+    """Pure nearest-object upright kinematic carry coupling (ADR-18 pattern)."""
+
+    close_threshold: float
+    release_threshold: float
+    max_distance_m: float
+    held_name: str | None = None
+    offset_pos: np.ndarray | None = None
+    held_quat: np.ndarray | None = None
+
+    def reset(self) -> None:
+        self.held_name = None
+        self.offset_pos = None
+        self.held_quat = None
+
+    def update(
+        self,
+        grip: float,
+        hand_pos: np.ndarray,
+        hand_quat: np.ndarray,
+        candidates: dict[str, tuple[np.ndarray, np.ndarray]],
+    ) -> tuple[str, np.ndarray, np.ndarray] | None:
+        hand_pos = np.asarray(hand_pos, dtype=np.float64)
+        hand_quat = np.asarray(hand_quat, dtype=np.float64)
+        if self.held_name is not None and grip <= self.release_threshold:
+            self.reset()
+            return None
+        if self.held_name is None and grip >= self.close_threshold:
+            nearest = min(
+                (
+                    (float(np.linalg.norm(np.asarray(pos) - hand_pos)), name)
+                    for name, (pos, _quat) in candidates.items()
+                ),
+                default=None,
+            )
+            if nearest is None or nearest[0] > self.max_distance_m:
+                return None
+            self.held_name = nearest[1]
+            box_pos, box_quat = candidates[self.held_name]
+            rotation = _yaw_matrix_wxyz(hand_quat)
+            self.offset_pos = rotation.T @ (np.asarray(box_pos) - hand_pos)
+            # Like ADR-18's store carry latch, retain the carton's upright
+            # world orientation instead of inheriting hand pitch/roll.  A
+            # five-axis radial transfer necessarily changes hand attitude;
+            # propagating it tipped otherwise-upright cartons onto their
+            # side before release.
+            self.held_quat = np.asarray(box_quat, dtype=np.float64).copy()
+        if self.held_name is None:
+            return None
+        rotation = _yaw_matrix_wxyz(hand_quat)
+        return (
+            self.held_name,
+            (hand_pos + rotation @ self.offset_pos).astype(np.float32),
+            self.held_quat.astype(np.float32),
+        )
+
+
 @dataclass(frozen=True)
 class BridgeConfig:
     seed: int
@@ -355,6 +443,19 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     hand_link = robot.get_link("hand") if is_store else None
     held_item: str | None = None  # carry latch (T15, ADR-18)
     held_offset = (0.0, 0.0, 0.0, 0.0)
+    so101_latch = None
+    so101_hand_link = None
+    so101_tcp_offset = None
+    if profile.get("kinematic_carry_latch", False):
+        if cfg.n_envs != 1 or is_store:
+            raise ValueError("SO-101 carry latch requires single-env pharmacy mode")
+        so101_hand_link = robot.get_link(profile["ee_link"])
+        so101_tcp_offset = np.asarray(profile["ee_frame_offset_xyz"], dtype=np.float64)
+        so101_latch = CarryLatch(
+            close_threshold=float(profile["carry_latch_close"]),
+            release_threshold=float(profile["carry_latch_release"]),
+            max_distance_m=float(profile["carry_latch_max_distance_m"]),
+        )
 
     node = Node()
     node.send_output(
@@ -707,6 +808,34 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     robot.set_quat(
                         np.array([np.cos(half), 0.0, 0.0, np.sin(half)], dtype=np.float32)
                     )
+            if so101_latch is not None:
+                finger = float(to_numpy(robot.get_qpos()).reshape(-1)[finger_idx[0]])
+                grip = float(
+                    np.clip((gripper_open - finger) / (gripper_open - gripper_close), 0.0, 1.0)
+                )
+                hand_pos = to_numpy(so101_hand_link.get_pos()).reshape(-1)[:3]
+                hand_quat = to_numpy(so101_hand_link.get_quat()).reshape(-1)[:4]
+                tcp_pos = frame_point_wxyz(hand_pos, hand_quat, so101_tcp_offset)
+                candidates = {
+                    name: (
+                        to_numpy(entity.get_pos()).reshape(-1)[:3],
+                        to_numpy(entity.get_quat()).reshape(-1)[:4],
+                    )
+                    for name, entity in handle.boxes.items()
+                }
+                before = so101_latch.held_name
+                attached = so101_latch.update(grip, tcp_pos, hand_quat, candidates)
+                if before != so101_latch.held_name:
+                    action = "latch" if so101_latch.held_name is not None else "release"
+                    print(
+                        f"so101 carry {action}: {before or so101_latch.held_name}", file=sys.stderr
+                    )
+                if attached is not None:
+                    name, pos, quat = attached
+                    entity = handle.boxes[name]
+                    entity.set_pos(pos)
+                    entity.set_quat(quat)
+                    entity.zero_all_dofs_velocity()
             handle.scene.step()  # BRG-7: exceptions crash the node loudly
             sim_time_ns += int(dt * 1e9)
             due = scheduler.due()
@@ -762,6 +891,13 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             # base_pose...) is a function of the episode, not of the wall
             # tick the request happened to land on
             scheduler = RateScheduler(topic_rates, dt)
+            if so101_latch is not None:
+                if so101_latch.held_name is not None:
+                    print(
+                        f"so101 carry release: {so101_latch.held_name} (reset)",
+                        file=sys.stderr,
+                    )
+                so101_latch.reset()
             if is_mobile:
                 # MOB-1/ADR-13: re-home the base to the store-frame start and
                 # drop the in-flight base command (mirrors the arm re-home).

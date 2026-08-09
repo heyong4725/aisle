@@ -198,18 +198,19 @@ def test_m0_3_mutated_frozen_file_refuses_rollout():
 
 
 def _so101_ready() -> bool:
-    """M0-5 has two independent blockers: the asset (ADR-6) and so101
-    support in the motion nodes (ik-trajectory is Panda-only; its manifest
-    is the mechanical record). Assets landing alone must not fire a
-    doomed 50-episode run."""
-    manifest = (REPO_ROOT / "registry" / "manifests" / "ik-trajectory.yaml").read_text()
-    return SO101_URDF.exists() and "so101" in manifest
+    """M0-5 starts only when the official asset and BOTH motion/safety
+    manifests declare SO-101; partial readiness must not spend 50 episodes."""
+    manifests = [
+        (REPO_ROOT / "registry" / "manifests" / name).read_text()
+        for name in ("ik-trajectory.yaml", "budget-guard.yaml")
+    ]
+    return SO101_URDF.exists() and all("so101" in manifest for manifest in manifests)
 
 
 @pytest.mark.skipif(
     not _so101_ready(),
-    reason="so101 blocked: asset acquisition (ADR-6) and/or ik-trajectory so101 "
-    "support (manifest is franka-only); the HAR-2 gate refuses the swap "
+    reason="so101 blocked: asset acquisition (ADR-6) and/or both motion manifests' "
+    "so101 support; the HAR-2 gate refuses the swap "
     "(EMBODIMENT_MISMATCH) until both land",
 )
 def test_m0_5_so101_profile_swap_pass1_at_least_80():

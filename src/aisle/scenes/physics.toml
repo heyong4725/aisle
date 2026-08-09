@@ -115,12 +115,46 @@ base_scan_range_max_m = 5.0
 
 [embodiment.so101]
 # Official SO-101 new-calibration follower model, pinned by ADR-27.
+# Genesis otherwise replaces each non-convex robot collision mesh with one
+# convex hull. Force its native convex decomposition so the official moving
+# and fixed finger geometries retain the physical gap needed for a pinch.
+collision_decompose_error_threshold = 0.0
 # Maximum TCP norm derived from the pinned URDF chain over official limits
 # (0.5457 m deterministic sweep; rounded down conservatively).
 reach_m = 0.540
-shelf_pos = [0.44, 0.0, 0.0]
+# Measured radial-front insertion envelope (TCP offsets included); the raw
+# chain can reach farther, but straight shelf insertion loses IK beyond this.
+placement_radius_m = 0.44
+shelf_pos = [0.40, 0.0, 0.0]
 # smaller arm, smaller approach clearance (overrides [ik].pregrasp_height_m)
 pregrasp_height_m = 0.06
+# Compact free-space waypoints for the official 0.5457 m reach envelope.
+trajectory_staging_z = 0.30
+trajectory_lift_m = 0.06
+trajectory_transfer_z = 0.30
+# The official side pinch held through lift but slipped during a 0.5-scale
+# radial retract. Halve only that shelf-proximate carry velocity; later
+# free-space transfer retains the existing bounded velocity and timeout.
+trajectory_retract_vel_scale = 0.25
+# The carton is stable through retract but slips when the transfer stage
+# accelerates vertically. Keep that loaded free-space move below 0.2 scale.
+trajectory_transfer_vel_scale = 0.20
+# The SO-101 tray shares the shelf's neutral azimuth, so no singularity-
+# avoiding detour or large base-pan turn is needed after the vertical rise.
+trajectory_transfer_route = []
+# The official wrist-flex range cannot realize a vertical top-down TCP at
+# the compact shelf. SO-101 uses its native radial front approach instead.
+force_front_grasp = true
+# One centimeter clears the board edge while keeping the inward pregrasp
+# inside the official chain's minimum horizontal reach.
+front_clearance_m = 0.01
+# Measured official-mesh contact basin: 10 mm ahead of the TCP and 14.4 mm
+# toward the fixed-finger side produced repeatable lift/retract contact.
+front_tcp_overshoot_m = -0.01
+front_jaw_center_offset_m = 0.0144
+# The accepted kinematic carry latch captures above the carton, keeping the
+# official gripper and forearm clear of neighboring cartons during close.
+front_vertical_offset_m = 0.12
 # TC-5: five arm motors followed by the gripper motor on the wire.
 arm_joint_names = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
 gripper_joint_names = ["gripper"]
@@ -148,23 +182,68 @@ gripper_dofs = 1
 home_qpos = [0.0, 0.0, 0.0, 0.0, 0.0, 1.74533]
 gripper_open_qpos = 1.74533
 gripper_close_qpos = -0.174533
+# The carry latch engages before physical contact; stop below the measured
+# 0.75 contact onset so the one-sided jaw cannot touch an adjacent carton
+# during its close-stage settle.
+gripper_grasp_cmd = 0.70
+# Narrow the 138 mm open jaw before shelf insertion. Surface/contact sweeps
+# show 0.60 remains clear of the carton; target contact begins near 0.75.
+gripper_pregrasp_cmd = 0.60
+# Official new-calibration MJCF STS3215 position-controller parameters.
+gripper_kp = [998.22]
+gripper_kv = [2.731]
 # physical jaw opening used only by placement/grasp clearance geometry
 gripper_open_m = 0.03
 gripper_finger_clear_m = 0.006
-# so101's small 1-dof gripper does not need franka's 0.04 finger-sweep
-# clearance; keep the pre-T10 separation for the compact hobby gripper
+# Scale the T0 cartons to the hobby arm's official usable jaw opening; the
+# shelf/tray are already embodiment-scaled by this same scene profile.
+med_scale = 0.50
+# ADR-27 / ADR-18 pattern: Genesis cannot retain the official hobby pinch
+# under horizontal motion, so close captures the nearest in-envelope carton
+# in the hand frame and open releases it back to physics. No target identity.
+kinematic_carry_latch = true
+carry_latch_close = 0.68
+carry_latch_release = 0.20
+carry_latch_max_distance_m = 0.20
+# AABB separation rejects overlap; the stronger center-distance envelope
+# below supplies radial-front robot clearance.
 min_separation = 0.02
+# Full 50-seed evidence found every forearm collision at pairwise centre
+# distances 0.102--0.131 m. Keep all pairs outside that measured envelope.
+center_separation_m = 0.18
+# Seed-randomized medicine-to-slot assignment plus global jitter retains
+# SCN-3 randomization while guaranteeing the measured 180 mm centre spacing.
+placement_slots_xy = [
+  [0.30,  -0.28],
+  [0.415, -0.14],
+  [0.30,  0.00],
+  [0.415,  0.14],
+  [0.30,   0.28],
+]
+placement_global_jitter_m = 0.001
+# Radial-front grasps do not require the top-down hand column; reduce the
+# upper-rail exclusion so both staggered x columns remain open.
+shelf_hand_clearance_m = 0.05
 # staggered two-level shelf scaled to the official SO-101 chain: the upper level is
 # geometry-only (the reach pre-filter excludes it, hand clearance leaves
 # no usable band); the lower open band is moved forward into the realized
-# top-down workspace and fits all five meds across 0.50 m — verified over
-# 200 placement seeds
-shelf_level_heights = [0.02, 0.24]
-shelf_level_depths = [0.30, 0.06]
-shelf_level_size = [0.30, 0.50]
-# same clearance rule as franka: footprint disjoint from the shelf span
-tray_pos = [0.16, -0.35, 0.01]
-tray_size = [0.14, 0.18, 0.03]
+# radial-front workspace and fits all five meds across 0.68 m — verified over
+# 200 placement seeds.
+# Initial carton centres remain at 80–85 mm, above the oracle's floor/drop
+# boundary, while the effective finger-mesh contact crosses their centres.
+shelf_level_heights = [0.045, 0.24]
+# The unreachable upper level is a 10 mm rear rail; this leaves a wider
+# collision-free front-grasp band on the reachable lower board.
+shelf_level_depths = [0.30, 0.01]
+# The 680 mm board fits the staggered 180 mm center-distance lattice;
+# placement_radius_m still caps every sampled centre to the measured arm envelope.
+shelf_level_size = [0.30, 0.68]
+# Raised side tray outside the shelf footprint and shelf-approach arm sweep:
+# its x edge ends at 0.23 m, 20 mm before the shelf front. The 80 mm top keeps
+# every half-scale carton resting above the oracle's 70 mm floor/drop boundary;
+# -39 degrees halves the original loaded base-pan turn.
+tray_pos = [0.20, -0.20, 0.04]
+tray_size = [0.06, 0.12, 0.08]
 
 [ik]
 pregrasp_height_m = 0.10

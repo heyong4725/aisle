@@ -215,10 +215,11 @@ def build_judge_cfg(
 ) -> JudgeCfg:
     """Assemble the per-episode cfg from the canonical config files (VER-2:
     thresholds.toml; geometry from the scene layout profile)."""
-    from aisle.scenes.pharmacy import resolve_layout
+    from aisle.scenes.pharmacy import resolve_layout, scaled_meds
 
     thresholds = load_thresholds()
     layout = resolve_layout(physics, embodiment)
+    meds = scaled_meds(meds, layout["med_scale"])
     tray_pos, tray_size = layout["tray"]["pos"], layout["tray"]["size"]
     tray_min = (
         tray_pos[0] - tray_size[0] / 2,
