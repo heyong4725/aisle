@@ -462,3 +462,73 @@ def test_probe_env_has_no_pythonpath_pin(tmp_path):
     staged = yaml.safe_load((tmp_path / "runs" / "probes" / f"{out['probe']}.yaml").read_text())
     assert "PYTHONPATH" not in staged["env"]
     assert set(staged["env"]) == {"AISLE_TRACE_DIR"}
+
+
+def test_bridge_is_a_trust_anchor():
+    """Issue #127: dora-genesis is the EN module's live half — replacing it
+    wholesale can drop the TC-9 rung declaration (env rides the node) and
+    turn an L1 run into an L0 one while each individual mutation validates.
+    The bridge joins the guard and the frozen env nodes as a trust anchor;
+    its manifest source is the spoof-proof authority."""
+    result = swapped_graph_doc(
+        REAL_GRAPH, "dora-genesis", {"id": "dora-genesis", "path": "replacement.py"}, REPO_ROOT
+    )
+    assert isinstance(result, str) and "trust anchor" in result
+
+
+def test_swap_refuses_a_rung_change_even_on_an_unanchored_bridge(tmp_path):
+    """Issue #127 defense in depth: anchoring dora-genesis closes today's
+    path, but the rung rule binds ANY sim_bridge provider — a future
+    world-model-env bridge is legitimately swappable CODE, yet a swap that
+    changes the graph's declared perception rung changes WHAT THE RUN
+    MEASURES and must be refused as that, not merely as an anchor
+    violation."""
+    from cli_helpers import make_registry_root, write_manifest
+
+    root = make_registry_root(tmp_path)
+    write_manifest(
+        root,
+        {
+            "id": "toy-bridge",
+            "kind": "node",
+            "provides": ["sim_bridge"],
+            "requires": [],
+            "inputs": {"tick": {"schema": "timer_tick", "rate_hz": 100}},
+            "outputs": {"seg_overhead": {"schema": "seg_i32", "latency_class": "soft_rt"}},
+            "embodiment": {"arm": ["franka"], "gripper": "any"},
+            "safety_class": "perception",
+            "eval": None,
+            "origin": "hub",
+            "source": "src/toy_bridge.py",
+        },
+    )
+    (root / "graphs").mkdir()
+    graph = root / "graphs" / "toy.yaml"
+    graph.write_text(
+        yaml.safe_dump(
+            {
+                "nodes": [
+                    {
+                        "id": "toy-bridge",
+                        "path": "../src/toy_bridge.py",
+                        "env": {"AISLE_PERCEPTION": "L1"},
+                        "inputs": {"tick": "dora/timer/millis/10"},
+                        "outputs": ["seg_overhead"],
+                    }
+                ]
+            },
+            sort_keys=False,
+        )
+    )
+    # same node, env dropped: the staged graph would be L0 by default
+    replacement = {
+        "id": "toy-bridge",
+        "path": "../src/toy_bridge.py",
+        "inputs": {"tick": "dora/timer/millis/10"},
+        "outputs": ["seg_overhead"],
+    }
+    result = swapped_graph_doc(graph, "toy-bridge", replacement, root)
+    assert isinstance(result, str) and "rung" in result and "L1" in result and "L0" in result
+    # an env-preserving replacement of the same bridge still goes through
+    same_rung = {**replacement, "env": {"AISLE_PERCEPTION": "L1"}}
+    assert isinstance(swapped_graph_doc(graph, "toy-bridge", same_rung, root), dict)

@@ -42,6 +42,10 @@ FROZEN_ROOTS = (
     "src/aisle/reset",
     "env",
     "src/aisle/nodes/budget_guard.py",
+    # issue #127: the sim bridge is the EN module's live half — replacing it
+    # wholesale can drop the TC-9 rung declaration (env rides the node) and
+    # turn an L1 run into an L0 one while each mutation validates
+    "src/aisle/nodes/dora_genesis.py",
 )
 
 
@@ -95,6 +99,9 @@ def swapped_graph_doc(graph_path: Path, node_id: str, replacement: dict, root: P
     """The POST-SWAP graph document with the named node replaced in place,
     or an error STRING (CON-8: refusals are JSON on stdout, never a
     SystemExit-to-stderr)."""
+    from aisle.harness.registry import load_manifests
+    from aisle.harness.validate import graph_perception_rung
+
     doc = yaml.safe_load(graph_path.read_text())
     nodes = doc.get("nodes") or []
     for index, node in enumerate(nodes):
@@ -105,7 +112,23 @@ def swapped_graph_doc(graph_path: Path, node_id: str, replacement: dict, root: P
                     "live swaps are refused — VAL-5's topology check assumes its "
                     "CODE is the frozen one (human review required, CON-7)"
                 )
+            manifest_list, manifest_errors = load_manifests(root)
+            manifests = {} if manifest_errors else {m["id"]: m for _, m in manifest_list}
+            pre_rung, _, pre_errors = graph_perception_rung(nodes, manifests)
             nodes[index] = replacement
+            # issue #127 defense in depth beyond the bridge anchor: the rung
+            # binds ANY sim_bridge provider (a future world-model-env bridge
+            # is legitimately swappable code), and a swap that changes the
+            # declared rung changes WHAT THE RUN MEASURES. Rung READ errors
+            # are left to the post-swap validate, which refuses them with
+            # the full VAL-8 report.
+            post_rung, _, post_errors = graph_perception_rung(nodes, manifests)
+            if not pre_errors and not post_errors and post_rung != pre_rung:
+                return (
+                    f"swap changes the perception rung {pre_rung} -> {post_rung} "
+                    "(TC-9, issue #127): the rung is what the run MEASURES — "
+                    "relaunch a new graph instead of mutating the rung live"
+                )
             return doc
     return f"node {node_id!r} not in {graph_path}"
 

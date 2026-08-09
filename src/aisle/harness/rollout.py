@@ -423,9 +423,22 @@ def instrumented_graph(
     relaunch (ADR-23): the recorder opens its Arrow/video files in write
     mode, so a relaunch pointed at the SAME dir would truncate the prior
     launch's evidence (PR #58 review)."""
+    from aisle.harness.registry import load_manifests
+    from aisle.harness.validate import FORBIDDEN_BY_RUNG, graph_perception_rung
+
     doc = yaml.safe_load(graph.read_text())
     for node in doc["nodes"]:
         node["path"] = str((graph.parent / node["path"]).resolve())
+    # issue #128 (TC-9): the recorder subscribes to declared endpoints, but a
+    # bridge output the graph's rung FORBIDS is filtered out — an L1 trace is
+    # then self-evidencing (no poses endpoint can exist in the artifact),
+    # instead of relying on the bridge's runtime restraint. Rung read errors
+    # filter nothing here; the HAR-2 validate gate refuses such graphs first.
+    manifest_list, manifest_errors = load_manifests(root)
+    rung, bridge_ids, rung_errors = graph_perception_rung(
+        doc["nodes"], {} if manifest_errors else {m["id"]: m for _, m in manifest_list}
+    )
+    forbidden = () if rung_errors else FORBIDDEN_BY_RUNG.get(rung, ())
     # HAR-4: EVERY declared endpoint, keyed <producer>__<topic> so two
     # producers of the same topic name (e.g. reset_done from both the
     # bridge and the reset service) stay distinct endpoints
@@ -433,6 +446,7 @@ def instrumented_graph(
         f"{node['id']}__{topic}": {"source": f"{node['id']}/{topic}", "queue_size": 100}
         for node in doc["nodes"]
         for topic in (node.get("outputs") or [])
+        if not (node["id"] in bridge_ids and topic in forbidden)
     }
     doc["nodes"].append(
         {
@@ -637,6 +651,12 @@ def rollout(
     perception_gate = perception_check(root, graph, perception)
     if not perception_gate["ok"]:
         return {"ok": False, "refused": perception_gate}
+    # issue #128: hash the authored graph HERE, adjacent to the rung read and
+    # before the gates — one anchored point in time, so the attested hash and
+    # rung cannot straddle a mid-flight file edit. (The gates re-read the
+    # file by path; collapsing those reads onto one snapshot conflicts with
+    # PATH_MANIFEST_MISMATCH's identity check and stays open on #128.)
+    authored_graph_hash = _graph_hash(graph)
     gates = run_gates(root, graph, branch, no_idea_gate, embodiment, env_baseline, episodes)
     if not gates["ok"]:
         return {"ok": False, "refused": gates}
@@ -661,6 +681,10 @@ def rollout(
     exec_graph = instrumented_graph(
         graph, root, run_dir, verifier=verifier, episode_timeout_s=episode_timeout_s
     )
+    # issue #128: attest what actually RAN, not only what was authored — one
+    # hash per launch (a wall-clamp relaunch writes a new exec copy whose
+    # trace_dir env differs, so its hash differs)
+    exec_graph_hashes = [_graph_hash(exec_graph)]
     results_path = run_dir / "episodes.jsonl"
 
     git_sha = subprocess.run(
@@ -783,6 +807,7 @@ def rollout(
                     verifier=verifier,
                     episode_timeout_s=episode_timeout_s,
                 )
+                exec_graph_hashes.append(_graph_hash(exec_graph))
                 # each relaunch pays a fresh build: extend the deadline by
                 # the build grace (still bounded by the campaign wall cap),
                 # else consecutive wedges cut the tail seeds (PR #58 review)
@@ -857,7 +882,11 @@ def rollout(
         "env_hash": env_hash,
         "platform": platform_module.platform(),
         "graph": str(graph),
-        "graph_hash": _graph_hash(graph),
+        # issue #128: graph_hash is the AUTHORED graph (CON-3's reproducibility
+        # key, hashed at gate time adjacent to the rung read); exec_graph_hashes
+        # attest the instrumented copies that actually RAN, one per launch
+        "graph_hash": authored_graph_hash,
+        "exec_graph_hashes": exec_graph_hashes,
         "tier": tier,
         # TC-9: the run attests which pose source produced it, read from the
         # graph (never from the flag or ambient env — both cannot inject)
