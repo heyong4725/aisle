@@ -10,6 +10,8 @@ import shutil
 
 import pytest
 
+from aisle.embodiment import SO101_JOINTS
+
 pytestmark = [
     pytest.mark.accept,
     pytest.mark.skipif(
@@ -28,6 +30,7 @@ RATES = {
     "poses": 15,
 }
 FRANKA_N_DOF = 9
+SO101_N_DOF = len(SO101_JOINTS)
 
 
 def capture(dataflow, tmp_path, bridge_env, driver_env, duration_s=10.0, **kw):
@@ -124,6 +127,31 @@ def test_schema_conformance(tmp_path, dataflow):
     assert any(int(m["metadata"]["dropped"]) > 0 for m in by_topic["joint_state"]), (
         "driver double-sends per tick; some coalescing must be observed"
     )
+
+
+def test_so101_schema_conformance(tmp_path, dataflow):
+    """Acceptance A1 (TC-1, TC-2, TC-5, SCN-4): the official SO-101
+    profile publishes and accepts the six-joint wire contract in motor order,
+    announces the realized DOF count, and normalizes its revolute gripper."""
+    records = capture(
+        dataflow,
+        tmp_path,
+        bridge_env={"AISLE_SEED": 7, "AISLE_EMBODIMENT": "so101"},
+        driver_env={"DRIVER_MODE": "conformance", "DRIVER_N_DOF": SO101_N_DOF},
+        duration_s=4.0,
+        driver_waits_for_bridge_info=True,
+    )
+    by_topic: dict[str, list[dict]] = {}
+    for record in records:
+        by_topic.setdefault(record["id"], []).append(record)
+    info = json.loads(by_topic["bridge_info"][0]["text"])
+    assert info["embodiment"] == "so101" and info["n_dof"] == SO101_N_DOF
+    joint = by_topic["joint_state"][0]
+    assert joint["len"] == SO101_N_DOF
+    assert tuple(joint["metadata"]["names"]) == SO101_JOINTS
+    gripper = by_topic["gripper_state"][0]
+    assert gripper["len"] == 1
+    assert 0.0 <= gripper["values"][0] <= 1.0
 
 
 def test_reset_service(tmp_path, dataflow):

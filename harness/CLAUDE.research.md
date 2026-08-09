@@ -24,7 +24,7 @@ the retail verifier.
 
 1. **The frozen set is off-limits** (CON-7). You MUST NOT edit anything
    under `src/aisle/scenes`, `src/aisle/verifier`, `src/aisle/reset`,
-   `env`, `src/aisle/nodes/budget_guard.py`, `harness/budget.toml`, or
+   `assets/so101`, `env`, `src/aisle/nodes/budget_guard.py`, `harness/budget.toml`, or
    `graphs/expert_*.yaml`. `harness rollout` FETCHES the protected
    `origin/main` head from the remote server at gate time, pins it by
    commit OID, and verifies the frozen tree — and the hash checker

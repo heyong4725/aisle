@@ -114,24 +114,51 @@ base_scan_angle_max = 3.14159
 base_scan_range_max_m = 5.0
 
 [embodiment.so101]
-reach_m = 0.450
-shelf_pos = [0.22, 0.0, 0.0]
+# Official SO-101 new-calibration follower model, pinned by ADR-27.
+# Maximum TCP norm derived from the pinned URDF chain over official limits
+# (0.5457 m deterministic sweep; rounded down conservatively).
+reach_m = 0.540
+shelf_pos = [0.44, 0.0, 0.0]
 # smaller arm, smaller approach clearance (overrides [ik].pregrasp_height_m)
 pregrasp_height_m = 0.06
-# TC-5: so101 is 6 arm dofs + 1 gripper dof
+# TC-5: five arm motors followed by the gripper motor on the wire.
+arm_joint_names = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
+gripper_joint_names = ["gripper"]
+# Genesis collapses the massless fixed gripper_frame_link. Retain its official
+# transform relative to the surviving gripper_link and compose it into camera
+# calibration / TCP consumers.
+ee_link = "gripper_link"
+ee_frame_offset_xyz = [-0.0079, -0.000218121, -0.0981274]
+ee_frame_offset_rpy = [0.0, 3.14159, 0.0]
+# A five-axis arm can constrain TCP position plus approach direction, but not
+# an independent wrist yaw. Top-down reachability therefore ignores yaw.
+ik_free_yaw = true
+# Deterministic full-range starts are needed because the new-calibration zero
+# pose is near a different IK basin than the compact top-down workspace.
+ik_max_starts = 64
+ik_max_solver_iters = 200
+ik_full_range_starts = true
+# Genesis's one-axis IK settles within 16.2 mm on the worst seed-7 target;
+# the 20 mm build-time tolerance is still smaller than the narrowest box.
+ik_pos_tol_m = 0.02
 gripper_dofs = 1
-# so101 gripper geometry — PROVISIONAL pending the asset (ADR-6); the
-# smaller hobby gripper opens narrower and needs less finger clearance
+# New-calibration arm zeros are joint-range midpoints. The upstream README
+# states the LeRobot 0..100 gripper mapping is not encoded in the model; its
+# official URDF limits correspond to closed..open, so home starts open.
+home_qpos = [0.0, 0.0, 0.0, 0.0, 0.0, 1.74533]
+gripper_open_qpos = 1.74533
+gripper_close_qpos = -0.174533
+# physical jaw opening used only by placement/grasp clearance geometry
 gripper_open_m = 0.03
 gripper_finger_clear_m = 0.006
 # so101's small 1-dof gripper does not need franka's 0.04 finger-sweep
-# clearance, and its 0.45 m reach cannot afford a wider shelf or a
-# farther tray — keep the pre-T10 separation
+# clearance; keep the pre-T10 separation for the compact hobby gripper
 min_separation = 0.02
-# staggered two-level shelf scaled to the 0.45 m arm: the upper level is
+# staggered two-level shelf scaled to the official SO-101 chain: the upper level is
 # geometry-only (the reach pre-filter excludes it, hand clearance leaves
-# no usable band); all five meds place on L0's 0.14 m open band across
-# the widened 0.50 m span — verified over 200 placement seeds
+# no usable band); the lower open band is moved forward into the realized
+# top-down workspace and fits all five meds across 0.50 m — verified over
+# 200 placement seeds
 shelf_level_heights = [0.02, 0.24]
 shelf_level_depths = [0.30, 0.06]
 shelf_level_size = [0.30, 0.50]
