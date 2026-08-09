@@ -13,6 +13,8 @@ from aisle.nodes.dora_genesis import (
     ResetQuarantine,
     make_bridge_info,
     parse_bridge_config,
+    rung_topic_rates,
+    segmentation_id_map,
 )
 
 pytestmark = pytest.mark.unit
@@ -163,6 +165,9 @@ def test_bridge_info_shape():
         "step_without_reset": False,
         # BRG-8: nested, verbatim — the verifier compares it field-wise
         "calibration": calibration,
+        # TC-9: the rung is attested in the TRACE, not only in the graph
+        "perception": "L0",
+        "segmentation_ids": {},
     }
     assert info["platform"]
     assert info["calibration"]["calibration_version"] == 1
@@ -242,3 +247,67 @@ def test_reset_quarantine_zero_ticks_never_holds():
     q = ResetQuarantine(0)
     q.arm()
     assert q.hold() is False
+
+
+def test_perception_rung_from_env_defaults_l0():
+    """TC-9: the rung comes from the graph node's env, defaults to L0, and is
+    read case-insensitively. An UNRECOGNIZED rung refuses rather than falling
+    back to L0 — a silent fallback would publish ground-truth pose to a graph
+    that asked not to have it and report the result under the rung it typo'd."""
+    assert parse_bridge_config({}).perception == "L0"
+    assert parse_bridge_config({"AISLE_PERCEPTION": "l1"}).perception == "L1"
+    assert parse_bridge_config({"AISLE_PERCEPTION": " L2 "}).perception == "L2"
+    with pytest.raises(ValueError, match="unknown perception rung"):
+        parse_bridge_config({"AISLE_PERCEPTION": "L3"})
+
+
+def test_bridge_publishes_only_what_the_rung_permits():
+    """TC-9: the bridge does not PUBLISH a topic the rung forbids — the other
+    half of VAL-8, which only rejects a graph that consumes one. The validator
+    can be bypassed (instrumented run copies, hand-edited graphs); a topic that
+    is never on the wire cannot be consumed by accident."""
+    l0 = rung_topic_rates("L0", is_mobile=False)
+    assert "poses" in l0 and "seg_overhead" not in l0
+    l1 = rung_topic_rates("L1", is_mobile=False)
+    assert "poses" not in l1 and l1["seg_overhead"] == 15
+    l2 = rung_topic_rates("L2", is_mobile=False)
+    assert "poses" not in l2 and "seg_overhead" not in l2
+    # the rung is orthogonal to embodiment: mobile still adds its base topics
+    assert {"base_pose", "base_scan"} <= set(rung_topic_rates("L1", is_mobile=True))
+    # and the rung never disturbs the topics it says nothing about
+    for rung in ("L0", "L1", "L2"):
+        assert {"rgb_overhead", "depth_overhead", "joint_state", "oracle_state"} <= set(
+            rung_topic_rates(rung, is_mobile=False)
+        )
+
+
+def test_segmentation_and_depth_are_co_scheduled_on_every_tick():
+    """TC-9, CON-5: `seg_overhead` and `depth_overhead` MUST be due on the
+    same ticks, because an L1 estimate masks the segmentation and indexes the
+    depth. If they could fire independently the estimator would either pair
+    across ticks (measuring a scene that never existed) or wait forever."""
+    scheduler = RateScheduler(rung_topic_rates("L1", is_mobile=False), dt=0.01)
+    seg_ticks, depth_ticks = [], []
+    for tick in range(1000):
+        due = scheduler.due()
+        if "seg_overhead" in due:
+            seg_ticks.append(tick)
+        if "depth_overhead" in due:
+            depth_ticks.append(tick)
+    assert seg_ticks == depth_ticks
+    assert len(seg_ticks) == 150  # 15 Hz over 10 s (TC-4)
+
+
+def test_segmentation_id_map_uses_the_scene_map_not_entity_indices():
+    """TC-9: the ids in `seg_overhead` are genesis's own segmentation map, NOT
+    entity indices. These numbers are MEASURED from the desk scene (seed 3):
+    entity 5 is amoxicillin and its seg id is 16. A consumer that masked on
+    the entity index would select other geometry — observed as robot links
+    whose pixel counts were identical across different object layouts."""
+    idx_dict = {0: -1, 1: (0, 0), 5: (4, 4), 6: (4, 5), 16: (5, 16), 17: (6, 17)}
+    ids = segmentation_id_map(idx_dict, {"amoxicillin": 5, "ibuprofen": 6})
+    assert ids == {"amoxicillin": [16], "ibuprofen": [17]}
+    # a multi-link entity contributes every one of its ids, sorted (CON-5)
+    assert segmentation_id_map({7: (4, 7), 5: (4, 4)}, {"robot": 4}) == {"robot": [5, 7]}
+    # an entity with no rendered geometry maps to an empty list, never a guess
+    assert segmentation_id_map(idx_dict, {"tray": 99}) == {"tray": []}

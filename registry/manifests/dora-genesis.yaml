@@ -23,6 +23,8 @@ outputs:
   rgb_overhead: {schema: rgb8_image, latency_class: soft_rt}
   rgb_wrist: {schema: rgb8_image, latency_class: soft_rt}
   depth_overhead: {schema: depth_f32, latency_class: soft_rt}
+  # TC-9: published at perception rung L1 only
+  seg_overhead: {schema: seg_i32, latency_class: soft_rt}
   reset_done: {schema: reset_done_u32, latency_class: best_effort}
   # SPEC 210 (mobile only): kinematic base topics + store-frame announce
   base_pose: {schema: base_pose3d_f32, latency_class: hard_rt}
