@@ -21,13 +21,13 @@ from typing import Any
 
 import numpy as np
 
+from aisle.embodiment import profile_dof_indices
+
 _SCENES_DIR = Path(__file__).parent
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 SO101_URDF = _REPO_ROOT / "assets" / "so101" / "so101.urdf"
 FRANKA_MJCF = "xml/franka_emika_panda/panda.xml"
 FRANKA_EE_LINK = "hand"
-# genesis quaternions are (w, x, y, z); gripper pointing straight down
-DOWNWARD_QUAT = (0.0, 1.0, 0.0, 0.0)
 
 _MAX_PLACEMENT_TRIES = 1000
 
@@ -77,6 +77,18 @@ def resolve_layout(physics: dict, embodiment: str) -> dict:
                 if "pregrasp_height_m" in profile
                 else {}
             ),
+            **({"max_starts": profile["ik_max_starts"]} if "ik_max_starts" in profile else {}),
+            **(
+                {"max_solver_iters": profile["ik_max_solver_iters"]}
+                if "ik_max_solver_iters" in profile
+                else {}
+            ),
+            **(
+                {"full_range_starts": profile["ik_full_range_starts"]}
+                if "ik_full_range_starts" in profile
+                else {}
+            ),
+            **({"pos_tol_m": profile["ik_pos_tol_m"]} if "ik_pos_tol_m" in profile else {}),
         },
     }
 
@@ -282,6 +294,58 @@ def wrist_mount_rotation(cam_cfg: dict) -> np.ndarray:
     )
 
 
+def ee_frame_transform(profile: dict | None) -> np.ndarray:
+    """EE-link-to-official-TCP transform; identity when no fixed frame is configured."""
+    fixed = np.eye(4, dtype=np.float32)
+    if not profile or "ee_frame_offset_xyz" not in profile:
+        return fixed
+    roll, pitch, yaw = (float(v) for v in profile["ee_frame_offset_rpy"])
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    fixed[:3, :3] = np.array(
+        [
+            [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+            [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+            [-sp, cp * sr, cp * cr],
+        ],
+        dtype=np.float32,
+    )
+    fixed[:3, 3] = profile["ee_frame_offset_xyz"]
+    return fixed
+
+
+def wrist_mount_transform(cam_cfg: dict, profile: dict | None = None) -> np.ndarray:
+    """EE-link-to-camera transform, including an official fixed TCP frame
+    when the simulator collapses that massless URDF link (SCN-5, ADR-27)."""
+    camera = np.eye(4, dtype=np.float32)
+    camera[:3, :3] = wrist_mount_rotation(cam_cfg)
+    camera[:3, 3] = cam_cfg["wrist_offset_m"]
+    fixed = ee_frame_transform(profile)
+    return fixed @ camera
+
+
+def _rotation_to_quat_wxyz(rotation: np.ndarray) -> np.ndarray:
+    """Branch-stable rotation-matrix to Genesis wxyz quaternion."""
+    r = np.asarray(rotation, dtype=np.float64)
+    trace = float(np.trace(r))
+    if trace > 0.0:
+        s = math.sqrt(trace + 1.0) * 2.0
+        return np.array(
+            [s / 4.0, (r[2, 1] - r[1, 2]) / s, (r[0, 2] - r[2, 0]) / s, (r[1, 0] - r[0, 1]) / s],
+            dtype=np.float32,
+        )
+    i = int(np.argmax(np.diag(r)))
+    j, k = (i + 1) % 3, (i + 2) % 3
+    s = math.sqrt(max(1.0 + r[i, i] - r[j, j] - r[k, k], 1e-12)) * 2.0
+    xyz = [0.0, 0.0, 0.0]
+    xyz[i] = s / 4.0
+    xyz[j] = (r[j, i] + r[i, j]) / s
+    xyz[k] = (r[k, i] + r[i, k]) / s
+    w = (r[k, j] - r[j, k]) / s
+    return np.array([w, *xyz], dtype=np.float32)
+
+
 def build_scene(
     seed: int,
     embodiment: str = "franka",
@@ -412,18 +476,27 @@ def build_scene(
     else:
         scene.build(n_envs=n_envs)
 
-    # start the robot AT its home pose: the qpos0 zeros pose violates franka
-    # joint limits and self-collides (T05 control would inherit that state)
+    # Start the robot AT its home pose. Configured profiles are expressed in
+    # TC-5 wire order; map by official joint name instead of assuming the
+    # URDF parser preserves XML order.
     profile = physics["embodiment"][embodiment]
+    wire_dof_indices = profile_dof_indices(robot, profile)
     if "home_qpos" in profile:
         home = np.asarray(profile["home_qpos"], dtype=np.float32)
+        if wire_dof_indices is not None:
+            native_home = np.empty(robot.n_dofs, dtype=np.float32)
+            native_home[list(wire_dof_indices)] = home
+            home = native_home
         robot.set_qpos(home if n_envs == 1 else np.tile(home, (n_envs, 1)))
     # finger-dof gains: without these the tendon-approximated gripper
     # actuator ignores position control and the fingers fall closed
     if "gripper_dofs" in profile and "gripper_kp" in profile:
-        # gripper_dofs is a COUNT; the finger dofs are the last N
-        count = int(profile["gripper_dofs"])
-        finger_dofs = list(range(robot.n_dofs - count, robot.n_dofs))
+        if wire_dof_indices is None:
+            count = int(profile["gripper_dofs"])
+            finger_dofs = list(range(robot.n_dofs - count, robot.n_dofs))
+        else:
+            count = len(profile["gripper_joint_names"])
+            finger_dofs = list(wire_dof_indices[-count:])
         robot.set_dofs_kp(
             np.asarray(profile["gripper_kp"], dtype=np.float32), dofs_idx_local=finger_dofs
         )
@@ -431,12 +504,10 @@ def build_scene(
             np.asarray(profile["gripper_kv"], dtype=np.float32), dofs_idx_local=finger_dofs
         )
 
-    ee_link = robot.get_link(FRANKA_EE_LINK) if embodiment == "franka" else robot.links[-1]
-    offset = np.eye(4, dtype=np.float32)
-    # SCN-5: orientation as well as position. An identity mount aimed the
-    # camera along the link's -Z, i.e. straight back up the arm (#109).
-    offset[:3, :3] = wrist_mount_rotation(cam_cfg)
-    offset[:3, 3] = cam_cfg["wrist_offset_m"]
+    ee_link = robot.get_link(profile.get("ee_link", FRANKA_EE_LINK))
+    # SCN-5: orientation as well as position. SO-101 composes the official
+    # fixed gripper-frame transform that Genesis collapses during import.
+    offset = wrist_mount_transform(cam_cfg, profile)
     cams["wrist"].attach(ee_link, offset_T=offset)
 
     handle = SceneHandle(
@@ -469,10 +540,37 @@ def _assert_reachable(handle: SceneHandle, ee_link, ik_cfg: dict, n_envs: int = 
     influences the outcome; position AND rotation error are both checked."""
     rng = random.Random(handle.seed)
     profile = load_physics()["embodiment"][handle.embodiment]
+    wire_dof_indices = profile_dof_indices(handle.robot, profile)
     if "home_qpos" in profile:
         home = np.asarray(profile["home_qpos"], dtype=np.float32)
+        if wire_dof_indices is not None:
+            native_home = np.empty(handle.robot.n_dofs, dtype=np.float32)
+            native_home[list(wire_dof_indices)] = home
+            home = native_home
     else:
         home = to_numpy(handle.robot.get_qpos()).reshape(-1)[: handle.robot.n_dofs]
+    frame = ee_frame_transform(profile)
+    local_point = frame[:3, 3] if "ee_frame_offset_xyz" in profile else None
+    downward = np.diag([1.0, -1.0, -1.0]).astype(np.float32)
+    link_quat = _rotation_to_quat_wxyz(downward @ frame[:3, :3].T)
+    # Genesis supports one-axis alignment for underactuated arms. Aligning
+    # the tool Z axis fixes the top-down approach direction while leaving
+    # rotation about that axis free (five task constraints for five joints).
+    rot_mask = [False, False, True] if profile.get("ik_free_yaw", False) else [True] * 3
+    if wire_dof_indices is None:
+        arm_dof_indices = list(range(handle.robot.n_dofs))
+    else:
+        arm_dof_indices = list(wire_dof_indices[: len(profile["arm_joint_names"])])
+    lower, upper = handle.robot.get_dofs_limit()
+    dof_limits = np.column_stack((to_numpy(lower), to_numpy(upper)))
+    starts = [home]
+    if ik_cfg.get("full_range_starts", False):
+        for _ in range(1, ik_cfg["max_starts"]):
+            init_qpos = home.copy()
+            for dof in arm_dof_indices:
+                lo, hi = dof_limits[dof]
+                init_qpos[dof] = rng.uniform(float(lo), float(hi))
+            starts.append(init_qpos)
     failures: list[str] = []
     for name, entity in handle.boxes.items():
         target = to_numpy(entity.get_pos()).reshape(-1)[:3] + np.array(
@@ -480,7 +578,9 @@ def _assert_reachable(handle: SceneHandle, ee_link, ik_cfg: dict, n_envs: int = 
         )
         best = None
         for attempt in range(ik_cfg["max_starts"]):
-            if attempt == 0:
+            if ik_cfg.get("full_range_starts", False):
+                init_qpos = starts[attempt]
+            elif attempt == 0:
                 init_qpos = home
             else:
                 perturbation = np.array(
@@ -493,23 +593,26 @@ def _assert_reachable(handle: SceneHandle, ee_link, ik_cfg: dict, n_envs: int = 
                 init_qpos = home + perturbation
             if n_envs > 1:  # genesis requires batch-shaped inputs
                 pos_arg = np.tile(target, (n_envs, 1))
-                quat_arg = np.tile(np.asarray(DOWNWARD_QUAT, dtype=np.float32), (n_envs, 1))
+                quat_arg = np.tile(link_quat, (n_envs, 1))
                 init_arg = np.tile(init_qpos, (n_envs, 1))
             else:
-                pos_arg, quat_arg, init_arg = target, DOWNWARD_QUAT, init_qpos
+                pos_arg, quat_arg, init_arg = target, link_quat, init_qpos
             _, error = handle.robot.inverse_kinematics(
                 link=ee_link,
                 pos=pos_arg,
                 quat=quat_arg,
+                local_point=local_point,
                 init_qpos=init_arg,
                 max_samples=1,
                 max_solver_iters=ik_cfg["max_solver_iters"],
+                rot_mask=rot_mask,
+                dofs_idx_local=arm_dof_indices,
                 return_error=True,
             )
             # env 0 witnesses all envs: placements are seed-identical
             error = to_numpy(error).reshape(-1)[:6]
             pos_error = float(np.linalg.norm(error[:3]))
-            rot_error = float(np.linalg.norm(error[3:6]))
+            rot_error = float(np.linalg.norm(error[3:6][rot_mask]))
             best = min(best or (pos_error, rot_error), (pos_error, rot_error))
             if pos_error <= ik_cfg["pos_tol_m"] and rot_error <= ik_cfg["rot_tol_rad"]:
                 break

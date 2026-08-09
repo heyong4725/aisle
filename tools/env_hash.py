@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """env_hash: fingerprint the CON-7 frozen set (CON-5, CON-8).
 
-Hashes src/aisle/{scenes,verifier,reset}, graphs/expert_*.yaml, and the
+Hashes src/aisle/{scenes,verifier,reset}, assets/so101, graphs/expert_*.yaml, and the
 SPEC 080 frozen safety artifacts (env/limits.toml + the budget-guard
 module) — sorted relative paths + file contents; __pycache__ excluded —
 into one sha256. Modes: compute (default), --write (commit tools/env_hash.json),
@@ -22,7 +22,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-FROZEN_DIRS = ("src/aisle/scenes", "src/aisle/verifier", "src/aisle/reset", "env")
+FROZEN_DIRS = (
+    "src/aisle/scenes",
+    "src/aisle/verifier",
+    "src/aisle/reset",
+    "assets/so101",
+    "env",
+)
 # SPEC 080: the guard and its limits are frozen safety artifacts — a run's
 # env_hash must change if either does. harness/budget.toml carries the
 # campaign ceilings (ADR-21): budgets get the same tamper trust as limits.

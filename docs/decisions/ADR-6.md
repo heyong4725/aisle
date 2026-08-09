@@ -55,3 +55,18 @@ sanctioned home for GPU wheels per CON-1. (15) "Textures" DR is color
 modulation in v0 (the rasterizer path has no texture-swap machinery yet)
 — recorded as a known gap, not renamed away; genesis pre-initialization
 with a foreign backend now raises instead of silently changing results.
+
+## Issue #13 resolution (2026-08-08)
+
+The owner approved TheRobotStudio's official Apache-2.0 SO-101 simulation
+bundle at commit `7629d2ad9853d10fb903093a33ef6114099d97e5` (ADR-27).
+`assets/so101/` now vendors the new-calibration URDF, every referenced STL,
+the upstream README, license, and a machine-readable provenance pin. The
+asset gate described above is therefore closed. Genesis collapses the
+massless fixed `gripper_frame_link`; AISLE retains its official transform
+relative to `gripper_link` and composes it into the wrist-camera mount and
+published calibration. The profile's former layout and gripper constants
+were provisional: they are replaced by the imported model's official joint
+order/limits, an official-frame transform, and a reach derived from the
+pinned kinematic chain. SO-101's five-axis IK constrains TCP position plus
+the top-down tool axis while leaving yaw free.
