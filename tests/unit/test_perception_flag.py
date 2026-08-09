@@ -57,9 +57,11 @@ def test_an_unreadable_rung_cannot_be_asserted(tmp_path):
 
 
 def test_rollout_refuses_mismatch_before_touching_disk():
-    """HAR-1: the perception assertion runs before run_gates, the budget
-    ledger, and the run directory — a refused run leaves no trace to clean
-    up and consumes no campaign budget."""
+    """HAR-1: a refused run leaves no run directory behind and never reaches
+    run_gates. (The before-the-budget-ledger ordering also holds, but is
+    pinned by code position only — this test runs env_baseline=local, which
+    skips reservation unconditionally, so it cannot distinguish the order;
+    round-2 review note.)"""
     run_id = "perception-flag-refusal-unit"
     result = rollout(
         root=REPO_ROOT,

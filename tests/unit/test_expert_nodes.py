@@ -226,7 +226,12 @@ class TestNeighbourConstraints:
     inline strict zip crashed on the shorter list L1's refusal path used to
     publish — these tests drive the CONSUMER with the producer's payloads."""
 
-    MEDS = {name: {"size": [0.04, 0.03, 0.08]} for name in MED_NAMES}
+    # DISTINCT per-med sizes (round-2 review): a uniform fixture let an
+    # implementation that reads the TARGET's size for every neighbour pass —
+    # per-slot half-extents below pin the per-NAME lookup the code performs
+    MEDS = {
+        name: {"size": [0.04 + 0.01 * i, 0.03 + 0.01 * i, 0.08]} for i, name in enumerate(MED_NAMES)
+    }
 
     def full_rows(self):
         return [[0.5, -0.1 + 0.06 * i] for i in range(len(MED_NAMES))]
@@ -236,7 +241,11 @@ class TestNeighbourConstraints:
         out = neighbour_constraints(rows, MED_NAMES[1], MED_NAMES, self.MEDS)
         assert len(out) == len(MED_NAMES) - 1
         assert [c[:2] for c in out] == [r for i, r in enumerate(rows) if i != 1]
-        assert all(c[2:] == [0.02, 0.015] for c in out)
+        assert [c[2:] for c in out] == [
+            [pytest.approx(0.02 + 0.005 * i), pytest.approx(0.015 + 0.005 * i)]
+            for i in range(len(MED_NAMES))
+            if i != 1
+        ]
 
     def test_l1_refused_slot_is_omitted_from_constraints_not_unpacked(self):
         """A None row is a REFUSED neighbour (mask under the occlusion

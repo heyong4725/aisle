@@ -201,8 +201,17 @@ class L1Session:
         return True
 
     def on_reset_done(self) -> None:
+        # clear the FRAME buffers along with the target (round-2 review,
+        # executed repro): seg and depth ride separate dora channels with no
+        # cross-channel ordering, so a pre-reset frame's twin can drain AFTER
+        # reset_done and the new target_request — pairing it with the buffered
+        # pre-reset half would publish the OLD episode's scene as the NEW
+        # target's pose. Stamps cannot disambiguate: the bridge never rewinds
+        # sim_time_ns across a teleport, so the stale pair's stamps match.
         self.target = None
         self.pending = False
+        self.latest_depth = None
+        self.latest_seg = None
 
     def on_depth(self, sim_time_ns: int, depth: np.ndarray) -> dict | None:
         """Buffer the frame; publishable estimate if its seg twin is already
@@ -287,6 +296,13 @@ def main() -> None:  # pragma: no cover — dora runtime
             session.on_reset_done()
         elif topic in ("depth_overhead", "seg_overhead"):
             h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
+            if h <= 0 or w <= 0:
+                # a frame without its stamped dimensions violates the bridge
+                # contract (BRG-2 metadata); skip it LOUDLY rather than die on
+                # reshape — a dead pose source times out every later episode
+                # in the least legible way (round-2 review)
+                print(f"{topic} frame skipped: h={h} w={w}", file=sys.stderr)
+                continue
             stamp = int(metadata.get("sim_time_ns", -1))
             frame = np.asarray(event["value"].to_numpy(zero_copy_only=False))
             try:

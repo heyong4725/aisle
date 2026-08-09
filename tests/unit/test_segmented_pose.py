@@ -171,6 +171,10 @@ def _armed_session():
 
 
 def _good_frame(s, sim_time_ns=100):
+    # `or` covers both publish paths, but only because every call uses a
+    # stamp the session has not paired yet: reusing a stamp would short-
+    # circuit at on_depth and quietly stop exercising on_seg — use fresh
+    # stamps per call (round-2 review note)
     seg, depth = _sized_scene(50, 45)
     return s.on_depth(sim_time_ns, depth) or s.on_seg(sim_time_ns, seg)
 
@@ -184,6 +188,21 @@ def test_session_reset_clears_the_active_target():
     s = _armed_session()
     s.on_reset_done()
     assert _good_frame(s) is None
+
+
+def test_session_reset_clears_buffered_frames_too():
+    """Round-2 review (executed repro): seg and depth ride separate dora
+    channels with no cross-channel ordering, so a pre-reset frame's twin can
+    drain AFTER reset_done and the next episode's target_request. If the
+    pre-reset half survived the boundary, the pair would publish the OLD
+    episode's scene as the NEW target's pose — and stamps cannot tell them
+    apart, because the bridge never rewinds sim_time_ns across a teleport."""
+    s = _armed_session()
+    seg, depth = _sized_scene(50, 45)
+    assert s.on_seg(100, seg) is None  # episode N's seg, twin still queued
+    s.on_reset_done()  # episode boundary
+    s.on_target_request({"target_med": "ibuprofen"})  # episode N+1 armed
+    assert s.on_depth(100, depth) is None  # the stale twin drains late: no pair
 
 
 def test_session_publishes_once_per_request():
