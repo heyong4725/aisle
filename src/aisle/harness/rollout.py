@@ -30,7 +30,8 @@ from aisle.harness.reaper import reap_orphans
 from aisle.harness.validate import validate
 
 # every declared node/output endpoint is traced (HAR-4); image topics
-# record metadata-only rows — pixels live in the mp4 (ADR-11)
+# record payload-free rows — pixels live in the mp4 (ADR-11), and seg
+# rows carry #131 provenance text
 # hard-won budgets (see ADR-11): the per-episode verifier budget in SIM
 # seconds; the one-off genesis build and per-episode WALL budgets; and
 # the stall detector's thresholds (pre-data = the build produces no

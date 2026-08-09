@@ -286,3 +286,62 @@ def test_capture_omits_a_seg_mask_from_a_different_render(tmp_path):
     assert capture_frames(tmp_path / "frames", latest) == 5_000_000_000
     stored = load_frames(tmp_path)["overhead"][5_000_000_000]
     assert set(stored) == {"rgb", "depth"}
+
+
+@pytest.mark.parametrize("goal_offset_ms", [0, 40], ids=["first-half-phase", "second-half-phase"])
+def test_masks_survive_both_boundary_phases_of_the_real_interleave(tmp_path, goal_offset_ms):
+    """PR #134 review P1: drive the retention/capture order with the REAL
+    contract-rate interleave — rgb+depth+seg on each 15 Hz render tick
+    (bridge publish order), rgb alone on the 30 Hz tick between. The 5 s
+    capture period is an exact multiple of the render period, so the
+    boundary phase repeats for EVERY checkpoint of an episode: with seg
+    retained after the boundary check, a second-half-phase boundary fires
+    capture ON the seg event and omits the in-hand mask at every
+    mid-episode capture (the first live run's 4/15 misses were one
+    all-miss episode, not a scattered race). Seg retained first, both
+    phases carry the mask."""
+    from aisle.harness.trace_recorder import record_image_frame
+
+    schedule = CaptureSchedule(int(5e9))
+    schedule.start(goal_offset_ms * 10**6)  # goal receipt re-bases (VER-9)
+    latest: dict = {}
+    frames_dir = tmp_path / "frames"
+    half = 33_333_333  # the 30 Hz rgb cadence; full render ticks at even k
+    for k in range(160):  # ~5.3 s: two checkpoints per phase
+        t = k * half
+        rgb = np.full((4, 4, 3), k % 251, dtype=np.uint8)
+        record_image_frame("rgb_overhead", t, rgb, schedule, latest, frames_dir)
+        if k % 2 == 0:
+            depth = np.full((4, 4), 0.5 + k, dtype=np.float32)
+            seg = np.full((4, 4), k % 17 + 1, dtype=np.int32)
+            record_image_frame("depth_overhead", t, depth, schedule, latest, frames_dir)
+            record_image_frame("seg_overhead", t, seg, schedule, latest, frames_dir)
+    frames = load_frames(tmp_path).get("overhead", {})
+    assert len(frames) >= 1, "no captures fired"
+    missing = [stamp for stamp, arrays in frames.items() if "seg" not in arrays]
+    assert missing == [], f"maskless judged instants at {missing}"
+
+
+def test_npz_mask_hash_matches_the_provenance_contract(tmp_path):
+    """The audit CHAIN between #131's two options: sha256 over the
+    npz-STORED mask must equal `seg_provenance` of the live frame — pinned
+    with a non-contiguous view so a layout/dtype divergence between the
+    write path and the hash path cannot silently sever the chain."""
+    import hashlib
+    import json
+
+    from aisle.harness.trace_recorder import seg_provenance
+
+    rgb = np.zeros((4, 4, 3), dtype=np.uint8)
+    depth = np.zeros((4, 4), dtype=np.float32)
+    seg = np.arange(32, dtype=np.int32).reshape(8, 4)[::-2]  # non-contiguous view
+    prov = json.loads(seg_provenance(seg))
+    latest = {
+        "rgb_overhead": (7, rgb),
+        "depth_overhead": (7, depth),
+        "seg_overhead": (7, seg),
+    }
+    assert capture_frames(tmp_path / "frames", latest) == 7
+    stored = load_frames(tmp_path)["overhead"][7]["seg"]
+    assert hashlib.sha256(np.ascontiguousarray(stored).tobytes()).hexdigest() == prov["mask_sha256"]
+    assert int(np.count_nonzero(stored)) == prov["nonzero_px"]
