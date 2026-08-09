@@ -30,6 +30,13 @@ from pathlib import Path
 
 import numpy as np
 
+from aisle.embodiment import (
+    from_wire_joint_order,
+    profile_dof_indices,
+    profile_joint_names,
+    to_wire_joint_order,
+)
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # SPEC 010 §2: producer rates are contracts, not hints (TC-4)
@@ -625,19 +632,28 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     if awaiting_first_reset:
         print("holding at sim step 0 until the first reset (CON-5)", file=sys.stderr)
     quarantine = ResetQuarantine(RESET_SETTLE_TICKS)  # holds arm at home post-reset
-    home_hold = (
-        np.asarray(profile["home_qpos"], dtype=np.float32) if "home_qpos" in profile else None
-    )
-    # one name per DOF in payload order (TC-5): multi-dof joints repeat,
-    # zero-dof (fixed) joints vanish; a mismatch is a loud startup failure
-    joint_names = []
-    for joint in robot.joints:
-        joint_names += [joint.name] * int(getattr(joint, "n_dofs", 1))
+    wire_dof_indices = profile_dof_indices(robot, profile)
+    configured_names = profile_joint_names(profile)
+    if configured_names is None:
+        # one name per DOF in native payload order: multi-dof joints repeat,
+        # zero-dof (fixed) joints vanish
+        joint_names = []
+        for joint in robot.joints:
+            joint_names += [joint.name] * int(getattr(joint, "n_dofs", 1))
+        wire_dof_indices = tuple(range(n_dof))
+    else:
+        joint_names = list(configured_names)
     assert len(joint_names) == n_dof, (len(joint_names), n_dof)
+
+    home_hold = (
+        from_wire_joint_order(np.asarray(profile["home_qpos"], dtype=np.float32), wire_dof_indices)
+        if "home_qpos" in profile
+        else None
+    )
     gripper_open = profile.get("gripper_open_m", 0.04)
     gripper_close = profile.get("gripper_close_m", 0.0)
     gripper_dofs = int(profile.get("gripper_dofs", 2))
-    finger_idx = list(range(n_dof - gripper_dofs, n_dof))
+    finger_idx = list(wire_dof_indices[-gripper_dofs:])
 
     def send(topic: str, env_id: int, array: np.ndarray, **extra) -> None:
         key = (topic, env_id)
@@ -700,12 +716,12 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                 send(
                     topic,
                     env_id,
-                    env_slice(qpos, env_id),
+                    to_wire_joint_order(env_slice(qpos, env_id), wire_dof_indices),
                     names=joint_names,
                     dropped=dropped_counts["joint"].pop(env_id, 0),
                 )
             elif topic == "gripper_state":
-                finger = env_slice(qpos, env_id)[-1]
+                finger = env_slice(qpos, env_id)[finger_idx[0]]
                 width = np.float32((gripper_open - finger) / (gripper_open - gripper_close or 1.0))
                 send(
                     topic,
@@ -760,7 +776,9 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         # command owns any overlapping dofs
         for kind, env_id, payload, dropped in commands.drain():
             if kind == "joint":
-                target = np.asarray(payload, dtype=np.float32)
+                target = from_wire_joint_order(
+                    np.asarray(payload, dtype=np.float32), wire_dof_indices
+                )
                 if cfg.n_envs > 1:
                     robot.control_dofs_position(target[None, :], envs_idx=[env_id])
                 else:
@@ -801,7 +819,9 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     entity.set_quat(quat)
                 entity.zero_all_dofs_velocity()
         if "home_qpos" in profile:
-            home = np.asarray(profile["home_qpos"], dtype=np.float32)
+            home = from_wire_joint_order(
+                np.asarray(profile["home_qpos"], dtype=np.float32), wire_dof_indices
+            )
             batched_home = home if cfg.n_envs == 1 else np.tile(home, (cfg.n_envs, 1))
             robot.set_qpos(batched_home)
             # re-latch the PD controller: a stale pre-reset target would
