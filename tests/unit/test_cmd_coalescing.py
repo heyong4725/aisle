@@ -8,11 +8,15 @@ import numpy as np
 import pytest
 
 from aisle.nodes.dora_genesis import (
+    BridgeConfig,
     CommandQueue,
     RateScheduler,
     ResetQuarantine,
     make_bridge_info,
+    may_publish,
     parse_bridge_config,
+    require_usable_segmentation_ids,
+    reset_publish_topics,
     rung_topic_rates,
     segmentation_id_map,
 )
@@ -151,6 +155,8 @@ def test_bridge_info_shape():
             # flag must fail loudly, not attest "off" while free-running
             step_without_reset=False,
             calibration=calibration,
+            perception="L0",
+            segmentation_ids={},
         )
     )
     assert info == {
@@ -259,6 +265,18 @@ def test_perception_rung_from_env_defaults_l0():
     assert parse_bridge_config({"AISLE_PERCEPTION": " L2 "}).perception == "L2"
     with pytest.raises(ValueError, match="unknown perception rung"):
         parse_bridge_config({"AISLE_PERCEPTION": "L3"})
+    # PRESENT but empty is an UNKNOWN rung, not an absent one. A trailing
+    # `or "L0"` mapped both onto the default and defeated this refusal — the
+    # same blank-value hole VAL-8 had on the validator side. Only a MISSING key
+    # defaults.
+    # `AISLE_PERCEPTION:` with no value parses from YAML as None, and
+    # `AISLE_PERCEPTION: ""` is the empty string. Both are a graph DECLARING a
+    # rung, so both must refuse rather than inherit L0. Each narrower version of
+    # this check let one more shape through: `or "L0"` let "" and "   " past,
+    # `is None` let YAML null past. Only an ABSENT key defaults.
+    for blank in ("", "   ", "\t", None):
+        with pytest.raises(ValueError, match="unknown perception rung"):
+            parse_bridge_config({"AISLE_PERCEPTION": blank})
 
 
 def test_bridge_publishes_only_what_the_rung_permits():
@@ -325,7 +343,8 @@ def test_reset_path_publishes_only_what_the_rung_permits():
     passed while the bridge leaked."""
     from aisle.nodes.dora_genesis import RESET_PUBLISH
 
-    # oracle_state is verifier-only at every rung (ADR-26) and stays
+    # oracle_state is verifier-only at every rung: VAL-6 is the rule, ADR-27
+    # records why the ladder does not widen to it
     assert "oracle_state" in RESET_PUBLISH
     assert "oracle_state" in rung_topic_rates("L1", is_mobile=False)
     # `poses` is published on the reset path at L0 and must be filtered out
@@ -379,3 +398,129 @@ def test_bridge_info_carries_the_l1_id_map():
     )
     assert info["perception"] == "L1"
     assert info["segmentation_ids"] == {"amoxicillin": [16], "ibuprofen": [17]}
+
+
+def test_publish_gate_blocks_forbidden_topics_including_direct_calls():
+    """TC-9: the gate `publish` actually consults, bound directly.
+
+    The first version of this test re-derived the gate from RESET_PUBLISH and
+    rung_topic_rates and stayed GREEN when the guard inside publish() was
+    deleted — it asserted set arithmetic over two module constants, not
+    behaviour. This binds `may_publish`, the predicate publish() calls, so
+    removing the guard fails here."""
+    l0, l1 = rung_topic_rates("L0", is_mobile=False), rung_topic_rates("L1", is_mobile=False)
+    # the reset path's direct publishes, as the reset path computes them. This is
+    # the leak that actually happened, so it is asserted on the function the
+    # bridge calls rather than on set arithmetic over two constants.
+    assert reset_publish_topics(l0) == ("oracle_state", "poses")
+    assert reset_publish_topics(l1) == ("oracle_state",)
+    assert reset_publish_topics(rung_topic_rates("L2", is_mobile=False)) == ("oracle_state",)
+    assert may_publish("poses", l0) is True
+    assert may_publish("poses", l1) is False
+    # oracle_state survives every rung (VAL-6 keeps it verifier-only; ADR-27)
+    assert may_publish("oracle_state", l0) is True
+    assert may_publish("oracle_state", l1) is True
+    # and the L1-only topic is gated the other way
+    assert may_publish("seg_overhead", l1) is True
+    assert may_publish("seg_overhead", l0) is False
+
+
+def test_publish_is_wired_to_the_gate_not_to_an_inline_check():
+    """TC-9: `publish` must route through `may_publish`, so the predicate the
+    test above pins is the one the bridge uses. Checked structurally because
+    publish() is a closure inside main() and needs dora + genesis to call."""
+    import inspect
+
+    from aisle.nodes import dora_genesis
+
+    # publish() is a closure inside main() needing dora + genesis to call, so
+    # these are STRUCTURAL checks. Matched on function names only: an assertion
+    # carrying the argument list would break on a harmless rename.
+    source = inspect.getsource(dora_genesis.main)
+    assert "may_publish(" in source, "publish() bypasses the TC-9 gate"
+    # the reset path must go through the FILTER, not the raw tuple. Replacing
+    # `reset_publish_topics(topic_rates)` with `RESET_PUBLISH` is precisely how
+    # the original leak looked, and the behavioural test above cannot see a call
+    # site that stopped calling it.
+    assert "for topic in reset_publish_topics(topic_rates):" in source
+    assert "for topic in RESET_PUBLISH:" not in source
+    # the extracted config/id-map refusals must still be CALLED. Their own
+    # behavioural tests pass whether or not main() invokes them, so removing a
+    # call site is the regression those tests cannot see.
+    assert "require_supported_perception(cfg)" in source
+    assert "require_usable_segmentation_ids(segmentation_ids, cfg.perception)" in source
+
+    # WHAT THIS DOES NOT COVER, stated rather than implied: INVERTING the guard
+    # inside publish() (`if may_publish(...): return`) passes every unit test
+    # here, because reaching that line needs the dora runtime. It is not a
+    # silent failure though -- every topic is in `topic_rates`, so an inverted
+    # guard drops ALL of them and any graph- or sim-marked test fails on the
+    # first missing observation. The leak that actually happened is prevented by
+    # `reset_publish_topics`, which IS bound behaviourally above.
+
+
+def test_bridge_info_requires_the_rung_rather_than_defaulting_it():
+    """TC-9/BRG-8: `perception` and `segmentation_ids` are REQUIRED arguments.
+    A defaulted rung would attest "L0" in the trace for a run that executed L1
+    — the recorded-vs-actual divergence the rung refusal and the env scrub
+    exist to prevent, and one no test can catch because the default is a valid
+    value. Same discipline the docstring already argues for calibration."""
+    import inspect
+
+    sig = inspect.signature(make_bridge_info)
+    for name in ("perception", "segmentation_ids"):
+        assert sig.parameters[name].default is inspect.Parameter.empty, name
+
+
+def test_seg_and_depth_publish_order_is_the_one_the_consumer_needs():
+    """TC-9: the L1 estimator buffers only the DEPTH side and drops a seg frame
+    whose partner has not arrived, so depth must be published before seg on a
+    shared tick. That currently holds because TOPIC_RATES lists depth_overhead
+    first and RateScheduler preserves insertion order — an incidental property
+    worth an assertion, since flipping the two would make the estimator publish
+    no pose at all while every topic looked healthy."""
+    order = list(rung_topic_rates("L1", is_mobile=False))
+    assert order.index("depth_overhead") < order.index("seg_overhead")
+
+
+def test_store_scene_refuses_the_l1_rung():
+    """TC-9: the store keys graspables by item id (`slot#k`) while the L1
+    estimator asks by med name, so an L1 store run would announce a well-formed
+    id map and then refuse every pose, dying on a timeout that scores as a
+    POLICY failure. Refused at config time, loudly, instead."""
+    from aisle.nodes.dora_genesis import require_supported_perception
+
+    store_l1 = BridgeConfig(seed=0, embodiment="mobile", n_envs=1, scene="store", perception="L1")
+    with pytest.raises(ValueError, match="not supported for the store scene"):
+        require_supported_perception(store_l1)
+    # the desk scene at L1 is the supported case, and the store at L0 is
+    # untouched — the refusal is about the id-map namespace, not about L1
+    require_supported_perception(
+        BridgeConfig(seed=0, embodiment="franka", n_envs=1, perception="L1")
+    )
+    require_supported_perception(
+        BridgeConfig(seed=0, embodiment="mobile", n_envs=1, scene="store", perception="L0")
+    )
+    # L2 is admitted by PERCEPTION_RUNGS but implemented by nothing: TC-9 defers
+    # it and rung_topic_rates pops BOTH pose sources, so an L2 bridge would start
+    # happily and publish no pose source at all — the same unserviceable-config
+    # shape as store+L1, one line away in the same function
+    with pytest.raises(ValueError, match="rung L2 is deferred"):
+        require_supported_perception(
+            BridgeConfig(seed=0, embodiment="franka", n_envs=1, perception="L2")
+        )
+
+
+def test_l1_refuses_an_unusable_segmentation_id_map():
+    """TC-9: at L1 the id map is load-bearing, so BOTH an empty and a partial
+    map are refused at startup. The partial-only check was vacuously satisfied
+    by an empty map, so bridge_info announced `"segmentation_ids": {}` at L1 —
+    attested-looking and unusable, and every estimate would then refuse one
+    stderr line at a time while the episode died on a timeout."""
+    require_usable_segmentation_ids({"amoxicillin": [16]}, "L1")  # usable
+    with pytest.raises(ValueError, match="no segmentation ids resolved"):
+        require_usable_segmentation_ids({}, "L1")
+    with pytest.raises(ValueError, match="amoxicillin"):
+        require_usable_segmentation_ids({"amoxicillin": [], "ibuprofen": [17]}, "L1")
+    # below L1 there is no map to require: L0 publishes ground truth instead
+    require_usable_segmentation_ids({}, "L0")

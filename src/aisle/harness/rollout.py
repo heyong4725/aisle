@@ -502,7 +502,12 @@ def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict) -> subprocess.Popen:
         cwd=run_dir,
         env=env,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
+        # dora's OWN stderr to a file in the run dir, not to a pipe nobody
+        # drains: an unread PIPE can fill (64 KB) and block the child, and the
+        # bytes were being discarded anyway. Per-NODE stderr is separate and
+        # already persisted by dora as out/<dataflow>/log_<node>.jsonl rows with
+        # "stream":"stderr", which is where a bridge refusal actually lands.
+        stderr=(run_dir / "dora.stderr.log").open("w"),
         text=True,
         start_new_session=True,
     )

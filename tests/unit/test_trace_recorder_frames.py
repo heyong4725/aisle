@@ -197,3 +197,29 @@ def test_capture_is_off_at_period_zero(tmp_path):
     assert not schedule.enabled
     assert not schedule.crossed(10**12)
     assert _drive(schedule, tmp_path / "frames", [1, 2, 3], period_start=0) == []
+
+
+def test_segmentation_endpoint_is_metadata_only():
+    """TC-9/HAR-4/ADR-11: `seg_overhead` is routed as an IMAGE endpoint, so its
+    row is metadata-only.
+
+    Not a style point. The generic numeric path calls `.tolist()` on the
+    payload, and a 640x480 mask is 307,200 values per frame at 15 Hz, buffered
+    BATCH_ROWS deep, against ADR-11's ~17 MB budget for an ENTIRE run's trace.
+    Routing also keeps masks out of the mp4 and the VER-9 capture set, which
+    `decode_frame` enforces independently by declining the `seg_i32` encoding —
+    nothing judges a segmentation mask."""
+    from aisle.harness.trace_recorder import is_image_endpoint
+
+    # the routing PREDICATE the recorder calls, not the constant behind it:
+    # asserting on the constant alone left `IMAGE_ENDPOINTS[:-1]` at the call
+    # site green while masks went back down the numeric path
+    assert is_image_endpoint("dora-genesis__seg_overhead")
+    for endpoint in ("rgb_overhead", "rgb_wrist", "depth_overhead", "seg_overhead"):
+        assert is_image_endpoint(f"dora-genesis__{endpoint}"), endpoint
+    # a non-image endpoint still takes the numeric path
+    assert not is_image_endpoint("dora-genesis__joint_state")
+    # and the encoding is not decodable as pixels, so a mask cannot reach the
+    # mp4 or the VER-9 capture set even though it is routed as an image
+    _, _, value = rgb_payload()
+    assert decode_frame({"h": 480, "w": 640, "enc": "seg_i32"}, value) is None

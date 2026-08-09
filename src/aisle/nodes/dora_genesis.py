@@ -59,6 +59,32 @@ RENDER_TOPICS = ("rgb_overhead", "rgb_wrist", "depth_overhead", "seg_overhead")
 RESET_PUBLISH = ("oracle_state", "poses")
 
 
+def reset_publish_topics(topic_rates: dict) -> tuple[str, ...]:
+    """The reset path's direct publishes, filtered by the rung (TC-9).
+
+    Filtering HERE as well as inside `publish` is deliberate. The gate inside
+    publish() is the backstop for every call site, but a test can only reach it
+    through dora and genesis, so an INVERTED guard there (`if may_publish(...):
+    return`) passed every test while re-opening exactly the leak this fixes.
+    Inverting it now breaks every ordinary topic loudly instead, and the leak
+    that actually happened is prevented by this function, which a unit test
+    calls directly."""
+    return tuple(topic for topic in RESET_PUBLISH if may_publish(topic, topic_rates))
+
+
+def may_publish(topic: str, topic_rates: dict) -> bool:
+    """TC-9: whether this bridge may put `topic` on the wire at its rung.
+
+    The rung's topic set is the single source of truth, and the gate is a
+    NAMED predicate rather than an inline check because the reset path
+    publishes directly, off the scheduler: `publish("poses")` after every
+    reset put ground-truth pose on an L1 wire once per episode. Naming it
+    also makes it testable -- the first version of the test for that fix
+    re-derived the gate from two module constants and stayed green when the
+    guard was deleted."""
+    return topic in topic_rates
+
+
 def rung_topic_rates(perception: str, is_mobile: bool) -> dict[str, int]:
     """TC-9: the bridge publishes only what the rung permits.
 
@@ -119,7 +145,17 @@ PERCEPTION_RUNGS = ("L0", "L1", "L2")
 
 def parse_bridge_config(env: dict) -> BridgeConfig:
     """BRG-1: node configuration from environment variables."""
-    perception = env.get("AISLE_PERCEPTION", "L0").strip().upper() or "L0"
+    # only an ABSENT key defaults. Membership, not `is None` and not falsiness:
+    # `AISLE_PERCEPTION:` with no value parses from YAML as None, and
+    # `AISLE_PERCEPTION: ""` is the empty string -- both are a graph DECLARING a
+    # rung, so both must reach the refusal below rather than inherit L0. Each
+    # narrower version of this test let one more shape through: `or "L0"` let
+    # "" and "   " through, `is None` let YAML null through.
+    perception = (
+        str(env.get("AISLE_PERCEPTION") or "").strip().upper()
+        if "AISLE_PERCEPTION" in env
+        else "L0"
+    )
     if perception not in PERCEPTION_RUNGS:
         # TC-9: an unrecognized rung must not silently fall back to L0 — that
         # would publish ground-truth pose to a graph that asked not to have it
@@ -150,6 +186,64 @@ def require_single_env_for_mobile(embodiment: str, n_envs: int) -> None:
         raise ValueError(
             f"mobile embodiment does not support batched envs (n_envs={n_envs}); "
             "run one env per bridge (SPEC 210 MOB-1, ADR-13)"
+        )
+
+
+def require_usable_segmentation_ids(segmentation_ids: dict, perception: str) -> None:
+    """TC-9: at L1 the id map is LOAD-BEARING, so refuse an unusable one.
+
+    A consumer cannot derive these ids — they are genesis's own numbering — so
+    an EMPTY or PARTIAL map means every L1 pose estimate refuses, one stderr
+    line at a time, and the episode dies on a timeout that scores as a policy
+    failure. Fail at startup instead, the way BRG-8 requires calibration rather
+    than defaulting it.
+
+    Both shapes, not just the partial one: for an empty map the partial check is
+    vacuously satisfied, so the guard passed and bridge_info announced
+    `"segmentation_ids": {}` at L1 — attested-looking and unusable, the same
+    empty-vs-absent confusion as the rung parsing itself."""
+    if perception != "L1":
+        return
+    blank = sorted(name for name, ids in segmentation_ids.items() if not ids)
+    if not segmentation_ids or blank:
+        raise ValueError(
+            "perception rung L1 but no segmentation ids resolved for "
+            f"{blank or 'any object (the scene declared no graspables)'} — "
+            "the scene's segmentation_idx_dict did not yield entity indices for "
+            "them (check VisOptions.segmentation_level); an L1 run needs this map "
+            "to estimate pose at all (TC-9)"
+        )
+
+
+def require_supported_perception(cfg: BridgeConfig) -> None:
+    """TC-9: refuse a rung this bridge cannot actually serve for the scene.
+
+    The store scene keys its graspables by ITEM ID (`f"{slot_id}#{k}"`, plus
+    `f"bin#{category}"`) while the only L1 consumer asks by MED NAME
+    (segmented_pose's `seg_ids_for(id_map, target_med)`). Those namespaces never
+    intersect, so an L1 store run would announce a well-formed id map and then
+    refuse every pose, dying on a timeout that scores as a POLICY failure. The
+    empty-entry guard cannot see it either: store ids resolve to real seg ids,
+    they are just unaskable. Refuse at config time until a store L1 consumer
+    exists — a loud refusal beats a run that looks like bad luck. The refusal
+    reaches an operator through dora's per-node log
+    (`runs/<id>/out/<dataflow>/log_dora-genesis.jsonl`, which carries
+    `"stream":"stderr"` rows), not through the rollout result JSON."""
+    if cfg.perception == "L2":
+        # TC-9 calls L2 "(deferred; T2's rung)" and no node consumes rgb alone.
+        # rung_topic_rates pops BOTH pose sources at L2, so the bridge would
+        # start happily and publish no pose source at all -- the same
+        # unserviceable-config shape as the store case one line below.
+        raise ValueError(
+            "perception rung L2 is deferred (TC-9): no estimator consumes rgb alone yet, "
+            "so an L2 run would publish no pose source at all. Use L0 or L1."
+        )
+    if cfg.perception == "L1" and cfg.scene == "store":
+        raise ValueError(
+            "perception rung L1 is not supported for the store scene: its id map is "
+            "keyed by item id and the L1 pose estimator asks by med name, so every "
+            "estimate would refuse (TC-9). Run the store at L0, or teach the "
+            "estimator the store namespace first."
         )
 
 
@@ -257,8 +351,8 @@ def make_bridge_info(
     env_hash: str,
     step_without_reset: bool,
     calibration: dict,
-    perception: str = "L0",
-    segmentation_ids: dict | None = None,
+    perception: str,
+    segmentation_ids: dict,
 ) -> str:
     """BRG-6 + BRG-8: the startup contract announcement, as a JSON string.
 
@@ -272,6 +366,12 @@ def make_bridge_info(
     judge without it, so a bridge that forgot to wire it must fail loudly
     rather than publish a judgeable-looking run with no calibration.
 
+    perception and segmentation_ids are REQUIRED for the same reason
+    calibration is: a caller that forgot `perception=` would attest "L0" in the
+    trace for a run that executed L1, which is exactly the recorded-vs-actual
+    divergence the rung refusal and the env scrub exist to prevent -- and no
+    test can catch it, because the defaulted value is a VALID one.
+
     perception is TC-9's rung, announced so a RECORDED run attests which pose
     source it used — the graph declares it, but a trace read on its own would
     otherwise not say. segmentation_ids maps med name -> the seg ids in
@@ -284,7 +384,7 @@ def make_bridge_info(
         {
             "contract": "v0",
             "perception": perception,
-            "segmentation_ids": segmentation_ids or {},
+            "segmentation_ids": segmentation_ids,
             "embodiment": embodiment,
             "n_dof": n_dof,
             "n_envs": n_envs,
@@ -408,6 +508,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     cfg = parse_bridge_config(os.environ)
     require_single_env_for_mobile(cfg.embodiment, cfg.n_envs)
     require_valid_store_config(cfg)
+    require_supported_perception(cfg)
     root = Path(os.environ.get("AISLE_ROOT", _REPO_ROOT))
     physics = load_physics()
     profile = physics["embodiment"][cfg.embodiment]
@@ -455,20 +556,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         if cfg.perception == "L1"
         else {}
     )
-    if cfg.perception == "L1":
-        # TC-9: at L1 this map is LOAD-BEARING — a consumer cannot derive the
-        # ids (they are genesis's own numbering) so an empty or partial map
-        # means every L1 pose estimate refuses. Fail here, the way BRG-8
-        # requires calibration rather than defaulting it, instead of running an
-        # episode that dies on a timeout with a stderr line as its only clue.
-        blank = sorted(name for name, ids in segmentation_ids.items() if not ids)
-        if blank:
-            raise ValueError(
-                f"perception rung L1 but no segmentation ids resolved for {blank} — "
-                "the scene's segmentation_idx_dict did not yield entity indices for "
-                "them (check VisOptions.segmentation_level); an L1 run needs this map "
-                "to estimate pose at all (TC-9)"
-            )
+    require_usable_segmentation_ids(segmentation_ids, cfg.perception)
 
     node = Node()
     node.send_output(
@@ -599,7 +687,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         # ground-truth `poses` reach an L1 wire once per reset — once per
         # episode, at the freshest possible moment, and into the trace the
         # recorder keeps. Every future direct call is gated by construction.
-        if topic not in topic_rates:
+        if not may_publish(topic, topic_rates):
             return
         oracle_cache = None
         frames = frames if frames is not None else render_due([topic])
@@ -918,7 +1006,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             # before any physics step so the first oracle_state after reset
             # is a pure function of the seed (TC-A2, CON-5); reset_done was
             # already sent, so nothing interleaves the service pair (TC-6)
-            for topic in RESET_PUBLISH:
+            for topic in reset_publish_topics(topic_rates):
                 publish(topic)
 
 

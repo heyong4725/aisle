@@ -1180,3 +1180,24 @@ def test_perception_rung_forbids_only_the_bridges_ground_truth(tmp_path):
     )
     _, report = run_validate(graph, "--root", str(root))
     assert "PERCEPTION_RUNG_VIOLATION" not in codes(report, "errors"), report
+
+
+def test_perception_rung_yaml_null_declaration_is_refused(tmp_path):
+    """VAL-8: `AISLE_PERCEPTION:` with no value parses from YAML as None. That
+    is a graph DECLARING a rung, so it must refuse rather than inherit L0 and
+    permit ground truth. Membership, not `is None`: each narrower version of
+    this check let one more shape through (Codex review)."""
+    root = fixture_root(tmp_path, {"dora-genesis": {}, "oracle-pose": {}})
+    graph = root / "g.yaml"
+    graph.write_text(
+        "nodes:\n"
+        "- id: dora-genesis\n"
+        "  env:\n"
+        "    AISLE_PERCEPTION:\n"
+        "  outputs: [poses]\n"
+        "- id: oracle-pose\n"
+        "  inputs: {poses: dora-genesis/poses}\n"
+    )
+    code, report = run_validate(graph, "--root", str(root))
+    assert code != 0, report
+    assert any("unknown perception rung" in e["detail"] for e in report["errors"]), report
