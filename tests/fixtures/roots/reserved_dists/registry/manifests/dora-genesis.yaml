@@ -48,6 +48,9 @@ outputs:
   depth_overhead:
     schema: depth_f32
     latency_class: soft_rt
+  seg_overhead:
+    schema: seg_i32
+    latency_class: soft_rt
   reset_done:
     schema: reset_done_u32
     latency_class: best_effort

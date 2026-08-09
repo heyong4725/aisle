@@ -10,6 +10,7 @@ import json
 import pytest
 
 from aisle.verifier.realistic import (
+    GATING_STAGES,
     STAGES,
     EpisodeJudge,
     StageVote,
@@ -29,8 +30,12 @@ def frame(sim_time_ns, target=True, non_target=False, scores=None):
     }
 
 
-def test_fusion_is_and_over_every_stage():
-    """VER-13: success iff all five stages pass."""
+def test_fusion_is_and_over_every_GATING_stage():
+    """VER-13 (amended, issue #107): success iff every GATING stage passes.
+    identity_wrist is corroborating -- still computed and recorded, but it
+    does not gate, because it passes only inside a ~1 s window the 5 s
+    cadence samples ~2 times in 5 and it caused every false fail in the
+    first VER-6 run."""
     passing = {
         k: StageVote("pass")
         for k in (
@@ -43,10 +48,15 @@ def test_fusion_is_and_over_every_stage():
         )
     }
     assert fuse(passing) is True
-    for stage in passing:
+    for stage in GATING_STAGES:
         one_bad = dict(passing)
         one_bad[stage] = StageVote("fail")
         assert fuse(one_bad) is False, f"{stage} did not gate the verdict"
+
+    # the one stage that must NOT gate, and is still reported
+    assert "identity_wrist" in STAGES and "identity_wrist" not in GATING_STAGES
+    assert fuse({**passing, "identity_wrist": StageVote("fail")}) is True
+    assert fuse({**passing, "identity_wrist": StageVote("error")}) is True
 
 
 def test_stage_error_fails_closed_never_skips():
@@ -96,17 +106,38 @@ def test_latch_survives_a_transient_wrong_item():
     assert judge.first_latch_event["sim_time_ns"] == 1_000_000_000
 
 
-def test_latch_is_cross_camera_and_episode_scoped():
-    """Either camera can set the latch; a fresh episode starts clean."""
+def test_latch_is_per_camera_and_episode_scoped():
+    """VER-9 (amended, issue #107): a non-target fails THAT camera's vote,
+    not both. Cross-camera let the wrist veto the overhead -- 2 of 5
+    episodes in the first VER-6 run, while the overhead's own detections
+    were healthy. A camera that cannot tell 21 px classes apart does not
+    overrule one that can."""
     judge = EpisodeJudge(goal_id="ep-0012")
     judge.observe("wrist", frame(2_000_000_000, target=True, non_target=True))
-    # a KNOWN wrong-object dominates this camera's missing evidence:
-    # VER-3's safety asymmetry outranks unable-to-judge
-    assert judge.identity_vote("overhead").status == "fail"
+    judge.observe("overhead", frame(2_000_000_000, target=True))
+
+    assert judge.identity_vote("wrist").status == "fail"
+    assert judge.identity_vote("overhead").status == "pass", "wrist vetoed the overhead"
+    # VER-14 still reports that SOMETHING latched, and which camera
+    assert judge.latched is True
     assert judge.first_latch_event["camera"] == "wrist"
+
     fresh = EpisodeJudge(goal_id="ep-0013")
     fresh.observe("overhead", frame(1_000_000_000, target=True))
     assert fresh.identity_vote("overhead").status == "pass"
+
+
+def test_a_wrong_object_seen_by_the_OVERHEAD_still_fails_the_episode():
+    """The safety property that must survive the amendment: the gating
+    camera's latch still fails the verdict. Only the wrist's veto was
+    removed (VER-3's asymmetry narrowed in exactly one direction)."""
+    judge = EpisodeJudge(goal_id="ep-0014")
+    judge.observe("overhead", frame(3_000_000_000, target=True, non_target=True))
+
+    assert judge.identity_vote("overhead").status == "fail"
+    votes = {s: StageVote("pass") for s in STAGES}
+    votes["identity_overhead"] = judge.identity_vote("overhead")
+    assert fuse(votes) is False
 
 
 def test_identity_requires_the_target_on_that_camera():
@@ -277,8 +308,10 @@ def test_judge_episode_fails_closed_when_a_camera_has_no_frames(tmp_path):
         min_score=0.3,
         roi={"overhead": (0.0, 0.0, 100.0, 100.0), "wrist": (0.0, 0.0, 100.0, 100.0)},
     )
-    assert success is False
+    # the wrist records `error` -- unable to judge, not a negative finding --
+    # and since #107 that no longer sinks the verdict on its own
     assert record["stages"]["identity_wrist"]["vote"] == "error"
+    assert success is True, "a corroborating camera with no frames must not gate"
 
 
 def test_missing_camera_evidence_is_error_not_fail():
@@ -291,4 +324,12 @@ def test_missing_camera_evidence_is_error_not_fail():
     wrist = judge.identity_vote("wrist")
     assert wrist.status == "error", "missing wrist frames recorded as a fail"
     assert "no judged frames" in wrist.detail
-    assert fuse({**{s: StageVote("pass") for s in STAGES}, "identity_wrist": wrist}) is False
+    # ...and since #107 a missing WRIST no longer sinks the verdict, while a
+    # missing OVERHEAD still does (it gates)
+    assert fuse({**{s: StageVote("pass") for s in STAGES}, "identity_wrist": wrist}) is True
+    overhead_missing = EpisodeJudge(goal_id="ep-0031").identity_vote("overhead")
+    assert overhead_missing.status == "error"
+    assert (
+        fuse({**{s: StageVote("pass") for s in STAGES}, "identity_overhead": overhead_missing})
+        is False
+    )

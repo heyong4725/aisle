@@ -468,13 +468,29 @@ def instrumented_graph(
     return out_path
 
 
+# settings that MUST come from the graph, where the graph hash attests them,
+# and never from the ambient process environment
+SCRUBBED_ENV = (
+    # ADR-25 (issue #71): the bridge's bring-up opt-out
+    "AISLE_STEP_WITHOUT_RESET",
+    # TC-9: the perception rung. The bridge reads it via parse_bridge_config(
+    # os.environ), so an ambient AISLE_PERCEPTION=L1 would set the rung of a
+    # run whose graph never declared one — and the validator, which sees only
+    # graph YAML, could never detect the divergence. Scrubbed with the variable
+    # that introduced the same hazard rather than after the first bad run.
+    "AISLE_PERCEPTION",
+)
+
+
 def scrub_bringup_env(env: dict) -> dict:
-    """ADR-25 (issue #71): the bridge's bring-up opt-out must never reach a
-    measured rollout — an ambient AISLE_STEP_WITHOUT_RESET=1 would silently
-    restore the pre-reset startup race while git_sha/env_hash/graph_hash all
-    attest clean. Graph-YAML env stays visible in the graph hash; the
-    process environment does not, so it is scrubbed here."""
-    return {k: v for k, v in env.items() if k != "AISLE_STEP_WITHOUT_RESET"}
+    """ADR-25 (issue #71) + TC-9: settings the graph must own must never reach a
+    measured rollout from the ambient environment — an ambient
+    AISLE_STEP_WITHOUT_RESET=1 would silently restore the pre-reset startup
+    race, and an ambient AISLE_PERCEPTION would silently set the perception
+    rung, while git_sha/env_hash/graph_hash all attest clean. Graph-YAML env
+    stays visible in the graph hash; the process environment does not, so it is
+    scrubbed here."""
+    return {k: v for k, v in env.items() if k not in SCRUBBED_ENV}
 
 
 def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict) -> subprocess.Popen:
@@ -486,7 +502,12 @@ def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict) -> subprocess.Popen:
         cwd=run_dir,
         env=env,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
+        # dora's OWN stderr to a file in the run dir, not to a pipe nobody
+        # drains: an unread PIPE can fill (64 KB) and block the child, and the
+        # bytes were being discarded anyway. Per-NODE stderr is separate and
+        # already persisted by dora as out/<dataflow>/log_<node>.jsonl rows with
+        # "stream":"stderr", which is where a bridge refusal actually lands.
+        stderr=(run_dir / "dora.stderr.log").open("w"),
         text=True,
         start_new_session=True,
     )
@@ -528,6 +549,52 @@ def _graph_hash(graph: Path) -> str:
     return hashlib.sha256(graph.read_bytes()).hexdigest()
 
 
+def perception_check(root: Path, graph: Path, requested: str | None) -> dict:
+    """HAR-1/TC-9: the graph DECLARES the perception rung, where the graph
+    hash attests it, and rollout scrubs ambient AISLE_PERCEPTION for the same
+    reason — so --perception cannot inject a rung. It ASSERTS one: a mismatch
+    is refused before any gate, budget reservation, or launch, because the
+    run would measure a different rung than the caller asked for. Returns
+    {"ok": True, "rung": <declared>} when the assertion holds (or none was
+    made); the declared rung is what rollout records in the run manifest."""
+    from aisle.harness.registry import load_manifests
+    from aisle.harness.validate import graph_perception_rung, load_graph
+
+    nodes, _ = load_graph(graph)
+    manifest_list, manifest_errors = load_manifests(root)
+    if nodes is None or manifest_errors:
+        # run_gates' validate owns the full structured report for a broken
+        # graph or registry; the flag only refuses what it cannot assert
+        if requested is None:
+            return {"ok": True, "rung": None}
+        return {
+            "ok": False,
+            "gate": "perception",
+            "detail": f"cannot assert --perception {requested}: {graph} or the registry "
+            "does not load, so the declared rung is unreadable (run `harness validate`)",
+        }
+    rung, _, rung_errors = graph_perception_rung(nodes, {m["id"]: m for _, m in manifest_list})
+    if rung_errors:
+        # TC-9's refuse-don't-guess rule: an unreadable rung matches nothing —
+        # never compare the request against the strictest-assumed fallback
+        if requested is None:
+            return {"ok": True, "rung": None}
+        return {
+            "ok": False,
+            "gate": "perception",
+            "detail": "; ".join(e["detail"] for e in rung_errors),
+        }
+    if requested is not None and requested != rung:
+        return {
+            "ok": False,
+            "gate": "perception",
+            "detail": f"--perception {requested} asserted, but the graph declares rung {rung} "
+            "(TC-9: the rung rides the graph, where the graph hash attests it)",
+            "hint": f"run a graph whose sim bridge declares AISLE_PERCEPTION: {requested}",
+        }
+    return {"ok": True, "rung": rung}
+
+
 def rollout(
     root: Path,
     graph: Path,
@@ -542,6 +609,7 @@ def rollout(
     timeout_s: float | None = None,
     embodiment: str = "franka",
     env_baseline: str = "origin/main",
+    perception: str | None = None,
 ) -> dict:
     """HAR-1: the full run. Returns the report dict (CON-8: caller emits)."""
     # A relative root (`--root .`) must be pinned to THIS process's cwd:
@@ -566,6 +634,9 @@ def rollout(
         return {"ok": False, "error": f"unsafe run_id {run_id!r}"}
     if (root / "runs" / run_id).exists():
         return {"ok": False, "error": f"run_id {run_id!r} already exists; refusing to overwrite"}
+    perception_gate = perception_check(root, graph, perception)
+    if not perception_gate["ok"]:
+        return {"ok": False, "refused": perception_gate}
     gates = run_gates(root, graph, branch, no_idea_gate, embodiment, env_baseline, episodes)
     if not gates["ok"]:
         return {"ok": False, "refused": gates}
@@ -788,6 +859,9 @@ def rollout(
         "graph": str(graph),
         "graph_hash": _graph_hash(graph),
         "tier": tier,
+        # TC-9: the run attests which pose source produced it, read from the
+        # graph (never from the flag or ambient env — both cannot inject)
+        "perception": perception_gate["rung"],
         "embodiment": embodiment,
         "seeds": seeds,
         "reset": reset_mode,

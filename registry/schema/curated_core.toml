@@ -24,6 +24,7 @@ core = [
   "reset",
   "rollout-client",
   "s1-expert",
+  "segmented-pose",
   "stock-detector",
   "task-planner",
   "task-state-machine",

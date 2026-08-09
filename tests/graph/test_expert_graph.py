@@ -25,32 +25,27 @@ pytestmark = [
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_expert_t0_episodes_succeed(tmp_path):
-    """SPEC 090 M0-1 (local slice), VER-2, RST-1, VAL-5/6: a seeded
-    top-level episode runs through graphs/expert_t0.yaml verbatim and
-    closes with status=success. (Expert v0 covers top-level placements;
-    under-board levels are the documented coverage gap for M0-1 — see
-    ADR-10 and the T08 PR.)"""
-    # run from a TEMP COPY with absolutized node paths: dora spawns nodes
-    # with cwd = the yaml's directory, and the orphan reaper is scoped by
-    # that cwd — running from the shared graphs/ dir would let cleanup
-    # SIGKILL unrelated developer runs (PR #10 review)
+def _run_expert_graph(tmp_path, graph_name: str, env_overrides: dict) -> tuple:
+    """One seeded episode through a graphs/ file verbatim, from a TEMP COPY
+    with absolutized node paths: dora spawns nodes with cwd = the yaml's
+    directory, and the orphan reaper is scoped by that cwd — running from
+    the shared graphs/ dir would let cleanup SIGKILL unrelated developer
+    runs (PR #10 review)."""
     import yaml as yaml_module
 
-    graph_doc = yaml_module.safe_load((REPO_ROOT / "graphs" / "expert_t0.yaml").read_text())
+    graph_doc = yaml_module.safe_load((REPO_ROOT / "graphs" / graph_name).read_text())
     for node in graph_doc["nodes"]:
         node["path"] = str((REPO_ROOT / "graphs" / node["path"]).resolve())
-    graph_path = tmp_path / "expert_t0.yaml"
+    graph_path = tmp_path / graph_name
     graph_path.write_text(yaml_module.safe_dump(graph_doc, sort_keys=False))
 
+    from aisle.harness.rollout import scrub_bringup_env
+
     results = tmp_path / "results.jsonl"
-    env = {
-        **os.environ,
-        "AISLE_SEEDS": "3",
-        "AISLE_TARGET_MEDS": "ibuprofen",
-        "AISLE_TIMEOUT_S": "60",
-        "AISLE_RESULTS": str(results),
-    }
+    # the graph owns its rung and bring-up settings (TC-9/ADR-25): an ambient
+    # AISLE_PERCEPTION=L1 in a dev shell would otherwise pop `poses` out of
+    # the T0 bridge and starve oracle-pose into a baffling timeout
+    env = {**scrub_bringup_env(dict(os.environ)), "AISLE_RESULTS": str(results), **env_overrides}
     proc = subprocess.Popen(
         ["dora", "run", str(graph_path), "--uv"],
         cwd=REPO_ROOT,
@@ -73,6 +68,39 @@ def test_expert_t0_episodes_succeed(tmp_path):
         from conftest import _reap_orphan_nodes
 
         _reap_orphan_nodes(tmp_path)
+    return results, stderr
+
+
+def test_expert_t0_episodes_succeed(tmp_path):
+    """SPEC 090 M0-1 (local slice), VER-2, RST-1, VAL-5/6: a seeded
+    top-level episode runs through graphs/expert_t0.yaml verbatim and
+    closes with status=success. (Expert v0 covers top-level placements;
+    under-board levels are the documented coverage gap for M0-1 — see
+    ADR-10 and the T08 PR.)"""
+    results, stderr = _run_expert_graph(
+        tmp_path,
+        "expert_t0.yaml",
+        {"AISLE_SEEDS": "3", "AISLE_TARGET_MEDS": "ibuprofen", "AISLE_TIMEOUT_S": "60"},
+    )
+
+    assert results.exists(), f"no results written; stderr tail: {(stderr or '')[-3000:]}"
+    records = [json.loads(line) for line in results.read_text().splitlines() if line.strip()]
+    assert len(records) == 1, (records, (stderr or "")[-2000:])
+    assert records[0]["status"] == "success", (records[0], (stderr or "")[-2000:])
+
+
+def test_expert_t1_l1_episode_succeeds(tmp_path):
+    """TC-9 end-to-end at rung L1: the same seeded episode that passes at
+    L0 runs through graphs/expert_t1.yaml verbatim — the bridge publishes
+    seg_overhead and NOT poses, segmented-pose estimates the target's pose
+    from the seg/depth pair, and the episode closes with status=success.
+    This is the one test that exercises the rung gate inside the bridge's
+    publish() and the estimated-pose path together in a live dataflow."""
+    results, stderr = _run_expert_graph(
+        tmp_path,
+        "expert_t1.yaml",
+        {"AISLE_SEEDS": "3", "AISLE_TARGET_MEDS": "ibuprofen", "AISLE_TIMEOUT_S": "60"},
+    )
 
     assert results.exists(), f"no results written; stderr tail: {(stderr or '')[-3000:]}"
     records = [json.loads(line) for line in results.read_text().splitlines() if line.strip()]
