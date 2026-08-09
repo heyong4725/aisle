@@ -26,6 +26,9 @@ detections.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass, field
+
 import numpy as np
 
 # below this many mask pixels the centroid is dominated by whatever fragment
@@ -128,10 +131,13 @@ def estimate_neighbours(seg, depth, id_map: dict, meds: dict, backproject) -> tu
 
     L0 hands the planner every neighbour from ground truth; without this the
     planner silently loses `_fingertip_clearance` at L1 and picks grip axes
-    that close on a neighbour. Returns (rows, n_refused): a neighbour whose
-    mask is too small is OMITTED and counted, never guessed at — and the count
-    travels in the metadata, because fewer constraints means a permissive
-    plan, not a safe one."""
+    that close on a neighbour. Returns (rows, n_refused) with ONE row per med
+    in `meds` order — the `neighbours` payload is POSITIONAL (the consumer
+    zips it against MED_NAMES strict=True, exactly as L0's full list), so a
+    neighbour whose mask is too small keeps its slot as None and is counted,
+    never guessed at and never silently dropped: a SHORTER list would crash
+    the planner, and fewer constraints means a permissive plan, not a safe
+    one, so the count travels in the metadata."""
     rows, refused = [], 0
     for name, spec in meds.items():
         try:
@@ -140,9 +146,113 @@ def estimate_neighbours(seg, depth, id_map: dict, meds: dict, backproject) -> tu
             )
         except PoseRefused:
             refused += 1
+            rows.append(None)
             continue
         rows.append([est["pos"][0], est["pos"][1]])
     return rows, refused
+
+
+@dataclass
+class L1Session:
+    """Event-state for the node loop, pure so the rules that keep L1 honest
+    are unit-testable rather than living only in the uncovered dora loop:
+
+    * episode boundary (T08 parity with oracle-pose): reset_done clears the
+      active target — ik-trajectory accepts a plan whenever it is idle, which
+      post-reset it is, so one stale seg frame of the new scene would seed a
+      plan for the PREVIOUS episode's med before the new target_request lands;
+    * ONE publish per target_request (T08 again): a completed plan can never
+      be re-triggered by the still-flowing seg stream, but a REFUSED estimate
+      keeps the request pending so a transient occlusion retries on the next
+      frame while a persistent one times out honestly (TC-9);
+    * stamp pairing (TC-9): seg and depth are consumed only as a same-stamp
+      pair from one render pass — buffered SYMMETRICALLY, so publication does
+      not depend on which of the co-scheduled frames dora delivers first
+      (the bridge happens to publish depth before seg today, but that is
+      topic-table ordering, not a contract).
+
+    `backprojector` maps the published calibration to a
+    `backproject(depth, pixels) -> (N, 3)` callable, bound per bridge_info so
+    a republish can never be shadowed by an earlier closure (B023)."""
+
+    meds: dict
+    backprojector: Callable[[dict], Callable]
+    calibration: dict | None = None
+    id_map: dict = field(default_factory=dict)
+    target: str | None = None
+    pending: bool = False
+    latest_depth: tuple[int, np.ndarray] | None = None
+    latest_seg: tuple[int, np.ndarray] | None = None
+
+    def on_bridge_info(self, info: dict) -> None:
+        self.calibration = info["calibration"]
+        self.id_map = info.get("segmentation_ids") or {}
+
+    def on_target_request(self, request: dict) -> bool:
+        """False for a med not in the scene manifest — refused ONCE, loudly,
+        by the caller (L0 parity with oracle-pose): accepting it would refuse
+        per-frame at 15 Hz, or KeyError on the meds lookup, neither of which
+        is a refusal the operator can act on."""
+        med = request.get("target_med")
+        if med not in self.meds:
+            return False
+        self.target = med
+        self.pending = True
+        return True
+
+    def on_reset_done(self) -> None:
+        # clear the FRAME buffers along with the target (round-2 review,
+        # executed repro): seg and depth ride separate dora channels with no
+        # cross-channel ordering, so a pre-reset frame's twin can drain AFTER
+        # reset_done and the new target_request — pairing it with the buffered
+        # pre-reset half would publish the OLD episode's scene as the NEW
+        # target's pose. Stamps cannot disambiguate: the bridge never rewinds
+        # sim_time_ns across a teleport, so the stale pair's stamps match.
+        self.target = None
+        self.pending = False
+        self.latest_depth = None
+        self.latest_seg = None
+
+    def on_depth(self, sim_time_ns: int, depth: np.ndarray) -> dict | None:
+        """Buffer the frame; publishable estimate if its seg twin is already
+        here (same rules as on_seg)."""
+        self.latest_depth = (sim_time_ns, depth)
+        if self.latest_seg is not None and self.latest_seg[0] == sim_time_ns >= 0:
+            return self._estimate(self.latest_seg[1], depth)
+        return None
+
+    def on_seg(self, sim_time_ns: int, seg: np.ndarray) -> dict | None:
+        """Buffer the frame; publishable estimate if its depth twin is
+        already here, or None when there is nothing to do (no pending
+        request, boot ordering, or no same-stamp pair yet — wait rather than
+        guess). Raises PoseRefused when the mask cannot support a
+        trustworthy pose; the request then STAYS pending. An unstamped frame
+        (missing sim_time_ns) never pairs."""
+        self.latest_seg = (sim_time_ns, seg)
+        if self.latest_depth is not None and self.latest_depth[0] == sim_time_ns >= 0:
+            return self._estimate(seg, self.latest_depth[1])
+        return None
+
+    def _estimate(self, seg: np.ndarray, depth: np.ndarray) -> dict | None:
+        if not (self.pending and self.target and self.calibration is not None):
+            return None
+        project = self.backprojector(self.calibration)
+        estimate = estimate_pose(
+            seg,
+            depth,
+            seg_ids_for(self.id_map, self.target),
+            float(self.meds[self.target]["size"][2]),
+            project,
+            footprint_m=tuple(self.meds[self.target]["size"][:2]),
+        )
+        neighbours, refused = estimate_neighbours(seg, depth, self.id_map, self.meds, project)
+        self.pending = False
+        return {
+            **estimate,
+            "target_med": self.target,
+            "neighbours": neighbours,
+            "neighbours_refused": refused,
+        }
 
 
 def main() -> None:  # pragma: no cover — dora runtime
@@ -156,78 +266,72 @@ def main() -> None:  # pragma: no cover — dora runtime
     from aisle.topics import make_sender
     from aisle.verifier.stages import backproject_overhead
 
-    meds = load_meds()
     node = Node()
     # TC-2's per-topic monotonic seq lives in one place for every AISLE node;
     # hand-building metadata here dropped `seq` entirely
     send = make_sender(node)
-    calibration: dict | None = None
-    id_map: dict = {}
-    target: str | None = None
-    latest_depth: tuple[int, np.ndarray] | None = None  # (sim_time_ns, array)
+    session = L1Session(
+        meds=load_meds(),
+        # bound per bridge_info by the session (B023): a closure over a loop
+        # variable here would follow a later republish
+        backprojector=lambda calibration: (
+            lambda depth, pixels: backproject_overhead(depth, calibration, pixels)
+        ),
+    )
 
     for event in node:
         if event["type"] != "INPUT":
             continue
         topic, metadata = event["id"], (event.get("metadata") or {})
         if topic == "bridge_info":
-            info = json.loads(event["value"][0].as_py())
-            calibration = info["calibration"]
-            id_map = info.get("segmentation_ids") or {}
+            session.on_bridge_info(json.loads(event["value"][0].as_py()))
         elif topic == "target_request":
-            target = json.loads(event["value"][0].as_py())["target_med"]
-        elif topic == "depth_overhead":
-            h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
-            latest_depth = (
-                int(metadata.get("sim_time_ns", -1)),
-                np.asarray(event["value"].to_numpy(zero_copy_only=False), dtype=np.float32).reshape(
-                    h, w
-                ),
-            )
-        elif topic == "seg_overhead" and target and calibration and latest_depth is not None:
-            # TC-9: seg and depth come from ONE render and carry the SAME
-            # stamp. Pairing across ticks measures a scene that never existed
-            # -- the defect that already reached the trace recorder and the
-            # verifier node. Wait for the matching pair rather than guessing.
-            if latest_depth[0] != int(metadata.get("sim_time_ns", -2)):
-                continue
-            depth = latest_depth[1]
-            h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
-            seg = np.asarray(event["value"].to_numpy(zero_copy_only=False)).reshape(h, w)
-
-            # bind the calibration explicitly: a closure over the loop
-            # variable would follow a later bridge_info republish (B023)
-            def project(d, px, cal=calibration):
-                return backproject_overhead(d, cal, px)
-
-            try:
-                estimate = estimate_pose(
-                    seg,
-                    depth,
-                    seg_ids_for(id_map, target),
-                    float(meds[target]["size"][2]),
-                    project,
-                    footprint_m=tuple(meds[target]["size"][:2]),
+            request = json.loads(event["value"][0].as_py())
+            if not session.on_target_request(request):
+                print(
+                    f"target_request refused: unknown med {request.get('target_med')!r}",
+                    file=sys.stderr,
                 )
+        elif topic == "reset_done":
+            session.on_reset_done()
+        elif topic in ("depth_overhead", "seg_overhead"):
+            h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
+            if h <= 0 or w <= 0:
+                # a frame without its stamped dimensions violates the bridge
+                # contract (BRG-2 metadata); skip it LOUDLY rather than die on
+                # reshape — a dead pose source times out every later episode
+                # in the least legible way (round-2 review)
+                print(f"{topic} frame skipped: h={h} w={w}", file=sys.stderr)
+                continue
+            stamp = int(metadata.get("sim_time_ns", -1))
+            frame = np.asarray(event["value"].to_numpy(zero_copy_only=False))
+            try:
+                if topic == "depth_overhead":
+                    out = session.on_depth(stamp, frame.astype(np.float32).reshape(h, w))
+                else:
+                    out = session.on_seg(stamp, frame.reshape(h, w))
             except PoseRefused as exc:
                 # TC-9: refuse rather than publish a biased pose. The episode
                 # then closes honestly on the verifier's timeout instead of the
                 # arm diving at a phantom.
-                print(f"L1 pose refused for {target}: {exc}", file=sys.stderr)
+                print(f"L1 pose refused for {session.target}: {exc}", file=sys.stderr)
+                continue
+            if out is None:
                 continue
             # `target_pose` is the topic the graph's grasp planner consumes
             # (oracle_pose publishes the same name at L0) -- an L1 node must be
-            # a drop-in replacement, not a new edge name
-            neighbours, refused = estimate_neighbours(seg, depth, id_map, meds, project)
+            # a drop-in replacement, not a new edge name. The frame's image
+            # keys (enc/h/w) stay behind: a 7-float pose that claims to be a
+            # 640x480 seg_i32 frame misleads any consumer that keys on them.
             send(
                 "target_pose",
-                pa.array(np.asarray(estimate["pos"] + [0.0, 0.0, 0.0, 1.0], dtype=np.float32)),
+                pa.array(np.asarray(out["pos"] + [0.0, 0.0, 0.0, 1.0], dtype=np.float32)),
                 {
-                    **metadata,
-                    "target_med": target,
-                    "neighbours": json.dumps(neighbours),
-                    "neighbours_refused": refused,
-                    "mask_pixels": estimate["mask_pixels"],
+                    **{k: v for k, v in metadata.items() if k not in ("enc", "h", "w")},
+                    "target_med": out["target_med"],
+                    "neighbours": json.dumps(out["neighbours"]),
+                    "neighbours_refused": out["neighbours_refused"],
+                    "mask_pixels": out["mask_pixels"],
                     "perception": "L1",
                 },
             )

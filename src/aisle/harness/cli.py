@@ -59,6 +59,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="skip the HAR-8 open-idea gate (humans only; recorded in the manifest)",
     )
+    roll.add_argument(
+        "--perception",
+        default=None,
+        choices=["L0", "L1", "L2"],
+        help="assert the graph's declared perception rung (TC-9); the rung "
+        "rides the graph, so a mismatch refuses the run",
+    )
     roll.add_argument("--run-id", default=None, help="override the generated run id (CON-5)")
     roll.add_argument(
         "--env-baseline",
@@ -152,6 +159,7 @@ def main() -> int:
             timeout_s=args.timeout_s,
             embodiment=args.embodiment,
             env_baseline=args.env_baseline,
+            perception=args.perception,
         )
         return emit_report(report, lambda level, e: f"rollout {level}: {e}")
 

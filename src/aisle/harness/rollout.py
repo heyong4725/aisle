@@ -549,6 +549,52 @@ def _graph_hash(graph: Path) -> str:
     return hashlib.sha256(graph.read_bytes()).hexdigest()
 
 
+def perception_check(root: Path, graph: Path, requested: str | None) -> dict:
+    """HAR-1/TC-9: the graph DECLARES the perception rung, where the graph
+    hash attests it, and rollout scrubs ambient AISLE_PERCEPTION for the same
+    reason — so --perception cannot inject a rung. It ASSERTS one: a mismatch
+    is refused before any gate, budget reservation, or launch, because the
+    run would measure a different rung than the caller asked for. Returns
+    {"ok": True, "rung": <declared>} when the assertion holds (or none was
+    made); the declared rung is what rollout records in the run manifest."""
+    from aisle.harness.registry import load_manifests
+    from aisle.harness.validate import graph_perception_rung, load_graph
+
+    nodes, _ = load_graph(graph)
+    manifest_list, manifest_errors = load_manifests(root)
+    if nodes is None or manifest_errors:
+        # run_gates' validate owns the full structured report for a broken
+        # graph or registry; the flag only refuses what it cannot assert
+        if requested is None:
+            return {"ok": True, "rung": None}
+        return {
+            "ok": False,
+            "gate": "perception",
+            "detail": f"cannot assert --perception {requested}: {graph} or the registry "
+            "does not load, so the declared rung is unreadable (run `harness validate`)",
+        }
+    rung, _, rung_errors = graph_perception_rung(nodes, {m["id"]: m for _, m in manifest_list})
+    if rung_errors:
+        # TC-9's refuse-don't-guess rule: an unreadable rung matches nothing —
+        # never compare the request against the strictest-assumed fallback
+        if requested is None:
+            return {"ok": True, "rung": None}
+        return {
+            "ok": False,
+            "gate": "perception",
+            "detail": "; ".join(e["detail"] for e in rung_errors),
+        }
+    if requested is not None and requested != rung:
+        return {
+            "ok": False,
+            "gate": "perception",
+            "detail": f"--perception {requested} asserted, but the graph declares rung {rung} "
+            "(TC-9: the rung rides the graph, where the graph hash attests it)",
+            "hint": f"run a graph whose sim bridge declares AISLE_PERCEPTION: {requested}",
+        }
+    return {"ok": True, "rung": rung}
+
+
 def rollout(
     root: Path,
     graph: Path,
@@ -563,6 +609,7 @@ def rollout(
     timeout_s: float | None = None,
     embodiment: str = "franka",
     env_baseline: str = "origin/main",
+    perception: str | None = None,
 ) -> dict:
     """HAR-1: the full run. Returns the report dict (CON-8: caller emits)."""
     # A relative root (`--root .`) must be pinned to THIS process's cwd:
@@ -587,6 +634,9 @@ def rollout(
         return {"ok": False, "error": f"unsafe run_id {run_id!r}"}
     if (root / "runs" / run_id).exists():
         return {"ok": False, "error": f"run_id {run_id!r} already exists; refusing to overwrite"}
+    perception_gate = perception_check(root, graph, perception)
+    if not perception_gate["ok"]:
+        return {"ok": False, "refused": perception_gate}
     gates = run_gates(root, graph, branch, no_idea_gate, embodiment, env_baseline, episodes)
     if not gates["ok"]:
         return {"ok": False, "refused": gates}
@@ -809,6 +859,9 @@ def rollout(
         "graph": str(graph),
         "graph_hash": _graph_hash(graph),
         "tier": tier,
+        # TC-9: the run attests which pose source produced it, read from the
+        # graph (never from the flag or ambient env — both cannot inject)
+        "perception": perception_gate["rung"],
         "embodiment": embodiment,
         "seeds": seeds,
         "reset": reset_mode,
