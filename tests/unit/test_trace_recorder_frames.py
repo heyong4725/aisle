@@ -199,16 +199,13 @@ def test_capture_is_off_at_period_zero(tmp_path):
     assert _drive(schedule, tmp_path / "frames", [1, 2, 3], period_start=0) == []
 
 
-def test_segmentation_endpoint_is_metadata_only():
+def test_segmentation_endpoint_routing_keeps_the_mask_out_of_the_numeric_path():
     """TC-9/HAR-4/ADR-11: `seg_overhead` is routed as an IMAGE endpoint, so its
-    row is metadata-only.
-
-    Not a style point. The generic numeric path calls `.tolist()` on the
-    payload, and a 640x480 mask is 307,200 values per frame at 15 Hz, buffered
-    BATCH_ROWS deep, against ADR-11's ~17 MB budget for an ENTIRE run's trace.
-    Routing also keeps masks out of the mp4 and the VER-9 capture set, which
-    `decode_frame` enforces independently by declining the `seg_i32` encoding —
-    nothing judges a segmentation mask."""
+    row can never take the generic numeric path — `.tolist()` on a 640x480
+    mask is 307,200 float64s per frame at 15 Hz against ADR-11's ~17 MB
+    whole-run budget. (#131 amended what the image path DOES with a mask —
+    see the decode/capture/provenance tests — but the routing that keeps it
+    off the numeric path is unchanged.)"""
     from aisle.harness.trace_recorder import is_image_endpoint
 
     # the routing PREDICATE the recorder calls, not the constant behind it:
@@ -219,7 +216,73 @@ def test_segmentation_endpoint_is_metadata_only():
         assert is_image_endpoint(f"dora-genesis__{endpoint}"), endpoint
     # a non-image endpoint still takes the numeric path
     assert not is_image_endpoint("dora-genesis__joint_state")
-    # and the encoding is not decodable as pixels, so a mask cannot reach the
-    # mp4 or the VER-9 capture set even though it is routed as an image
-    _, _, value = rgb_payload()
-    assert decode_frame({"h": 480, "w": 640, "enc": "seg_i32"}, value) is None
+
+
+def test_decode_frame_returns_seg_mask_as_int32():
+    """#131 (amending #129's decline): at L1 the mask IS the pose's
+    determining input, so it decodes — into the capture set and the
+    provenance hash — with its ids intact. The mp4 remains rgb-only via the
+    recorder's stream-name guard."""
+    mask = np.zeros((480, 640), dtype=np.int32)
+    mask[100:140, 200:260] = 17
+    value = pa.array(mask.ravel())
+    decoded = decode_frame({"h": 480, "w": 640, "enc": "seg_i32"}, value)
+    assert decoded is not None and decoded.dtype == np.int32
+    assert decoded.shape == (480, 640)
+    assert int((decoded == 17).sum()) == 40 * 60
+
+
+def test_seg_provenance_row_proves_which_mask_produced_a_pose():
+    """#131 option 2: the metadata-only row carries a sha256 + labeled-pixel
+    count (~bytes, not the ~1.2 MB payload), so an L1 `target_pose` in a
+    trace can be tied to the exact mask that produced it even when frame
+    capture was off."""
+    import hashlib
+    import json
+
+    from aisle.harness.trace_recorder import seg_provenance
+
+    mask = np.zeros((48, 64), dtype=np.int32)
+    mask[10:20, 10:20] = 5
+    row = json.loads(seg_provenance(mask))
+    assert row["mask_sha256"] == hashlib.sha256(mask.tobytes()).hexdigest()
+    assert row["nonzero_px"] == 100
+    # a different mask must hash differently — the hash is the audit anchor
+    mask[0, 0] = 9
+    assert json.loads(seg_provenance(mask))["mask_sha256"] != row["mask_sha256"]
+
+
+def test_capture_includes_a_same_render_seg_mask_in_the_overhead_npz(tmp_path):
+    """#131 option 1: when frame capture is on, the judged overhead npz
+    carries the mask from the SAME render pass (TC-9 stamp rule) — the L1
+    replay input, a few KB per judged instant."""
+    rgb = np.random.default_rng(0).integers(0, 255, (4, 4, 3), dtype=np.uint8)
+    depth = np.random.default_rng(1).random((4, 4)).astype(np.float32)
+    seg = np.arange(16, dtype=np.int32).reshape(4, 4)
+    latest = {
+        "rgb_overhead": (5_000_000_000, rgb),
+        "depth_overhead": (5_000_000_000, depth),
+        "seg_overhead": (5_000_000_000, seg),
+    }
+    assert capture_frames(tmp_path / "frames", latest) == 5_000_000_000
+    frames = load_frames(tmp_path)
+    stored = frames["overhead"][5_000_000_000]
+    assert set(stored) == {"rgb", "depth", "seg"}
+    assert np.array_equal(stored["seg"], seg)
+
+
+def test_capture_omits_a_seg_mask_from_a_different_render(tmp_path):
+    """The TC-9 stamp rule applies to the capture set too: a mask from
+    another tick would attest a scene the judged pair never saw — the pair
+    is still written, the stale mask is not."""
+    rgb = np.random.default_rng(0).integers(0, 255, (4, 4, 3), dtype=np.uint8)
+    depth = np.random.default_rng(1).random((4, 4)).astype(np.float32)
+    seg = np.arange(16, dtype=np.int32).reshape(4, 4)
+    latest = {
+        "rgb_overhead": (5_000_000_000, rgb),
+        "depth_overhead": (5_000_000_000, depth),
+        "seg_overhead": (4_933_000_000, seg),  # previous tick
+    }
+    assert capture_frames(tmp_path / "frames", latest) == 5_000_000_000
+    stored = load_frames(tmp_path)["overhead"][5_000_000_000]
+    assert set(stored) == {"rgb", "depth"}
