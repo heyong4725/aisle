@@ -424,9 +424,32 @@ def instrumented_graph(
     relaunch (ADR-23): the recorder opens its Arrow/video files in write
     mode, so a relaunch pointed at the SAME dir would truncate the prior
     launch's evidence (PR #58 review)."""
+    from aisle.harness.registry import load_manifests
+    from aisle.harness.validate import FORBIDDEN_BY_RUNG, graph_perception_rung
+
     doc = yaml.safe_load(graph.read_text())
     for node in doc["nodes"]:
         node["path"] = str((graph.parent / node["path"]).resolve())
+    # issue #128 (TC-9): the recorder subscribes to declared endpoints, but a
+    # bridge output the graph's rung FORBIDS is filtered out — an L1 trace
+    # then cannot carry the NON-privileged ground-truth pose endpoint,
+    # instead of relying on the bridge's runtime restraint. (oracle_state
+    # remains recorded at every rung: it is the verifier's privileged input,
+    # governed by VAL-6/ADR-27, not by the rung.) FAIL CLOSED on unreadable
+    # rungs (PR #135 round-2 review): this function re-reads graph and
+    # registry at launch AND at every wall-clamp relaunch, hours after the
+    # HAR-2 gate validated — a registry broken in between must refuse the
+    # launch loudly, not silently record an unfiltered trace.
+    manifest_list, manifest_errors = load_manifests(root)
+    rung, bridge_ids, rung_errors = graph_perception_rung(
+        doc["nodes"], {} if manifest_errors else {m["id"]: m for _, m in manifest_list}
+    )
+    if rung_errors:
+        raise RuntimeError(
+            "perception rung unresolvable at instrumentation time (TC-9): "
+            + "; ".join(e["detail"] for e in rung_errors)
+        )
+    forbidden = FORBIDDEN_BY_RUNG.get(rung, ())
     # HAR-4: EVERY declared endpoint, keyed <producer>__<topic> so two
     # producers of the same topic name (e.g. reset_done from both the
     # bridge and the reset service) stay distinct endpoints
@@ -434,6 +457,7 @@ def instrumented_graph(
         f"{node['id']}__{topic}": {"source": f"{node['id']}/{topic}", "queue_size": 100}
         for node in doc["nodes"]
         for topic in (node.get("outputs") or [])
+        if not (node["id"] in bridge_ids and topic in forbidden)
     }
     doc["nodes"].append(
         {
@@ -638,6 +662,14 @@ def rollout(
     perception_gate = perception_check(root, graph, perception)
     if not perception_gate["ok"]:
         return {"ok": False, "refused": perception_gate}
+    # issue #128: hash the authored graph HERE, adjacent to the rung read and
+    # before the gates. This NARROWS the straddle window between the attested
+    # hash and the attested rung — it does not close it: perception_check and
+    # this hash are still two reads, as are the gates' and instrumentation's
+    # (round-2 review). Full closure needs the one-snapshot design that
+    # conflicts with PATH_MANIFEST_MISMATCH's identity check — open on #128;
+    # exec_graph_hashes bounds the damage by attesting what actually ran.
+    authored_graph_hash = _graph_hash(graph)
     gates = run_gates(root, graph, branch, no_idea_gate, embodiment, env_baseline, episodes)
     if not gates["ok"]:
         return {"ok": False, "refused": gates}
@@ -659,9 +691,16 @@ def rollout(
     # SIM timeout declared in the graph, since it ends episodes on its own
     # budget rather than waiting for the oracle (VER-5, increment 1b)
     episode_timeout_s, per_episode_budget_s = tier_budgets(tier)
-    exec_graph = instrumented_graph(
-        graph, root, run_dir, verifier=verifier, episode_timeout_s=episode_timeout_s
-    )
+    try:
+        exec_graph = instrumented_graph(
+            graph, root, run_dir, verifier=verifier, episode_timeout_s=episode_timeout_s
+        )
+    except RuntimeError as exc:
+        return {"ok": False, "refused": {"gate": "perception", "detail": str(exc)}}
+    # issue #128: attest what actually RAN, not only what was authored — one
+    # hash per launch (a wall-clamp relaunch writes a new exec copy whose
+    # trace_dir env differs, so its hash differs)
+    exec_graph_hashes = [_graph_hash(exec_graph)]
     results_path = run_dir / "episodes.jsonl"
 
     git_sha = subprocess.run(
@@ -775,15 +814,24 @@ def rollout(
                 relaunch_traces = traces_dir / f"relaunch-{relaunches}"
                 relaunch_traces.mkdir(parents=True, exist_ok=True)
                 current_traces = relaunch_traces
-                exec_graph = instrumented_graph(
-                    graph,
-                    root,
-                    run_dir,
-                    trace_dir=relaunch_traces,
-                    name=f"graph-r{relaunches}.yaml",
-                    verifier=verifier,
-                    episode_timeout_s=episode_timeout_s,
-                )
+                try:
+                    exec_graph = instrumented_graph(
+                        graph,
+                        root,
+                        run_dir,
+                        trace_dir=relaunch_traces,
+                        name=f"graph-r{relaunches}.yaml",
+                        verifier=verifier,
+                        episode_timeout_s=episode_timeout_s,
+                    )
+                except RuntimeError as exc:
+                    # fail closed mid-run too: a registry broken since the
+                    # gate must not relaunch with an unfiltered recorder —
+                    # remaining seeds are lost LOUDLY (they stay short in
+                    # the episode count) rather than recorded unattested
+                    print(f"relaunch refused: {exc}", file=sys.stderr)
+                    break
+                exec_graph_hashes.append(_graph_hash(exec_graph))
                 # each relaunch pays a fresh build: extend the deadline by
                 # the build grace (still bounded by the campaign wall cap),
                 # else consecutive wedges cut the tail seeds (PR #58 review)
@@ -803,9 +851,19 @@ def rollout(
         if verifier == "both":
             await_realistic_sidecar(run_dir, episodes)
         # ADR-21 round 3: reconcile the reservation with actuals no matter
-        # how the run ended — crash paths settle too
+        # how the run ended — crash paths settle too. Count from the RESULTS
+        # FILE, not episode_records: that list is parsed after this
+        # try/finally, so it is always [] here and every settle recorded 0
+        # episodes — the ceiling never decremented (found by the first real
+        # trusted campaign run; wall clamps' synthetic records count, they
+        # consumed attempts)
         if reservation is not None:
-            settle_budget(root, run_id, len(episode_records), time.monotonic() - started)
+            actual_episodes = (
+                sum(1 for line in results_path.read_text().splitlines() if line.strip())
+                if results_path.exists()
+                else 0
+            )
+            settle_budget(root, run_id, actual_episodes, time.monotonic() - started)
         _terminate(proc)
         reap_orphans(run_dir)
         if verifier == "both":
@@ -858,7 +916,11 @@ def rollout(
         "env_hash": env_hash,
         "platform": platform_module.platform(),
         "graph": str(graph),
-        "graph_hash": _graph_hash(graph),
+        # issue #128: graph_hash is the AUTHORED graph (CON-3's reproducibility
+        # key, hashed at gate time adjacent to the rung read); exec_graph_hashes
+        # attest the instrumented copies that actually RAN, one per launch
+        "graph_hash": authored_graph_hash,
+        "exec_graph_hashes": exec_graph_hashes,
         "tier": tier,
         # TC-9: the run attests which pose source produced it, read from the
         # graph (never from the flag or ambient env — both cannot inject)
