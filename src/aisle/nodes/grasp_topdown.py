@@ -19,7 +19,11 @@ import math
 
 import numpy as np
 
-from aisle.nodes.ik_trajectory import HAND_MOUNT_YAW
+from aisle.nodes.ik_trajectory import (
+    HAND_MOUNT_YAW,
+    rotation_to_quat,
+    so101_radial_rotation,
+)
 from aisle.scenes.pharmacy import level_x_span
 
 # how far the fingertips engage below the box TOP (top-down mode). 0.045
@@ -159,6 +163,12 @@ def plan_grasp(
     neighbours: list | None = None,
     finger_open: float | None = None,
     finger_clear: float | None = None,
+    topdown_approach: float = 0.15,
+    radial_front: bool = False,
+    front_clearance: float = FRONT_CLEARANCE,
+    front_tcp_overshoot: float = 0.0,
+    front_jaw_center_offset: float = 0.0,
+    front_vertical_offset: float = 0.0,
 ) -> tuple[np.ndarray, float, float]:
     """Pure plan: (grasp_pose7, approach_m).
 
@@ -175,9 +185,55 @@ def plan_grasp(
         half_z = float(size_xyz[2]) / 2
         bottom, top = float(pose[2]) - half_z, float(pose[2]) + half_z
         # ride high: wrist over the board edge, fingers still on the box
-        z = min(max(float(pose[2]), bottom + WRIST_CLEARANCE), top - MIN_FINGER_ON_BOX)
-        grasp = np.array([pose[0], pose[1], z, *FRONT_QUAT], dtype=np.float32)
-        approach = float(pose[0]) - (shelf_front_x - FRONT_CLEARANCE)
+        z = (
+            float(pose[2]) + float(front_vertical_offset)
+            if radial_front
+            else min(max(float(pose[2]), bottom + WRIST_CLEARANCE), top - MIN_FINGER_ON_BOX)
+        )
+        if radial_front:
+            base_rotation = so101_radial_rotation(pose[:3])
+            jaw_sign = 1.0
+            if neighbours:
+                # The official jaw is one-sided: the fixed fingertip extends
+                # on frame -X while the moving jaw retracts from +X. Choose
+                # the 180-degree wrist-roll parity whose fixed-finger side
+                # has the larger empty corridor. This leaves the radial tool
+                # axis unchanged and is deterministic on ties.
+                target_xy = pose[:2].astype(float)
+
+                def fixed_side_clearance(sign: float) -> float:
+                    fixed_dir = -sign * base_rotation[:2, 0]
+                    clearances = []
+                    for nx, ny, nhx, nhy in neighbours:
+                        delta = np.array([nx, ny], dtype=float) - target_xy
+                        projected = float(np.dot(delta, fixed_dir))
+                        if projected <= 0:
+                            continue
+                        clearances.append(
+                            projected
+                            - abs(float(fixed_dir[0])) * float(nhx)
+                            - abs(float(fixed_dir[1])) * float(nhy)
+                        )
+                    return min(clearances, default=math.inf)
+
+                if fixed_side_clearance(-1.0) > fixed_side_clearance(1.0):
+                    jaw_sign = -1.0
+            rotation = so101_radial_rotation(pose[:3], jaw_sign)
+            tcp_xy = (
+                pose[:2]
+                + rotation[:2, 2] * float(front_tcp_overshoot)
+                + rotation[:2, 0] * float(front_jaw_center_offset)
+            )
+            # Re-anchor the feasible radial frame at the actual offset TCP.
+            rotation = so101_radial_rotation([tcp_xy[0], tcp_xy[1], z], jaw_sign)
+            quat = rotation_to_quat(rotation)
+            radial_x = max(float(rotation[0, 2]), 1e-6)
+            approach = (float(tcp_xy[0]) - (shelf_front_x - front_clearance)) / radial_x
+        else:
+            quat = FRONT_QUAT
+            tcp_xy = pose[:2]
+            approach = float(pose[0]) - (shelf_front_x - front_clearance)
+        grasp = np.array([tcp_xy[0], tcp_xy[1], z, *quat], dtype=np.float32)
         return grasp, approach, place_tcp_z(size_xyz, top - z, tray_top_z)
     legacy_yaw = yaw_of(pose[3:7]) + (math.pi / 2 if size_xyz[0] < size_xyz[1] else 0.0)
     if neighbours and finger_open is not None and finger_clear is not None:
@@ -200,7 +256,7 @@ def plan_grasp(
         yaw = legacy_yaw
     z = float(pose[2]) + float(size_xyz[2]) / 2 - grip
     grasp = np.array([pose[0], pose[1], z, *topdown_quat(yaw)], dtype=np.float32)
-    return grasp, 0.15, place_tcp_z(size_xyz, grip, tray_top_z)
+    return grasp, float(topdown_approach), place_tcp_z(size_xyz, grip, tray_top_z)
 
 
 def place_tcp_z(size_xyz, grip_from_top: float, tray_top_z: float) -> float:
@@ -241,10 +297,10 @@ def main() -> None:
     from aisle.scenes.pharmacy import MED_NAMES, load_meds, load_physics, resolve_layout
     from aisle.topics import make_sender
 
-    meds = load_meds()
     embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
     physics = load_physics()
     layout = resolve_layout(physics, embodiment)
+    meds = load_meds()
     shelf = layout["shelf"]
     shelf_front_x = shelf["pos"][0] - shelf["level_size"][0] / 2
     tray = layout["tray"]
@@ -255,6 +311,7 @@ def main() -> None:
     profile = physics["embodiment"][embodiment]
     finger_open = float(profile["gripper_open_m"])
     finger_clear = float(profile["gripper_finger_clear_m"])
+    topdown_approach = float(profile.get("pregrasp_height_m", physics["ik"]["pregrasp_height_m"]))
     node = Node()
     send = make_sender(node)
     for event in node:
@@ -268,7 +325,11 @@ def main() -> None:
                 continue
             pose = event["value"].to_numpy(zero_copy_only=False)
             flat = np.asarray(pose).reshape(-1)
-            front = needs_front(float(flat[0]), float(flat[2]), shelf)
+            front = bool(profile.get("force_front_grasp", False)) or needs_front(
+                float(flat[0]), float(flat[2]), shelf
+            )
+            # same-level neighbours (x, y, half_x, half_y) for grip-axis
+            # selection — every box except the target
             neighbours = None
             if "neighbours" in metadata:
                 neighbours = neighbour_constraints(
@@ -283,6 +344,12 @@ def main() -> None:
                 neighbours=neighbours,
                 finger_open=finger_open,
                 finger_clear=finger_clear,
+                topdown_approach=topdown_approach,
+                radial_front=bool(profile.get("force_front_grasp", False)),
+                front_clearance=float(profile.get("front_clearance_m", FRONT_CLEARANCE)),
+                front_tcp_overshoot=float(profile.get("front_tcp_overshoot_m", 0.0)),
+                front_jaw_center_offset=float(profile.get("front_jaw_center_offset_m", 0.0)),
+                front_vertical_offset=float(profile.get("front_vertical_offset_m", 0.0)),
             )
             send(
                 "grasp_pose",

@@ -68,5 +68,9 @@ relative to `gripper_link` and composes it into the wrist-camera mount and
 published calibration. The profile's former layout and gripper constants
 were provisional: they are replaced by the imported model's official joint
 order/limits, an official-frame transform, and a reach derived from the
-pinned kinematic chain. SO-101's five-axis IK constrains TCP position plus
-the top-down tool axis while leaving yaw free.
+pinned kinematic chain. The first implementation assumed five-axis IK could
+hold a vertical top-down tool axis; official-chain reachability disproved
+that at the compact shelf. ADR-27's motion amendment supersedes that
+provisional statement: SO-101 uses its native radial-front frame and
+constrains TCP position plus pitch/roll while leaving base-coupled world yaw
+free.

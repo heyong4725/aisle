@@ -32,6 +32,28 @@ gripper_rate_max = 1.25
 # contract dt of the gripper_cmd topic (TC: 30 Hz)
 gripper_dt_s = 0.0333
 
+[embodiment.so101]
+# Official new-calibration follower URDF (ADR-27): five arm joints followed
+# by the revolute gripper in TC-5 motor order.
+n_arm_dof = 5
+q_min = [-1.91986, -1.74533, -1.69, -1.65806, -2.74385, -0.174533]
+q_max = [1.91986, 1.74533, 1.69, 1.65806, 2.84121, 1.74533]
+# Every actuated joint in the pinned official URDF declares velocity=10 rad/s.
+qdot_max = [10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
+cmd_dt_s = 0.01
+# Conservative AABB inside the 0.5457 m official-chain reach sweep. The
+# positive floor keeps the fixed TCP frame out of the work surface.
+workspace_min = [-0.55, -0.55, 0.005]
+workspace_max = [0.55, 0.55, 0.60]
+# Official new-calibration arm zero and open gripper upper endpoint; MUST
+# equal the scene home_qpos (asserted).
+fallback_qpos = [0.0, 0.0, 0.0, 0.0, 0.0, 1.74533]
+gripper_min = 0.0
+gripper_max = 1.0
+# Normalize the official 10 rad/s jaw velocity over its 1.919863 rad travel.
+gripper_rate_max = 5.208705
+gripper_dt_s = 0.0333
+
 [episode]
 # wall-clock BACKSTOP per episode against hung/runaway pipelines; on
 # breach the guard holds the robot at the last safe command (clamp, never

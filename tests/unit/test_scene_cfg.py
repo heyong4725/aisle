@@ -70,6 +70,46 @@ def test_so101_profile_matches_official_joint_space():
     assert profile["gripper_close_qpos"] == pytest.approx(-0.174533)
 
 
+def test_so101_collision_meshes_preserve_the_official_finger_gap():
+    """M0-5, SCN-2, SCN-4: the official non-convex SO-101 collision
+    meshes are decomposed instead of collapsed to one convex hull, which
+    would fill the gripper gap and make a physical pinch impossible."""
+    from aisle.scenes.pharmacy import so101_urdf_options
+
+    profile = load_physics()["embodiment"]["so101"]
+    options = so101_urdf_options(profile)
+    assert profile["collision_decompose_error_threshold"] == pytest.approx(0.0)
+    assert options == {
+        "fixed": True,
+        "convexify": True,
+        "decompose_robot_error_threshold": 0.0,
+    }
+
+
+def test_so101_profile_preserves_canonical_medicine_dimensions():
+    """M0-5, SCN-2, SCN-4: an embodiment profile may move the shelf and
+    tray, but the five fixed T0 medicine dimensions remain those in meds.toml."""
+    from aisle.scenes.pharmacy import resolve_layout
+
+    physics = load_physics()
+    meds = load_meds()
+    layout = resolve_layout(physics, "so101")
+    profile = physics["embodiment"]["so101"]
+    assert "med_scale" not in profile
+    assert "med_scale" not in layout
+    assert profile["kinematic_carry_latch"] is True
+    assert profile["carry_latch_close"] > profile["carry_latch_release"]
+    assert profile["carry_latch_max_distance_m"] == pytest.approx(0.20)
+    tray_top = profile["tray_pos"][2] + profile["tray_size"][2] / 2
+    assert tray_top + min(spec["size"][2] / 2 for spec in meds.values()) > 0.07
+    max_box_half_extent = max(max(spec["size"][:2]) for spec in meds.values()) / 2
+    capture_offset = (
+        profile["front_tcp_overshoot_m"] ** 2 + profile["front_jaw_center_offset_m"] ** 2
+    ) ** 0.5
+    assert min(profile["tray_size"][:2]) / 2 > max_box_half_extent + capture_offset
+    assert meds["amoxicillin"]["size"] == [0.060, 0.040, 0.100]
+
+
 def test_dr_toggles_default_off():
     """SCN-6: every domain-randomization toggle defaults OFF and each is
     independently seedable; DR distribution constants live in physics.toml,
@@ -158,6 +198,18 @@ def test_placements_never_interpenetrate_or_exceed_reach(embodiment, placements_
             half_y = (meds[a.name]["size"][1] + meds[b.name]["size"][1]) / 2
             overlap = abs(a.x - b.x) < half_x and abs(a.y - b.y) < half_y
             assert not overlap, (seed, a.name, b.name)
+
+
+def test_so101_radial_front_placements_clear_observed_forearm_envelope(placements_200):
+    """M0-5, SCN-3, SCN-4: every SO-101 pair clears the radial-front
+    center-distance envelope measured from the complete failing campaign."""
+    layout, per_seed = placements_200["so101"]
+    minimum = layout["center_separation_m"]
+    assert minimum >= 0.18
+    for seed, placements in enumerate(per_seed):
+        for a, b in itertools.combinations(placements, 2):
+            distance = ((a.x - b.x) ** 2 + (a.y - b.y) ** 2) ** 0.5
+            assert distance >= minimum, (seed, a.name, b.name, distance)
 
 
 @pytest.mark.parametrize("embodiment", ["franka", "so101"])
