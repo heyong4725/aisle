@@ -37,51 +37,71 @@ import numpy as np
 from aisle.nodes.perception_session import FramePairSession
 from aisle.nodes.segmented_pose import PoseRefused, estimate_pose
 
-# measured separation (idea I7): all 8 wrong-ids at margin <= 0.034, right-id
-# median 0.134 — the floor sits between the populations. Move it only with a
-# new measurement, never by tuning against a failing run.
-MARGIN_FLOOR = 0.05
+# measured under the IMPLEMENTED rival rule (round-2 re-measurement): wrong
+# picks all negative (max -0.027), right picks all positive (min +0.016) —
+# the floor sits inside the gap. Move it only with a new measurement, never
+# by tuning against a failing run.
+MARGIN_FLOOR = 0.01
+# neighbours only: just above the measured background-argmax max (0.054);
+# the target is margin-gated instead because right-pick scores overlap the
+# background range (ibuprofen right picks reach 0.007)
+NEIGHBOUR_SCORE_FLOOR = 0.055
 # ~0.7 s/frame detection vs 66.7 ms between pairs: throttle refusal retries
 MIN_RETRY_GAP_NS = int(1e9)
 
 
-def _overlaps(a: list, b: list) -> bool:
-    """Boxes share area — the regime where two labels claim one med and the
-    margin measures identity ambiguity rather than scene layout."""
-    return not (a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1])
+def _contains_centre(box: list, of: list) -> bool:
+    """`box` contains the centre of `of` — the runtime analogue of the
+    offline rule (rival boxes containing the ground-truth centroid). Any-
+    overlap was the first cut and is the WRONG population: a neighbour's
+    correct box grazing the target's by a pixel is scene layout, not
+    identity ambiguity (round-2 review)."""
+    cx, cy = (of[0] + of[2]) / 2, (of[1] + of[3]) / 2
+    return box[0] <= cx <= box[2] and box[1] <= cy <= box[3]
 
 
 def pick_target_detection(detections: list[dict], target: str, margin_floor: float) -> dict:
     """The target's best detection WITH its identity margin, or PoseRefused.
 
-    The margin is score over the best OVERLAPPING rival of a different
-    label (a rival on a different box is scene layout, not ambiguity —
-    tested). Below the floor is the measured wrong-id signature: refuse."""
+    The margin is score over the best different-label rival whose box
+    CONTAINS THE CENTRE of the target's box. Below the floor is the
+    measured wrong-pick signature (all negative under this rule): refuse."""
     mine = [d for d in detections if d["label"] == target]
     if not mine:
         raise PoseRefused(f"no {target!r} detection in frame (L2)")
     best = max(mine, key=lambda d: d["score"])
+    if not all(np.isfinite(v) for v in best["box"]):
+        raise PoseRefused(f"non-finite detection box for {target!r}")
     rivals = [
-        d["score"] for d in detections if d["label"] != target and _overlaps(d["box"], best["box"])
+        d["score"]
+        for d in detections
+        if d["label"] != target and _contains_centre(d["box"], best["box"])
     ]
     margin = best["score"] - max(rivals, default=0.0)
     if margin < margin_floor:
         raise PoseRefused(
-            f"identity margin {margin:.3f} under the {margin_floor} floor — the measured "
-            "wrong-id signature (every confused detection sat <= 0.034 over its rival); "
-            "a low-margin pick risks the 10x wrong_object penalty, a refusal costs 1x"
+            f"identity margin {margin:.3f} under the {margin_floor} floor — measured "
+            "wrong picks all carry NEGATIVE margins under this rule; a low-margin pick "
+            "risks the 10x wrong_object penalty, a refusal costs 1x"
         )
     return {**best, "margin": margin}
 
 
 def _bbox_mask(shape: tuple, box: list) -> np.ndarray:
+    """Synthetic mask for a detection box; a malformed box (non-finite or
+    inverted) raises PoseRefused rather than ValueError — one bad frame
+    must refuse, not kill the pose source (round-2 review). A degenerate
+    or out-of-frame box collapses to an empty mask and hits
+    estimate_pose's min-pixel refusal."""
+    if not all(np.isfinite(v) for v in box) or box[2] < box[0] or box[3] < box[1]:
+        raise PoseRefused(f"malformed detection box {box}")
     x0, y0, x1, y1 = (int(round(v)) for v in box)
     mask = np.zeros(shape, dtype=np.int32)
     mask[max(y0, 0) : max(y1, 0), max(x0, 0) : max(x1, 0)] = 1
     return mask
 
 
-@dataclass
+@dataclass(kw_only=True)
 class L2Session(FramePairSession):
     """Detection-driven estimate over the shared frame-pairing lifecycle.
 
@@ -121,12 +141,19 @@ class L2Session(FramePairSession):
             footprint_m=tuple(size[:2]),
         )
         # positional neighbour slots (the grasp planner zips MED_NAMES
-        # strict=True): each med's best detection, None when undetected —
-        # no margin gate here, a possibly-mislabeled box still marks a REAL
-        # obstacle position for fingertip clearance
+        # strict=True): each med's best CONFIDENT detection, None + counted
+        # below the score floor. The floor is what makes None reachable in
+        # production: at threshold 0 every label always has candidate boxes,
+        # and an unfloored slot would be filled by a background argmax box —
+        # a guessed obstacle position with the audit trail reading confident
+        # (round-2 review). No margin gate: a mislabeled but CONFIDENT box
+        # still marks a real obstacle, and over-constraining is the safe
+        # direction.
         neighbours, refused = [], 0
         for name, spec in self.meds.items():
-            cands = [d for d in detections if d["label"] == name]
+            cands = [
+                d for d in detections if d["label"] == name and d["score"] >= NEIGHBOUR_SCORE_FLOOR
+            ]
             if not cands:
                 neighbours.append(None)
                 refused += 1

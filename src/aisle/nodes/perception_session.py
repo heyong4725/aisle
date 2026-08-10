@@ -20,7 +20,14 @@ duplicating it per rung would re-open every closed defect. The rules:
 * stamp pairing: the observation frame and depth are consumed only as a
   same-stamp pair from one render pass, buffered SYMMETRICALLY so
   publication does not depend on which of the co-scheduled frames dora
-  delivers first; unstamped frames (negative sentinel) never pair.
+  delivers first; unstamped frames (negative sentinel) never pair;
+* reset WATERMARK (PR #139 round-2 review): clearing the buffers at
+  reset_done defends against ONE straggler half, but a slow estimator
+  (L2's 0.7 s detector) backs the queues up ~30 messages deep, so
+  COMPLETE pre-reset pairs can drain after the boundary and pair with
+  each other — stamps match and sim time never rewinds across a
+  teleport, so only a watermark can tell the epochs apart. Frames at or
+  below the newest stamp seen before the reset never attempt.
 
 Subclasses implement `_estimate(obs, depth) -> dict | None` (raising
 PoseRefused to keep the request pending) — L1 masks ground-truth
@@ -29,12 +36,12 @@ segmentation, L2 detects on rgb.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
 
-@dataclass
+@dataclass(kw_only=True)
 class FramePairSession:
     meds: dict
     calibration: dict | None = None
@@ -42,7 +49,8 @@ class FramePairSession:
     pending: bool = False
     latest_depth: tuple[int, np.ndarray] | None = None
     latest_obs: tuple[int, np.ndarray] | None = None
-    extras: dict = field(default_factory=dict)
+    newest_stamp_ns: int = -1
+    reset_watermark_ns: int = -1
 
     def on_bridge_info(self, info: dict) -> None:
         self.calibration = info["calibration"]
@@ -62,11 +70,17 @@ class FramePairSession:
         self.pending = False
         self.latest_depth = None
         self.latest_obs = None
+        self.reset_watermark_ns = self.newest_stamp_ns
 
     def on_depth(self, sim_time_ns: int, depth: np.ndarray) -> dict | None:
         """Buffer the frame; publishable estimate if its obs twin is here."""
+        self.newest_stamp_ns = max(self.newest_stamp_ns, sim_time_ns)
         self.latest_depth = (sim_time_ns, depth)
-        if self.latest_obs is not None and self.latest_obs[0] == sim_time_ns >= 0:
+        if (
+            self.latest_obs is not None
+            and self.latest_obs[0] == sim_time_ns >= 0
+            and sim_time_ns > self.reset_watermark_ns
+        ):
             return self._gated_estimate(self.latest_obs[1], depth)
         return None
 
@@ -75,8 +89,13 @@ class FramePairSession:
         estimate if its depth twin is already here, or None when there is
         nothing to do. Raises PoseRefused when the frame cannot support a
         trustworthy pose; the request then STAYS pending."""
+        self.newest_stamp_ns = max(self.newest_stamp_ns, sim_time_ns)
         self.latest_obs = (sim_time_ns, obs)
-        if self.latest_depth is not None and self.latest_depth[0] == sim_time_ns >= 0:
+        if (
+            self.latest_depth is not None
+            and self.latest_depth[0] == sim_time_ns >= 0
+            and sim_time_ns > self.reset_watermark_ns
+        ):
             return self._gated_estimate(obs, self.latest_depth[1])
         return None
 

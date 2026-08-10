@@ -154,7 +154,7 @@ def estimate_neighbours(seg, depth, id_map: dict, meds: dict, backproject) -> tu
     return rows, refused
 
 
-@dataclass
+@dataclass(kw_only=True)
 class L1Session(FramePairSession):
     """The L1 rung's estimate over the shared frame-pairing lifecycle
     (perception_session.FramePairSession carries the review-hardened rules:
