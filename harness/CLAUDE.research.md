@@ -141,7 +141,7 @@ frozen set):
   logged via `ANTHROPIC_TOKENS_LOG` into every run manifest; the
   campaign audit reconciles the two. Tokens-to-success is a headline
   metric — summarize, don't re-read.
-- **Episodes: 500**, RESERVED atomically before launch: every rollout
+- **Episodes: 2000**, RESERVED atomically before launch: every rollout
   reserves its episode count in the hash-chained
   `runs/campaign_ledger.jsonl` under a lock (concurrent runs cannot
   both squeeze past the ceiling), settles to actuals when it ends —
@@ -149,7 +149,7 @@ frozen set):
   REFUSED (`gate: budget`). Each report returns `budget.episodes_left`;
   each manifest records its reservation's chain hash. Prefer few,
   well-hypothesized rollouts over sweeps.
-- **Wall-clock: 40 hours**, enforced the same way, and each run's own
+- **Wall-clock: 100 hours**, enforced the same way, and each run's own
   deadline is CAPPED to the remaining wall budget (`budget.wall_h_left`
   in every report). Store-sim runs at rtf well below 1; a retail
   episode costs minutes of wall time — batch seeds into one rollout

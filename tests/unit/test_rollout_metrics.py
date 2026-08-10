@@ -126,7 +126,17 @@ def test_rollout_relative_root_pins_absolute_paths_for_dora(tmp_path, monkeypatc
         return proc
 
     monkeypatch.setattr(ro.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(ro, "run_gates", lambda *a, **k: {"ok": True, "env_hash": "x"})
+    monkeypatch.setattr(
+        ro,
+        "run_gates",
+        lambda *a, **k: {
+            "ok": True,
+            "env_hash": "x",
+            "sim_extra": "sim",
+            "sim_backend": "metal",
+            "sim_device": "mps",
+        },
+    )
     monkeypatch.setattr(ro, "reap_orphans", lambda *a, **k: None)
     monkeypatch.chdir(root)
     report = ro.rollout(
@@ -290,7 +300,17 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
 
     monkeypatch.setattr(ro, "time", FakeClock())
     monkeypatch.setattr(ro.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(ro, "run_gates", lambda *a, **k: {"ok": True, "env_hash": "x"})
+    monkeypatch.setattr(
+        ro,
+        "run_gates",
+        lambda *a, **k: {
+            "ok": True,
+            "env_hash": "x",
+            "sim_extra": "sim",
+            "sim_backend": "metal",
+            "sim_device": "mps",
+        },
+    )
     monkeypatch.setattr(ro, "reap_orphans", lambda *a, **k: None)
     report = ro.rollout(
         root=root,
@@ -406,7 +426,17 @@ def test_relaunch_reaps_orphans_and_isolates_trace_dirs(tmp_path, monkeypatch):
 
     monkeypatch.setattr(ro, "time", clock)
     monkeypatch.setattr(ro.subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(ro, "run_gates", lambda *a, **k: {"ok": True, "env_hash": "x"})
+    monkeypatch.setattr(
+        ro,
+        "run_gates",
+        lambda *a, **k: {
+            "ok": True,
+            "env_hash": "x",
+            "sim_extra": "sim",
+            "sim_backend": "metal",
+            "sim_device": "mps",
+        },
+    )
 
     def fake_reap(*a, **k):
         events.append(("reap",))
