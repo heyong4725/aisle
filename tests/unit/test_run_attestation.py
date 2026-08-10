@@ -135,3 +135,82 @@ def test_instrumentation_fails_closed_when_the_rung_is_unresolvable(tmp_path):
     (tmp_path / "run").mkdir()
     with pytest.raises(RuntimeError, match="rung unresolvable|perception rung"):
         instrumented_graph(root / "graphs" / "expert_t1.yaml", root, tmp_path / "run")
+
+
+def test_settle_records_actual_episode_count(tmp_path, monkeypatch):
+    """ADR-21: the settle entry must carry the ACTUAL episode count. The
+    wiring bug this pins: settle ran inside the finally while
+    episode_records was parsed after it, so every trusted run settled at 0
+    and the campaign episode ceiling never decremented — found by the first
+    real trusted run (p2-a1-t1-l0-e50 reserved 50, settled 0). The fake
+    root becomes its own git origin so the REAL trusted reserve/settle path
+    runs; a draft of this test used env_baseline=local and passed vacuously
+    because local never reserves — the defect class, in a test draft."""
+    import json
+    import subprocess
+
+    from test_idea_gate import _fake_root
+
+    from aisle.harness import rollout as rollout_module
+
+    root = _fake_root(tmp_path)
+    # the trusted gate demands dist attestation evidence (ADR-24 D2/D3);
+    # extend the fixture's stub checker to supply it
+    (root / "tools" / "env_hash.py").write_text(
+        "import json\n"
+        'print(json.dumps({"ok": True, "env_hash": "h", '
+        '"dist": {"attested": True, "env_fingerprint": "f"}}))\n'
+    )
+    for cmd in (
+        ["git", "init", "-q", "-b", "main"],
+        ["git", "add", "-A"],
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "root"],
+    ):
+        subprocess.run(cmd, cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(root)], cwd=root, check=True, capture_output=True
+    )
+
+    def fake_spawn(exec_graph, run_dir, env):
+        results = Path(env["AISLE_RESULTS"])
+        with open(results, "w") as f:
+            for i, seed in enumerate(int(s) for s in env["AISLE_SEEDS"].split(",")):
+                f.write(
+                    json.dumps({"episode": i, "seed": seed, "status": "success", "failure": None})
+                    + "\n"
+                )
+
+        class FakeProc:
+            pid = 0
+
+            def poll(self):
+                return None
+
+        return FakeProc()
+
+    monkeypatch.setattr(rollout_module, "_spawn_dora", fake_spawn)
+    monkeypatch.setattr(rollout_module, "_terminate", lambda proc: None)
+    report = rollout_module.rollout(
+        root=root,
+        graph=root / "graphs" / "expert_t1.yaml",
+        tier="T1",
+        episodes=3,
+        seeds=[0, 1, 2],
+        reset_mode="teleport",
+        verifier="oracle",
+        run_id="settle-unit",
+        branch="b",
+        no_idea_gate=True,
+        env_baseline="origin/main",
+        perception="L1",
+    )
+    assert report["ok"] is True, report
+    entries = [
+        json.loads(line)
+        for line in (root / "runs" / "campaign_ledger.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    kinds = {e["kind"]: e for e in entries}
+    assert kinds["reserve"]["episodes"] == 3
+    assert kinds["settle"]["episodes"] == 3, entries
+    assert rollout_module.budget_remaining(root)["episodes_left"] == 500 - 3
