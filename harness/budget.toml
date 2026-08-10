@@ -12,6 +12,6 @@
 tokens = 5000000
 # episode ceiling across the whole campaign ledger (8.2.3's
 # budget-episodes-left semantics)
-episodes = 500
+episodes = 2000
 # wall-clock ceiling in hours, summed over rollouts
-wall_h = 40.0
+wall_h = 100.0
