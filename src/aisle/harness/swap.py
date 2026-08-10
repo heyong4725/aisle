@@ -119,11 +119,22 @@ def swapped_graph_doc(graph_path: Path, node_id: str, replacement: dict, root: P
             # issue #127 defense in depth beyond the bridge anchor: the rung
             # binds ANY sim_bridge provider (a future world-model-env bridge
             # is legitimately swappable code), and a swap that changes the
-            # declared rung changes WHAT THE RUN MEASURES. Rung READ errors
-            # are left to the post-swap validate, which refuses them with
-            # the full VAL-8 report.
+            # declared rung changes WHAT THE RUN MEASURES. FAIL CLOSED on
+            # unreadable rungs (PR #135 round-2 review): deferring errors to
+            # the post-swap validate fails open — validate checks the POST
+            # graph's internal consistency, never invariance against the
+            # pre graph, so a registry corrupted for the duration of this
+            # call (and restored before validate) would smuggle a rung
+            # change through. Invariance that cannot be asserted refuses.
             post_rung, _, post_errors = graph_perception_rung(nodes, manifests)
-            if not pre_errors and not post_errors and post_rung != pre_rung:
+            if manifest_errors or pre_errors or post_errors:
+                return (
+                    "swap refused: the perception rung cannot be asserted "
+                    "invariant (TC-9, issue #127) — registry or rung "
+                    "declaration unreadable; fix the registry "
+                    "(harness/registry.py lint) and re-validate the graph"
+                )
+            if post_rung != pre_rung:
                 return (
                     f"swap changes the perception rung {pre_rung} -> {post_rung} "
                     "(TC-9, issue #127): the rung is what the run MEASURES — "

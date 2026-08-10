@@ -532,3 +532,42 @@ def test_swap_refuses_a_rung_change_even_on_an_unanchored_bridge(tmp_path):
     # an env-preserving replacement of the same bridge still goes through
     same_rung = {**replacement, "env": {"AISLE_PERCEPTION": "L1"}}
     assert isinstance(swapped_graph_doc(graph, "toy-bridge", same_rung, root), dict)
+
+
+def test_swap_fails_closed_when_the_rung_cannot_be_asserted(tmp_path):
+    """Round-2 review (both models): deferring rung READ errors to the
+    post-swap validate fails OPEN — validate checks the post graph's
+    internal consistency, never invariance against the pre graph, so a
+    registry corrupted for the duration of the swap call (and restored
+    before validate) would smuggle a rung change through. Invariance that
+    cannot be asserted refuses."""
+    from cli_helpers import make_registry_root
+
+    root = make_registry_root(tmp_path)
+    # no manifest for toy-bridge at all: its L1 declaration is a rung error
+    (root / "graphs").mkdir()
+    graph = root / "graphs" / "toy.yaml"
+    graph.write_text(
+        yaml.safe_dump(
+            {
+                "nodes": [
+                    {
+                        "id": "toy-bridge",
+                        "path": "../src/toy_bridge.py",
+                        "env": {"AISLE_PERCEPTION": "L1"},
+                        "inputs": {"tick": "dora/timer/millis/10"},
+                        "outputs": ["seg_overhead"],
+                    }
+                ]
+            },
+            sort_keys=False,
+        )
+    )
+    replacement = {
+        "id": "toy-bridge",
+        "path": "../src/toy_bridge.py",
+        "inputs": {"tick": "dora/timer/millis/10"},
+        "outputs": ["seg_overhead"],
+    }
+    result = swapped_graph_doc(graph, "toy-bridge", replacement, root)
+    assert isinstance(result, str) and "cannot be asserted" in result
