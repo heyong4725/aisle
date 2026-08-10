@@ -236,3 +236,10 @@ codes = ["GRAPH_INVALID"]
 
 [graph_invalid_env_list]
 codes = ["GRAPH_INVALID"]
+
+# VAL-8 (TC-9): the perception rung is enforced, not advisory. The L2-forbids-
+# segmentation half of the rule joins this corpus with the bridge PR that makes
+# `seg_overhead` a real port -- naming it here would only raise SCHEMA_MISMATCH
+# against today's bridge manifest and test nothing about the rung.
+[perception_rung_l1_uses_poses]
+codes = ["PERCEPTION_RUNG_VIOLATION"]

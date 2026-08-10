@@ -72,3 +72,11 @@ shape = "2"
 [base_scan_f32]
 arrow = "Float32"
 shape = "n_scan"
+
+# TC-9 L1 perception — per-pixel segmentation ids (Class C vocabulary change,
+# CAP-2, flagged for owner sign-off with the perception ladder). Int32, not
+# genesis's native int64: ids are small (~21 in the desk scene) and the raw
+# type doubles a 640x480 payload at 15 Hz.
+[seg_i32]
+arrow = "Int32"
+shape = "h*w"

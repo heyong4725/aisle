@@ -44,6 +44,8 @@ EXPECTED_IDS = {
     # T15 S1 expert graph (ADR-18)
     "verifier-retail",
     "s1-expert",
+    # perception rung L1 (TC-9): the expert_t1 pose source
+    "segmented-pose",
 }
 
 
@@ -114,7 +116,9 @@ def test_search_cli_json():
 
     code, report = run_registry("search", "--provides", "object_pose")
     ids = {m["id"] for m in report["matches"]}
-    assert ids == {"oracle-pose", "pose-estimator"}  # the perception ladder
+    # the perception ladder (TC-9): L0 oracle passthrough, L1 estimated
+    # from ground-truth segmentation, L2-bound full estimator
+    assert ids == {"oracle-pose", "segmented-pose", "pose-estimator"}
 
 
 def test_search_no_match_is_ok_empty():

@@ -10,8 +10,11 @@ vendored: acquisition needs owner sign-off on provenance/licensing, so
 `assets/so101/` is empty, `build_scene(embodiment="so101")` raises a clear
 FileNotFoundError, and the so101 sim test skips with that reason — SCN-4 is
 fully verified for franka and code-complete-but-asset-blocked for so101
-(M0-5 forces resolution by T10). (3) Backend selection: gs.metal on Darwin,
-gs.cpu elsewhere (SCN-5/CON-1); the rasterizer renderer is set explicitly.
+(M0-5 forces resolution by T10). (3) Backend selection is explicit and
+attested: the portable `sim` extra selects gs.metal on Darwin and gs.cpu
+elsewhere; the optional `cuda` extra selects gs.cuda on Linux and fails
+closed when CUDA is unavailable (SCN-5/CON-1/CON-5). The rasterizer renderer
+is set explicitly.
 (4) The SCN-3 reachability assertion runs for n_envs == 1 (the M0
 configuration); batched builds skip it since per-env IK across identical
 placements is redundant. (5) Placement randomness is a pure
@@ -48,10 +51,40 @@ STARTS at home_qpos (franka's qpos0 zeros violate joint limits and
 self-collide — T05 must not inherit that); levels/board clearances are
 config-validated against the tallest med, and so101's profile (shelf 0.24,
 pregrasp override 0.06, width 0.40) was chosen by a 200-seed capacity
-search — still provisional until the asset lands. (14) linux resolves
-torch from the PyTorch CPU index, so NO CUDA/NVIDIA package exists
-anywhere in the lock (test-pinned); a future `cuda` extra is the
-sanctioned home for GPU wheels per CON-1. (15) "Textures" DR is color
+search — still provisional until the asset lands. (14) Linux `sim` resolves
+torch from the PyTorch CPU index, so no CUDA/NVIDIA package enters that
+closure; the mutually exclusive `cuda` extra resolves torch from the pinned
+CUDA index and is the only sanctioned home for those wheels per CON-1.
+(15) "Textures" DR is color
 modulation in v0 (the rasterizer path has no texture-swap machinery yet)
 — recorded as a known gap, not renamed away; genesis pre-initialization
 with a foreign backend now raises instead of silently changing results.
+
+## Issue #13 resolution (2026-08-08)
+
+The owner approved TheRobotStudio's official Apache-2.0 SO-101 simulation
+bundle at commit `7629d2ad9853d10fb903093a33ef6114099d97e5` (ADR-27).
+`assets/so101/` now vendors the new-calibration URDF, every referenced STL,
+the upstream README, license, and a machine-readable provenance pin. The
+asset gate described above is therefore closed. Genesis collapses the
+massless fixed `gripper_frame_link`; AISLE retains its official transform
+relative to `gripper_link` and composes it into the wrist-camera mount and
+published calibration. The profile's former layout and gripper constants
+were provisional: they are replaced by the imported model's official joint
+order/limits, an official-frame transform, and a reach derived from the
+pinned kinematic chain. The first implementation assumed five-axis IK could
+hold a vertical top-down tool axis; official-chain reachability disproved
+that at the compact shelf. ADR-27's motion amendment supersedes that
+provisional statement: SO-101 uses its native radial-front frame and
+constrains TCP position plus pitch/roll while leaving base-coupled world yaw
+free.
+
+## Linux CUDA amendment (PR #99)
+
+`harness rollout --sim-extra {sim,cuda}` makes the dependency selection an
+explicit run input. The environment checker fingerprints that exact extra,
+the bridge receives the gate-resolved backend, and the manifest records the
+selected extra, Genesis backend, and device. Hardware discovery may confirm
+an explicit `cuda` request but never upgrades a `sim` run or falls back from
+CUDA to CPU. CUDA evidence is therefore distinguishable from portable
+CPU/Metal evidence; cross-backend numerical equivalence remains unclaimed.

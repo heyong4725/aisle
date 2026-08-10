@@ -17,6 +17,24 @@ pytestmark = pytest.mark.unit
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_rollout_cli_exposes_the_attested_simulation_extra():
+    """HAR-1, CON-5: the public rollout path exposes the exact dependency
+    selection; CUDA cannot be activated by an ambient hardware probe."""
+    from aisle.harness.cli import build_parser
+
+    base = [
+        "rollout",
+        "--graph",
+        "graphs/expert_t0.yaml",
+        "--episodes",
+        "1",
+        "--seeds",
+        "0",
+    ]
+    assert build_parser().parse_args(base).sim_extra == "sim"
+    assert build_parser().parse_args([*base, "--sim-extra", "cuda"]).sim_extra == "cuda"
+
+
 def test_log_appends_jsonl_with_monotonic_ids(tmp_path):
     """HAR-7: `report log` appends JSONL entries with branch-monotonic ids,
     injected timestamp and git sha (CON-5)."""
@@ -98,6 +116,80 @@ def test_gate_refuses_on_env_hash_mismatch(tmp_path):
         root, root / "graphs" / "expert_t0.yaml", "b", no_idea_gate=True, env_baseline="local"
     )
     assert result["ok"] is False and result["gate"] == "env_hash"
+
+
+def test_gate_attests_the_selected_sim_extra_and_backend(tmp_path, monkeypatch):
+    """HAR-2, HAR-4, CON-5: a CUDA rollout checks the CUDA lock selection
+    and carries its resolved backend/device identity out of the gate."""
+    from aisle.harness import rollout as rollout_module
+
+    root = _fake_root(tmp_path, hash_ok=True)
+    argv_path = root / "hash-argv.json"
+    (root / "tools" / "env_hash.py").write_text(
+        "import json, sys\n"
+        f"open({str(argv_path)!r}, 'w').write(json.dumps(sys.argv[1:]))\n"
+        'print(json.dumps({"ok": True, "env_hash": "h"}))\n'
+    )
+    monkeypatch.setattr(
+        rollout_module,
+        "resolve_sim_identity",
+        lambda extra: {
+            "ok": True,
+            "sim_extra": extra,
+            "sim_backend": "cuda",
+            "sim_device": "NVIDIA Test GPU",
+        },
+    )
+
+    result = rollout_module.run_gates(
+        root,
+        root / "graphs" / "expert_t0.yaml",
+        "b",
+        no_idea_gate=True,
+        env_baseline="local",
+        sim_extra="cuda",
+    )
+
+    assert result["ok"] is True
+    assert (result["sim_extra"], result["sim_backend"], result["sim_device"]) == (
+        "cuda",
+        "cuda",
+        "NVIDIA Test GPU",
+    )
+    args = json.loads(argv_path.read_text())
+    assert args[args.index("--extras") + 1] == "cuda"
+
+
+def test_gate_fails_closed_when_requested_backend_is_unavailable(tmp_path, monkeypatch):
+    """HAR-2, CON-5: an explicit CUDA run refuses before validation or
+    launch when the selected backend cannot be honored; it never falls back."""
+    from aisle.harness import rollout as rollout_module
+
+    root = _fake_root(tmp_path, hash_ok=True)
+    monkeypatch.setattr(
+        rollout_module,
+        "resolve_sim_identity",
+        lambda extra: {
+            "ok": False,
+            "gate": "sim_backend",
+            "detail": "CUDA device unavailable",
+        },
+    )
+
+    result = rollout_module.run_gates(
+        root,
+        root / "graphs" / "expert_t0.yaml",
+        "b",
+        no_idea_gate=True,
+        env_baseline="local",
+        sim_extra="cuda",
+    )
+
+    assert result == {
+        "ok": False,
+        "gate": "sim_backend",
+        "detail": "CUDA device unavailable",
+    }
 
 
 def test_gate_refuses_without_open_idea_and_bypass_is_recorded(tmp_path):
@@ -450,3 +542,20 @@ def test_rollout_scrubs_bringup_env():
     env = scrub_bringup_env({"AISLE_STEP_WITHOUT_RESET": "1", "AISLE_TIER": "S1"})
     assert "AISLE_STEP_WITHOUT_RESET" not in env
     assert env == {"AISLE_TIER": "S1"}
+
+
+def test_rollout_scrubs_the_perception_rung():
+    """TC-9: the rung MUST come from the graph, where the graph hash attests
+    it, and never from the ambient environment. The bridge reads it via
+    parse_bridge_config(os.environ), so an ambient AISLE_PERCEPTION=L1 would
+    set the rung of a run whose graph declared none — and the validator, which
+    sees only graph YAML, could never detect the divergence. Same hazard ADR-25
+    wrote this scrub for."""
+    from aisle.harness.rollout import scrub_bringup_env
+
+    scrubbed = scrub_bringup_env(
+        {"AISLE_PERCEPTION": "L1", "AISLE_STEP_WITHOUT_RESET": "1", "PATH": "/usr/bin"}
+    )
+    assert "AISLE_PERCEPTION" not in scrubbed
+    assert "AISLE_STEP_WITHOUT_RESET" not in scrubbed
+    assert scrubbed["PATH"] == "/usr/bin"

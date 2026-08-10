@@ -21,22 +21,34 @@ from typing import Any
 
 import numpy as np
 
+from aisle.embodiment import profile_dof_indices
+
 _SCENES_DIR = Path(__file__).parent
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 SO101_URDF = _REPO_ROOT / "assets" / "so101" / "so101.urdf"
 FRANKA_MJCF = "xml/franka_emika_panda/panda.xml"
 FRANKA_EE_LINK = "hand"
-# genesis quaternions are (w, x, y, z); gripper pointing straight down
-DOWNWARD_QUAT = (0.0, 1.0, 0.0, 0.0)
 
 _MAX_PLACEMENT_TRIES = 1000
+_MAX_LAYOUT_RESTARTS = 64
 
 
-def select_genesis_backend(platform_name: str, cuda_available: bool) -> str:
-    """Select the deterministic Genesis backend for this resolved host."""
-    if platform_name == "Darwin":
-        return "metal"
-    return "cuda" if cuda_available else "cpu"
+def select_genesis_backend(sim_extra: str, platform_name: str, cuda_available: bool = False) -> str:
+    """Resolve an explicit, attested dependency selection to one backend.
+
+    The portable ``sim`` environment never changes physics merely because a
+    GPU happens to be visible. The Linux-only ``cuda`` environment is an
+    explicit opt-in and fails closed instead of silently falling back.
+    """
+    if sim_extra == "sim":
+        return "metal" if platform_name == "Darwin" else "cpu"
+    if sim_extra != "cuda":
+        raise ValueError(f"unknown simulation extra {sim_extra!r}; expected 'sim' or 'cuda'")
+    if platform_name != "Linux":
+        raise ValueError("the locked CUDA simulation extra is supported only on Linux")
+    if not cuda_available:
+        raise ValueError("the CUDA simulation extra requires an available CUDA device")
+    return "cuda"
 
 
 def load_meds() -> dict:
@@ -47,6 +59,15 @@ def load_meds() -> dict:
 def load_physics() -> dict:
     with open(_SCENES_DIR / "physics.toml", "rb") as f:
         return tomllib.load(f)
+
+
+def so101_urdf_options(profile: dict) -> dict[str, Any]:
+    """Genesis import options that retain the official gripper geometry."""
+    return {
+        "fixed": True,
+        "convexify": True,
+        "decompose_robot_error_threshold": float(profile["collision_decompose_error_threshold"]),
+    }
 
 
 def resolve_layout(physics: dict, embodiment: str) -> dict:
@@ -70,6 +91,16 @@ def resolve_layout(physics: dict, embodiment: str) -> dict:
             **(
                 {"min_separation": profile["min_separation"]} if "min_separation" in profile else {}
             ),
+            **(
+                {"hand_clearance_m": profile["shelf_hand_clearance_m"]}
+                if "shelf_hand_clearance_m" in profile
+                else {}
+            ),
+            **(
+                {"edge_margin": profile["shelf_edge_margin_m"]}
+                if "shelf_edge_margin_m" in profile
+                else {}
+            ),
         },
         "tray": {
             **physics["tray"],
@@ -77,6 +108,10 @@ def resolve_layout(physics: dict, embodiment: str) -> dict:
             "size": profile["tray_size"],
         },
         "reach_m": profile["reach_m"],
+        "placement_radius_m": float(profile.get("placement_radius_m", profile["reach_m"])),
+        "center_separation_m": float(profile.get("center_separation_m", 0.0)),
+        "placement_slots_xy": profile.get("placement_slots_xy"),
+        "placement_global_jitter_m": float(profile.get("placement_global_jitter_m", 0.0)),
         "ik": {
             **physics["ik"],
             **(
@@ -84,6 +119,18 @@ def resolve_layout(physics: dict, embodiment: str) -> dict:
                 if "pregrasp_height_m" in profile
                 else {}
             ),
+            **({"max_starts": profile["ik_max_starts"]} if "ik_max_starts" in profile else {}),
+            **(
+                {"max_solver_iters": profile["ik_max_solver_iters"]}
+                if "ik_max_solver_iters" in profile
+                else {}
+            ),
+            **(
+                {"full_range_starts": profile["ik_full_range_starts"]}
+                if "ik_full_range_starts" in profile
+                else {}
+            ),
+            **({"pos_tol_m": profile["ik_pos_tol_m"]} if "ik_pos_tol_m" in profile else {}),
         },
     }
 
@@ -184,43 +231,147 @@ def sample_placements(seed: int, med_names: list[str], layout: dict) -> list[Pla
     ]
     if not usable_levels:
         raise AssertionError("no shelf level is inside the reach envelope (check layout profile)")
-    placed: list[Placement] = []
-    for name in med_names:
-        size = meds[name]["size"]
-        half_x, half_y = size[0] / 2, size[1] / 2
-        for _ in range(_MAX_PLACEMENT_TRIES):
-            level = usable_levels[rng.randrange(len(usable_levels))]
-            band_min, band_max = open_band(shelf, level)
-            x_lo = band_min - shelf["pos"][0] + shelf["edge_margin"] + half_x
-            x_hi = band_max - shelf["pos"][0] - shelf["edge_margin"] - half_x
-            if x_hi < x_lo:
-                continue  # this med cannot fit the level's open band
-            local_x = rng.uniform(x_lo, x_hi)
-            local_y = rng.uniform(
-                -width / 2 + shelf["edge_margin"] + half_y,
-                width / 2 - shelf["edge_margin"] - half_y,
-            )
+    if layout["placement_slots_xy"]:
+        return _sample_profile_slots(
+            rng,
+            med_names,
+            layout,
+            meds,
+            usable_levels[0],
+            max_target,
+        )
+    # Sequential rejection can paint itself into a corner even when a valid
+    # layout exists (the larger official SO-101 jaw corridor exposes this at
+    # seed 22). Restart the whole layout from the same injected RNG stream;
+    # the bound and stream remain deterministic (CON-5).
+    for _restart in range(_MAX_LAYOUT_RESTARTS):
+        placed: list[Placement] = []
+        for name in med_names:
+            size = meds[name]["size"]
+            half_x, half_y = size[0] / 2, size[1] / 2
+            for _ in range(_MAX_PLACEMENT_TRIES):
+                level = usable_levels[rng.randrange(len(usable_levels))]
+                band_min, band_max = open_band(shelf, level)
+                x_lo = band_min - shelf["pos"][0] + shelf["edge_margin"] + half_x
+                x_hi = band_max - shelf["pos"][0] - shelf["edge_margin"] - half_x
+                if x_hi < x_lo:
+                    continue  # this med cannot fit the level's open band
+                local_x = rng.uniform(x_lo, x_hi)
+                local_y = rng.uniform(
+                    -width / 2 + shelf["edge_margin"] + half_y,
+                    width / 2 - shelf["edge_margin"] - half_y,
+                )
+                candidate = Placement(
+                    name=name,
+                    level=level,
+                    x=shelf["pos"][0] + local_x,
+                    y=shelf["pos"][1] + local_y,
+                    z=shelf["pos"][2]
+                    + shelf["level_heights"][level]
+                    + shelf["board_thickness"] / 2
+                    + size[2] / 2,
+                )
+                pregrasp_distance = math.hypot(
+                    candidate.x, candidate.y, candidate.z + ik["pregrasp_height_m"]
+                )
+                if (
+                    pregrasp_distance > max_target
+                    or math.hypot(candidate.x, candidate.y) > layout["placement_radius_m"]
+                ):
+                    continue
+                if _separated(
+                    candidate,
+                    half_x,
+                    half_y,
+                    placed,
+                    meds,
+                    shelf["min_separation"],
+                    layout["center_separation_m"],
+                ):
+                    placed.append(candidate)
+                    break
+            else:
+                break
+        else:
+            return placed
+    raise AssertionError(
+        f"could not place all medicines after {_MAX_LAYOUT_RESTARTS} deterministic restarts"
+    )
+
+
+def _sample_profile_slots(
+    rng: random.Random,
+    med_names: list[str],
+    layout: dict,
+    meds: dict,
+    level: int,
+    max_target: float,
+) -> list[Placement]:
+    """Randomize medicines over a measured collision-free slot lattice.
+
+    The slot coordinates and jitter are physics configuration, not inline
+    scene constants (SCN-2). Every shuffled/jittered candidate is still
+    rejection-checked for board bounds, reach, radial envelope, and pairwise
+    separation (SCN-3).
+    """
+    shelf = layout["shelf"]
+    slots = [tuple(map(float, slot)) for slot in layout["placement_slots_xy"]]
+    if len(slots) != len(med_names):
+        raise AssertionError("placement_slots_xy must have one slot per medicine")
+    jitter = layout["placement_global_jitter_m"]
+    band_min, band_max = open_band(shelf, level)
+    for _restart in range(_MAX_LAYOUT_RESTARTS):
+        shuffled = slots.copy()
+        rng.shuffle(shuffled)
+        dx, dy = rng.uniform(-jitter, jitter), rng.uniform(-jitter, jitter)
+        placed: list[Placement] = []
+        for name, (slot_x, slot_y) in zip(med_names, shuffled, strict=True):
+            size = meds[name]["size"]
+            half_x, half_y = size[0] / 2, size[1] / 2
             candidate = Placement(
                 name=name,
                 level=level,
-                x=shelf["pos"][0] + local_x,
-                y=shelf["pos"][1] + local_y,
+                x=slot_x + dx,
+                y=slot_y + dy,
                 z=shelf["pos"][2]
                 + shelf["level_heights"][level]
                 + shelf["board_thickness"] / 2
                 + size[2] / 2,
             )
             pregrasp_distance = math.hypot(
-                candidate.x, candidate.y, candidate.z + ik["pregrasp_height_m"]
+                candidate.x,
+                candidate.y,
+                candidate.z + layout["ik"]["pregrasp_height_m"],
             )
-            if pregrasp_distance > max_target:
-                continue
-            if _separated(candidate, half_x, half_y, placed, meds, shelf["min_separation"]):
-                placed.append(candidate)
+            in_bounds = (
+                band_min + shelf["edge_margin"] + half_x
+                <= candidate.x
+                <= band_max - shelf["edge_margin"] - half_x
+                and -shelf["level_size"][1] / 2 + shelf["edge_margin"] + half_y
+                <= candidate.y
+                <= shelf["level_size"][1] / 2 - shelf["edge_margin"] - half_y
+            )
+            if (
+                not in_bounds
+                or pregrasp_distance > max_target
+                or math.hypot(candidate.x, candidate.y) > layout["placement_radius_m"]
+                or not _separated(
+                    candidate,
+                    half_x,
+                    half_y,
+                    placed,
+                    meds,
+                    shelf["min_separation"],
+                    layout["center_separation_m"],
+                )
+            ):
                 break
+            placed.append(candidate)
         else:
-            raise AssertionError(f"could not place {name!r} after {_MAX_PLACEMENT_TRIES} tries")
-    return placed
+            return placed
+    raise AssertionError(
+        f"could not assign collision-free profile slots after {_MAX_LAYOUT_RESTARTS} attempts"
+    )
 
 
 def _separated(
@@ -230,12 +381,15 @@ def _separated(
     placed: list[Placement],
     meds: dict,
     min_separation: float,
+    center_separation_m: float = 0.0,
 ) -> bool:
     """AABBs overlap iff BOTH axis gaps are below their half-extent sums, so
     separation requires at least one axis to clear its sum plus margin."""
     for other in placed:
         if other.level != candidate.level:
             continue
+        if math.hypot(candidate.x - other.x, candidate.y - other.y) < center_separation_m:
+            return False
         required_x = half_x + meds[other.name]["size"][0] / 2 + min_separation
         required_y = half_y + meds[other.name]["size"][1] / 2 + min_separation
         clear_x = abs(candidate.x - other.x) >= required_x
@@ -245,16 +399,23 @@ def _separated(
     return True
 
 
-def _ensure_genesis():
+def _ensure_genesis(backend_name: str | None = None):
     import genesis as gs
 
     system = platform.system()
-    cuda_available = False
-    if system != "Darwin":
+    backend_name = backend_name or select_genesis_backend("sim", system)
+    cuda_available = backend_name == "cuda"
+    if cuda_available:
         import torch
 
         cuda_available = torch.cuda.is_available()
-    backend_name = select_genesis_backend(system, cuda_available)
+    selected_extra = "cuda" if backend_name == "cuda" else "sim"
+    resolved = select_genesis_backend(selected_extra, system, cuda_available)
+    if resolved != backend_name:
+        raise ValueError(
+            f"simulation backend {backend_name!r} is incompatible with {system}; "
+            f"expected {resolved!r}"
+        )
     expected = {"metal": gs.metal, "cuda": gs.cuda, "cpu": gs.cpu}[backend_name]
     if not getattr(gs, "_initialized", False):
         # fixed seed: genesis's internal RNG must never be an input to build
@@ -280,18 +441,87 @@ def to_numpy(tensor) -> np.ndarray:
     return np.asarray(tensor, dtype=np.float32)
 
 
+def wrist_mount_rotation(cam_cfg: dict) -> np.ndarray:
+    """The wrist camera's GL-convention mount rotation (SCN-5), from
+    `wrist_rotation_xyzw` in physics.toml. The verifier's calibration
+    derives `cam_to_ee` from the SAME value, so the published block and
+    the built scene cannot disagree (VER-8)."""
+    x, y, z, w = (float(v) for v in cam_cfg["wrist_rotation_xyzw"])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ],
+        dtype=np.float32,
+    )
+
+
+def ee_frame_transform(profile: dict | None) -> np.ndarray:
+    """EE-link-to-official-TCP transform; identity when no fixed frame is configured."""
+    fixed = np.eye(4, dtype=np.float32)
+    if not profile or "ee_frame_offset_xyz" not in profile:
+        return fixed
+    roll, pitch, yaw = (float(v) for v in profile["ee_frame_offset_rpy"])
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    fixed[:3, :3] = np.array(
+        [
+            [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+            [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+            [-sp, cp * sr, cp * cr],
+        ],
+        dtype=np.float32,
+    )
+    fixed[:3, 3] = profile["ee_frame_offset_xyz"]
+    return fixed
+
+
+def wrist_mount_transform(cam_cfg: dict, profile: dict | None = None) -> np.ndarray:
+    """EE-link-to-camera transform, including an official fixed TCP frame
+    when the simulator collapses that massless URDF link (SCN-5, ADR-27)."""
+    camera = np.eye(4, dtype=np.float32)
+    camera[:3, :3] = wrist_mount_rotation(cam_cfg)
+    camera[:3, 3] = cam_cfg["wrist_offset_m"]
+    fixed = ee_frame_transform(profile)
+    return fixed @ camera
+
+
+def _rotation_to_quat_wxyz(rotation: np.ndarray) -> np.ndarray:
+    """Branch-stable rotation-matrix to Genesis wxyz quaternion."""
+    r = np.asarray(rotation, dtype=np.float64)
+    trace = float(np.trace(r))
+    if trace > 0.0:
+        s = math.sqrt(trace + 1.0) * 2.0
+        return np.array(
+            [s / 4.0, (r[2, 1] - r[1, 2]) / s, (r[0, 2] - r[2, 0]) / s, (r[1, 0] - r[0, 1]) / s],
+            dtype=np.float32,
+        )
+    i = int(np.argmax(np.diag(r)))
+    j, k = (i + 1) % 3, (i + 2) % 3
+    s = math.sqrt(max(1.0 + r[i, i] - r[j, j] - r[k, k], 1e-12)) * 2.0
+    xyz = [0.0, 0.0, 0.0]
+    xyz[i] = s / 4.0
+    xyz[j] = (r[j, i] + r[i, j]) / s
+    xyz[k] = (r[k, i] + r[i, k]) / s
+    w = (r[k, j] - r[j, k]) / s
+    return np.array([w, *xyz], dtype=np.float32)
+
+
 def build_scene(
     seed: int,
     embodiment: str = "franka",
     n_envs: int = 1,
     headless: bool = True,
     cfg: SceneCfg | None = None,
+    sim_backend: str | None = None,
 ) -> SceneHandle:
     cfg = cfg or SceneCfg()
-    gs = _ensure_genesis()
-    meds = load_meds()
+    gs = _ensure_genesis(sim_backend)
     physics = load_physics()
     layout = resolve_layout(physics, embodiment)
+    meds = load_meds()
     shelf, tray_cfg = layout["shelf"], layout["tray"]
     dr_cfg = physics["domain_randomization"]
 
@@ -362,7 +592,10 @@ def build_scene(
             raise FileNotFoundError(
                 f"so101 asset missing: {SO101_URDF} (acquisition pending, ADR-6)"
             )
-        robot = scene.add_entity(gs.morphs.URDF(file=str(SO101_URDF), fixed=True))
+        profile = physics["embodiment"][embodiment]
+        robot = scene.add_entity(
+            gs.morphs.URDF(file=str(SO101_URDF), **so101_urdf_options(profile))
+        )
 
     box_physics = physics["materials"]["box"]
     applied_frictions: dict[str, float] = {}
@@ -410,18 +643,27 @@ def build_scene(
     else:
         scene.build(n_envs=n_envs)
 
-    # start the robot AT its home pose: the qpos0 zeros pose violates franka
-    # joint limits and self-collides (T05 control would inherit that state)
+    # Start the robot AT its home pose. Configured profiles are expressed in
+    # TC-5 wire order; map by official joint name instead of assuming the
+    # URDF parser preserves XML order.
     profile = physics["embodiment"][embodiment]
+    wire_dof_indices = profile_dof_indices(robot, profile)
     if "home_qpos" in profile:
         home = np.asarray(profile["home_qpos"], dtype=np.float32)
+        if wire_dof_indices is not None:
+            native_home = np.empty(robot.n_dofs, dtype=np.float32)
+            native_home[list(wire_dof_indices)] = home
+            home = native_home
         robot.set_qpos(home if n_envs == 1 else np.tile(home, (n_envs, 1)))
     # finger-dof gains: without these the tendon-approximated gripper
     # actuator ignores position control and the fingers fall closed
     if "gripper_dofs" in profile and "gripper_kp" in profile:
-        # gripper_dofs is a COUNT; the finger dofs are the last N
-        count = int(profile["gripper_dofs"])
-        finger_dofs = list(range(robot.n_dofs - count, robot.n_dofs))
+        if wire_dof_indices is None:
+            count = int(profile["gripper_dofs"])
+            finger_dofs = list(range(robot.n_dofs - count, robot.n_dofs))
+        else:
+            count = len(profile["gripper_joint_names"])
+            finger_dofs = list(wire_dof_indices[-count:])
         robot.set_dofs_kp(
             np.asarray(profile["gripper_kp"], dtype=np.float32), dofs_idx_local=finger_dofs
         )
@@ -429,9 +671,10 @@ def build_scene(
             np.asarray(profile["gripper_kv"], dtype=np.float32), dofs_idx_local=finger_dofs
         )
 
-    ee_link = robot.get_link(FRANKA_EE_LINK) if embodiment == "franka" else robot.links[-1]
-    offset = np.eye(4, dtype=np.float32)
-    offset[:3, 3] = cam_cfg["wrist_offset_m"]
+    ee_link = robot.get_link(profile.get("ee_link", FRANKA_EE_LINK))
+    # SCN-5: orientation as well as position. SO-101 composes the official
+    # fixed gripper-frame transform that Genesis collapses during import.
+    offset = wrist_mount_transform(cam_cfg, profile)
     cams["wrist"].attach(ee_link, offset_T=offset)
 
     handle = SceneHandle(
@@ -453,21 +696,121 @@ def build_scene(
 
     # SCN-3: asserted at build time, unconditionally; placements are seed-
     # identical across batched envs, so env 0 witnesses reachability for all
-    _assert_reachable(handle, ee_link, layout["ik"], n_envs)
+    _assert_reachable(handle, ee_link, layout, n_envs)
     return handle
 
 
-def _assert_reachable(handle: SceneHandle, ee_link, ik_cfg: dict, n_envs: int = 1) -> None:
+def _assert_reachable(handle: SceneHandle, ee_link, layout: dict, n_envs: int = 1) -> None:
     """SCN-3: every box placement must admit an IK solution to its pre-grasp
     pose. Deterministic multi-start (CON-5): explicit seeded init_qpos
     perturbations with max_samples=1, so genesis's global RNG never
     influences the outcome; position AND rotation error are both checked."""
+    ik_cfg = layout["ik"]
     rng = random.Random(handle.seed)
     profile = load_physics()["embodiment"][handle.embodiment]
+    wire_dof_indices = profile_dof_indices(handle.robot, profile)
     if "home_qpos" in profile:
         home = np.asarray(profile["home_qpos"], dtype=np.float32)
+        if wire_dof_indices is not None:
+            native_home = np.empty(handle.robot.n_dofs, dtype=np.float32)
+            native_home[list(wire_dof_indices)] = home
+            home = native_home
     else:
         home = to_numpy(handle.robot.get_qpos()).reshape(-1)[: handle.robot.n_dofs]
+
+    if handle.embodiment == "so101":
+        # The official chain cannot realize the provisional vertical
+        # top-down pose at this compact shelf. Validate the SAME native
+        # radial-front pregrasp/insertion geometry the production planner
+        # uses (ADR-27), through the pure URDF-derived IK used at runtime.
+        from aisle.nodes.grasp_topdown import plan_grasp
+        from aisle.nodes.ik_trajectory import (
+            ik_continuation,
+            ik_solve,
+            quat_to_rotation,
+        )
+
+        shelf = layout["shelf"]
+        shelf_front_x = shelf["pos"][0] - shelf["level_size"][0] / 2
+        front_clearance = float(profile["front_clearance_m"])
+        front_overshoot = float(profile["front_tcp_overshoot_m"])
+        jaw_center_offset = float(profile["front_jaw_center_offset_m"])
+        vertical_offset = float(profile["front_vertical_offset_m"])
+        arm_home = home[: len(profile["arm_joint_names"])]
+        failures = []
+        centres = {
+            name: to_numpy(entity.get_pos()).reshape(-1)[:3]
+            for name, entity in handle.boxes.items()
+        }
+        for name in handle.boxes:
+            centre = centres[name]
+            target_pose = np.array([*centre, 0.0, 0.0, 0.0, 1.0], dtype=np.float32)
+            neighbours = [
+                [
+                    other_pos[0],
+                    other_pos[1],
+                    handle.med_sizes[other][0] / 2,
+                    handle.med_sizes[other][1] / 2,
+                ]
+                for other, other_pos in centres.items()
+                if other != name
+            ]
+            grasp_pose, approach, _ = plan_grasp(
+                target_pose,
+                handle.med_sizes[name],
+                front=True,
+                shelf_front_x=shelf_front_x,
+                tray_top_z=0.0,
+                radial_front=True,
+                neighbours=neighbours,
+                front_clearance=front_clearance,
+                front_tcp_overshoot=front_overshoot,
+                front_jaw_center_offset=jaw_center_offset,
+                front_vertical_offset=vertical_offset,
+            )
+            grasp_pos = grasp_pose[:3].astype(np.float64)
+            rotation = quat_to_rotation(grasp_pose[3:])
+            pregrasp = grasp_pos - rotation[:, 2] * approach
+            q_pre = ik_solve(pregrasp, rotation, arm_home, embodiment="so101")
+            path = (
+                ik_continuation(
+                    pregrasp,
+                    grasp_pos,
+                    rotation,
+                    q_pre,
+                    embodiment="so101",
+                )
+                if q_pre is not None
+                else None
+            )
+            if path is None:
+                failures.append(f"{name}: radial-front pregrasp/insertion IK failed")
+        handle.reachability_errors = failures
+        assert not failures, f"unreachable placements (SCN-3): {failures}"
+        return
+
+    frame = ee_frame_transform(profile)
+    local_point = frame[:3, 3] if "ee_frame_offset_xyz" in profile else None
+    downward = np.diag([1.0, -1.0, -1.0]).astype(np.float32)
+    link_quat = _rotation_to_quat_wxyz(downward @ frame[:3, :3].T)
+    # Genesis supports one-axis alignment for underactuated arms. Aligning
+    # the tool Z axis fixes the top-down approach direction while leaving
+    # rotation about that axis free (five task constraints for five joints).
+    rot_mask = [False, False, True] if profile.get("ik_free_yaw", False) else [True] * 3
+    if wire_dof_indices is None:
+        arm_dof_indices = list(range(handle.robot.n_dofs))
+    else:
+        arm_dof_indices = list(wire_dof_indices[: len(profile["arm_joint_names"])])
+    lower, upper = handle.robot.get_dofs_limit()
+    dof_limits = np.column_stack((to_numpy(lower), to_numpy(upper)))
+    starts = [home]
+    if ik_cfg.get("full_range_starts", False):
+        for _ in range(1, ik_cfg["max_starts"]):
+            init_qpos = home.copy()
+            for dof in arm_dof_indices:
+                lo, hi = dof_limits[dof]
+                init_qpos[dof] = rng.uniform(float(lo), float(hi))
+            starts.append(init_qpos)
     failures: list[str] = []
     for name, entity in handle.boxes.items():
         target = to_numpy(entity.get_pos()).reshape(-1)[:3] + np.array(
@@ -475,7 +818,9 @@ def _assert_reachable(handle: SceneHandle, ee_link, ik_cfg: dict, n_envs: int = 
         )
         best = None
         for attempt in range(ik_cfg["max_starts"]):
-            if attempt == 0:
+            if ik_cfg.get("full_range_starts", False):
+                init_qpos = starts[attempt]
+            elif attempt == 0:
                 init_qpos = home
             else:
                 perturbation = np.array(
@@ -488,23 +833,26 @@ def _assert_reachable(handle: SceneHandle, ee_link, ik_cfg: dict, n_envs: int = 
                 init_qpos = home + perturbation
             if n_envs > 1:  # genesis requires batch-shaped inputs
                 pos_arg = np.tile(target, (n_envs, 1))
-                quat_arg = np.tile(np.asarray(DOWNWARD_QUAT, dtype=np.float32), (n_envs, 1))
+                quat_arg = np.tile(link_quat, (n_envs, 1))
                 init_arg = np.tile(init_qpos, (n_envs, 1))
             else:
-                pos_arg, quat_arg, init_arg = target, DOWNWARD_QUAT, init_qpos
+                pos_arg, quat_arg, init_arg = target, link_quat, init_qpos
             _, error = handle.robot.inverse_kinematics(
                 link=ee_link,
                 pos=pos_arg,
                 quat=quat_arg,
+                local_point=local_point,
                 init_qpos=init_arg,
                 max_samples=1,
                 max_solver_iters=ik_cfg["max_solver_iters"],
+                rot_mask=rot_mask,
+                dofs_idx_local=arm_dof_indices,
                 return_error=True,
             )
             # env 0 witnesses all envs: placements are seed-identical
             error = to_numpy(error).reshape(-1)[:6]
             pos_error = float(np.linalg.norm(error[:3]))
-            rot_error = float(np.linalg.norm(error[3:6]))
+            rot_error = float(np.linalg.norm(error[3:6][rot_mask]))
             best = min(best or (pos_error, rot_error), (pos_error, rot_error))
             if pos_error <= ik_cfg["pos_tol_m"] and rot_error <= ik_cfg["rot_tol_rad"]:
                 break

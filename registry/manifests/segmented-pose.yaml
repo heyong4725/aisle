@@ -1,0 +1,25 @@
+# The L1 rung's pose source (TC-9): pose ESTIMATED from ground-truth
+# segmentation + same-stamp depth, publishing the same target_pose edge
+# oracle-pose serves at L0 so an expert graph swaps rungs by swapping
+# this one node. Refuses (publishes nothing) when the mask cannot
+# support a trustworthy pose — occlusion, tipped box, absent target.
+id: segmented-pose
+kind: node
+provides: [object_pose]
+requires: []
+inputs:
+  bridge_info: {schema: json_utf8, rate_hz: 1}
+  seg_overhead: {schema: seg_i32, rate_hz: 15}
+  depth_overhead: {schema: depth_f32, rate_hz: 15}
+  target_request: {schema: json_utf8, rate_hz: 1}
+  # episode boundary: clears the active target (T08 parity with oracle-pose)
+  reset_done: {schema: reset_done_u32, rate_hz: 1}
+outputs:
+  target_pose: {schema: pose7d_f32, latency_class: soft_rt}
+embodiment:
+  arm: [franka, so101]
+  gripper: any
+safety_class: perception
+eval: null
+origin: hub
+source: src/aisle/nodes/segmented_pose.py

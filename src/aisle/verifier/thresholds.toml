@@ -10,6 +10,84 @@ tray_margin_m = 0.005
 resting_tolerance_m = 0.01
 robot_home_tolerance_rad = 0.15
 
+[realistic]
+# VER-9: judged-frame cadence — the terminal frame plus a checkpoint
+# every this many sim-seconds from goal receipt. The wrong-object latch
+# can only see what it samples: a transient entirely BETWEEN checkpoints
+# is the cadence-bounded residual VER-6's false-success rate measures.
+checkpoint_period_s = 5.0
+# CALIBRATED ENVELOPE (VER-9). These identity values are calibrated for,
+# and only for, the OVERHEAD camera under exactly these SCN-6 toggle
+# combinations, each measured over 5 med classes x 2 seeds (70/70 cells
+# clean — correct target vote, no wrong-object latch):
+#   1 all off        2 lighting       3 textures      4 camera_jitter
+#   5 lighting+textures    6 lighting+camera_jitter
+#   7 textures+camera_jitter
+# EVERY OTHER SCN-6 configuration is OUT OF ENVELOPE, explicitly:
+#   * lighting+textures+camera_jitter — measured BROKEN. A correct
+#     delivery is detected as a different med class and sets the
+#     permanent latch, and no threshold separates it: genuine in-tray
+#     detections span 0.054-0.35 and the misclassification sits inside
+#     that band (issue #108).
+#   * anything enabling friction_jitter — NOT SWEPT. Unmeasured means
+#     outside; widening the envelope takes a sweep, not an argument.
+# The WRIST camera has no calibrated operating point of its own. Since the
+# mount was fixed (#110 — it used to point back up the arm) the wrist DOES
+# produce passing votes at this same threshold, but only in a ~1 s window
+# around release and measured on 3 episodes, and VER-9's 5 s checkpoint
+# cadence usually misses that window (#107). Do not treat this number as
+# calibrated for the wrist.
+# Every graph in graphs/ runs with DR off — SceneCfg is never built with
+# toggles outside tests and tools — so this envelope covers what is
+# actually executed today, and NOT the full space SCN-6 permits.
+
+# VER-9: per-class detection score below which a box is not "in the tray".
+# CALIBRATED on the five-class live run identity-calib-I2 (2026-08-07,
+# one episode per med class, all five scored success by the oracle),
+# judging every checkpoint of every episode. WITH the size gate below,
+# the best target detection per episode is
+#   0.1844 amoxicillin | 0.2497 ibuprofen | 0.1373 cetirizine
+#   0.2038 omeprazole  | 0.0541 metformin
+# and NO non-target detection survives at any score, on any frame. So
+# the score threshold no longer separates target from non-target — the
+# size gate does — and 0.05 only has to sit below the weakest true
+# positive (0.0541, metformin).
+#
+# It is calibrated in THAT order deliberately: without the size gate the
+# separation is 0.0474 (a non-target artifact) against 0.0541 (the
+# weakest target), a 1.14x band with the threshold inside the noise, and
+# no value of this number is safe (PR #104 review, finding 1).
+identity_min_score = 0.05
+# VER-9: a detection is only a MED if its box could be one. The rejected
+# detections are the model labelling the WHOLE TRAY with a med class:
+# measured on identity-calib-I2, every genuine med box covers <= 0.105 of
+# the tray ROI while every non-target artifact covers >= 0.284 (usually
+# ~0.77 — the tray itself). The limit is derived from geometry, not
+# fitted: the largest med footprint is 0.0437 of the tray footprint, and
+# this slack covers the side faces a 9.5 cm-tall box shows under
+# perspective. 3.0 -> a gate at 0.131 of the ROI, above every true
+# detection and 2.2x below every artifact.
+#
+# It bounds the box size UPWARD only. A real second med in the tray is
+# med-sized, so VER-9's wrong-object latch keeps seeing it — this rejects
+# a detection that is too big to be any med, never a plausible one.
+identity_max_box_area_slack = 3.0
+# VER-10/11: the minimum target-detection score that may SEED the
+# segmenter. Below it the geometry stages record `error` rather than
+# measuring whatever the mask happened to cover (PR #103 review).
+# same signal as the identity vote, so the same operating point: a seed
+# below it means no trustworthy target location and the geometry stages
+# record `error` rather than measuring an arbitrary mask
+grounding_min_score = 0.05
+# VER-10/11: mask points within this depth band of the median are the
+# target's visible lid; the rest is background bleed at the silhouette.
+# This decides which points reach BOTH geometry stages.
+surface_band_m = 0.01
+# a mask must genuinely span two dimensions to define a plane: the
+# second singular value must be at least this fraction of the first.
+# Collinear points otherwise yield an arbitrary "normal".
+surface_min_rank_ratio = 0.02
+
 [failure]
 # below this center height a box can only be resting on the floor: floor-
 # resting centers span 0.015-0.055 m while tray/shelf resting centers start

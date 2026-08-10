@@ -60,8 +60,8 @@ This Linux workstation has been configured locally with:
 - Genesis 1.2.3
 - dora 1.0.0-rc.4
 
-AISLE now selects Genesis CUDA automatically when PyTorch reports an available
-CUDA device. The verified T0 GPU rollout:
+AISLE selects Genesis CUDA only for an explicit, attested `cuda` rollout. The
+verified T0 GPU rollout:
 
 - allocated approximately 1,761 MiB of GPU memory;
 - completed with pass@1 1.0;
@@ -77,9 +77,12 @@ Verification completed on this checkout:
 - 28 simulator/graph tests passed and 2 skipped;
 - formatting, lint, traceability, and frozen-environment hash gates passed.
 
-The CUDA PyTorch installation is a local `.venv` override. Do not run a normal
-`uv sync` before the demo: the committed Linux lock selection will restore
-CPU-only PyTorch. Use `uv run --no-sync` in the commands below.
+Install the committed CUDA environment before the demo. This is a locked,
+mutually exclusive alternative to the portable `sim` extra:
+
+```bash
+uv sync --extra cuda
+```
 
 ## Recommended live presentation
 
@@ -93,7 +96,7 @@ cd /home/demo/Public/github_aisle/aisle-latest
 
 ```bash
 env -u PYTHONPATH \
-  uv run --no-sync harness validate graphs/expert_t0.yaml
+  uv run harness validate graphs/expert_t0.yaml
 ```
 
 Expected result: JSON with `"ok": true`, no validation errors, and no
@@ -104,7 +107,7 @@ process starts.
 
 ```bash
 env -u PYTHONPATH \
-  uv run --no-sync python -c \
+  uv run python -c \
   "import torch; print(torch.__version__, torch.cuda.get_device_name(0))"
 ```
 
@@ -124,9 +127,10 @@ watch -n 1 nvidia-smi
 
 ```bash
 env -u PYTHONPATH AISLE_HEADLESS=0 \
-  uv run --no-sync harness rollout \
+  uv run harness rollout \
   --graph graphs/expert_t0.yaml \
   --tier T0 \
+  --sim-extra cuda \
   --episodes 1 \
   --seeds 0..0 \
   --no-idea-gate \
@@ -148,9 +152,10 @@ headlessly over three seeds:
 
 ```bash
 env -u PYTHONPATH \
-  uv run --no-sync harness rollout \
+  uv run harness rollout \
   --graph graphs/expert_t0.yaml \
   --tier T0 \
+  --sim-extra cuda \
   --episodes 3 \
   --seeds 0..2 \
   --no-idea-gate \
@@ -190,9 +195,9 @@ runs/linux-cuda-seed0-r2-20260801/traces/overhead.mp4
 If pytest or a harness command imports ROS Humble's Python 3.10 packages, keep
 the `env -u PYTHONPATH` prefix.
 
-If PyTorch reports `+cpu` or CUDA is unavailable, a normal `uv sync` likely
-restored the committed CPU wheel. Reapply the approved local CUDA environment
-override before running the demo; do not change the system NVIDIA driver.
+If PyTorch reports `+cpu`, restore the committed CUDA selection with
+`uv sync --extra cuda`. If `--sim-extra cuda` reports that CUDA is unavailable,
+stop rather than changing the system NVIDIA driver or allowing a CPU fallback.
 
 If a rollout is interrupted, inspect for stale simulator processes before
 starting another:

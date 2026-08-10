@@ -234,12 +234,13 @@ def build_store(
     embodiment: str = "mobile",
     n_envs: int = 1,
     headless: bool = True,
+    sim_backend: str | None = None,
 ) -> StoreHandle:
     """RS-2: build the store — >=3 shelf units in >=2 aisles, delivery
     counter, restocking bin — GENERATED from planogram.toml, stocked per
     the seeded episode (RS-3). Reuses build_scene conventions (SCN-1
     purity, toml-driven assets, mobile profile from physics.toml)."""
-    gs = _ensure_genesis()
+    gs = _ensure_genesis(sim_backend)
     meds = load_meds()
     physics = load_physics()
     plano = load_planogram()

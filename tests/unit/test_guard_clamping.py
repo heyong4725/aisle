@@ -232,11 +232,11 @@ def test_finger_rate_state_is_shared_across_channels():
     assert "velocity" in [v["reason"] for v in violations]
 
 
-def test_unsupported_embodiment_is_refused_at_startup():
-    """BG-2: an embodiment with no limits section (so101 until its asset
-    and kinematics land) is refused loudly at startup, never guessed."""
-    with pytest.raises(ValueError, match="so101"):
-        load_limits("so101")
+def test_unknown_embodiment_is_refused_at_startup():
+    """BG-2: an embodiment with no limits section is refused loudly at
+    startup, never guessed; SO-101 is covered by its official limits."""
+    with pytest.raises(ValueError, match="unknown-arm"):
+        load_limits("unknown-arm")
 
 
 def test_workspace_intent_reported_even_when_velocity_contains_it():

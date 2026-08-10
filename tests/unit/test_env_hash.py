@@ -1,6 +1,6 @@
 """Unit tests for tools/env_hash.py (CON-7, CON-5, CON-8).
 
-CON-7: the frozen set is src/aisle/{scenes,verifier,reset} and
+CON-7: the frozen set is src/aisle/{scenes,verifier,reset}, assets/so101, and
 graphs/expert_*.yaml; tools/env_hash.py fingerprints it so rollout can
 refuse on mismatch.
 """
@@ -30,6 +30,9 @@ def make_root(tmp_path: Path) -> Path:
     (tmp_path / "graphs").mkdir()
     (tmp_path / "graphs" / "expert_t0.yaml").write_text("nodes: []\n")
     (tmp_path / "graphs" / "scratch.yaml").write_text("nodes: []\n")
+    asset = tmp_path / "assets" / "so101"
+    asset.mkdir(parents=True)
+    (asset / "so101.urdf").write_text("<robot name='so101'/>\n")
     (tmp_path / "tools").mkdir()
     return tmp_path
 
@@ -71,6 +74,15 @@ def test_content_change_changes_hash(tmp_path):
     assert get_hash(root) != before
 
 
+def test_so101_asset_change_changes_hash(tmp_path):
+    """CON-5, CON-7, SCN-4: the pinned SO-101 URDF and mesh closure are
+    frozen inputs; changing an asset invalidates the environment hash."""
+    root = make_root(tmp_path)
+    before = get_hash(root)
+    (root / "assets" / "so101" / "so101.urdf").write_text("<robot name='changed'/>\n")
+    assert get_hash(root) != before
+
+
 def test_rename_changes_hash(tmp_path):
     """CON-7: file paths are part of the fingerprint, not just contents."""
     root = make_root(tmp_path)
@@ -81,8 +93,7 @@ def test_rename_changes_hash(tmp_path):
 
 
 def test_non_frozen_files_ignored(tmp_path):
-    """CON-7: only src/aisle/{scenes,verifier,reset} and graphs/expert_*.yaml
-    are fingerprinted; other files do not affect the hash."""
+    """CON-7: files outside the declared frozen paths do not affect the hash."""
     root = make_root(tmp_path)
     before = get_hash(root)
     (root / "graphs" / "scratch.yaml").write_text("nodes: [changed]\n")
@@ -478,3 +489,35 @@ def test_adr24_selection_covers_abi_groups_and_tags():
     base = env_fingerprint(lock, sel)
     assert env_fingerprint(lock, current_selection(["sim"], groups=[])) != base
     assert env_fingerprint(lock, current_selection([])) != base
+
+
+def test_committed_hash_matches_this_tree():
+    """CON-7 self-consistency: tools/env_hash.json must describe THIS tree.
+
+    PR #122 landed a --write computed on a stale base (42 files, 0d68a166)
+    while its own merged tree held 43 — from that commit until the fix,
+    mainline could not pass its own trusted gate, and nothing in CI noticed
+    because no test pinned committed-to-computed. This one does: any PR
+    that changes the frozen set must run tools/env_hash.py --write in the
+    SAME PR, on the FINAL tree — which is exactly the discipline CON-7
+    demands, now enforced instead of requested."""
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    proc = subprocess.run(
+        [sys.executable, str(root / "tools" / "env_hash.py"), "--root", str(root)],
+        capture_output=True,
+        text=True,
+    )
+    computed = json.loads(proc.stdout)
+    committed = json.loads((root / "tools" / "env_hash.json").read_text())
+    assert computed["env_hash"] == committed["env_hash"], (
+        f"frozen set changed without tools/env_hash.py --write: computed "
+        f"{computed['env_hash'][:12]} ({computed['n_files']} files) vs committed "
+        f"{committed['env_hash'][:12]} ({committed['n_files']}) — run the --write "
+        "on the final tree and include it in this change (CON-7)"
+    )
+    assert computed["n_files"] == committed["n_files"]

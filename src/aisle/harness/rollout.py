@@ -30,7 +30,8 @@ from aisle.harness.reaper import reap_orphans
 from aisle.harness.validate import validate
 
 # every declared node/output endpoint is traced (HAR-4); image topics
-# record metadata-only rows — pixels live in the mp4 (ADR-11)
+# record payload-free rows — pixels live in the mp4 (ADR-11), and seg
+# rows carry #131 provenance text
 # hard-won budgets (see ADR-11): the per-episode verifier budget in SIM
 # seconds; the one-off genesis build and per-episode WALL budgets; and
 # the stall detector's thresholds (pre-data = the build produces no
@@ -82,6 +83,49 @@ def compute_metrics(episodes: list[dict]) -> dict:
         "pass1": pass1 / n if n else 0.0,
         "pass8": pass8 / n if n else 0.0,
         "failures": failures,
+    }
+
+
+def resolve_sim_identity(sim_extra: str) -> dict:
+    """Resolve the requested lock extra to a fail-closed backend/device.
+
+    CON-5 requires this live hardware fact to ride with the run identity;
+    the portable ``sim`` selection deliberately never probes into CUDA.
+    """
+    from aisle.scenes.pharmacy import select_genesis_backend
+
+    system = platform_module.system()
+    cuda_available = False
+    device = "mps" if system == "Darwin" else "cpu"
+    if sim_extra == "cuda":
+        if system != "Linux":
+            return {
+                "ok": False,
+                "gate": "sim_backend",
+                "detail": "the locked CUDA simulation extra is supported only on Linux",
+            }
+        try:
+            import torch
+
+            cuda_available = bool(torch.cuda.is_available())
+            if cuda_available:
+                index = int(torch.cuda.current_device())
+                device = f"cuda:{index}:{torch.cuda.get_device_name(index)}"
+        except (ImportError, RuntimeError) as exc:
+            return {
+                "ok": False,
+                "gate": "sim_backend",
+                "detail": f"cannot inspect the requested CUDA device: {exc}",
+            }
+    try:
+        backend = select_genesis_backend(sim_extra, system, cuda_available)
+    except ValueError as exc:
+        return {"ok": False, "gate": "sim_backend", "detail": str(exc)}
+    return {
+        "ok": True,
+        "sim_extra": sim_extra,
+        "sim_backend": backend,
+        "sim_device": device,
     }
 
 
@@ -258,6 +302,7 @@ def run_gates(
     embodiment: str = "franka",
     env_baseline: str = "origin/main",
     episodes: int = 0,
+    sim_extra: str = "sim",
 ) -> dict:
     """HAR-2: refuse on env-hash mismatch (TRUSTED baseline by default,
     ADR-21: the baseline commit is fetched from the remote SERVER and
@@ -277,11 +322,14 @@ def run_gates(
             "'origin/main' (server-resolved) or the logged dev override 'local' "
             "are accepted (ADR-21)",
         }
+    sim_identity = resolve_sim_identity(sim_extra)
+    if not sim_identity["ok"]:
+        return sim_identity
     baseline_oid = None
     hash_cmd = [sys.executable, str(root / "tools" / "env_hash.py"), "--check", "--root", str(root)]
     # ADR-24: rollouts need the sim extra — declare the selection so the
     # trusted checker attests THIS environment shape (HAR-2)
-    hash_cmd += ["--extras", "sim"]
+    hash_cmd += ["--extras", sim_extra]
     if env_baseline != "local":
         baseline_oid, err = resolve_trusted_baseline(root)
         if err:
@@ -331,6 +379,7 @@ def run_gates(
     if not validation["ok"]:
         return {"ok": False, "gate": "validate", "detail": validation["errors"]}
     gates = {
+        **sim_identity,
         "env_hash": env_hash,
         "env_baseline": env_baseline,
         # the resolved immutable identity (ADR-21 round 3): the audit
@@ -358,8 +407,65 @@ def run_gates(
     return {"ok": True, **gates, "idea": ideas[-1]["id"], "no_idea_gate": False}
 
 
+def realistic_verifier_node(root: Path, run_dir: Path, doc: dict, timeout_s: float) -> dict:
+    """The VER-5 judge as a SIDECAR node (increment 1b, `--verifier both`).
+
+    It publishes its own `episode_result` but nothing consumes it: the
+    rollout client advances on the ORACLE's result, and a second producer
+    on that edge would step its state machine twice per episode. What the
+    comparison actually needs is the VER-14 sidecar, which `judge_frames`
+    writes to the run dir — so `harness/fidelity.py` gets a LIVE number
+    without perturbing the loop's control flow.
+
+    ORACLE-FREE: subscribes to camera frames, joint_state, bridge_info and
+    episode_goal only. `oracle_state` is deliberately absent, and a test
+    asserts that — A7's whole premise is that this verdict never saw it."""
+    producers = {
+        topic: f"{node['id']}/{topic}"
+        for node in doc["nodes"]
+        for topic in (node.get("outputs") or [])
+    }
+    wanted = (
+        "bridge_info",
+        "episode_goal",
+        "joint_state",
+        "rgb_overhead",
+        "depth_overhead",
+        "rgb_wrist",
+    )
+    return {
+        "id": "verifier-realistic",
+        "path": str((root / "src" / "aisle" / "nodes" / "verifier_realistic.py").resolve()),
+        # joint_state is STATE, not a command stream: latest-wins, the same
+        # reasoning graphs/expert_t0.yaml gives for the executor. With a deep
+        # queue the node reads STALE poses after falling behind during a
+        # judge, and a wrist ROI composed from one describes a different arm
+        # than the pixels show (VER-8).
+        "inputs": {
+            topic: {
+                "source": producers[topic],
+                "queue_size": 1 if topic == "joint_state" else 100,
+            }
+            for topic in wanted
+            if topic in producers
+        },
+        "outputs": ["episode_result"],
+        "env": {
+            "AISLE_RESULTS_DIR": str(run_dir.resolve()),
+            "AISLE_TIMEOUT_S": str(timeout_s),
+        },
+    }
+
+
 def instrumented_graph(
-    graph: Path, root: Path, run_dir: Path, trace_dir: Path | None = None, name: str = "graph.yaml"
+    graph: Path,
+    root: Path,
+    run_dir: Path,
+    trace_dir: Path | None = None,
+    name: str = "graph.yaml",
+    verifier: str = "oracle",
+    episode_timeout_s: float = 60.0,
+    sim_backend: str | None = None,
 ) -> Path:
     """The input graph plus a trace-recorder node (HAR-4) with absolutized
     node paths, written under the run dir (dora's cwd becomes the run dir,
@@ -367,9 +473,36 @@ def instrumented_graph(
     relaunch (ADR-23): the recorder opens its Arrow/video files in write
     mode, so a relaunch pointed at the SAME dir would truncate the prior
     launch's evidence (PR #58 review)."""
+    from aisle.harness.registry import load_manifests
+    from aisle.harness.validate import FORBIDDEN_BY_RUNG, graph_perception_rung
+
     doc = yaml.safe_load(graph.read_text())
     for node in doc["nodes"]:
         node["path"] = str((graph.parent / node["path"]).resolve())
+    # issue #128 (TC-9): the recorder subscribes to declared endpoints, but a
+    # bridge output the graph's rung FORBIDS is filtered out — an L1 trace
+    # then cannot carry the NON-privileged ground-truth pose endpoint,
+    # instead of relying on the bridge's runtime restraint. (oracle_state
+    # remains recorded at every rung: it is the verifier's privileged input,
+    # governed by VAL-6/ADR-27, not by the rung.) FAIL CLOSED on unreadable
+    # rungs (PR #135 round-2 review): this function re-reads graph and
+    # registry at launch AND at every wall-clamp relaunch, hours after the
+    # HAR-2 gate validated — a registry broken in between must refuse the
+    # launch loudly, not silently record an unfiltered trace.
+    manifest_list, manifest_errors = load_manifests(root)
+    rung, bridge_ids, rung_errors = graph_perception_rung(
+        doc["nodes"], {} if manifest_errors else {m["id"]: m for _, m in manifest_list}
+    )
+    if rung_errors:
+        raise RuntimeError(
+            "perception rung unresolvable at instrumentation time (TC-9): "
+            + "; ".join(e["detail"] for e in rung_errors)
+        )
+    if sim_backend is not None:
+        for node in doc["nodes"]:
+            if node["id"] in bridge_ids:
+                node["env"] = {**(node.get("env") or {}), "AISLE_SIM_BACKEND": sim_backend}
+    forbidden = FORBIDDEN_BY_RUNG.get(rung, ())
     # HAR-4: EVERY declared endpoint, keyed <producer>__<topic> so two
     # producers of the same topic name (e.g. reset_done from both the
     # bridge and the reset service) stay distinct endpoints
@@ -377,6 +510,7 @@ def instrumented_graph(
         f"{node['id']}__{topic}": {"source": f"{node['id']}/{topic}", "queue_size": 100}
         for node in doc["nodes"]
         for topic in (node.get("outputs") or [])
+        if not (node["id"] in bridge_ids and topic in forbidden)
     }
     doc["nodes"].append(
         {
@@ -385,21 +519,56 @@ def instrumented_graph(
             # run dir otherwise kills the dataflow at startup, zero episodes
             "path": str((root / "src" / "aisle" / "harness" / "trace_recorder.py").resolve()),
             "inputs": inputs,
-            "env": {"AISLE_TRACE_DIR": str(trace_dir if trace_dir else run_dir / "traces")},
+            # frame capture is declared IN THE GRAPH, not inherited from the
+            # runner's process env: the graph hash then attests whether a run
+            # recorded replayable frames (the same reasoning as ADR-25's
+            # bring-up scrub, in the opposite direction)
+            "env": {
+                "AISLE_TRACE_DIR": str(trace_dir if trace_dir else run_dir / "traces"),
+                "AISLE_FRAME_CAPTURE_PERIOD_S": os.environ.get("AISLE_FRAME_CAPTURE_PERIOD_S", "0"),
+            },
         }
     )
+    if verifier == "both":
+        realistic = realistic_verifier_node(root, run_dir, doc, episode_timeout_s)
+        doc["nodes"].append(realistic)
+        # the recorder's inputs were computed BEFORE this node existed, so its
+        # verdicts were absent from every trace — add them explicitly rather
+        # than leaving the node's own output the one unrecorded endpoint
+        recorder = next(n for n in doc["nodes"] if n["id"] == "trace-recorder")
+        for topic in realistic["outputs"]:
+            recorder["inputs"][f"{realistic['id']}__{topic}"] = {
+                "source": f"{realistic['id']}/{topic}",
+                "queue_size": 100,
+            }
     out_path = run_dir / name
     out_path.write_text(yaml.safe_dump(doc, sort_keys=False))
     return out_path
 
 
+# settings that MUST come from the graph, where the graph hash attests them,
+# and never from the ambient process environment
+SCRUBBED_ENV = (
+    # ADR-25 (issue #71): the bridge's bring-up opt-out
+    "AISLE_STEP_WITHOUT_RESET",
+    # TC-9: the perception rung. The bridge reads it via parse_bridge_config(
+    # os.environ), so an ambient AISLE_PERCEPTION=L1 would set the rung of a
+    # run whose graph never declared one — and the validator, which sees only
+    # graph YAML, could never detect the divergence. Scrubbed with the variable
+    # that introduced the same hazard rather than after the first bad run.
+    "AISLE_PERCEPTION",
+)
+
+
 def scrub_bringup_env(env: dict) -> dict:
-    """ADR-25 (issue #71): the bridge's bring-up opt-out must never reach a
-    measured rollout — an ambient AISLE_STEP_WITHOUT_RESET=1 would silently
-    restore the pre-reset startup race while git_sha/env_hash/graph_hash all
-    attest clean. Graph-YAML env stays visible in the graph hash; the
-    process environment does not, so it is scrubbed here."""
-    return {k: v for k, v in env.items() if k != "AISLE_STEP_WITHOUT_RESET"}
+    """ADR-25 (issue #71) + TC-9: settings the graph must own must never reach a
+    measured rollout from the ambient environment — an ambient
+    AISLE_STEP_WITHOUT_RESET=1 would silently restore the pre-reset startup
+    race, and an ambient AISLE_PERCEPTION would silently set the perception
+    rung, while git_sha/env_hash/graph_hash all attest clean. Graph-YAML env
+    stays visible in the graph hash; the process environment does not, so it is
+    scrubbed here."""
+    return {k: v for k, v in env.items() if k not in SCRUBBED_ENV}
 
 
 def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict) -> subprocess.Popen:
@@ -411,10 +580,36 @@ def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict) -> subprocess.Popen:
         cwd=run_dir,
         env=env,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
+        # dora's OWN stderr to a file in the run dir, not to a pipe nobody
+        # drains: an unread PIPE can fill (64 KB) and block the child, and the
+        # bytes were being discarded anyway. Per-NODE stderr is separate and
+        # already persisted by dora as out/<dataflow>/log_<node>.jsonl rows with
+        # "stream":"stderr", which is where a bridge refusal actually lands.
+        stderr=(run_dir / "dora.stderr.log").open("w"),
         text=True,
         start_new_session=True,
     )
+
+
+def await_realistic_sidecar(run_dir: Path, expected: int, timeout_s: float = 45.0) -> int:
+    """Wait (bounded) for the realistic verifier's VER-14 sidecar to carry
+    one record per episode before teardown, and return how many it has.
+
+    The node judges an episode when the NEXT goal arrives; the LAST episode
+    has no next goal, so its only chance is the dataflow stopping — and
+    `judge_frames` takes seconds, which it loses to teardown. Observed: 2
+    records for 3 episodes, twice. Waiting here is the fix that does not
+    require the node to win a race, and a bounded wait cannot hang a run:
+    on timeout the count is simply short and the caller reports it."""
+    sidecar = run_dir / "verifier_stages.jsonl"
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        lines = sidecar.read_text().splitlines() if sidecar.exists() else []
+        if len([ln for ln in lines if ln.strip()]) >= expected:
+            return expected
+        time.sleep(1.0)
+    lines = sidecar.read_text().splitlines() if sidecar.exists() else []
+    return len([ln for ln in lines if ln.strip()])
 
 
 def _terminate(proc: subprocess.Popen) -> None:
@@ -432,6 +627,52 @@ def _graph_hash(graph: Path) -> str:
     return hashlib.sha256(graph.read_bytes()).hexdigest()
 
 
+def perception_check(root: Path, graph: Path, requested: str | None) -> dict:
+    """HAR-1/TC-9: the graph DECLARES the perception rung, where the graph
+    hash attests it, and rollout scrubs ambient AISLE_PERCEPTION for the same
+    reason — so --perception cannot inject a rung. It ASSERTS one: a mismatch
+    is refused before any gate, budget reservation, or launch, because the
+    run would measure a different rung than the caller asked for. Returns
+    {"ok": True, "rung": <declared>} when the assertion holds (or none was
+    made); the declared rung is what rollout records in the run manifest."""
+    from aisle.harness.registry import load_manifests
+    from aisle.harness.validate import graph_perception_rung, load_graph
+
+    nodes, _ = load_graph(graph)
+    manifest_list, manifest_errors = load_manifests(root)
+    if nodes is None or manifest_errors:
+        # run_gates' validate owns the full structured report for a broken
+        # graph or registry; the flag only refuses what it cannot assert
+        if requested is None:
+            return {"ok": True, "rung": None}
+        return {
+            "ok": False,
+            "gate": "perception",
+            "detail": f"cannot assert --perception {requested}: {graph} or the registry "
+            "does not load, so the declared rung is unreadable (run `harness validate`)",
+        }
+    rung, _, rung_errors = graph_perception_rung(nodes, {m["id"]: m for _, m in manifest_list})
+    if rung_errors:
+        # TC-9's refuse-don't-guess rule: an unreadable rung matches nothing —
+        # never compare the request against the strictest-assumed fallback
+        if requested is None:
+            return {"ok": True, "rung": None}
+        return {
+            "ok": False,
+            "gate": "perception",
+            "detail": "; ".join(e["detail"] for e in rung_errors),
+        }
+    if requested is not None and requested != rung:
+        return {
+            "ok": False,
+            "gate": "perception",
+            "detail": f"--perception {requested} asserted, but the graph declares rung {rung} "
+            "(TC-9: the rung rides the graph, where the graph hash attests it)",
+            "hint": f"run a graph whose sim bridge declares AISLE_PERCEPTION: {requested}",
+        }
+    return {"ok": True, "rung": rung}
+
+
 def rollout(
     root: Path,
     graph: Path,
@@ -446,6 +687,8 @@ def rollout(
     timeout_s: float | None = None,
     embodiment: str = "franka",
     env_baseline: str = "origin/main",
+    perception: str | None = None,
+    sim_extra: str = "sim",
 ) -> dict:
     """HAR-1: the full run. Returns the report dict (CON-8: caller emits)."""
     # A relative root (`--root .`) must be pinned to THIS process's cwd:
@@ -455,13 +698,42 @@ def rollout(
     root = root.resolve()
     if reset_mode != "teleport":
         return {"ok": False, "error": "behavioral reset is Phase 2 (RST-2)"}
-    if verifier != "oracle":
-        return {"ok": False, "error": "realistic verifier is Phase 2"}
+    if verifier == "realistic":
+        # A7 mode drives the LOOP from the realistic verdict, which means
+        # rewiring the rollout client's episode_result source away from the
+        # oracle. That changes control flow and is a separate change;
+        # `both` runs the realistic judge ALONGSIDE without touching it.
+        return {
+            "ok": False,
+            "error": "verifier=realistic (A7 mode) needs the client rewired; use --verifier both",
+        }
+    if verifier not in ("oracle", "both"):
+        return {"ok": False, "error": f"unknown verifier {verifier!r}"}
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", run_id):
         return {"ok": False, "error": f"unsafe run_id {run_id!r}"}
     if (root / "runs" / run_id).exists():
         return {"ok": False, "error": f"run_id {run_id!r} already exists; refusing to overwrite"}
-    gates = run_gates(root, graph, branch, no_idea_gate, embodiment, env_baseline, episodes)
+    perception_gate = perception_check(root, graph, perception)
+    if not perception_gate["ok"]:
+        return {"ok": False, "refused": perception_gate}
+    # issue #128: hash the authored graph HERE, adjacent to the rung read and
+    # before the gates. This NARROWS the straddle window between the attested
+    # hash and the attested rung — it does not close it: perception_check and
+    # this hash are still two reads, as are the gates' and instrumentation's
+    # (round-2 review). Full closure needs the one-snapshot design that
+    # conflicts with PATH_MANIFEST_MISMATCH's identity check — open on #128;
+    # exec_graph_hashes bounds the damage by attesting what actually ran.
+    authored_graph_hash = _graph_hash(graph)
+    gates = run_gates(
+        root,
+        graph,
+        branch,
+        no_idea_gate,
+        embodiment,
+        env_baseline,
+        episodes,
+        sim_extra,
+    )
     if not gates["ok"]:
         return {"ok": False, "refused": gates}
     # ADR-21 round 3: RESERVE atomically before launch (trusted runs only;
@@ -478,7 +750,25 @@ def rollout(
     run_dir = root / "runs" / run_id
     traces_dir = run_dir / "traces"
     traces_dir.mkdir(parents=True, exist_ok=True)
-    exec_graph = instrumented_graph(graph, root, run_dir)
+    # budgets before the graph: the realistic verifier node needs the episode
+    # SIM timeout declared in the graph, since it ends episodes on its own
+    # budget rather than waiting for the oracle (VER-5, increment 1b)
+    episode_timeout_s, per_episode_budget_s = tier_budgets(tier)
+    try:
+        exec_graph = instrumented_graph(
+            graph,
+            root,
+            run_dir,
+            verifier=verifier,
+            episode_timeout_s=episode_timeout_s,
+            sim_backend=gates["sim_backend"],
+        )
+    except RuntimeError as exc:
+        return {"ok": False, "refused": {"gate": "perception", "detail": str(exc)}}
+    # issue #128: attest what actually RAN, not only what was authored — one
+    # hash per launch (a wall-clamp relaunch writes a new exec copy whose
+    # trace_dir env differs, so its hash differs)
+    exec_graph_hashes = [_graph_hash(exec_graph)]
     results_path = run_dir / "episodes.jsonl"
 
     git_sha = subprocess.run(
@@ -486,7 +776,6 @@ def rollout(
     ).stdout.strip()
     env_hash = gates["env_hash"]
 
-    episode_timeout_s, per_episode_budget_s = tier_budgets(tier)
     env = scrub_bringup_env(
         {
             **os.environ,
@@ -497,6 +786,9 @@ def rollout(
             "AISLE_TIER": tier,
             # M0-5: the embodiment profile swap rides on env, zero YAML edits
             "AISLE_EMBODIMENT": embodiment,
+            # CON-5: the gate resolved this from the explicitly selected,
+            # attested dependency extra. It never comes from ambient state.
+            "AISLE_SIM_BACKEND": gates["sim_backend"],
             "AISLE_TIMEOUT_S": str(episode_timeout_s),
             "AISLE_RESULTS": str(results_path),
         }
@@ -593,13 +885,25 @@ def rollout(
                 relaunch_traces = traces_dir / f"relaunch-{relaunches}"
                 relaunch_traces.mkdir(parents=True, exist_ok=True)
                 current_traces = relaunch_traces
-                exec_graph = instrumented_graph(
-                    graph,
-                    root,
-                    run_dir,
-                    trace_dir=relaunch_traces,
-                    name=f"graph-r{relaunches}.yaml",
-                )
+                try:
+                    exec_graph = instrumented_graph(
+                        graph,
+                        root,
+                        run_dir,
+                        trace_dir=relaunch_traces,
+                        name=f"graph-r{relaunches}.yaml",
+                        verifier=verifier,
+                        episode_timeout_s=episode_timeout_s,
+                        sim_backend=gates["sim_backend"],
+                    )
+                except RuntimeError as exc:
+                    # fail closed mid-run too: a registry broken since the
+                    # gate must not relaunch with an unfiltered recorder —
+                    # remaining seeds are lost LOUDLY (they stay short in
+                    # the episode count) rather than recorded unattested
+                    print(f"relaunch refused: {exc}", file=sys.stderr)
+                    break
+                exec_graph_hashes.append(_graph_hash(exec_graph))
                 # each relaunch pays a fresh build: extend the deadline by
                 # the build grace (still bounded by the campaign wall cap),
                 # else consecutive wedges cut the tail seeds (PR #58 review)
@@ -614,12 +918,33 @@ def rollout(
                 continue
             time.sleep(2.0)
     finally:
+        # let the realistic judge finish the LAST episode before teardown
+        # (it judges on the next goal, and the last episode has none)
+        if verifier == "both":
+            await_realistic_sidecar(run_dir, episodes)
         # ADR-21 round 3: reconcile the reservation with actuals no matter
-        # how the run ended — crash paths settle too
+        # how the run ended — crash paths settle too. Count from the RESULTS
+        # FILE, not episode_records: that list is parsed after this
+        # try/finally, so it is always [] here and every settle recorded 0
+        # episodes — the ceiling never decremented (found by the first real
+        # trusted campaign run; wall clamps' synthetic records count, they
+        # consumed attempts)
         if reservation is not None:
-            settle_budget(root, run_id, len(episode_records), time.monotonic() - started)
+            actual_episodes = (
+                sum(1 for line in results_path.read_text().splitlines() if line.strip())
+                if results_path.exists()
+                else 0
+            )
+            settle_budget(root, run_id, actual_episodes, time.monotonic() - started)
         _terminate(proc)
         reap_orphans(run_dir)
+        if verifier == "both":
+            # count AFTER teardown, not before: the node can still land the
+            # last record during the SIGTERM grace, and reporting the
+            # pre-teardown count said "2/3" for a run that ended with 3/3
+            judged = await_realistic_sidecar(run_dir, episodes, timeout_s=0.0)
+            if judged < episodes:
+                print(f"realistic sidecar has {judged}/{episodes} records", file=sys.stderr)
 
     if results_path.exists():
         episode_records = [
@@ -663,9 +988,21 @@ def rollout(
         "env_hash": env_hash,
         "platform": platform_module.platform(),
         "graph": str(graph),
-        "graph_hash": _graph_hash(graph),
+        # issue #128: graph_hash is the AUTHORED graph (CON-3's reproducibility
+        # key, hashed at gate time adjacent to the rung read); exec_graph_hashes
+        # attest the instrumented copies that actually RAN, one per launch
+        "graph_hash": authored_graph_hash,
+        "exec_graph_hashes": exec_graph_hashes,
         "tier": tier,
+        # TC-9: the run attests which pose source produced it, read from the
+        # graph (never from the flag or ambient env — both cannot inject)
+        "perception": perception_gate["rung"],
         "embodiment": embodiment,
+        # CON-5 / SCN-7: dependency selection and the resolved live device
+        # distinguish CPU/Metal/CUDA physics evidence with no hidden probe.
+        "sim_extra": gates["sim_extra"],
+        "sim_backend": gates["sim_backend"],
+        "sim_device": gates["sim_device"],
         "seeds": seeds,
         "reset": reset_mode,
         "verifier": verifier,

@@ -118,20 +118,61 @@ def test_no_cuda_in_default_dependencies():
     )
 
 
-def test_cuda_extra_provisions_gpu_torch():
-    """CON-1: CUDA-only dependencies MAY live behind an optional `cuda`
-    extra. The extra MUST actually provision a GPU torch, otherwise
-    `scenes.pharmacy.select_genesis_backend` can never resolve to cuda on
-    Linux — the default CPU index would silently win."""
+def test_sim_and_cuda_extras_route_linux_torch_to_disjoint_indexes():
+    """CON-1: the portable and GPU simulation closures MUST bind Linux
+    torch to their respective CPU/CUDA indexes; merely having both indexes
+    somewhere in the lock does not prove either extra selects the right one."""
     pyproject = load_pyproject()
     extras = pyproject["project"].get("optional-dependencies", {})
-    assert "cuda" in extras, "CON-1 names `cuda` as the sanctioned GPU extra"
-    assert any("torch" in dep.lower() for dep in extras["cuda"]), extras["cuda"]
+    assert set(extras["cuda"]) == set(extras["sim"]), (
+        "cuda must carry the complete sim stack; only the torch distribution differs"
+    )
+    sources = pyproject["tool"]["uv"]["sources"]["torch"]
+    linux_bindings = {
+        source["extra"]: source["index"]
+        for source in sources
+        if source.get("marker") == "sys_platform == 'linux'"
+    }
+    assert linux_bindings == {"sim": "pytorch-cpu", "cuda": "pytorch-cu130"}
 
-    # the extra is inert unless torch resolves from a CUDA index on linux
     indexes = {i["name"]: i["url"] for i in pyproject["tool"]["uv"].get("index", [])}
-    cuda_indexes = [n for n, url in indexes.items() if "/cu" in url]
-    assert cuda_indexes, f"no CUDA wheel index declared: {indexes}"
+    assert indexes[linux_bindings["sim"]].rstrip("/").endswith("/cpu")
+    assert indexes[linux_bindings["cuda"]].rstrip("/").endswith("/cu130")
+
+    with open(REPO_ROOT / "uv.lock", "rb") as f:
+        lock = tomllib.load(f)
+    root = next(package for package in lock["package"] if package["name"] == "aisle")
+    locked = root["optional-dependencies"]
+    sim_linux = [
+        dep
+        for dep in locked["sim"]
+        if dep["name"] == "torch" and dep.get("source", {}).get("registry", "").endswith("/cpu")
+    ]
+    cuda_linux = [
+        dep
+        for dep in locked["cuda"]
+        if dep["name"] == "torch" and dep.get("source", {}).get("registry", "").endswith("/cu130")
+    ]
+    assert len(sim_linux) == len(cuda_linux) == 1
+    assert "+cpu" in sim_linux[0]["version"]
+    assert "+cu130" in cuda_linux[0]["version"]
+
+    torch_variants = {
+        package["version"]: {dep["name"] for dep in package.get("dependencies", [])}
+        for package in lock["package"]
+        if package["name"] == "torch"
+    }
+    forbidden = ("cuda", "nvidia", "cu11", "cu12", "cu13")
+    assert not any(
+        token in dependency.lower()
+        for dependency in torch_variants[sim_linux[0]["version"]]
+        for token in forbidden
+    )
+    assert any(
+        token in dependency.lower()
+        for dependency in torch_variants[cuda_linux[0]["version"]]
+        for token in forbidden
+    )
 
 
 def test_ci_script_gate_order():

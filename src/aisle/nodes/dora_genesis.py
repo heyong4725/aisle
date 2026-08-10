@@ -30,6 +30,13 @@ from pathlib import Path
 
 import numpy as np
 
+from aisle.embodiment import (
+    from_wire_joint_order,
+    profile_dof_indices,
+    profile_joint_names,
+    to_wire_joint_order,
+)
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # SPEC 010 §2: producer rates are contracts, not hints (TC-4)
@@ -45,8 +52,67 @@ TOPIC_RATES = {
     # VAL-6 keeps oracle_state verifier-only. 15 Hz: a second 30 Hz stream
     # pushed the render wall-rate below the TC-4 band (T08 A1)
     "poses": 15,
+    # TC-9 L1 only: per-pixel segmentation ids. 15 Hz — the SAME rate as
+    # depth, because an L1 estimate masks the segmentation and indexes the
+    # depth, so the two MUST be co-scheduled and served by one render pass.
+    "seg_overhead": 15,
 }
-RENDER_TOPICS = ("rgb_overhead", "rgb_wrist", "depth_overhead")
+RENDER_TOPICS = ("rgb_overhead", "rgb_wrist", "depth_overhead", "seg_overhead")
+# published DIRECTLY on the reset path, off the scheduler: the injected state
+# IS the post-reset observation and must be snapshotted before any physics
+# step (TC-A2, CON-5). Named as data so a test can assert every one of them
+# still passes through the rung gate in `publish` (TC-9) — `poses` here on an
+# L1 run was ground truth on the wire once per episode.
+RESET_PUBLISH = ("oracle_state", "poses")
+
+
+def reset_publish_topics(topic_rates: dict) -> tuple[str, ...]:
+    """The reset path's direct publishes, filtered by the rung (TC-9).
+
+    Filtering HERE as well as inside `publish` is deliberate. The gate inside
+    publish() is the backstop for every call site, but a test can only reach it
+    through dora and genesis, so an INVERTED guard there (`if may_publish(...):
+    return`) passed every test while re-opening exactly the leak this fixes.
+    Inverting it now breaks every ordinary topic loudly instead, and the leak
+    that actually happened is prevented by this function, which a unit test
+    calls directly."""
+    return tuple(topic for topic in RESET_PUBLISH if may_publish(topic, topic_rates))
+
+
+def may_publish(topic: str, topic_rates: dict) -> bool:
+    """TC-9: whether this bridge may put `topic` on the wire at its rung.
+
+    The rung's topic set is the single source of truth, and the gate is a
+    NAMED predicate rather than an inline check because the reset path
+    publishes directly, off the scheduler: `publish("poses")` after every
+    reset put ground-truth pose on an L1 wire once per episode. Naming it
+    also makes it testable -- the first version of the test for that fix
+    re-derived the gate from two module constants and stayed green when the
+    guard was deleted."""
+    return topic in topic_rates
+
+
+def rung_topic_rates(perception: str, is_mobile: bool) -> dict[str, int]:
+    """TC-9: the bridge publishes only what the rung permits.
+
+    VAL-8 rejects a graph that CONSUMES a forbidden topic; this is the other
+    half — the bridge does not PUBLISH one. Belt and braces on purpose: the
+    validator can be bypassed (an instrumented run copy, a hand-edited graph),
+    and a topic that is never on the wire cannot be consumed by accident.
+    Segmentation is rendered only at L1 because a segmentation pass costs an
+    extra render on every overhead tick, so an L0 run's render budget is
+    unchanged by this topic existing.
+    """
+    rates = dict(TOPIC_RATES)
+    if perception != "L0":
+        rates.pop("poses")
+    if perception != "L1":
+        rates.pop("seg_overhead")
+    if is_mobile:
+        rates.update(base_pose=50, base_scan=10)
+    return rates
+
+
 # ticks after a reset during which the bridge HOLDS the arm at home and
 # drops incoming joint commands. A collision/timeout ends an episode
 # mid-plan; the executor keeps streaming that plan's joint_cmds for the
@@ -57,6 +123,94 @@ RENDER_TOPICS = ("rgb_overhead", "rgb_wrist", "depth_overhead")
 # reset_done round-trip and is far shorter than the goal->grasp latency,
 # so no real command for the NEW episode is dropped.
 RESET_SETTLE_TICKS = 20
+
+
+def _quat_matrix_wxyz(quat: np.ndarray) -> np.ndarray:
+    """Rotation matrix for a Genesis-order (w, x, y, z) quaternion."""
+    w, x, y, z = np.asarray(quat, dtype=np.float64)
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ],
+        dtype=np.float64,
+    )
+
+
+def frame_point_wxyz(
+    link_pos: np.ndarray, link_quat: np.ndarray, local_offset: np.ndarray
+) -> np.ndarray:
+    """Transform a fixed-frame point from a link into world coordinates."""
+    return np.asarray(link_pos, dtype=np.float64) + _quat_matrix_wxyz(link_quat) @ np.asarray(
+        local_offset, dtype=np.float64
+    )
+
+
+def _yaw_matrix_wxyz(quat: np.ndarray) -> np.ndarray:
+    """World-z rotation from a Genesis-order (w, x, y, z) quaternion."""
+    w, x, y, z = np.asarray(quat, dtype=np.float64)
+    yaw = float(np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
+    c, s = np.cos(yaw), np.sin(yaw)
+    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
+
+
+@dataclass
+class CarryLatch:
+    """Pure nearest-object upright kinematic carry coupling (ADR-18 pattern)."""
+
+    close_threshold: float
+    release_threshold: float
+    max_distance_m: float
+    held_name: str | None = None
+    offset_pos: np.ndarray | None = None
+    held_quat: np.ndarray | None = None
+
+    def reset(self) -> None:
+        self.held_name = None
+        self.offset_pos = None
+        self.held_quat = None
+
+    def update(
+        self,
+        grip: float,
+        hand_pos: np.ndarray,
+        hand_quat: np.ndarray,
+        candidates: dict[str, tuple[np.ndarray, np.ndarray]],
+    ) -> tuple[str, np.ndarray, np.ndarray] | None:
+        hand_pos = np.asarray(hand_pos, dtype=np.float64)
+        hand_quat = np.asarray(hand_quat, dtype=np.float64)
+        if self.held_name is not None and grip <= self.release_threshold:
+            self.reset()
+            return None
+        if self.held_name is None and grip >= self.close_threshold:
+            nearest = min(
+                (
+                    (float(np.linalg.norm(np.asarray(pos) - hand_pos)), name)
+                    for name, (pos, _quat) in candidates.items()
+                ),
+                default=None,
+            )
+            if nearest is None or nearest[0] > self.max_distance_m:
+                return None
+            self.held_name = nearest[1]
+            box_pos, box_quat = candidates[self.held_name]
+            rotation = _yaw_matrix_wxyz(hand_quat)
+            self.offset_pos = rotation.T @ (np.asarray(box_pos) - hand_pos)
+            # Like ADR-18's store carry latch, retain the carton's upright
+            # world orientation instead of inheriting hand pitch/roll.  A
+            # five-axis radial transfer necessarily changes hand attitude;
+            # propagating it tipped otherwise-upright cartons onto their
+            # side before release.
+            self.held_quat = np.asarray(box_quat, dtype=np.float64).copy()
+        if self.held_name is None:
+            return None
+        rotation = _yaw_matrix_wxyz(hand_quat)
+        return (
+            self.held_name,
+            (hand_pos + rotation @ self.offset_pos).astype(np.float32),
+            self.held_quat.astype(np.float32),
+        )
 
 
 @dataclass(frozen=True)
@@ -75,11 +229,47 @@ class BridgeConfig:
     # (CON-5/ADR-25, issue #71): the first step must not race the first
     # reset, so measured rollouts start episode 0 at sim step 0 exactly.
     step_without_reset: bool = False
+    # TC-9's perception rung, declared in the GRAPH (node env) so the graph
+    # hash attests which pose source a result used. L0: ground-truth `poses`.
+    # L1: no `poses`, segmentation instead, pose estimated. L2: neither.
+    perception: str = "L0"
+    # CON-5: rollout resolves and attests this backend before launch. None is
+    # the deterministic portable default for direct/debug graph execution.
+    sim_backend: str | None = None
+
+
+PERCEPTION_RUNGS = ("L0", "L1", "L2")
 
 
 def parse_bridge_config(env: dict) -> BridgeConfig:
     """BRG-1: node configuration from environment variables."""
+    # only an ABSENT key defaults. Membership, not `is None` and not falsiness:
+    # `AISLE_PERCEPTION:` with no value parses from YAML as None, and
+    # `AISLE_PERCEPTION: ""` is the empty string -- both are a graph DECLARING a
+    # rung, so both must reach the refusal below rather than inherit L0. Each
+    # narrower version of this test let one more shape through: `or "L0"` let
+    # "" and "   " through, `is None` let YAML null through.
+    perception = (
+        str(env.get("AISLE_PERCEPTION") or "").strip().upper()
+        if "AISLE_PERCEPTION" in env
+        else "L0"
+    )
+    if perception not in PERCEPTION_RUNGS:
+        # TC-9: an unrecognized rung must not silently fall back to L0 — that
+        # would publish ground-truth pose to a graph that asked not to have it
+        # and report the result under the rung it typo'd.
+        raise ValueError(
+            f"unknown perception rung {perception!r} (TC-9: {'|'.join(PERCEPTION_RUNGS)})"
+        )
+    sim_backend = env.get("AISLE_SIM_BACKEND")
+    if sim_backend is not None:
+        sim_backend = str(sim_backend).strip().lower()
+        if sim_backend not in ("cpu", "metal", "cuda"):
+            raise ValueError(
+                f"unknown simulation backend {sim_backend!r}; expected cpu, metal, or cuda"
+            )
     return BridgeConfig(
+        perception=perception,
         seed=int(env.get("AISLE_SEED", "0")),
         embodiment=env.get("AISLE_EMBODIMENT", "franka"),
         n_envs=int(env.get("AISLE_N_ENVS", "1")),
@@ -88,6 +278,7 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
         headless=env.get("AISLE_HEADLESS", "1") not in ("0", "false", "no"),
         step_without_reset=env.get("AISLE_STEP_WITHOUT_RESET", "0").strip().lower()
         in ("1", "true", "yes"),
+        sim_backend=sim_backend,
     )
 
 
@@ -101,6 +292,64 @@ def require_single_env_for_mobile(embodiment: str, n_envs: int) -> None:
         raise ValueError(
             f"mobile embodiment does not support batched envs (n_envs={n_envs}); "
             "run one env per bridge (SPEC 210 MOB-1, ADR-13)"
+        )
+
+
+def require_usable_segmentation_ids(segmentation_ids: dict, perception: str) -> None:
+    """TC-9: at L1 the id map is LOAD-BEARING, so refuse an unusable one.
+
+    A consumer cannot derive these ids — they are genesis's own numbering — so
+    an EMPTY or PARTIAL map means every L1 pose estimate refuses, one stderr
+    line at a time, and the episode dies on a timeout that scores as a policy
+    failure. Fail at startup instead, the way BRG-8 requires calibration rather
+    than defaulting it.
+
+    Both shapes, not just the partial one: for an empty map the partial check is
+    vacuously satisfied, so the guard passed and bridge_info announced
+    `"segmentation_ids": {}` at L1 — attested-looking and unusable, the same
+    empty-vs-absent confusion as the rung parsing itself."""
+    if perception != "L1":
+        return
+    blank = sorted(name for name, ids in segmentation_ids.items() if not ids)
+    if not segmentation_ids or blank:
+        raise ValueError(
+            "perception rung L1 but no segmentation ids resolved for "
+            f"{blank or 'any object (the scene declared no graspables)'} — "
+            "the scene's segmentation_idx_dict did not yield entity indices for "
+            "them (check VisOptions.segmentation_level); an L1 run needs this map "
+            "to estimate pose at all (TC-9)"
+        )
+
+
+def require_supported_perception(cfg: BridgeConfig) -> None:
+    """TC-9: refuse a rung this bridge cannot actually serve for the scene.
+
+    The store scene keys its graspables by ITEM ID (`f"{slot_id}#{k}"`, plus
+    `f"bin#{category}"`) while the only L1 consumer asks by MED NAME
+    (segmented_pose's `seg_ids_for(id_map, target_med)`). Those namespaces never
+    intersect, so an L1 store run would announce a well-formed id map and then
+    refuse every pose, dying on a timeout that scores as a POLICY failure. The
+    empty-entry guard cannot see it either: store ids resolve to real seg ids,
+    they are just unaskable. Refuse at config time until a store L1 consumer
+    exists — a loud refusal beats a run that looks like bad luck. The refusal
+    reaches an operator through dora's per-node log
+    (`runs/<id>/out/<dataflow>/log_dora-genesis.jsonl`, which carries
+    `"stream":"stderr"` rows), not through the rollout result JSON."""
+    if cfg.perception == "L2":
+        # TC-9 calls L2 "(deferred; T2's rung)" and no node consumes rgb alone.
+        # rung_topic_rates pops BOTH pose sources at L2, so the bridge would
+        # start happily and publish no pose source at all -- the same
+        # unserviceable-config shape as the store case one line below.
+        raise ValueError(
+            "perception rung L2 is deferred (TC-9): no estimator consumes rgb alone yet, "
+            "so an L2 run would publish no pose source at all. Use L0 or L1."
+        )
+    if cfg.perception == "L1" and cfg.scene == "store":
+        raise ValueError(
+            "perception rung L1 is not supported for the store scene: its id map is "
+            "keyed by item id and the L1 pose estimator asks by med name, so every "
+            "estimate would refuse (TC-9). Run the store at L0, or teach the "
+            "estimator the store namespace first."
         )
 
 
@@ -207,15 +456,43 @@ def make_bridge_info(
     genesis_version: str,
     env_hash: str,
     step_without_reset: bool,
+    calibration: dict,
+    perception: str,
+    segmentation_ids: dict,
+    sim_backend: str,
 ) -> str:
-    """BRG-6: the startup contract announcement, as a JSON string.
+    """BRG-6 + BRG-8: the startup contract announcement, as a JSON string.
 
     step_without_reset is surfaced so a run whose bridge free-ran before the
     first reset (ADR-25 bring-up mode) is auditable from its traces — the
-    env var alone would leave no attestation footprint (issue #71)."""
+    env var alone would leave no attestation footprint (issue #71).
+
+    calibration is the VER-8 v1 block (SPEC 040) built from the REALIZED
+    camera state — post-DR-jitter, the same values the render path uses.
+    Required, not defaulted: the realistic verifier's stage 0 refuses to
+    judge without it, so a bridge that forgot to wire it must fail loudly
+    rather than publish a judgeable-looking run with no calibration.
+
+    perception and segmentation_ids are REQUIRED for the same reason
+    calibration is: a caller that forgot `perception=` would attest "L0" in the
+    trace for a run that executed L1, which is exactly the recorded-vs-actual
+    divergence the rung refusal and the env scrub exist to prevent -- and no
+    test can catch it, because the defaulted value is a VALID one.
+
+    perception is TC-9's rung, announced so a RECORDED run attests which pose
+    source it used — the graph declares it, but a trace read on its own would
+    otherwise not say. segmentation_ids maps med name -> the seg ids in
+    `seg_overhead` (L1 only, empty otherwise): the ids are the simulator's own
+    segmentation map, NOT entity indices, so a consumer that derives them
+    silently selects other geometry (measured: robot links with identical
+    pixel counts across different layouts). Publishing the map is what keeps
+    a consumer from having to guess. sim_backend is required for the same
+    recorded-vs-actual reason: CUDA and CPU traces must not look identical."""
     return json.dumps(
         {
             "contract": "v0",
+            "perception": perception,
+            "segmentation_ids": segmentation_ids,
             "embodiment": embodiment,
             "n_dof": n_dof,
             "n_envs": n_envs,
@@ -223,7 +500,68 @@ def make_bridge_info(
             "platform": f"{platform.system().lower()}-{platform.machine()}",
             "env_hash": env_hash,
             "step_without_reset": step_without_reset,
+            "sim_backend": sim_backend,
+            "calibration": calibration,
         }
+    )
+
+
+def segmentation_id_map(idx_dict: dict, entity_idx: dict) -> dict[str, list[int]]:
+    """TC-9: {med name: [seg ids]} from genesis's OWN segmentation map.
+
+    `idx_dict` is `scene.segmentation_idx_dict`: seg id -> genesis's seg_key,
+    with a bare -1 for background. `entity_idx` is {name: entity.idx}. The two
+    are NOT the same numbering — measured on the desk scene, entity 5
+    (amoxicillin) is seg id 16 — which is why a consumer must be handed this
+    map rather than masking on the entity index. A multi-link entity
+    contributes every one of its ids, sorted so the map is deterministic
+    (CON-5).
+
+    The seg_key SHAPE depends on `VisOptions.segmentation_level`, which the
+    scene does not currently set (genesis defaults to `link`). Read from
+    genesis's own construction: `geom` gives (entity, link, geom), `link`
+    gives (entity, link), and `entity` gives a BARE int. All three are handled
+    because the entity index is what this map needs and it is first in every
+    shape — an earlier version required a tuple, so at `segmentation_level=
+    "entity"` it would have returned an empty id list for every object,
+    making the L1 estimator refuse every pose with only a stderr line to say
+    why. A silent downgrade to "refuse everything" is the worst of the three
+    possible failures."""
+    by_entity: dict[int, list[int]] = {}
+    for seg_id, ref in idx_dict.items():
+        entity = ref[0] if isinstance(ref, (tuple, list)) and ref else ref
+        if isinstance(entity, (int, np.integer)) and int(entity) >= 0:
+            by_entity.setdefault(int(entity), []).append(int(seg_id))
+    return {name: sorted(by_entity.get(int(idx), [])) for name, idx in entity_idx.items()}
+
+
+def realized_calibration(handle, physics: dict, is_store: bool) -> dict:
+    """BRG-8: the v1 calibration block from the BUILT scene — the
+    overhead pose is read back from the camera transform (so DR jitter is
+    reflected), converted to the v1/OpenCV conventions by VER-8's own
+    module. Store scenes use their own overhead nominals."""
+    from aisle.scenes.pharmacy import to_numpy, wrist_mount_transform
+    from aisle.verifier.calibration import GL_TO_CV, build_calibration_v1
+
+    cams = handle.cams
+    cam_cfg = physics["cameras"]
+    overhead = cams["overhead"]
+    transform = np.asarray(to_numpy(overhead.transform)).reshape(4, 4)
+    wrist_transform = wrist_mount_transform(cam_cfg, physics["embodiment"][handle.embodiment])
+    lookat = cam_cfg["store_overhead_lookat" if is_store else "overhead_lookat"]
+    return build_calibration_v1(
+        # the REALIZED rotation, converted GL->CV — not a re-derivation
+        # from config (PR #103 review): stage 0 must be able to catch a
+        # camera that is rotated in place
+        overhead_rotation_cv=transform[:3, :3] @ GL_TO_CV,
+        overhead_pos=transform[:3, 3].tolist(),
+        overhead_lookat=lookat,
+        overhead_resolution=overhead.res,
+        overhead_fov_deg=overhead.fov,
+        wrist_offset_m=wrist_transform[:3, 3].tolist(),
+        wrist_mount_rotation_gl=wrist_transform[:3, :3],
+        wrist_resolution=cams["wrist"].res,
+        wrist_fov_deg=cams["wrist"].fov,
     )
 
 
@@ -274,12 +612,14 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         oracle_state,
         resolve_layout,
         sample_placements,
+        select_genesis_backend,
         to_numpy,
     )
 
     cfg = parse_bridge_config(os.environ)
     require_single_env_for_mobile(cfg.embodiment, cfg.n_envs)
     require_valid_store_config(cfg)
+    require_supported_perception(cfg)
     root = Path(os.environ.get("AISLE_ROOT", _REPO_ROOT))
     physics = load_physics()
     profile = physics["embodiment"][cfg.embodiment]
@@ -304,10 +644,15 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             scenario=cfg.scenario,
             embodiment=cfg.embodiment,
             headless=cfg.headless,
+            sim_backend=cfg.sim_backend,
         )
     else:
         handle = build_scene(
-            seed=cfg.seed, embodiment=cfg.embodiment, n_envs=cfg.n_envs, headless=cfg.headless
+            seed=cfg.seed,
+            embodiment=cfg.embodiment,
+            n_envs=cfg.n_envs,
+            headless=cfg.headless,
+            sim_backend=cfg.sim_backend,
         )
     robot = handle.robot
     n_dof = robot.n_dofs
@@ -315,6 +660,32 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     hand_link = robot.get_link("hand") if is_store else None
     held_item: str | None = None  # carry latch (T15, ADR-18)
     held_offset = (0.0, 0.0, 0.0, 0.0)
+    so101_latch = None
+    so101_hand_link = None
+    so101_tcp_offset = None
+    if profile.get("kinematic_carry_latch", False):
+        if cfg.n_envs != 1 or is_store:
+            raise ValueError("SO-101 carry latch requires single-env pharmacy mode")
+        so101_hand_link = robot.get_link(profile["ee_link"])
+        so101_tcp_offset = np.asarray(profile["ee_frame_offset_xyz"], dtype=np.float64)
+        so101_latch = CarryLatch(
+            close_threshold=float(profile["carry_latch_close"]),
+            release_threshold=float(profile["carry_latch_release"]),
+            max_distance_m=float(profile["carry_latch_max_distance_m"]),
+        )
+
+    # the graspable set is named `items` in the store scene and `boxes` on the
+    # desk; the id map itself is name -> seg ids either way
+    graspable = handle.items if is_store else handle.boxes
+    segmentation_ids = (
+        segmentation_id_map(
+            handle.scene.segmentation_idx_dict,
+            {name: entity.idx for name, entity in graspable.items()},
+        )
+        if cfg.perception == "L1"
+        else {}
+    )
+    require_usable_segmentation_ids(segmentation_ids, cfg.perception)
 
     node = Node()
     node.send_output(
@@ -328,6 +699,10 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     genesis_version=genesis.__version__,
                     env_hash=compute_env_hash(root),
                     step_without_reset=cfg.step_without_reset,
+                    calibration=realized_calibration(handle, physics, is_store),
+                    perception=cfg.perception,
+                    segmentation_ids=segmentation_ids,
+                    sim_backend=cfg.sim_backend or select_genesis_backend("sim", platform.system()),
                 )
             ]
         ),
@@ -359,7 +734,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     # topics. base_pose is integrated from base_cmd each tick and the arm's
     # root is re-based; base_scan is a planar raycast against the scene.
     is_mobile = cfg.embodiment == "mobile"
-    topic_rates = {**TOPIC_RATES, **({"base_pose": 50, "base_scan": 10} if is_mobile else {})}
+    topic_rates = rung_topic_rates(cfg.perception, is_mobile)
     base_pose = [float(v) for v in profile.get("base_start", [0.0, 0.0, 0.0])]
     base_cmd = [0.0, 0.0]
     if is_store:
@@ -380,19 +755,28 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     if awaiting_first_reset:
         print("holding at sim step 0 until the first reset (CON-5)", file=sys.stderr)
     quarantine = ResetQuarantine(RESET_SETTLE_TICKS)  # holds arm at home post-reset
-    home_hold = (
-        np.asarray(profile["home_qpos"], dtype=np.float32) if "home_qpos" in profile else None
-    )
-    # one name per DOF in payload order (TC-5): multi-dof joints repeat,
-    # zero-dof (fixed) joints vanish; a mismatch is a loud startup failure
-    joint_names = []
-    for joint in robot.joints:
-        joint_names += [joint.name] * int(getattr(joint, "n_dofs", 1))
+    wire_dof_indices = profile_dof_indices(robot, profile)
+    configured_names = profile_joint_names(profile)
+    if configured_names is None:
+        # one name per DOF in native payload order: multi-dof joints repeat,
+        # zero-dof (fixed) joints vanish
+        joint_names = []
+        for joint in robot.joints:
+            joint_names += [joint.name] * int(getattr(joint, "n_dofs", 1))
+        wire_dof_indices = tuple(range(n_dof))
+    else:
+        joint_names = list(configured_names)
     assert len(joint_names) == n_dof, (len(joint_names), n_dof)
-    gripper_open = profile.get("gripper_open_m", 0.04)
-    gripper_close = profile.get("gripper_close_m", 0.0)
+
+    home_hold = (
+        from_wire_joint_order(np.asarray(profile["home_qpos"], dtype=np.float32), wire_dof_indices)
+        if "home_qpos" in profile
+        else None
+    )
+    gripper_open = profile.get("gripper_open_qpos", profile.get("gripper_open_m", 0.04))
+    gripper_close = profile.get("gripper_close_qpos", profile.get("gripper_close_m", 0.0))
     gripper_dofs = int(profile.get("gripper_dofs", 2))
-    finger_idx = list(range(n_dof - gripper_dofs, n_dof))
+    finger_idx = list(wire_dof_indices[-gripper_dofs:])
 
     def send(topic: str, env_id: int, array: np.ndarray, **extra) -> None:
         key = (topic, env_id)
@@ -408,21 +792,42 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         return data[env_id] if cfg.n_envs > 1 else data.reshape(-1)
 
     def render_due(due: list[str]) -> dict[str, np.ndarray]:
-        """BRG-2: one overhead pass serves both rgb and depth when both are
-        due; nothing renders unless a camera topic is due this tick."""
+        """BRG-2: one overhead pass serves rgb, depth and segmentation when
+        they are due; nothing renders unless a camera topic is due this tick.
+
+        TC-9: segmentation and depth come from ONE pass, so an L1 estimate
+        that masks the seg and indexes the depth reads one scene rather than
+        two ticks blended (the defect class that already reached the trace
+        recorder and the realistic verifier)."""
         frames: dict[str, np.ndarray] = {}
         need_rgb = "rgb_overhead" in due
+        need_seg = "seg_overhead" in due
         need_depth = "depth_overhead" in due
-        if need_rgb or need_depth:
-            out = handle.cams["overhead"].render(rgb=True, depth=need_depth)
+        if need_rgb or need_depth or need_seg:
+            out = handle.cams["overhead"].render(rgb=True, depth=need_depth, segmentation=need_seg)
             frames["rgb_overhead"] = np.asarray(out[0], dtype=np.uint8)
             if need_depth:
                 frames["depth_overhead"] = np.asarray(out[1], dtype=np.float32)
+            if need_seg:
+                # TC-1: the WIRE type is the contract. Genesis renders int64;
+                # narrowing here (ids are ~21 in the desk scene) halves a
+                # 640x480 payload at 15 Hz. A passthrough would be a TC-1
+                # violation, not an optimization left on the table.
+                frames["seg_overhead"] = np.asarray(out[2], dtype=np.int32)
         if "rgb_wrist" in due:
             frames["rgb_wrist"] = np.asarray(handle.cams["wrist"].render()[0], dtype=np.uint8)
         return frames
 
     def publish(topic: str, frames: dict[str, np.ndarray] | None = None) -> None:
+        # TC-9: the rung's topic set is the SINGLE source of truth for what
+        # this bridge may put on the wire, and the gate belongs here rather
+        # than in the scheduler. The reset path publishes directly, off the
+        # scheduler (RESET_PUBLISH below), so gating the scheduler alone let
+        # ground-truth `poses` reach an L1 wire once per reset — once per
+        # episode, at the freshest possible moment, and into the trace the
+        # recorder keeps. Every future direct call is gated by construction.
+        if not may_publish(topic, topic_rates):
+            return
         oracle_cache = None
         frames = frames if frames is not None else render_due([topic])
         qpos = robot.get_qpos() if topic in ("joint_state", "gripper_state") else None
@@ -434,12 +839,12 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                 send(
                     topic,
                     env_id,
-                    env_slice(qpos, env_id),
+                    to_wire_joint_order(env_slice(qpos, env_id), wire_dof_indices),
                     names=joint_names,
                     dropped=dropped_counts["joint"].pop(env_id, 0),
                 )
             elif topic == "gripper_state":
-                finger = env_slice(qpos, env_id)[-1]
+                finger = env_slice(qpos, env_id)[finger_idx[0]]
                 width = np.float32((gripper_open - finger) / (gripper_open - gripper_close or 1.0))
                 send(
                     topic,
@@ -457,6 +862,9 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             elif topic == "depth_overhead":
                 depth = frames[topic]
                 send(topic, env_id, depth, h=depth.shape[0], w=depth.shape[1], enc="depth32f")
+            elif topic == "seg_overhead":
+                seg = frames[topic]
+                send(topic, env_id, seg, h=seg.shape[0], w=seg.shape[1], enc="seg_i32")
             elif topic == "base_pose":
                 # report the PHYSICAL root, not the integrator (PR #21): a
                 # path that moves one but not the other (e.g. a reset that
@@ -491,7 +899,9 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         # command owns any overlapping dofs
         for kind, env_id, payload, dropped in commands.drain():
             if kind == "joint":
-                target = np.asarray(payload, dtype=np.float32)
+                target = from_wire_joint_order(
+                    np.asarray(payload, dtype=np.float32), wire_dof_indices
+                )
                 if cfg.n_envs > 1:
                     robot.control_dofs_position(target[None, :], envs_idx=[env_id])
                 else:
@@ -532,7 +942,9 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     entity.set_quat(quat)
                 entity.zero_all_dofs_velocity()
         if "home_qpos" in profile:
-            home = np.asarray(profile["home_qpos"], dtype=np.float32)
+            home = from_wire_joint_order(
+                np.asarray(profile["home_qpos"], dtype=np.float32), wire_dof_indices
+            )
             batched_home = home if cfg.n_envs == 1 else np.tile(home, (cfg.n_envs, 1))
             robot.set_qpos(batched_home)
             # re-latch the PD controller: a stale pre-reset target would
@@ -648,6 +1060,34 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     robot.set_quat(
                         np.array([np.cos(half), 0.0, 0.0, np.sin(half)], dtype=np.float32)
                     )
+            if so101_latch is not None:
+                finger = float(to_numpy(robot.get_qpos()).reshape(-1)[finger_idx[0]])
+                grip = float(
+                    np.clip((gripper_open - finger) / (gripper_open - gripper_close), 0.0, 1.0)
+                )
+                hand_pos = to_numpy(so101_hand_link.get_pos()).reshape(-1)[:3]
+                hand_quat = to_numpy(so101_hand_link.get_quat()).reshape(-1)[:4]
+                tcp_pos = frame_point_wxyz(hand_pos, hand_quat, so101_tcp_offset)
+                candidates = {
+                    name: (
+                        to_numpy(entity.get_pos()).reshape(-1)[:3],
+                        to_numpy(entity.get_quat()).reshape(-1)[:4],
+                    )
+                    for name, entity in handle.boxes.items()
+                }
+                before = so101_latch.held_name
+                attached = so101_latch.update(grip, tcp_pos, hand_quat, candidates)
+                if before != so101_latch.held_name:
+                    action = "latch" if so101_latch.held_name is not None else "release"
+                    print(
+                        f"so101 carry {action}: {before or so101_latch.held_name}", file=sys.stderr
+                    )
+                if attached is not None:
+                    name, pos, quat = attached
+                    entity = handle.boxes[name]
+                    entity.set_pos(pos)
+                    entity.set_quat(quat)
+                    entity.zero_all_dofs_velocity()
             handle.scene.step()  # BRG-7: exceptions crash the node loudly
             sim_time_ns += int(dt * 1e9)
             due = scheduler.due()
@@ -703,6 +1143,13 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             # base_pose...) is a function of the episode, not of the wall
             # tick the request happened to land on
             scheduler = RateScheduler(topic_rates, dt)
+            if so101_latch is not None:
+                if so101_latch.held_name is not None:
+                    print(
+                        f"so101 carry release: {so101_latch.held_name} (reset)",
+                        file=sys.stderr,
+                    )
+                so101_latch.reset()
             if is_mobile:
                 # MOB-1/ADR-13: re-home the base to the store-frame start and
                 # drop the in-flight base command (mirrors the arm re-home).
@@ -737,8 +1184,8 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             # before any physics step so the first oracle_state after reset
             # is a pure function of the seed (TC-A2, CON-5); reset_done was
             # already sent, so nothing interleaves the service pair (TC-6)
-            publish("oracle_state")
-            publish("poses")
+            for topic in reset_publish_topics(topic_rates):
+                publish(topic)
 
 
 if __name__ == "__main__":

@@ -22,7 +22,9 @@ things to know before anything else:
   CPU torch on Linux (CON-1 keeps CUDA wheels out of the default set), so
   Genesis runs on CPU even with a GPU present. `uv sync --extra cuda`
   installs the same stack with the CUDA torch; the two extras are
-  mutually exclusive.
+  mutually exclusive. Pass `--sim-extra cuda` to `harness rollout`; the
+  request fails closed if CUDA is unavailable and is recorded in the run
+  manifest. The default `--sim-extra sim` never auto-upgrades to CUDA.
 - **dora runs from source, not PyPI.** PyPI's latest dora wheel (0.5.0)
   is far behind dora main and lacks the dynamic-node command family this
   repo depends on (`dora node add/remove`, hot-swap). The python API

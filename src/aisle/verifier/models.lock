@@ -1,0 +1,32 @@
+{
+ "_note": "VER-5/D3: pinned HF snapshots for the realistic verifier. Revisions are exact commit shas; files_sha256 covers every weight/config/tokenizer file in the snapshot. Licenses verified at pin time (2026-08-06). CPU inference only (D2). Any change here is an env-change PR with a new env_hash.",
+ "lock_version": 1,
+ "models": {
+  "identity": {
+   "files_sha256": {
+    "added_tokens.json": "e5dc0da35d20111e8ff3fdfc03682beca23d5f94ed74331bce81786b2636a24f",
+    "config.json": "ba9df8c25a4b8461887dd0a93d9252c9cd84697fe8d49a9d8794ce409af9acb2",
+    "merges.txt": "9fd691f7c8039210e0fced15865466c65820d09b63988b0174bfe25de299051a",
+    "model.safetensors": "e1e130b9e404cf91a75ad45644c1da9d7fa5284085eecc864266a6923efb99e7",
+    "preprocessor_config.json": "cf3e396635b797ee1a464e1b2836e98748f8edac19e89aaa2c93b55ac15b0064",
+    "pytorch_model.bin": "69feda8b53b1c9e2a85ae756bf58c120c3c1b4b4a4d97d4876578c1809a63d76",
+    "special_tokens_map.json": "d6e2b9cf664efbad2d22998b8d3da986abcbeed3e0825ad33605c9401f9cf73e",
+    "tokenizer_config.json": "b55cda6198e152ded427c8a9b3faf1cccf27a7fa080697a62f6ff143f511f44f",
+    "vocab.json": "e089ad92ba36837a0d31433e555c8f45fe601ab5c221d4f607ded32d9f7a4349"
+   },
+   "license": "apache-2.0",
+   "repo": "google/owlv2-base-patch16-ensemble",
+   "revision": "cfd3195ba4ea9592eec887ded089f4c08eff231d"
+  },
+  "segmenter": {
+   "files_sha256": {
+    "config.json": "75baa88a4780233d7a1d5525b702ab9552938d383f65f658d20e6c345d3f7eeb",
+    "model.safetensors": "b0ee221e3d33935807a820c157fec81a537b3b9979edc88b148a8dae8bbdd5d2",
+    "preprocessor_config.json": "225545a743c654e3c495ec6f545a0eaba57c8ba3fbbd8483b3cb1c0fc58db517"
+   },
+   "license": "apache-2.0",
+   "repo": "nielsr/slimsam-77-uniform",
+   "revision": "72a5ae6ca4d1da579a001f6f008b6fb949282c10"
+  }
+ }
+}

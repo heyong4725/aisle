@@ -53,11 +53,24 @@ def build_parser() -> argparse.ArgumentParser:
     roll.add_argument("--seeds", required=True, help="a..b or comma list")
     roll.add_argument("--reset", default="teleport", choices=["teleport", "behavioral"])
     roll.add_argument("--verifier", default="oracle", choices=["oracle", "realistic", "both"])
+    roll.add_argument(
+        "--sim-extra",
+        default="sim",
+        choices=["sim", "cuda"],
+        help="attested dependency/backend selection: portable sim or Linux CUDA",
+    )
     roll.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     roll.add_argument(
         "--no-idea-gate",
         action="store_true",
         help="skip the HAR-8 open-idea gate (humans only; recorded in the manifest)",
+    )
+    roll.add_argument(
+        "--perception",
+        default=None,
+        choices=["L0", "L1", "L2"],
+        help="assert the graph's declared perception rung (TC-9); the rung "
+        "rides the graph, so a mismatch refuses the run",
     )
     roll.add_argument("--run-id", default=None, help="override the generated run id (CON-5)")
     roll.add_argument(
@@ -152,6 +165,8 @@ def main() -> int:
             timeout_s=args.timeout_s,
             embodiment=args.embodiment,
             env_baseline=args.env_baseline,
+            perception=args.perception,
+            sim_extra=args.sim_extra,
         )
         return emit_report(report, lambda level, e: f"rollout {level}: {e}")
 

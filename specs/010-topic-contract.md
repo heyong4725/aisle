@@ -30,6 +30,7 @@ MUST honor it byte-for-byte.
 | `rgb_overhead` | out | UInt8[h*w*3] | 30 Hz | TC-3 metadata |
 | `rgb_wrist` | out | UInt8[h*w*3] | 30 Hz | attached to EE link |
 | `depth_overhead` | out | Float32[h*w] | 15 Hz | meters; 0 = invalid |
+| `seg_overhead` | out | Int32[h*w] | 15 Hz | per-pixel segmentation id; L1 ONLY (TC-9). 0 = background. Genesis renders int64; the bridge NARROWS to Int32 because ids are small (~21 in the desk scene) and the raw type doubles a 640x480 payload at 15 Hz — the wire type is the contract, so a passthrough of the raw array is a TC-1 violation. Ids are the SCENE's segmentation map, not entity indices — see TC-9 |
 | `joint_state` | out | Float32[n_dof] | 100 Hz | meta `names: list[str]` |
 | `gripper_state` | out | Float32[1] | 100 Hz | 0 open … 1 closed |
 | `oracle_state` | out | Float32[n_obj*7] | 30 Hz | pos+quat per box, order = scene manifest; VERIFIER-ONLY (VAL-6) |
@@ -39,8 +40,10 @@ MUST honor it byte-for-byte.
 | `episode_result` | out (verifier) | JSON utf8 | per episode | see §3 |
 
 - TC-5: The bridge MUST publish `joint_state` and accept `joint_cmd` for BOTH
-  embodiment profiles (`franka` n_dof=7+2, `so101` n_dof=6+1) with identical
-  semantics; `names` metadata disambiguates.
+  embodiment profiles (`franka` n_dof=7+2, `so101` n_dof=5+1) with identical
+  semantics; `names` metadata disambiguates. The SO-101 arm-joint order MUST
+  match the official follower model: `shoulder_pan`, `shoulder_lift`,
+  `elbow_flex`, `wrist_flex`, `wrist_roll`, followed by `gripper` (ADR-27).
 
 ## 3. Services and actions (dora patterns)
 
@@ -59,6 +62,7 @@ MUST honor it byte-for-byte.
 - TC-8: `episode_result.status == "success"` from the ORACLE verifier is the
   ONLY ground truth any metric may count. Realistic-verifier verdicts are
   recorded alongside for the fidelity metric, never substituted.
+- TC-9: perception ladder — the rung is a CONTRACT, not a convention. The rung (`L0|L1|L2`) selects which pose source a graph may consume, and the bridge MUST publish only what the rung permits. **L0** — the graph may consume `poses` (non-privileged ground-truth pose, TC-2 layout); no segmentation is rendered. **L1** — the bridge MUST NOT publish `poses` and MUST publish `seg_overhead`; pose is ESTIMATED from segmentation plus `depth_overhead`. **L2** — the bridge MUST publish neither, and perception runs on `rgb_*` alone (deferred; T2's rung). An unrecognized rung MUST be refused rather than defaulted to L0: a silent fallback would hand ground-truth pose to a graph that asked not to have it and report the result under the rung it typo'd. `seg_overhead` and `depth_overhead` MUST come from ONE render pass and carry the SAME `sim_time_ns`, which requires them to be co-scheduled on identical ticks (both 15 Hz, TC-4): an L1 estimate masks the segmentation and indexes the depth, so a pair from two ticks measures a scene that never existed — the same rule BRG-2 already gives for the overhead rgb/depth pair, and the same defect class that reached both the trace recorder and the realistic verifier before being caught. A consumer that receives one without a matching stamp waits rather than pairing across ticks. `seg_overhead` is rendered ONLY at L1 because a segmentation pass costs an extra render on every overhead tick and BRG-2 already rate-limits depth for that reason: an L0 run's render budget is unchanged by this topic existing. Ids in `seg_overhead` are the simulator's own segmentation map (Genesis: `scene.segmentation_idx_dict`, seg id → (entity_idx, link_idx)) and are NOT entity indices — a consumer that masks on entity index silently selects other geometry, measured as robot links whose pixel counts were identical across scenes with different object layouts. The bridge therefore MUST publish the per-object id map in `bridge_info` so a consumer never guesses it (measured on the desk scene: entity 5, amoxicillin, is seg id 16). Rung selection MUST be declared IN THE GRAPH — the bridge node's `env` key `AISLE_PERCEPTION`, a field dora's dataflow schema already defines and passes to the node process — so the graph hash attests which pose source a result used, and it is never inherited from ambient environment. The bridge MUST also announce the rung in `bridge_info`, so a RECORDED run attests its rung without reference to the graph it came from. An L1 pose estimate carries its supporting mask size so a consumer can refuse a partially occluded object rather than accept a centroid biased toward the visible fragment (measured: 2.2 mm mean XY error over 20 objects, but 19.5 mm on the smallest mask).
 
 ## 4. Acceptance
 
@@ -71,3 +75,13 @@ MUST honor it byte-for-byte.
   message (CON-5). Cites TC-6.
 - TC-A3 (`::test_episode_action_lifecycle`): scripted trivial episode ends with
   a schema-valid `episode_result` carrying the goal's `goal_id`. Cites TC-7/8.
+- TC-A4 (`tests/unit/test_cmd_coalescing.py::test_bridge_publishes_only_what_the_rung_permits`,
+  `::test_segmentation_and_depth_are_co_scheduled_on_every_tick`,
+  `::test_segmentation_id_map_uses_the_scene_map_not_entity_indices`,
+  `::test_perception_rung_from_env_defaults_l0`, `::test_bridge_info_shape`) plus
+  `tests/sim/test_l1_perception.py::test_l1_estimate_matches_genesis_ground_truth`
+  and `::test_segmentation_render_shares_the_depth_stamp_and_pass`: the ladder's
+  publish rules, the one-render pairing, and the id map — the sim pair pins the
+  estimated pose against Genesis ground truth, because an L1 number is only a
+  policy measurement if the estimator agrees with what L0 would have given.
+  Cites TC-9.

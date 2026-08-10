@@ -4,17 +4,15 @@ Contract: same (seed, cfg, platform) ⇒ bitwise-identical initial
 `oracle_state`. Verified by `tests/sim/test_scene.py::test_build_determinism`
 on macOS arm64 (Metal backend, float32).
 
-Backend selection is automatic: macOS uses Metal; other platforms use CUDA
-when PyTorch reports an available CUDA device and otherwise use CPU. Linux
-x86-64 CUDA execution has been exercised on an NVIDIA GeForce RTX 5090 with
-driver 580.126.09 and PyTorch 2.13.0+cu130.
-
-Selection is only half the story: `uv sync --extra sim` resolves the CPU
-torch on Linux (CON-1), so `cuda_available` is False and the CUDA branch
-never engages. The GPU build comes from the `cuda` extra —
-`uv sync --extra cuda` — which is the sanctioned home for CUDA wheels and
-is mutually exclusive with `sim`. Running `--extra sim` on a GPU host is
-therefore a silent CPU run, not a broken one.
+Backend selection is explicit and recorded. `uv sync --extra sim` plus
+`harness rollout --sim-extra sim` uses Metal on Darwin and CPU elsewhere,
+even when a CUDA device is visible. `uv sync --extra cuda` plus
+`harness rollout --sim-extra cuda` uses CUDA on Linux and fails closed when
+the device is unavailable; it never silently retries on CPU. The selected
+extra, Genesis backend, and device are persisted in `manifest.json` beside
+the environment fingerprint. Linux x86-64 CUDA execution has been exercised
+on an NVIDIA GeForce RTX 5090 with driver 580.126.09 and PyTorch
+2.13.0+cu130.
 
 Known platform caveats — recorded here rather than hidden (SCN-7):
 
