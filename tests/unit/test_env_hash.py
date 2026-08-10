@@ -489,3 +489,35 @@ def test_adr24_selection_covers_abi_groups_and_tags():
     base = env_fingerprint(lock, sel)
     assert env_fingerprint(lock, current_selection(["sim"], groups=[])) != base
     assert env_fingerprint(lock, current_selection([])) != base
+
+
+def test_committed_hash_matches_this_tree():
+    """CON-7 self-consistency: tools/env_hash.json must describe THIS tree.
+
+    PR #122 landed a --write computed on a stale base (42 files, 0d68a166)
+    while its own merged tree held 43 — from that commit until the fix,
+    mainline could not pass its own trusted gate, and nothing in CI noticed
+    because no test pinned committed-to-computed. This one does: any PR
+    that changes the frozen set must run tools/env_hash.py --write in the
+    SAME PR, on the FINAL tree — which is exactly the discipline CON-7
+    demands, now enforced instead of requested."""
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    proc = subprocess.run(
+        [sys.executable, str(root / "tools" / "env_hash.py"), "--root", str(root)],
+        capture_output=True,
+        text=True,
+    )
+    computed = json.loads(proc.stdout)
+    committed = json.loads((root / "tools" / "env_hash.json").read_text())
+    assert computed["env_hash"] == committed["env_hash"], (
+        f"frozen set changed without tools/env_hash.py --write: computed "
+        f"{computed['env_hash'][:12]} ({computed['n_files']} files) vs committed "
+        f"{committed['env_hash'][:12]} ({committed['n_files']}) — run the --write "
+        "on the final tree and include it in this change (CON-7)"
+    )
+    assert computed["n_files"] == committed["n_files"]
