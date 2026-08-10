@@ -46,6 +46,8 @@ EXPECTED_IDS = {
     "s1-expert",
     # perception rung L1 (TC-9): the expert_t1 pose source
     "segmented-pose",
+    # perception rung L2 (TC-9, idea I7): the expert_t1_l2 pose source
+    "detected-pose",
 }
 
 
@@ -116,9 +118,10 @@ def test_search_cli_json():
 
     code, report = run_registry("search", "--provides", "object_pose")
     ids = {m["id"] for m in report["matches"]}
-    # the perception ladder (TC-9): L0 oracle passthrough, L1 estimated
-    # from ground-truth segmentation, L2-bound full estimator
-    assert ids == {"oracle-pose", "segmented-pose", "pose-estimator"}
+    # the perception ladder (TC-9), now complete: L0 oracle passthrough,
+    # L1 estimated from ground-truth segmentation, L2 detected on rendered
+    # rgb — plus the abstract hub estimator exemplar
+    assert ids == {"oracle-pose", "segmented-pose", "detected-pose", "pose-estimator"}
 
 
 def test_search_no_match_is_ok_empty():

@@ -335,21 +335,20 @@ def require_supported_perception(cfg: BridgeConfig) -> None:
     reaches an operator through dora's per-node log
     (`runs/<id>/out/<dataflow>/log_dora-genesis.jsonl`, which carries
     `"stream":"stderr"` rows), not through the rollout result JSON."""
-    if cfg.perception == "L2":
-        # TC-9 calls L2 "(deferred; T2's rung)" and no node consumes rgb alone.
-        # rung_topic_rates pops BOTH pose sources at L2, so the bridge would
-        # start happily and publish no pose source at all -- the same
-        # unserviceable-config shape as the store case one line below.
+    # L2 is served since detected-pose landed (idea I7): the desk deferral
+    # this guard used to enforce ("no estimator consumes rgb alone yet") is
+    # obsolete for the desk scene — rgb_overhead + depth_overhead feed the
+    # detector-based estimator. The STORE stays refused at both estimated
+    # rungs for the same namespace reason: the estimators ask by desk MED
+    # NAME (segmented_pose's id map keys; detected-pose's detector
+    # vocabulary), while the store keys items by slot/category ids.
+    if cfg.perception in ("L1", "L2") and cfg.scene == "store":
         raise ValueError(
-            "perception rung L2 is deferred (TC-9): no estimator consumes rgb alone yet, "
-            "so an L2 run would publish no pose source at all. Use L0 or L1."
-        )
-    if cfg.perception == "L1" and cfg.scene == "store":
-        raise ValueError(
-            "perception rung L1 is not supported for the store scene: its id map is "
-            "keyed by item id and the L1 pose estimator asks by med name, so every "
-            "estimate would refuse (TC-9). Run the store at L0, or teach the "
-            "estimator the store namespace first."
+            f"perception rung {cfg.perception} is not supported for the store scene: "
+            "the store keys items by item id while the estimated-pose rungs ask by "
+            "desk med name (L1's id map, L2's detector vocabulary), so every estimate "
+            "would refuse (TC-9). Run the store at L0, or teach the estimators the "
+            "store namespace first."
         )
 
 

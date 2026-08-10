@@ -50,9 +50,10 @@ over 50 seeds, a successful H2 iteration result, measured H3 and H4 campaigns,
 and implemented retail S1–S3 scenes. See the root `README.md` and `analysis/`
 for the formal findings and their limitations.
 
-## Verified status on this workstation
+## Historical workstation evidence
 
-This Linux workstation has been configured locally with:
+Before the locked, attested CUDA path landed, a contributor workstation was
+configured locally with:
 
 - PyTorch 2.13.0+cu130
 - NVIDIA GeForce RTX 5090
@@ -60,22 +61,24 @@ This Linux workstation has been configured locally with:
 - Genesis 1.2.3
 - dora 1.0.0-rc.4
 
-AISLE selects Genesis CUDA only for an explicit, attested `cuda` rollout. The
-verified T0 GPU rollout:
+That workstation produced a T0 GPU development rollout which:
 
 - allocated approximately 1,761 MiB of GPU memory;
 - completed with pass@1 1.0;
 - took 56.3 seconds wall time for 27.2 simulated seconds;
 - produced Arrow traces and an overhead video.
 
-The comparable earlier CPU success took 104.6 seconds wall time. This is a
-single-run development comparison, not a formal performance benchmark.
+The comparable earlier CPU success took 104.6 seconds wall time. Both numbers
+are historical, single-run development measurements, not a formal performance
+benchmark. The GPU run predated the committed `cuda` extra and therefore does
+not attest the current dependency/backend path. Current test totals and lock
+resolution evidence belong in the PR/CI record for the exact commit under
+review, rather than as a count in this long-lived guide.
 
-Verification completed on this checkout:
-
-- 629 unit tests passed and 1 skipped;
-- 28 simulator/graph tests passed and 2 skipped;
-- formatting, lint, traceability, and frozen-environment hash gates passed.
+AISLE now selects Genesis CUDA only for an explicit, attested `cuda` rollout.
+The corrected path is covered by fail-closed identity/manifest tests and locked
+Linux CPU/CUDA resolution checks; a fresh hardware run is still required before
+claiming attested performance for it.
 
 Install the committed CUDA environment before the demo. This is a locked,
 mutually exclusive alternative to the portable `sim` extra:
@@ -89,7 +92,7 @@ uv sync --extra cuda
 Run all commands from the repository root:
 
 ```bash
-cd /home/demo/Public/github_aisle/aisle-latest
+cd aisle
 ```
 
 ### 1. Validate the typed robot graph
@@ -173,11 +176,16 @@ runs/<run-id>/
     └── ...
 ```
 
-The already verified single-seed GPU recording is:
+The historical single-seed GPU recording was stored at the following
+contributor-local path:
 
 ```text
 runs/linux-cuda-seed0-r2-20260801/traces/overhead.mp4
 ```
+
+`runs/` is gitignored, so that file is not distributed with the repository and
+must not be presented as reviewable evidence for the current head. Generate a
+new recording with the command above for a live demonstration.
 
 ## What to point out during the demo
 

@@ -143,6 +143,42 @@ def test_expert_t1_with_poses_routed_is_rejected(tmp_path):
     assert any("dora-genesis/poses" in e.get("edge", "") for e in violations), violations
 
 
+def test_expert_t1_l2_is_good():
+    """VAL-7 for graphs/expert_t1_l2.yaml, validated in place: the T1
+    baseline at rung L2 (TC-9's top rung — the bridge publishes NEITHER
+    ground-truth pose topic; perception is detection on rendered rgb, idea
+    I7) passes NORMAL validation with zero errors and zero warnings."""
+    code, report = run_validate(REPO_ROOT / "graphs" / "expert_t1_l2.yaml")
+    assert code == 0, report
+    assert report["ok"] is True and report["errors"] == []
+    assert report["warnings"] == []
+
+
+def test_expert_t1_l2_with_seg_routed_is_rejected(tmp_path):
+    """VAL-8/TC-9 mutation-proofing at L2: re-add `seg_overhead` to the
+    bridge and route it into detected-pose — the quiet downgrade from
+    detection to ground-truth segmentation — and the validator must reject
+    it with PERCEPTION_RUNG_VIOLATION naming the edge."""
+    doc = yaml.safe_load((REPO_ROOT / "graphs" / "expert_t1_l2.yaml").read_text())
+    for node in doc["nodes"]:
+        node["path"] = str((REPO_ROOT / "graphs" / node["path"]).resolve())
+        if node["id"] == "dora-genesis":
+            node["outputs"].append("seg_overhead")
+        if node["id"] == "detected-pose":
+            node["inputs"]["seg_overhead"] = {
+                "source": "dora-genesis/seg_overhead",
+                "queue_size": 100,
+            }
+    mutated = tmp_path / "expert_t1_l2_seg_leak.yaml"
+    mutated.write_text(yaml.safe_dump(doc, sort_keys=False))
+
+    code, report = run_validate(mutated, "--root", str(REPO_ROOT))
+    assert code != 0 and report["ok"] is False
+    violations = [e for e in report["errors"] if e["code"] == "PERCEPTION_RUNG_VIOLATION"]
+    assert violations, report["errors"]
+    assert any("dora-genesis/seg_overhead" in e.get("edge", "") for e in violations), violations
+
+
 def test_hints_nonempty():
     """VAL-3: every error and warning across the whole bad corpus carries a
     non-empty hint naming a registry capability or concrete fix, and the

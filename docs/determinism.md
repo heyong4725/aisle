@@ -10,9 +10,10 @@ even when a CUDA device is visible. `uv sync --extra cuda` plus
 `harness rollout --sim-extra cuda` uses CUDA on Linux and fails closed when
 the device is unavailable; it never silently retries on CPU. The selected
 extra, Genesis backend, and device are persisted in `manifest.json` beside
-the environment fingerprint. Linux x86-64 CUDA execution has been exercised
-on an NVIDIA GeForce RTX 5090 with driver 580.126.09 and PyTorch
-2.13.0+cu130.
+the environment fingerprint. A pre-attestation development build executed on
+an NVIDIA GeForce RTX 5090 with driver 580.126.09 and PyTorch 2.13.0+cu130;
+that historical run is not evidence for the corrected attested path. A fresh
+hardware run is required before making a performance or reproducibility claim.
 
 Known platform caveats — recorded here rather than hidden (SCN-7):
 
