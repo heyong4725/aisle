@@ -31,6 +31,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from aisle.nodes.perception_session import FramePairSession
+
 # below this many mask pixels the centroid is dominated by whatever fragment
 # is visible. Unoccluded meds render 433-970 px at 640x480 from the overhead
 # camera, so this floor rejects a box more than roughly half hidden while
@@ -153,89 +155,31 @@ def estimate_neighbours(seg, depth, id_map: dict, meds: dict, backproject) -> tu
 
 
 @dataclass
-class L1Session:
-    """Event-state for the node loop, pure so the rules that keep L1 honest
-    are unit-testable rather than living only in the uncovered dora loop:
-
-    * episode boundary (T08 parity with oracle-pose): reset_done clears the
-      active target — ik-trajectory accepts a plan whenever it is idle, which
-      post-reset it is, so one stale seg frame of the new scene would seed a
-      plan for the PREVIOUS episode's med before the new target_request lands;
-    * ONE publish per target_request (T08 again): a completed plan can never
-      be re-triggered by the still-flowing seg stream, but a REFUSED estimate
-      keeps the request pending so a transient occlusion retries on the next
-      frame while a persistent one times out honestly (TC-9);
-    * stamp pairing (TC-9): seg and depth are consumed only as a same-stamp
-      pair from one render pass — buffered SYMMETRICALLY, so publication does
-      not depend on which of the co-scheduled frames dora delivers first
-      (the bridge happens to publish depth before seg today, but that is
-      topic-table ordering, not a contract).
+class L1Session(FramePairSession):
+    """The L1 rung's estimate over the shared frame-pairing lifecycle
+    (perception_session.FramePairSession carries the review-hardened rules:
+    once-per-request, reset clears target AND buffers, symmetric same-stamp
+    pairing, unknown-med refusal).
 
     `backprojector` maps the published calibration to a
     `backproject(depth, pixels) -> (N, 3)` callable, bound per bridge_info so
     a republish can never be shadowed by an earlier closure (B023)."""
 
-    meds: dict
-    backprojector: Callable[[dict], Callable]
-    calibration: dict | None = None
+    backprojector: Callable[[dict], Callable] | None = None
     id_map: dict = field(default_factory=dict)
-    target: str | None = None
-    pending: bool = False
-    latest_depth: tuple[int, np.ndarray] | None = None
-    latest_seg: tuple[int, np.ndarray] | None = None
 
     def on_bridge_info(self, info: dict) -> None:
-        self.calibration = info["calibration"]
+        super().on_bridge_info(info)
         self.id_map = info.get("segmentation_ids") or {}
 
-    def on_target_request(self, request: dict) -> bool:
-        """False for a med not in the scene manifest — refused ONCE, loudly,
-        by the caller (L0 parity with oracle-pose): accepting it would refuse
-        per-frame at 15 Hz, or KeyError on the meds lookup, neither of which
-        is a refusal the operator can act on."""
-        med = request.get("target_med")
-        if med not in self.meds:
-            return False
-        self.target = med
-        self.pending = True
-        return True
+    # the L1 observation frame is the segmentation mask
+    on_seg = FramePairSession.on_obs
 
-    def on_reset_done(self) -> None:
-        # clear the FRAME buffers along with the target (round-2 review,
-        # executed repro): seg and depth ride separate dora channels with no
-        # cross-channel ordering, so a pre-reset frame's twin can drain AFTER
-        # reset_done and the new target_request — pairing it with the buffered
-        # pre-reset half would publish the OLD episode's scene as the NEW
-        # target's pose. Stamps cannot disambiguate: the bridge never rewinds
-        # sim_time_ns across a teleport, so the stale pair's stamps match.
-        self.target = None
-        self.pending = False
-        self.latest_depth = None
-        self.latest_seg = None
+    @property
+    def latest_seg(self):
+        return self.latest_obs
 
-    def on_depth(self, sim_time_ns: int, depth: np.ndarray) -> dict | None:
-        """Buffer the frame; publishable estimate if its seg twin is already
-        here (same rules as on_seg)."""
-        self.latest_depth = (sim_time_ns, depth)
-        if self.latest_seg is not None and self.latest_seg[0] == sim_time_ns >= 0:
-            return self._estimate(self.latest_seg[1], depth)
-        return None
-
-    def on_seg(self, sim_time_ns: int, seg: np.ndarray) -> dict | None:
-        """Buffer the frame; publishable estimate if its depth twin is
-        already here, or None when there is nothing to do (no pending
-        request, boot ordering, or no same-stamp pair yet — wait rather than
-        guess). Raises PoseRefused when the mask cannot support a
-        trustworthy pose; the request then STAYS pending. An unstamped frame
-        (missing sim_time_ns) never pairs."""
-        self.latest_seg = (sim_time_ns, seg)
-        if self.latest_depth is not None and self.latest_depth[0] == sim_time_ns >= 0:
-            return self._estimate(seg, self.latest_depth[1])
-        return None
-
-    def _estimate(self, seg: np.ndarray, depth: np.ndarray) -> dict | None:
-        if not (self.pending and self.target and self.calibration is not None):
-            return None
+    def _estimate(self, seg: np.ndarray, depth: np.ndarray) -> dict:
         project = self.backprojector(self.calibration)
         estimate = estimate_pose(
             seg,
@@ -246,7 +190,6 @@ class L1Session:
             footprint_m=tuple(self.meds[self.target]["size"][:2]),
         )
         neighbours, refused = estimate_neighbours(seg, depth, self.id_map, self.meds, project)
-        self.pending = False
         return {
             **estimate,
             "target_med": self.target,

@@ -1,0 +1,25 @@
+# The L2 rung's pose source (TC-9): pose from the pinned OWLv2 detector on
+# rendered rgb + same-stamp depth -- no ground truth of any kind. Refuses
+# on missing detections AND on low identity margins (measured wrong-id
+# signature, idea I7): under the asymmetric goal a wrong-medicine pick is
+# 10x worse than a refusal. Drop-in for the target_pose edge.
+id: detected-pose
+kind: node
+provides: [object_pose]
+requires: []
+inputs:
+  bridge_info: {schema: json_utf8, rate_hz: 1}
+  rgb_overhead: {schema: rgb8_image, rate_hz: 30}
+  depth_overhead: {schema: depth_f32, rate_hz: 15}
+  target_request: {schema: json_utf8, rate_hz: 1}
+  # episode boundary: clears the active target (T08 parity with oracle-pose)
+  reset_done: {schema: reset_done_u32, rate_hz: 1}
+outputs:
+  target_pose: {schema: pose7d_f32, latency_class: best_effort}
+embodiment:
+  arm: [franka, so101]
+  gripper: any
+safety_class: perception
+eval: null
+origin: hub
+source: src/aisle/nodes/l2_pose.py

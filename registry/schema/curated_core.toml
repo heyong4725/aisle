@@ -8,6 +8,7 @@ core = [
   "base-driver-sim",
   "budget-guard",
   "camera-source",
+  "detected-pose",
   "detector-openvocab",
   "dora-genesis",
   "grasp-planner-topdown",

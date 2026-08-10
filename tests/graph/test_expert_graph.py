@@ -106,3 +106,29 @@ def test_expert_t1_l1_episode_succeeds(tmp_path):
     records = [json.loads(line) for line in results.read_text().splitlines() if line.strip()]
     assert len(records) == 1, (records, (stderr or "")[-2000:])
     assert records[0]["status"] == "success", (records[0], (stderr or "")[-2000:])
+
+
+def test_expert_t1_l2_episode_succeeds(tmp_path):
+    """TC-9 end-to-end at rung L2 (idea I7): the seeded episode runs through
+    graphs/expert_t1_l2.yaml verbatim — the bridge publishes NEITHER
+    ground-truth pose topic, detected-pose grounds the target with the
+    pinned OWLv2 detector under the measured identity-margin floor, and the
+    episode closes with status=success. The one live test where no ground
+    truth of any kind reaches the policy side.
+
+    The target is cetirizine, never confused in the I7 shelf measurement.
+    Ibuprofen is deliberately NOT this test's target: OWLv2 systematically
+    scores its box below an overlapping rival (measured margin -0.028 live),
+    so the floor refuses every attempt and the episode times out honestly as
+    never_grasped — correct floor behavior, pinned by the acceptance run's
+    refusal statistics rather than by a single-episode success test."""
+    results, stderr = _run_expert_graph(
+        tmp_path,
+        "expert_t1_l2.yaml",
+        {"AISLE_SEEDS": "3", "AISLE_TARGET_MEDS": "cetirizine", "AISLE_TIMEOUT_S": "60"},
+    )
+
+    assert results.exists(), f"no results written; stderr tail: {(stderr or '')[-3000:]}"
+    records = [json.loads(line) for line in results.read_text().splitlines() if line.strip()]
+    assert len(records) == 1, (records, (stderr or "")[-2000:])
+    assert records[0]["status"] == "success", (records[0], (stderr or "")[-2000:])
