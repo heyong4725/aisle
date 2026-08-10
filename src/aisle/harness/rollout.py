@@ -851,9 +851,19 @@ def rollout(
         if verifier == "both":
             await_realistic_sidecar(run_dir, episodes)
         # ADR-21 round 3: reconcile the reservation with actuals no matter
-        # how the run ended — crash paths settle too
+        # how the run ended — crash paths settle too. Count from the RESULTS
+        # FILE, not episode_records: that list is parsed after this
+        # try/finally, so it is always [] here and every settle recorded 0
+        # episodes — the ceiling never decremented (found by the first real
+        # trusted campaign run; wall clamps' synthetic records count, they
+        # consumed attempts)
         if reservation is not None:
-            settle_budget(root, run_id, len(episode_records), time.monotonic() - started)
+            actual_episodes = (
+                sum(1 for line in results_path.read_text().splitlines() if line.strip())
+                if results_path.exists()
+                else 0
+            )
+            settle_budget(root, run_id, actual_episodes, time.monotonic() - started)
         _terminate(proc)
         reap_orphans(run_dir)
         if verifier == "both":
