@@ -157,6 +157,7 @@ def test_bridge_info_shape():
             calibration=calibration,
             perception="L0",
             segmentation_ids={},
+            sim_backend="metal",
         )
     )
     assert info == {
@@ -174,18 +175,29 @@ def test_bridge_info_shape():
         # TC-9: the rung is attested in the TRACE, not only in the graph
         "perception": "L0",
         "segmentation_ids": {},
+        "sim_backend": "metal",
     }
     assert info["platform"]
     assert info["calibration"]["calibration_version"] == 1
 
 
 def test_bridge_config_from_env():
-    """BRG-1: bridge configuration (seed, embodiment, n_envs) comes from
-    node environment variables with sane defaults."""
+    """BRG-1, CON-5: bridge configuration, including the rollout-attested
+    Genesis backend, comes from node environment variables with safe defaults."""
     cfg = parse_bridge_config({})
-    assert (cfg.seed, cfg.embodiment, cfg.n_envs) == (0, "franka", 1)
-    cfg = parse_bridge_config({"AISLE_SEED": "7", "AISLE_EMBODIMENT": "so101", "AISLE_N_ENVS": "4"})
-    assert (cfg.seed, cfg.embodiment, cfg.n_envs) == (7, "so101", 4)
+    assert (cfg.seed, cfg.embodiment, cfg.n_envs, cfg.sim_backend) == (0, "franka", 1, None)
+    cfg = parse_bridge_config(
+        {
+            "AISLE_SEED": "7",
+            "AISLE_EMBODIMENT": "so101",
+            "AISLE_N_ENVS": "4",
+            "AISLE_SIM_BACKEND": "cuda",
+        }
+    )
+    assert (cfg.seed, cfg.embodiment, cfg.n_envs, cfg.sim_backend) == (7, "so101", 4, "cuda")
+
+    with pytest.raises(ValueError, match="simulation backend"):
+        parse_bridge_config({"AISLE_SIM_BACKEND": "auto"})
 
 
 def test_step_without_reset_defaults_off():
@@ -394,10 +406,12 @@ def test_bridge_info_carries_the_l1_id_map():
             calibration={"calibration_version": 1},
             perception="L1",
             segmentation_ids={"amoxicillin": [16], "ibuprofen": [17]},
+            sim_backend="cuda",
         )
     )
     assert info["perception"] == "L1"
     assert info["segmentation_ids"] == {"amoxicillin": [16], "ibuprofen": [17]}
+    assert info["sim_backend"] == "cuda"
 
 
 def test_publish_gate_blocks_forbidden_topics_including_direct_calls():

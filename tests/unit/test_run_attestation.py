@@ -54,7 +54,7 @@ def test_recorder_still_subscribes_to_poses_at_l0(tmp_path):
 
 
 def test_manifest_attests_authored_and_executed_hashes_end_to_end(tmp_path, monkeypatch):
-    """Round-2 review P1: the attestation FIELDS this concern exists for
+    """Round-2 review P1 + CON-5: the attestation FIELDS this concern exists for
     (#128) were asserted nowhere — deleting the exec hash append or
     recording the authored hash twice passed the whole suite. This drives
     the REAL rollout() end to end (gates, instrumentation, manifest) with
@@ -70,8 +70,10 @@ def test_manifest_attests_authored_and_executed_hashes_end_to_end(tmp_path, monk
 
     root = _fake_root(tmp_path)
     graph = root / "graphs" / "expert_t1.yaml"
+    spawned = {}
 
     def fake_spawn(exec_graph, run_dir, env):
+        spawned.update(env)
         results = Path(env["AISLE_RESULTS"])
         seeds = [int(s) for s in env["AISLE_SEEDS"].split(",")]
         with open(results, "w") as f:
@@ -91,6 +93,16 @@ def test_manifest_attests_authored_and_executed_hashes_end_to_end(tmp_path, monk
 
     monkeypatch.setattr(rollout_module, "_spawn_dora", fake_spawn)
     monkeypatch.setattr(rollout_module, "_terminate", lambda proc: None)
+    monkeypatch.setattr(
+        rollout_module,
+        "resolve_sim_identity",
+        lambda extra: {
+            "ok": True,
+            "sim_extra": extra,
+            "sim_backend": "cuda",
+            "sim_device": "NVIDIA Test GPU",
+        },
+    )
 
     report = rollout_module.rollout(
         root=root,
@@ -105,6 +117,7 @@ def test_manifest_attests_authored_and_executed_hashes_end_to_end(tmp_path, monk
         no_idea_gate=True,
         env_baseline="local",
         perception="L1",
+        sim_extra="cuda",
     )
     assert report["ok"] is True, report
     manifest = json.loads((root / "runs" / "attest-unit" / "manifest.json").read_text())
@@ -112,7 +125,14 @@ def test_manifest_attests_authored_and_executed_hashes_end_to_end(tmp_path, monk
     exec_copy = root / "runs" / "attest-unit" / "graph.yaml"
     assert manifest["exec_graph_hashes"] == [hashlib.sha256(exec_copy.read_bytes()).hexdigest()]
     assert manifest["exec_graph_hashes"][0] != manifest["graph_hash"]
+    executed = yaml.safe_load(exec_copy.read_text())
+    bridge = next(node for node in executed["nodes"] if node["id"] == "dora-genesis")
+    assert bridge["env"]["AISLE_SIM_BACKEND"] == "cuda"
     assert manifest["perception"] == "L1"
+    assert manifest["sim_extra"] == "cuda"
+    assert manifest["sim_backend"] == "cuda"
+    assert manifest["sim_device"] == "NVIDIA Test GPU"
+    assert spawned["AISLE_SIM_BACKEND"] == "cuda"
 
 
 def test_instrumentation_fails_closed_when_the_rung_is_unresolvable(tmp_path):

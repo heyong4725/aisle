@@ -1,7 +1,10 @@
 # Getting started
 
-Target platform: macOS arm64 (M-series). Linux works for the non-sim
-test suite; the measured experiments to date ran on an M3 MacBook.
+Primary platform: macOS arm64 (M-series). Linux runs the non-sim suite and,
+with the explicit `cuda` extra, the Genesis simulator on supported NVIDIA
+hardware. The signed-off M0 experiments ran on an M3 MacBook; the Linux CUDA
+measurements described in `docs/demo.md` are development evidence, not a
+cross-backend reproducibility claim.
 Python >= 3.11, managed exclusively through
 [uv](https://docs.astral.sh/uv/) — never bare pip/conda (CON-2).
 
@@ -18,6 +21,13 @@ things to know before anything else:
 - **Plain `uv sync` REMOVES the sim extras.** If a sim test suddenly
   can't import `genesis` or `dora`, this is why. Re-run with
   `--extra sim`.
+- **On an NVIDIA host, use `--extra cuda` instead.** `sim` resolves the
+  CPU torch on Linux (CON-1 keeps CUDA wheels out of the default set), so
+  Genesis runs on CPU even with a GPU present. `uv sync --extra cuda`
+  installs the same stack with the CUDA torch; the two extras are
+  mutually exclusive. Pass `--sim-extra cuda` to `harness rollout`; the
+  request fails closed if CUDA is unavailable and is recorded in the run
+  manifest. The default `--sim-extra sim` never auto-upgrades to CUDA.
 - **dora runs from source, not PyPI.** PyPI's latest dora wheel (0.5.0)
   is far behind dora main and lacks the dynamic-node command family this
   repo depends on (`dora node add/remove`, hot-swap). The python API

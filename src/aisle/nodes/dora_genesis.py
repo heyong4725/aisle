@@ -233,6 +233,9 @@ class BridgeConfig:
     # hash attests which pose source a result used. L0: ground-truth `poses`.
     # L1: no `poses`, segmentation instead, pose estimated. L2: neither.
     perception: str = "L0"
+    # CON-5: rollout resolves and attests this backend before launch. None is
+    # the deterministic portable default for direct/debug graph execution.
+    sim_backend: str | None = None
 
 
 PERCEPTION_RUNGS = ("L0", "L1", "L2")
@@ -258,6 +261,13 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
         raise ValueError(
             f"unknown perception rung {perception!r} (TC-9: {'|'.join(PERCEPTION_RUNGS)})"
         )
+    sim_backend = env.get("AISLE_SIM_BACKEND")
+    if sim_backend is not None:
+        sim_backend = str(sim_backend).strip().lower()
+        if sim_backend not in ("cpu", "metal", "cuda"):
+            raise ValueError(
+                f"unknown simulation backend {sim_backend!r}; expected cpu, metal, or cuda"
+            )
     return BridgeConfig(
         perception=perception,
         seed=int(env.get("AISLE_SEED", "0")),
@@ -268,6 +278,7 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
         headless=env.get("AISLE_HEADLESS", "1") not in ("0", "false", "no"),
         step_without_reset=env.get("AISLE_STEP_WITHOUT_RESET", "0").strip().lower()
         in ("1", "true", "yes"),
+        sim_backend=sim_backend,
     )
 
 
@@ -447,6 +458,7 @@ def make_bridge_info(
     calibration: dict,
     perception: str,
     segmentation_ids: dict,
+    sim_backend: str,
 ) -> str:
     """BRG-6 + BRG-8: the startup contract announcement, as a JSON string.
 
@@ -473,7 +485,8 @@ def make_bridge_info(
     segmentation map, NOT entity indices, so a consumer that derives them
     silently selects other geometry (measured: robot links with identical
     pixel counts across different layouts). Publishing the map is what keeps
-    a consumer from having to guess."""
+    a consumer from having to guess. sim_backend is required for the same
+    recorded-vs-actual reason: CUDA and CPU traces must not look identical."""
     return json.dumps(
         {
             "contract": "v0",
@@ -486,6 +499,7 @@ def make_bridge_info(
             "platform": f"{platform.system().lower()}-{platform.machine()}",
             "env_hash": env_hash,
             "step_without_reset": step_without_reset,
+            "sim_backend": sim_backend,
             "calibration": calibration,
         }
     )
@@ -597,6 +611,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         oracle_state,
         resolve_layout,
         sample_placements,
+        select_genesis_backend,
         to_numpy,
     )
 
@@ -628,10 +643,15 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             scenario=cfg.scenario,
             embodiment=cfg.embodiment,
             headless=cfg.headless,
+            sim_backend=cfg.sim_backend,
         )
     else:
         handle = build_scene(
-            seed=cfg.seed, embodiment=cfg.embodiment, n_envs=cfg.n_envs, headless=cfg.headless
+            seed=cfg.seed,
+            embodiment=cfg.embodiment,
+            n_envs=cfg.n_envs,
+            headless=cfg.headless,
+            sim_backend=cfg.sim_backend,
         )
     robot = handle.robot
     n_dof = robot.n_dofs
@@ -681,6 +701,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     calibration=realized_calibration(handle, physics, is_store),
                     perception=cfg.perception,
                     segmentation_ids=segmentation_ids,
+                    sim_backend=cfg.sim_backend or select_genesis_backend("sim", platform.system()),
                 )
             ]
         ),

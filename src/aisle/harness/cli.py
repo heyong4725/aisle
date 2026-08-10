@@ -53,6 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
     roll.add_argument("--seeds", required=True, help="a..b or comma list")
     roll.add_argument("--reset", default="teleport", choices=["teleport", "behavioral"])
     roll.add_argument("--verifier", default="oracle", choices=["oracle", "realistic", "both"])
+    roll.add_argument(
+        "--sim-extra",
+        default="sim",
+        choices=["sim", "cuda"],
+        help="attested dependency/backend selection: portable sim or Linux CUDA",
+    )
     roll.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     roll.add_argument(
         "--no-idea-gate",
@@ -160,6 +166,7 @@ def main() -> int:
             embodiment=args.embodiment,
             env_baseline=args.env_baseline,
             perception=args.perception,
+            sim_extra=args.sim_extra,
         )
         return emit_report(report, lambda level, e: f"rollout {level}: {e}")
 

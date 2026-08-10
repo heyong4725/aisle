@@ -33,6 +33,24 @@ _MAX_PLACEMENT_TRIES = 1000
 _MAX_LAYOUT_RESTARTS = 64
 
 
+def select_genesis_backend(sim_extra: str, platform_name: str, cuda_available: bool = False) -> str:
+    """Resolve an explicit, attested dependency selection to one backend.
+
+    The portable ``sim`` environment never changes physics merely because a
+    GPU happens to be visible. The Linux-only ``cuda`` environment is an
+    explicit opt-in and fails closed instead of silently falling back.
+    """
+    if sim_extra == "sim":
+        return "metal" if platform_name == "Darwin" else "cpu"
+    if sim_extra != "cuda":
+        raise ValueError(f"unknown simulation extra {sim_extra!r}; expected 'sim' or 'cuda'")
+    if platform_name != "Linux":
+        raise ValueError("the locked CUDA simulation extra is supported only on Linux")
+    if not cuda_available:
+        raise ValueError("the CUDA simulation extra requires an available CUDA device")
+    return "cuda"
+
+
 def load_meds() -> dict:
     with open(_SCENES_DIR / "meds.toml", "rb") as f:
         return tomllib.load(f)
@@ -381,10 +399,24 @@ def _separated(
     return True
 
 
-def _ensure_genesis():
+def _ensure_genesis(backend_name: str | None = None):
     import genesis as gs
 
-    expected = gs.metal if platform.system() == "Darwin" else gs.cpu
+    system = platform.system()
+    backend_name = backend_name or select_genesis_backend("sim", system)
+    cuda_available = backend_name == "cuda"
+    if cuda_available:
+        import torch
+
+        cuda_available = torch.cuda.is_available()
+    selected_extra = "cuda" if backend_name == "cuda" else "sim"
+    resolved = select_genesis_backend(selected_extra, system, cuda_available)
+    if resolved != backend_name:
+        raise ValueError(
+            f"simulation backend {backend_name!r} is incompatible with {system}; "
+            f"expected {resolved!r}"
+        )
+    expected = {"metal": gs.metal, "cuda": gs.cuda, "cpu": gs.cpu}[backend_name]
     if not getattr(gs, "_initialized", False):
         # fixed seed: genesis's internal RNG must never be an input to build
         # outcomes (CON-5); reachability IK is additionally made
@@ -483,9 +515,10 @@ def build_scene(
     n_envs: int = 1,
     headless: bool = True,
     cfg: SceneCfg | None = None,
+    sim_backend: str | None = None,
 ) -> SceneHandle:
     cfg = cfg or SceneCfg()
-    gs = _ensure_genesis()
+    gs = _ensure_genesis(sim_backend)
     physics = load_physics()
     layout = resolve_layout(physics, embodiment)
     meds = load_meds()

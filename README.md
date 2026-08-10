@@ -34,6 +34,7 @@ Rust toolchain (for the dora CLI). Details and troubleshooting:
 
 ```bash
 uv sync --extra sim        # plain `uv sync` REMOVES the sim extras
+                           # NVIDIA host? use --extra cuda (GPU torch)
 cargo install --git https://github.com/dora-rs/dora --rev cd597e705 dora-cli --locked
 dora --version             # warns if CLI and python API revs drift
 
@@ -41,6 +42,7 @@ uv run pytest -m unit                            # fast, no sim (~547 tests)
 uv run harness validate graphs/expert_t0.yaml    # typed-graph validation
 uv run harness rollout --graph graphs/expert_t0.yaml --tier T0 \
     --episodes 2 --seeds 0..1 --no-idea-gate --env-baseline local
+# With `uv sync --extra cuda`, add `--sim-extra cuda` (Linux only).
 ```
 
 dora runs **from source** at the rev pinned in `pyproject.toml`
