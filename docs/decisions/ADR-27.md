@@ -82,10 +82,12 @@ pairwise center clearance. The upper level remains a 10 mm rear rail, so the
 scene still has the specified staggered two-level geometry. Labels, classes,
 goal distribution, graph YAML, and verifier criteria are unchanged.
 
-The trajectory rises to 300 mm, performs radial-front insertion, lifts and
-retracts gently, transfers at 300 mm, lowers over the side tray, releases, and
-returns home. Every waypoint is solved through the official limits. The exact
+The trajectory rises to 300 mm, performs radial-front insertion, lifts 50 mm
+and retracts gently, transfers at 300 mm, lowers over a 120 x 140 mm side tray
+that contains every canonical carton plus its captured horizontal offset,
+releases, and returns home. Every waypoint is solved through the official
+limits. The exact
 M0-5 command (`graphs/expert_t0.yaml`, profile swap only, seeds `0..49`) passed
-50/50 with `pass1=1.00` in run `m0-5-so101-final-v4`; the prior candidate's
+50/50 with `pass1=1.00` in run `m0-5-so101-final-v5`; the prior candidate's
 39/50 result is retained as negative evidence for the fixed-frame bug. Issue
 #13's deferred M0-5 gate is therefore satisfied.

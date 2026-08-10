@@ -240,6 +240,55 @@ def test_so101_staged_plan_covers_seed_zero_offset_grasp():
     assert len(next(stage for stage in plan.stages if stage.name == "transfer").path) >= 2
 
 
+def test_so101_staged_plan_lifts_tall_canonical_seed_two_carton():
+    """M0-5, SCN-2, SCN-4: the seed-2 cetirizine plan, which sits on the
+    official chain's lift boundary, clears the shelf at canonical height."""
+    from aisle.scenes.pharmacy import MED_NAMES, resolve_layout, sample_placements
+
+    physics = load_physics()
+    profile = physics["embodiment"]["so101"]
+    layout = resolve_layout(physics, "so101")
+    meds = load_meds()
+    placements = sample_placements(2, MED_NAMES, layout)
+    target = next(p for p in placements if p.name == "cetirizine")
+    pose = np.array([target.x, target.y, target.z, 0.0, 0.0, 0.0, 1.0], dtype=np.float32)
+    neighbours = [
+        [p.x, p.y, meds[p.name]["size"][0] / 2, meds[p.name]["size"][1] / 2]
+        for p in placements
+        if p.name != target.name
+    ]
+    shelf = layout["shelf"]
+    tray_top = layout["tray"]["pos"][2] + layout["tray"]["size"][2] / 2
+    grasp, approach, place_z = plan_grasp(
+        pose,
+        meds[target.name]["size"],
+        front=True,
+        shelf_front_x=shelf["pos"][0] - shelf["level_size"][0] / 2,
+        tray_top_z=tray_top,
+        neighbours=neighbours,
+        radial_front=True,
+        front_clearance=profile["front_clearance_m"],
+        front_tcp_overshoot=profile["front_tcp_overshoot_m"],
+        front_jaw_center_offset=profile["front_jaw_center_offset_m"],
+        front_vertical_offset=profile["front_vertical_offset_m"],
+    )
+    home = np.asarray(load_limits("so101").fallback_qpos, dtype=np.float32)
+    plan = StagedPlan(
+        grasp,
+        tuple(profile["tray_pos"][:2]),
+        approach,
+        home,
+        place_z=place_z,
+        embodiment="so101",
+    )
+    assert plan.ok, plan.error
+    advance = next(stage for stage in plan.stages if stage.name == "advance")
+    lift = next(stage for stage in plan.stages if stage.name == "lift")
+    assert fk_tcp(lift.q, embodiment="so101")[2] - fk_tcp(advance.q, embodiment="so101")[
+        2
+    ] == pytest.approx(profile["trajectory_lift_m"], abs=0.01)
+
+
 def test_so101_front_grasp_pose_is_radial_and_clears_shelf_front():
     """M0-5, SCN-4: the SO-101 planner emits its official-chain-feasible
     radial front frame and places the pregrasp beyond the shelf front

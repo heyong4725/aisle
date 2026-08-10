@@ -102,6 +102,11 @@ def test_so101_profile_preserves_canonical_medicine_dimensions():
     assert profile["carry_latch_max_distance_m"] == pytest.approx(0.20)
     tray_top = profile["tray_pos"][2] + profile["tray_size"][2] / 2
     assert tray_top + min(spec["size"][2] / 2 for spec in meds.values()) > 0.07
+    max_box_half_extent = max(max(spec["size"][:2]) for spec in meds.values()) / 2
+    capture_offset = (
+        profile["front_tcp_overshoot_m"] ** 2 + profile["front_jaw_center_offset_m"] ** 2
+    ) ** 0.5
+    assert min(profile["tray_size"][:2]) / 2 > max_box_half_extent + capture_offset
     assert meds["amoxicillin"]["size"] == [0.060, 0.040, 0.100]
 
 

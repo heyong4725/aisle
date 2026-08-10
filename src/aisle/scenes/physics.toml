@@ -130,7 +130,10 @@ shelf_pos = [0.40, 0.0, 0.0]
 pregrasp_height_m = 0.06
 # Compact free-space waypoints for the official 0.5457 m reach envelope.
 trajectory_staging_z = 0.30
-trajectory_lift_m = 0.06
+# A 60 mm lift puts the canonical-height cetirizine on an unreachable
+# continuation boundary for four seeds; 50 mm clears the board and solves all
+# 50 deterministic task plans through the official joint limits.
+trajectory_lift_m = 0.05
 trajectory_transfer_z = 0.30
 # The official side pinch held through lift but slipped during a 0.5-scale
 # radial retract. Halve only that shelf-proximate carry velocity; later
@@ -238,12 +241,14 @@ shelf_level_depths = [0.30, 0.01]
 # The 680 mm board fits the staggered 180 mm center-distance lattice;
 # placement_radius_m still caps every sampled centre to the measured arm envelope.
 shelf_level_size = [0.30, 0.68]
-# Raised side tray outside the shelf footprint and shelf-approach arm sweep:
-# its x edge ends at 0.23 m, 20 mm before the shelf front. The 80 mm top keeps
-# every canonical carton resting above the oracle's 70 mm floor/drop boundary;
-# -39 degrees halves the original loaded base-pan turn.
-tray_pos = [0.20, -0.20, 0.04]
-tray_size = [0.06, 0.12, 0.08]
+# Raised side tray outside the shelf footprint and shelf-approach arm sweep.
+# The canonical cartons plus the latch's measured horizontal capture offset
+# fit inside the 120 x 140 mm footprint; its x edge ends at 0.22 m, 30 mm
+# before the shelf front. The 80 mm top keeps every canonical carton above the
+# oracle's 70 mm floor/drop boundary, and the -45 degree azimuth preserves the
+# short loaded base-pan turn.
+tray_pos = [0.16, -0.16, 0.04]
+tray_size = [0.12, 0.14, 0.08]
 
 [ik]
 pregrasp_height_m = 0.10
