@@ -44,6 +44,7 @@ _AXES = ("x", "y", "z")
 class GuardLimits:
     """BG-2: every limit the guard enforces, loaded from env/limits.toml."""
 
+    embodiment: str
     n_arm_dof: int
     q_min: tuple[float, ...]
     q_max: tuple[float, ...]
@@ -90,6 +91,7 @@ def load_limits(embodiment: str) -> GuardLimits:
         )
     emb = raw["embodiment"][arm_kind]
     return GuardLimits(
+        embodiment=arm_kind,
         n_arm_dof=emb["n_arm_dof"],
         q_min=tuple(emb["q_min"]),
         q_max=tuple(emb["q_max"]),
@@ -124,21 +126,52 @@ def fk_flange(q_arm: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return T[:3, 3] + T[:3, 2] * _FRANKA_FLANGE_D, T[:3, :3]
 
 
-def fk_ee_pos(q_arm: np.ndarray) -> np.ndarray:
-    """Flange position only (the guard's workspace check)."""
-    return fk_flange(q_arm)[0]
+def fk_ee_pose(q_arm: np.ndarray, embodiment: str = "franka") -> tuple[np.ndarray, np.ndarray]:
+    """Official end-effector pose for an embodiment (BG-2).
+
+    Panda retains its verified modified-DH implementation. SO-101 parses the
+    vendored official URDF through its fixed ``gripper_frame_link`` so the
+    guard, planner, and simulator share one chain.
+    """
+    if embodiment == "so101":
+        from aisle.kinematics import so101_chain
+
+        return so101_chain().forward(q_arm)
+    if embodiment in {"franka", "mobile"}:
+        return fk_flange(q_arm)
+    raise ValueError(f"no forward kinematics for embodiment {embodiment!r}")
+
+
+def fk_ee_pos(
+    q_arm: np.ndarray, limits: GuardLimits | None = None, embodiment: str = "franka"
+) -> np.ndarray:
+    """End-effector position only (the guard's workspace check)."""
+    profile = limits.embodiment if limits is not None else embodiment
+    return fk_ee_pose(q_arm, profile)[0]
 
 
 def gripper_to_fingers(g: float, limits: GuardLimits) -> np.ndarray:
-    """Normalized gripper (0 open .. 1 closed) -> finger joint positions
-    (fingers are open at q_max, closed at 0 — franka; ADR-9)."""
-    return limits.q_max_arr[limits.n_arm_dof :] * (1.0 - g)
+    """Normalized gripper (0 open .. 1 closed) -> physical joint positions.
+
+    The official profiles use q_max as open and q_min as closed. Franka's
+    q_min happens to be zero; SO-101's revolute jaw has a non-zero lower
+    endpoint, so interpolation must retain both endpoints (ADR-27).
+    """
+    open_pos = limits.q_max_arr[limits.n_arm_dof :]
+    closed_pos = limits.q_min_arr[limits.n_arm_dof :]
+    if g <= 0.0:
+        return open_pos.copy()
+    if g >= 1.0:
+        return closed_pos.copy()
+    return open_pos + float(g) * (closed_pos - open_pos)
 
 
 def fingers_to_gripper(q: np.ndarray, limits: GuardLimits) -> float:
     """Inverse of gripper_to_fingers on the finger slice of a command."""
     open_pos = limits.q_max_arr[limits.n_arm_dof :]
-    return float(1.0 - np.mean(np.asarray(q, np.float32)[limits.n_arm_dof :] / open_pos))
+    closed_pos = limits.q_min_arr[limits.n_arm_dof :]
+    physical = np.asarray(q, np.float32)[limits.n_arm_dof :]
+    return float(np.mean((open_pos - physical) / (open_pos - closed_pos)))
 
 
 def _inside(ee: np.ndarray, limits: GuardLimits) -> bool:
@@ -187,7 +220,7 @@ def clamp_joint_cmd(
     # before the velocity clamp shortens the step, so an out-of-workspace
     # intent is reported even when velocity limiting already contains it;
     # commanded_ee is None iff the commanded pose was inside
-    commanded_ee = fk_ee_pos(safe[: limits.n_arm_dof])
+    commanded_ee = fk_ee_pos(safe[: limits.n_arm_dof], limits)
     if _inside(commanded_ee, limits):
         commanded_ee = None
 
@@ -202,26 +235,28 @@ def clamp_joint_cmd(
     # verified and pulled back if needed. When velocity left the command
     # untouched, its FK is the commanded one already computed.
     final_ee = (
-        fk_ee_pos(safe[: limits.n_arm_dof])
+        fk_ee_pos(safe[: limits.n_arm_dof], limits)
         if velocity_clamped
         else (commanded_ee if commanded_ee is not None else None)
     )
     if final_ee is not None and not _inside(final_ee, limits):
         if commanded_ee is None:  # velocity-clamped pose strayed on its own
             commanded_ee = final_ee
-        if _inside(fk_ee_pos(last[: limits.n_arm_dof]), limits):
+        if _inside(fk_ee_pos(last[: limits.n_arm_dof], limits), limits):
             # largest t in [0, 1] along last -> safe whose FK stays inside
             good, bad = 0.0, 1.0
             for _ in range(12):  # sub-millimeter resolution on any step
                 mid = (good + bad) / 2
-                if _inside(fk_ee_pos((last + mid * (safe - last))[: limits.n_arm_dof]), limits):
+                if _inside(
+                    fk_ee_pos((last + mid * (safe - last))[: limits.n_arm_dof], limits), limits
+                ):
                     good = mid
                 else:
                     bad = mid
             safe = (last + good * (safe - last)).astype(np.float32)
         else:  # last safe itself is outside (should not happen): hold home
             safe = np.asarray(limits.fallback_qpos, dtype=np.float32)
-        final_ee = fk_ee_pos(safe[: limits.n_arm_dof])
+        final_ee = fk_ee_pos(safe[: limits.n_arm_dof], limits)
     if commanded_ee is not None:
         axis = next(
             (

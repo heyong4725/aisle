@@ -30,6 +30,7 @@ FRANKA_MJCF = "xml/franka_emika_panda/panda.xml"
 FRANKA_EE_LINK = "hand"
 
 _MAX_PLACEMENT_TRIES = 1000
+_MAX_LAYOUT_RESTARTS = 64
 
 
 def load_meds() -> dict:
@@ -40,6 +41,15 @@ def load_meds() -> dict:
 def load_physics() -> dict:
     with open(_SCENES_DIR / "physics.toml", "rb") as f:
         return tomllib.load(f)
+
+
+def so101_urdf_options(profile: dict) -> dict[str, Any]:
+    """Genesis import options that retain the official gripper geometry."""
+    return {
+        "fixed": True,
+        "convexify": True,
+        "decompose_robot_error_threshold": float(profile["collision_decompose_error_threshold"]),
+    }
 
 
 def resolve_layout(physics: dict, embodiment: str) -> dict:
@@ -63,6 +73,16 @@ def resolve_layout(physics: dict, embodiment: str) -> dict:
             **(
                 {"min_separation": profile["min_separation"]} if "min_separation" in profile else {}
             ),
+            **(
+                {"hand_clearance_m": profile["shelf_hand_clearance_m"]}
+                if "shelf_hand_clearance_m" in profile
+                else {}
+            ),
+            **(
+                {"edge_margin": profile["shelf_edge_margin_m"]}
+                if "shelf_edge_margin_m" in profile
+                else {}
+            ),
         },
         "tray": {
             **physics["tray"],
@@ -70,6 +90,10 @@ def resolve_layout(physics: dict, embodiment: str) -> dict:
             "size": profile["tray_size"],
         },
         "reach_m": profile["reach_m"],
+        "placement_radius_m": float(profile.get("placement_radius_m", profile["reach_m"])),
+        "center_separation_m": float(profile.get("center_separation_m", 0.0)),
+        "placement_slots_xy": profile.get("placement_slots_xy"),
+        "placement_global_jitter_m": float(profile.get("placement_global_jitter_m", 0.0)),
         "ik": {
             **physics["ik"],
             **(
@@ -189,43 +213,147 @@ def sample_placements(seed: int, med_names: list[str], layout: dict) -> list[Pla
     ]
     if not usable_levels:
         raise AssertionError("no shelf level is inside the reach envelope (check layout profile)")
-    placed: list[Placement] = []
-    for name in med_names:
-        size = meds[name]["size"]
-        half_x, half_y = size[0] / 2, size[1] / 2
-        for _ in range(_MAX_PLACEMENT_TRIES):
-            level = usable_levels[rng.randrange(len(usable_levels))]
-            band_min, band_max = open_band(shelf, level)
-            x_lo = band_min - shelf["pos"][0] + shelf["edge_margin"] + half_x
-            x_hi = band_max - shelf["pos"][0] - shelf["edge_margin"] - half_x
-            if x_hi < x_lo:
-                continue  # this med cannot fit the level's open band
-            local_x = rng.uniform(x_lo, x_hi)
-            local_y = rng.uniform(
-                -width / 2 + shelf["edge_margin"] + half_y,
-                width / 2 - shelf["edge_margin"] - half_y,
-            )
+    if layout["placement_slots_xy"]:
+        return _sample_profile_slots(
+            rng,
+            med_names,
+            layout,
+            meds,
+            usable_levels[0],
+            max_target,
+        )
+    # Sequential rejection can paint itself into a corner even when a valid
+    # layout exists (the larger official SO-101 jaw corridor exposes this at
+    # seed 22). Restart the whole layout from the same injected RNG stream;
+    # the bound and stream remain deterministic (CON-5).
+    for _restart in range(_MAX_LAYOUT_RESTARTS):
+        placed: list[Placement] = []
+        for name in med_names:
+            size = meds[name]["size"]
+            half_x, half_y = size[0] / 2, size[1] / 2
+            for _ in range(_MAX_PLACEMENT_TRIES):
+                level = usable_levels[rng.randrange(len(usable_levels))]
+                band_min, band_max = open_band(shelf, level)
+                x_lo = band_min - shelf["pos"][0] + shelf["edge_margin"] + half_x
+                x_hi = band_max - shelf["pos"][0] - shelf["edge_margin"] - half_x
+                if x_hi < x_lo:
+                    continue  # this med cannot fit the level's open band
+                local_x = rng.uniform(x_lo, x_hi)
+                local_y = rng.uniform(
+                    -width / 2 + shelf["edge_margin"] + half_y,
+                    width / 2 - shelf["edge_margin"] - half_y,
+                )
+                candidate = Placement(
+                    name=name,
+                    level=level,
+                    x=shelf["pos"][0] + local_x,
+                    y=shelf["pos"][1] + local_y,
+                    z=shelf["pos"][2]
+                    + shelf["level_heights"][level]
+                    + shelf["board_thickness"] / 2
+                    + size[2] / 2,
+                )
+                pregrasp_distance = math.hypot(
+                    candidate.x, candidate.y, candidate.z + ik["pregrasp_height_m"]
+                )
+                if (
+                    pregrasp_distance > max_target
+                    or math.hypot(candidate.x, candidate.y) > layout["placement_radius_m"]
+                ):
+                    continue
+                if _separated(
+                    candidate,
+                    half_x,
+                    half_y,
+                    placed,
+                    meds,
+                    shelf["min_separation"],
+                    layout["center_separation_m"],
+                ):
+                    placed.append(candidate)
+                    break
+            else:
+                break
+        else:
+            return placed
+    raise AssertionError(
+        f"could not place all medicines after {_MAX_LAYOUT_RESTARTS} deterministic restarts"
+    )
+
+
+def _sample_profile_slots(
+    rng: random.Random,
+    med_names: list[str],
+    layout: dict,
+    meds: dict,
+    level: int,
+    max_target: float,
+) -> list[Placement]:
+    """Randomize medicines over a measured collision-free slot lattice.
+
+    The slot coordinates and jitter are physics configuration, not inline
+    scene constants (SCN-2). Every shuffled/jittered candidate is still
+    rejection-checked for board bounds, reach, radial envelope, and pairwise
+    separation (SCN-3).
+    """
+    shelf = layout["shelf"]
+    slots = [tuple(map(float, slot)) for slot in layout["placement_slots_xy"]]
+    if len(slots) != len(med_names):
+        raise AssertionError("placement_slots_xy must have one slot per medicine")
+    jitter = layout["placement_global_jitter_m"]
+    band_min, band_max = open_band(shelf, level)
+    for _restart in range(_MAX_LAYOUT_RESTARTS):
+        shuffled = slots.copy()
+        rng.shuffle(shuffled)
+        dx, dy = rng.uniform(-jitter, jitter), rng.uniform(-jitter, jitter)
+        placed: list[Placement] = []
+        for name, (slot_x, slot_y) in zip(med_names, shuffled, strict=True):
+            size = meds[name]["size"]
+            half_x, half_y = size[0] / 2, size[1] / 2
             candidate = Placement(
                 name=name,
                 level=level,
-                x=shelf["pos"][0] + local_x,
-                y=shelf["pos"][1] + local_y,
+                x=slot_x + dx,
+                y=slot_y + dy,
                 z=shelf["pos"][2]
                 + shelf["level_heights"][level]
                 + shelf["board_thickness"] / 2
                 + size[2] / 2,
             )
             pregrasp_distance = math.hypot(
-                candidate.x, candidate.y, candidate.z + ik["pregrasp_height_m"]
+                candidate.x,
+                candidate.y,
+                candidate.z + layout["ik"]["pregrasp_height_m"],
             )
-            if pregrasp_distance > max_target:
-                continue
-            if _separated(candidate, half_x, half_y, placed, meds, shelf["min_separation"]):
-                placed.append(candidate)
+            in_bounds = (
+                band_min + shelf["edge_margin"] + half_x
+                <= candidate.x
+                <= band_max - shelf["edge_margin"] - half_x
+                and -shelf["level_size"][1] / 2 + shelf["edge_margin"] + half_y
+                <= candidate.y
+                <= shelf["level_size"][1] / 2 - shelf["edge_margin"] - half_y
+            )
+            if (
+                not in_bounds
+                or pregrasp_distance > max_target
+                or math.hypot(candidate.x, candidate.y) > layout["placement_radius_m"]
+                or not _separated(
+                    candidate,
+                    half_x,
+                    half_y,
+                    placed,
+                    meds,
+                    shelf["min_separation"],
+                    layout["center_separation_m"],
+                )
+            ):
                 break
+            placed.append(candidate)
         else:
-            raise AssertionError(f"could not place {name!r} after {_MAX_PLACEMENT_TRIES} tries")
-    return placed
+            return placed
+    raise AssertionError(
+        f"could not assign collision-free profile slots after {_MAX_LAYOUT_RESTARTS} attempts"
+    )
 
 
 def _separated(
@@ -235,12 +363,15 @@ def _separated(
     placed: list[Placement],
     meds: dict,
     min_separation: float,
+    center_separation_m: float = 0.0,
 ) -> bool:
     """AABBs overlap iff BOTH axis gaps are below their half-extent sums, so
     separation requires at least one axis to clear its sum plus margin."""
     for other in placed:
         if other.level != candidate.level:
             continue
+        if math.hypot(candidate.x - other.x, candidate.y - other.y) < center_separation_m:
+            return False
         required_x = half_x + meds[other.name]["size"][0] / 2 + min_separation
         required_y = half_y + meds[other.name]["size"][1] / 2 + min_separation
         clear_x = abs(candidate.x - other.x) >= required_x
@@ -355,9 +486,9 @@ def build_scene(
 ) -> SceneHandle:
     cfg = cfg or SceneCfg()
     gs = _ensure_genesis()
-    meds = load_meds()
     physics = load_physics()
     layout = resolve_layout(physics, embodiment)
+    meds = load_meds()
     shelf, tray_cfg = layout["shelf"], layout["tray"]
     dr_cfg = physics["domain_randomization"]
 
@@ -428,7 +559,10 @@ def build_scene(
             raise FileNotFoundError(
                 f"so101 asset missing: {SO101_URDF} (acquisition pending, ADR-6)"
             )
-        robot = scene.add_entity(gs.morphs.URDF(file=str(SO101_URDF), fixed=True))
+        profile = physics["embodiment"][embodiment]
+        robot = scene.add_entity(
+            gs.morphs.URDF(file=str(SO101_URDF), **so101_urdf_options(profile))
+        )
 
     box_physics = physics["materials"]["box"]
     applied_frictions: dict[str, float] = {}
@@ -529,15 +663,16 @@ def build_scene(
 
     # SCN-3: asserted at build time, unconditionally; placements are seed-
     # identical across batched envs, so env 0 witnesses reachability for all
-    _assert_reachable(handle, ee_link, layout["ik"], n_envs)
+    _assert_reachable(handle, ee_link, layout, n_envs)
     return handle
 
 
-def _assert_reachable(handle: SceneHandle, ee_link, ik_cfg: dict, n_envs: int = 1) -> None:
+def _assert_reachable(handle: SceneHandle, ee_link, layout: dict, n_envs: int = 1) -> None:
     """SCN-3: every box placement must admit an IK solution to its pre-grasp
     pose. Deterministic multi-start (CON-5): explicit seeded init_qpos
     perturbations with max_samples=1, so genesis's global RNG never
     influences the outcome; position AND rotation error are both checked."""
+    ik_cfg = layout["ik"]
     rng = random.Random(handle.seed)
     profile = load_physics()["embodiment"][handle.embodiment]
     wire_dof_indices = profile_dof_indices(handle.robot, profile)
@@ -549,6 +684,78 @@ def _assert_reachable(handle: SceneHandle, ee_link, ik_cfg: dict, n_envs: int = 
             home = native_home
     else:
         home = to_numpy(handle.robot.get_qpos()).reshape(-1)[: handle.robot.n_dofs]
+
+    if handle.embodiment == "so101":
+        # The official chain cannot realize the provisional vertical
+        # top-down pose at this compact shelf. Validate the SAME native
+        # radial-front pregrasp/insertion geometry the production planner
+        # uses (ADR-27), through the pure URDF-derived IK used at runtime.
+        from aisle.nodes.grasp_topdown import plan_grasp
+        from aisle.nodes.ik_trajectory import (
+            ik_continuation,
+            ik_solve,
+            quat_to_rotation,
+        )
+
+        shelf = layout["shelf"]
+        shelf_front_x = shelf["pos"][0] - shelf["level_size"][0] / 2
+        front_clearance = float(profile["front_clearance_m"])
+        front_overshoot = float(profile["front_tcp_overshoot_m"])
+        jaw_center_offset = float(profile["front_jaw_center_offset_m"])
+        vertical_offset = float(profile["front_vertical_offset_m"])
+        arm_home = home[: len(profile["arm_joint_names"])]
+        failures = []
+        centres = {
+            name: to_numpy(entity.get_pos()).reshape(-1)[:3]
+            for name, entity in handle.boxes.items()
+        }
+        for name in handle.boxes:
+            centre = centres[name]
+            target_pose = np.array([*centre, 0.0, 0.0, 0.0, 1.0], dtype=np.float32)
+            neighbours = [
+                [
+                    other_pos[0],
+                    other_pos[1],
+                    handle.med_sizes[other][0] / 2,
+                    handle.med_sizes[other][1] / 2,
+                ]
+                for other, other_pos in centres.items()
+                if other != name
+            ]
+            grasp_pose, approach, _ = plan_grasp(
+                target_pose,
+                handle.med_sizes[name],
+                front=True,
+                shelf_front_x=shelf_front_x,
+                tray_top_z=0.0,
+                radial_front=True,
+                neighbours=neighbours,
+                front_clearance=front_clearance,
+                front_tcp_overshoot=front_overshoot,
+                front_jaw_center_offset=jaw_center_offset,
+                front_vertical_offset=vertical_offset,
+            )
+            grasp_pos = grasp_pose[:3].astype(np.float64)
+            rotation = quat_to_rotation(grasp_pose[3:])
+            pregrasp = grasp_pos - rotation[:, 2] * approach
+            q_pre = ik_solve(pregrasp, rotation, arm_home, embodiment="so101")
+            path = (
+                ik_continuation(
+                    pregrasp,
+                    grasp_pos,
+                    rotation,
+                    q_pre,
+                    embodiment="so101",
+                )
+                if q_pre is not None
+                else None
+            )
+            if path is None:
+                failures.append(f"{name}: radial-front pregrasp/insertion IK failed")
+        handle.reachability_errors = failures
+        assert not failures, f"unreachable placements (SCN-3): {failures}"
+        return
+
     frame = ee_frame_transform(profile)
     local_point = frame[:3, 3] if "ee_frame_offset_xyz" in profile else None
     downward = np.diag([1.0, -1.0, -1.0]).astype(np.float32)

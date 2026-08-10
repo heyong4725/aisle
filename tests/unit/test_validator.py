@@ -531,14 +531,12 @@ def test_missing_graph_file_reported_as_json(tmp_path):
     assert "GRAPH_INVALID" in codes(report, "errors")
 
 
-def test_good_graph_rejected_for_other_embodiment():
-    """VAL-2: EMBODIMENT_MISMATCH fires when a node's manifest does not
-    support the requested arm profile — the franka-only expert graph
-    rejected for so101. (mobile is NOT such a case any more: MOB-4 resolves
-    it to the franka arm; see test_mobility.)"""
+def test_expert_graph_accepts_so101_after_motion_stack_lands():
+    """VAL-2, M0-5: once both official SO-101 motion manifests advertise
+    support, the exact T0 graph validates under a profile swap."""
     code, report = run_validate(REPO_ROOT / "graphs" / "expert_t0.yaml", "--embodiment", "so101")
-    assert code != 0
-    assert "EMBODIMENT_MISMATCH" in codes(report, "errors")
+    assert code == 0, report
+    assert "EMBODIMENT_MISMATCH" not in codes(report, "errors")
 
 
 def test_install_missing_hint_names_installed_alternative():

@@ -26,10 +26,9 @@ outputs:
   violation: {schema: json_utf8, latency_class: best_effort}
   guard_stats: {schema: json_utf8, latency_class: best_effort}
 embodiment:
-  # so101 intentionally absent: env/limits.toml has no so101 section and
-  # load_limits refuses it (asset + kinematics blocked); restore when the
-  # so101 limits land
-  arm: [franka]
+  # Both fixed-base arms have official limits/FK in env/limits.toml and the
+  # guard; mobile resolves to its Franka arm under MOB-4.
+  arm: [franka, so101]
   gripper: any
 safety_class: motion
 eval:
