@@ -86,6 +86,49 @@ def compute_metrics(episodes: list[dict]) -> dict:
     }
 
 
+def resolve_sim_identity(sim_extra: str) -> dict:
+    """Resolve the requested lock extra to a fail-closed backend/device.
+
+    CON-5 requires this live hardware fact to ride with the run identity;
+    the portable ``sim`` selection deliberately never probes into CUDA.
+    """
+    from aisle.scenes.pharmacy import select_genesis_backend
+
+    system = platform_module.system()
+    cuda_available = False
+    device = "mps" if system == "Darwin" else "cpu"
+    if sim_extra == "cuda":
+        if system != "Linux":
+            return {
+                "ok": False,
+                "gate": "sim_backend",
+                "detail": "the locked CUDA simulation extra is supported only on Linux",
+            }
+        try:
+            import torch
+
+            cuda_available = bool(torch.cuda.is_available())
+            if cuda_available:
+                index = int(torch.cuda.current_device())
+                device = f"cuda:{index}:{torch.cuda.get_device_name(index)}"
+        except (ImportError, RuntimeError) as exc:
+            return {
+                "ok": False,
+                "gate": "sim_backend",
+                "detail": f"cannot inspect the requested CUDA device: {exc}",
+            }
+    try:
+        backend = select_genesis_backend(sim_extra, system, cuda_available)
+    except ValueError as exc:
+        return {"ok": False, "gate": "sim_backend", "detail": str(exc)}
+    return {
+        "ok": True,
+        "sim_extra": sim_extra,
+        "sim_backend": backend,
+        "sim_device": device,
+    }
+
+
 def load_campaign_budget(root: Path) -> dict:
     """ADR-21: the campaign ceilings from harness/budget.toml (FROZEN — a
     research agent must not raise its own budget)."""
@@ -259,6 +302,7 @@ def run_gates(
     embodiment: str = "franka",
     env_baseline: str = "origin/main",
     episodes: int = 0,
+    sim_extra: str = "sim",
 ) -> dict:
     """HAR-2: refuse on env-hash mismatch (TRUSTED baseline by default,
     ADR-21: the baseline commit is fetched from the remote SERVER and
@@ -278,11 +322,14 @@ def run_gates(
             "'origin/main' (server-resolved) or the logged dev override 'local' "
             "are accepted (ADR-21)",
         }
+    sim_identity = resolve_sim_identity(sim_extra)
+    if not sim_identity["ok"]:
+        return sim_identity
     baseline_oid = None
     hash_cmd = [sys.executable, str(root / "tools" / "env_hash.py"), "--check", "--root", str(root)]
     # ADR-24: rollouts need the sim extra — declare the selection so the
     # trusted checker attests THIS environment shape (HAR-2)
-    hash_cmd += ["--extras", "sim"]
+    hash_cmd += ["--extras", sim_extra]
     if env_baseline != "local":
         baseline_oid, err = resolve_trusted_baseline(root)
         if err:
@@ -332,6 +379,7 @@ def run_gates(
     if not validation["ok"]:
         return {"ok": False, "gate": "validate", "detail": validation["errors"]}
     gates = {
+        **sim_identity,
         "env_hash": env_hash,
         "env_baseline": env_baseline,
         # the resolved immutable identity (ADR-21 round 3): the audit
@@ -417,6 +465,7 @@ def instrumented_graph(
     name: str = "graph.yaml",
     verifier: str = "oracle",
     episode_timeout_s: float = 60.0,
+    sim_backend: str | None = None,
 ) -> Path:
     """The input graph plus a trace-recorder node (HAR-4) with absolutized
     node paths, written under the run dir (dora's cwd becomes the run dir,
@@ -449,6 +498,10 @@ def instrumented_graph(
             "perception rung unresolvable at instrumentation time (TC-9): "
             + "; ".join(e["detail"] for e in rung_errors)
         )
+    if sim_backend is not None:
+        for node in doc["nodes"]:
+            if node["id"] in bridge_ids:
+                node["env"] = {**(node.get("env") or {}), "AISLE_SIM_BACKEND": sim_backend}
     forbidden = FORBIDDEN_BY_RUNG.get(rung, ())
     # HAR-4: EVERY declared endpoint, keyed <producer>__<topic> so two
     # producers of the same topic name (e.g. reset_done from both the
@@ -635,6 +688,7 @@ def rollout(
     embodiment: str = "franka",
     env_baseline: str = "origin/main",
     perception: str | None = None,
+    sim_extra: str = "sim",
 ) -> dict:
     """HAR-1: the full run. Returns the report dict (CON-8: caller emits)."""
     # A relative root (`--root .`) must be pinned to THIS process's cwd:
@@ -670,7 +724,16 @@ def rollout(
     # conflicts with PATH_MANIFEST_MISMATCH's identity check — open on #128;
     # exec_graph_hashes bounds the damage by attesting what actually ran.
     authored_graph_hash = _graph_hash(graph)
-    gates = run_gates(root, graph, branch, no_idea_gate, embodiment, env_baseline, episodes)
+    gates = run_gates(
+        root,
+        graph,
+        branch,
+        no_idea_gate,
+        embodiment,
+        env_baseline,
+        episodes,
+        sim_extra,
+    )
     if not gates["ok"]:
         return {"ok": False, "refused": gates}
     # ADR-21 round 3: RESERVE atomically before launch (trusted runs only;
@@ -693,7 +756,12 @@ def rollout(
     episode_timeout_s, per_episode_budget_s = tier_budgets(tier)
     try:
         exec_graph = instrumented_graph(
-            graph, root, run_dir, verifier=verifier, episode_timeout_s=episode_timeout_s
+            graph,
+            root,
+            run_dir,
+            verifier=verifier,
+            episode_timeout_s=episode_timeout_s,
+            sim_backend=gates["sim_backend"],
         )
     except RuntimeError as exc:
         return {"ok": False, "refused": {"gate": "perception", "detail": str(exc)}}
@@ -718,6 +786,9 @@ def rollout(
             "AISLE_TIER": tier,
             # M0-5: the embodiment profile swap rides on env, zero YAML edits
             "AISLE_EMBODIMENT": embodiment,
+            # CON-5: the gate resolved this from the explicitly selected,
+            # attested dependency extra. It never comes from ambient state.
+            "AISLE_SIM_BACKEND": gates["sim_backend"],
             "AISLE_TIMEOUT_S": str(episode_timeout_s),
             "AISLE_RESULTS": str(results_path),
         }
@@ -823,6 +894,7 @@ def rollout(
                         name=f"graph-r{relaunches}.yaml",
                         verifier=verifier,
                         episode_timeout_s=episode_timeout_s,
+                        sim_backend=gates["sim_backend"],
                     )
                 except RuntimeError as exc:
                     # fail closed mid-run too: a registry broken since the
@@ -926,6 +998,11 @@ def rollout(
         # graph (never from the flag or ambient env — both cannot inject)
         "perception": perception_gate["rung"],
         "embodiment": embodiment,
+        # CON-5 / SCN-7: dependency selection and the resolved live device
+        # distinguish CPU/Metal/CUDA physics evidence with no hidden probe.
+        "sim_extra": gates["sim_extra"],
+        "sim_backend": gates["sim_backend"],
+        "sim_device": gates["sim_device"],
         "seeds": seeds,
         "reset": reset_mode,
         "verifier": verifier,

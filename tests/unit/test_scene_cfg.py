@@ -250,6 +250,42 @@ def test_module_import_stays_sim_free():
     assert proc.returncode == 0, proc.stderr
 
 
+@pytest.mark.parametrize(
+    ("sim_extra", "platform_name", "cuda_available", "expected"),
+    [
+        ("sim", "Darwin", False, "metal"),
+        ("sim", "Darwin", True, "metal"),
+        ("sim", "Linux", True, "cpu"),
+        ("sim", "Linux", False, "cpu"),
+        ("sim", "Windows", True, "cpu"),
+        ("cuda", "Linux", True, "cuda"),
+    ],
+)
+def test_select_genesis_backend(sim_extra, platform_name, cuda_available, expected):
+    """SCN-7, CON-5: the attested extra, not ambient hardware, selects the
+    backend; the portable sim extra stays CPU on Linux even on a GPU host."""
+    from aisle.scenes.pharmacy import select_genesis_backend
+
+    assert select_genesis_backend(sim_extra, platform_name, cuda_available) == expected
+
+
+@pytest.mark.parametrize(
+    ("sim_extra", "platform_name", "cuda_available", "message"),
+    [
+        ("cuda", "Linux", False, "CUDA device"),
+        ("cuda", "Darwin", True, "Linux"),
+        ("bogus", "Linux", True, "simulation extra"),
+    ],
+)
+def test_select_genesis_backend_fails_closed(sim_extra, platform_name, cuda_available, message):
+    """SCN-7, CON-5: an explicit CUDA identity must never fall back to CPU
+    or run on a platform for which the locked CUDA selection is undefined."""
+    from aisle.scenes.pharmacy import select_genesis_backend
+
+    with pytest.raises(ValueError, match=message):
+        select_genesis_backend(sim_extra, platform_name, cuda_available)
+
+
 def test_sampled_boxes_always_have_open_sky(placements_200):
     """SCN-3 / ADR-12: the staggered sampler's open bands and the
     planner's needs_front safety net agree — across 200 seeds and both
