@@ -1,5 +1,7 @@
 """Stable embodiment-level topic contracts (SPEC 010, TC-5)."""
 
+import numpy as np
+
 SO101_ARM_JOINTS = (
     "shoulder_pan",
     "shoulder_lift",
@@ -38,3 +40,16 @@ def profile_dof_indices(robot, profile: dict) -> tuple[int, ...] | None:
             f"profile joint order covers DOFs {indices}, but robot has {robot.n_dofs} DOFs"
         )
     return tuple(indices)
+
+
+def from_wire_joint_order(values: np.ndarray, indices: tuple[int, ...]) -> np.ndarray:
+    """Map a TC-5 command from wire order into simulator-native DOF order."""
+    values = np.asarray(values, dtype=np.float32)
+    native = np.empty_like(values)
+    native[..., list(indices)] = values
+    return native
+
+
+def to_wire_joint_order(values: np.ndarray, indices: tuple[int, ...]) -> np.ndarray:
+    """Map simulator-native joint state into the TC-5 wire order."""
+    return np.asarray(values)[..., list(indices)]

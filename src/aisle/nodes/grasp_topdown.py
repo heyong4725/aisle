@@ -268,6 +268,24 @@ def place_tcp_z(size_xyz, grip_from_top: float, tray_top_z: float) -> float:
     return float(tray_top_z) + (float(size_xyz[2]) - float(grip_from_top)) + PLACE_DROP_GAP
 
 
+def neighbour_constraints(centres: list, target_med: str, med_names: list, meds: dict) -> list:
+    """(x, y, half_x, half_y) grip-axis constraints from a `neighbours`
+    payload: every box except the target.
+
+    The payload is POSITIONAL — one row per med in scene-manifest order, so
+    `strict=True` pins producer drift (a short list is a producer bug, not a
+    plan input). A row of None is a neighbour the L1 estimator REFUSED to
+    place (mask under the occlusion floor, TC-9) and is omitted from the
+    constraints — fewer constraints means a permissive plan, which is why
+    the refusal count travels in the metadata — never unpacked as a centre:
+    at L0 every row is a real centre and this reduces to the old parse."""
+    return [
+        [row[0], row[1], meds[name]["size"][0] / 2, meds[name]["size"][1] / 2]
+        for name, row in zip(med_names, centres, strict=True)
+        if name != target_med and row is not None
+    ]
+
+
 def main() -> None:
     import json
     import os
@@ -276,19 +294,13 @@ def main() -> None:
     import pyarrow as pa
     from dora import Node
 
-    from aisle.scenes.pharmacy import (
-        MED_NAMES,
-        load_meds,
-        load_physics,
-        resolve_layout,
-        scaled_meds,
-    )
+    from aisle.scenes.pharmacy import MED_NAMES, load_meds, load_physics, resolve_layout
     from aisle.topics import make_sender
 
     embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
     physics = load_physics()
     layout = resolve_layout(physics, embodiment)
-    meds = scaled_meds(load_meds(), layout["med_scale"])
+    meds = load_meds()
     shelf = layout["shelf"]
     shelf_front_x = shelf["pos"][0] - shelf["level_size"][0] / 2
     tray = layout["tray"]
@@ -320,12 +332,9 @@ def main() -> None:
             # selection — every box except the target
             neighbours = None
             if "neighbours" in metadata:
-                centres = json.loads(metadata["neighbours"])
-                neighbours = [
-                    [cx, cy, meds[name]["size"][0] / 2, meds[name]["size"][1] / 2]
-                    for name, (cx, cy) in zip(MED_NAMES, centres, strict=True)
-                    if name != med
-                ]
+                neighbours = neighbour_constraints(
+                    json.loads(metadata["neighbours"]), med, MED_NAMES, meds
+                )
             grasp, approach, place_z = plan_grasp(
                 pose,
                 meds[med]["size"],

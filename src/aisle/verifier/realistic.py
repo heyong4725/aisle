@@ -33,6 +33,13 @@ STAGES = (
     "upright",
     "home",
 )
+# VER-13 (amended, issue #107): the stages that GATE the verdict.
+# identity_wrist is recorded and reported but does not gate -- after the
+# wrist mount was fixed (#109/#110) it passes only inside a ~1 s window
+# around release that the 5 s cadence samples ~2 times in 5, and every false
+# fail in the first VER-6 run was wrist-driven while the overhead
+# contributed none. STAGES stays complete so the sidecar keeps reporting it.
+GATING_STAGES = tuple(s for s in STAGES if s != "identity_wrist")
 CAMERAS = ("overhead", "wrist")
 SIDECAR_NAME = "verifier_stages.jsonl"
 
@@ -66,8 +73,17 @@ class EpisodeJudge:
 
     goal_id: str
     frames: dict[str, list[dict]] = field(default_factory=lambda: {c: [] for c in CAMERAS})
-    latched: bool = False
+    # VER-9 (amended, issue #107): the latch is PER-CAMERA. Cross-camera
+    # let the wrist veto the overhead's vote -- 2 of 5 episodes in the first
+    # VER-6 run -- while the overhead's own detections were healthy.
+    latched_cameras: set = field(default_factory=set)
     first_latch_event: dict | None = None
+
+    @property
+    def latched(self) -> bool:
+        """Any camera latched. VER-14 reports this; the VOTE uses the
+        per-camera set."""
+        return bool(self.latched_cameras)
 
     def observe(self, camera: str, frame: dict) -> None:
         """Record one judged frame (checkpoint or terminal) for a camera.
@@ -76,18 +92,21 @@ class EpisodeJudge:
         if camera not in CAMERAS:
             raise ValueError(f"unknown camera {camera!r}")
         self.frames[camera].append(frame)
-        if frame.get("non_target_in_tray") and not self.latched:
-            self.latched = True
+        if frame.get("non_target_in_tray") and camera not in self.latched_cameras:
+            self.latched_cameras.add(camera)
             offenders = {
                 k: v
                 for k, v in (frame.get("per_class_scores") or {}).items()
                 if k != frame.get("target_med")
             }
-            self.first_latch_event = {
+            first = self.first_latch_event is None
+            event = {
                 "sim_time_ns": frame["sim_time_ns"],
                 "camera": camera,
                 "med_class": max(offenders, key=offenders.get) if offenders else None,
             }
+            if first:
+                self.first_latch_event = event
 
     def identity_vote(self, camera: str) -> StageVote:
         """VER-9: pass iff this camera saw the TARGET in the tray on some
@@ -97,10 +116,10 @@ class EpisodeJudge:
         # dominates missing evidence on this camera — VER-3's safety
         # asymmetry outranks unable-to-judge. Only with the latch clear
         # is an empty camera an error (VER-13, PR #103 review round 3).
-        if self.latched:
+        if camera in self.latched_cameras:
             return StageVote(
                 "fail",
-                detail="wrong-object latch set (VER-9)",
+                detail=f"wrong-object latch set on {camera} (VER-9)",
                 measurement={"latched_at_ns": self.first_latch_event["sim_time_ns"]},
             )
         if not frames:
@@ -115,9 +134,14 @@ class EpisodeJudge:
 
 
 def fuse(votes: dict[str, StageVote]) -> bool:
-    """VER-13: realistic success iff EVERY stage passes. Missing stages
-    and `error` statuses both fail closed."""
-    return all(votes.get(stage, StageVote("error")).status == "pass" for stage in STAGES)
+    """VER-13: realistic success iff every GATING stage passes. Missing
+    stages and `error` statuses both fail closed.
+
+    identity_wrist is deliberately not gating (issue #107) -- it is still
+    computed, recorded and reported, so VER-6 attribution keeps showing it
+    and restoring it to the gate is a one-line change once it detects
+    reliably."""
+    return all(votes.get(stage, StageVote("error")).status == "pass" for stage in GATING_STAGES)
 
 
 def sidecar_record(judge: EpisodeJudge, votes: dict[str, StageVote]) -> dict:

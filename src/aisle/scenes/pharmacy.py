@@ -52,16 +52,6 @@ def so101_urdf_options(profile: dict) -> dict[str, Any]:
     }
 
 
-def scaled_meds(meds: dict, scale: float) -> dict:
-    """Copy medicine specs with geometry scaled for an embodiment profile."""
-    if scale <= 0:
-        raise ValueError("medicine scale must be positive")
-    return {
-        name: {**spec, "size": [float(value) * scale for value in spec["size"]]}
-        for name, spec in meds.items()
-    }
-
-
 def resolve_layout(physics: dict, embodiment: str) -> dict:
     """Merge shared geometry with the embodiment's layout profile: shelf
     position/levels/size, tray position/size, reach, and the ik section."""
@@ -88,6 +78,11 @@ def resolve_layout(physics: dict, embodiment: str) -> dict:
                 if "shelf_hand_clearance_m" in profile
                 else {}
             ),
+            **(
+                {"edge_margin": profile["shelf_edge_margin_m"]}
+                if "shelf_edge_margin_m" in profile
+                else {}
+            ),
         },
         "tray": {
             **physics["tray"],
@@ -95,7 +90,6 @@ def resolve_layout(physics: dict, embodiment: str) -> dict:
             "size": profile["tray_size"],
         },
         "reach_m": profile["reach_m"],
-        "med_scale": float(profile.get("med_scale", 1.0)),
         "placement_radius_m": float(profile.get("placement_radius_m", profile["reach_m"])),
         "center_separation_m": float(profile.get("center_separation_m", 0.0)),
         "placement_slots_xy": profile.get("placement_slots_xy"),
@@ -197,7 +191,7 @@ def sample_placements(seed: int, med_names: list[str], layout: dict) -> list[Pla
     shelf = layout["shelf"]
     ik = layout["ik"]
     max_target = layout["reach_m"] * ik["reach_margin_frac"]
-    meds = scaled_meds(load_meds(), layout["med_scale"])
+    meds = load_meds()
     width = shelf["level_size"][1]
 
     # levels whose nearest-point candidates can never pass the reach filter
@@ -494,7 +488,7 @@ def build_scene(
     gs = _ensure_genesis()
     physics = load_physics()
     layout = resolve_layout(physics, embodiment)
-    meds = scaled_meds(load_meds(), layout["med_scale"])
+    meds = load_meds()
     shelf, tray_cfg = layout["shelf"], layout["tray"]
     dr_cfg = physics["domain_randomization"]
 

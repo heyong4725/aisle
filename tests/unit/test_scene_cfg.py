@@ -86,25 +86,22 @@ def test_so101_collision_meshes_preserve_the_official_finger_gap():
     }
 
 
-def test_so101_profile_scales_medicines_to_official_opening():
-    """M0-5, SCN-2, SCN-4: the SO-101 scene profile scales T0 props so
-    every front-grasp width fits the official physical jaw opening while
-    the canonical Franka medicine dimensions remain unchanged."""
-    from aisle.scenes.pharmacy import resolve_layout, scaled_meds
+def test_so101_profile_preserves_canonical_medicine_dimensions():
+    """M0-5, SCN-2, SCN-4: an embodiment profile may move the shelf and
+    tray, but the five fixed T0 medicine dimensions remain those in meds.toml."""
+    from aisle.scenes.pharmacy import resolve_layout
 
     physics = load_physics()
     meds = load_meds()
     layout = resolve_layout(physics, "so101")
-    scaled = scaled_meds(meds, layout["med_scale"])
     profile = physics["embodiment"]["so101"]
-    usable_opening = profile["gripper_open_m"] - profile["gripper_finger_clear_m"]
-    assert layout["med_scale"] == pytest.approx(0.5)
+    assert "med_scale" not in profile
+    assert "med_scale" not in layout
     assert profile["kinematic_carry_latch"] is True
     assert profile["carry_latch_close"] > profile["carry_latch_release"]
     assert profile["carry_latch_max_distance_m"] == pytest.approx(0.20)
     tray_top = profile["tray_pos"][2] + profile["tray_size"][2] / 2
-    assert tray_top + min(spec["size"][2] / 2 for spec in scaled.values()) > 0.07
-    assert max(spec["size"][1] for spec in scaled.values()) <= usable_opening
+    assert tray_top + min(spec["size"][2] / 2 for spec in meds.values()) > 0.07
     assert meds["amoxicillin"]["size"] == [0.060, 0.040, 0.100]
 
 

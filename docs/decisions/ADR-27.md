@@ -64,13 +64,14 @@ stops at `0.70`, below the measured physical-contact onset near `0.75`.
 Normalized topic endpoints remain exactly `0=open, 1=closed`; these are
 documented simulator operating points, not an endpoint remap.
 
-The SO-101 profile scales medicine geometry by `0.50`, so the widest
-tangential face is 22.5 mm inside the configured 24 mm usable opening. The
-radial-front capture TCP sits 120 mm above the carton center, keeping official
-robot collision geometry out of the planogram while the nearest-object latch
-remains inside its 200 mm envelope. Position carry is yaw-relative and height-
-preserving, matching ADR-18; orientation stays upright. Build-time
-reachability calls the same pure grasp planner and URDF-derived IK as runtime.
+The SO-101 profile preserves the five canonical medicine sizes from
+`scenes/meds.toml` (SCN-2); an embodiment profile changes shelf/tray placement,
+not the task objects. The radial-front capture TCP sits 120 mm above the carton
+center, keeping official robot collision geometry out of the planogram while
+the nearest-object latch remains inside its 200 mm envelope. Position carry is
+yaw-relative and height-preserving, matching ADR-18; orientation stays upright.
+Build-time reachability calls the same pure grasp planner and URDF-derived IK
+as runtime.
 
 The measured insertion radius remains capped at 440 mm, below the official
 chain's 545.7 mm swept maximum. The lower board uses a seed-randomized,
@@ -85,6 +86,6 @@ The trajectory rises to 300 mm, performs radial-front insertion, lifts and
 retracts gently, transfers at 300 mm, lowers over the side tray, releases, and
 returns home. Every waypoint is solved through the official limits. The exact
 M0-5 command (`graphs/expert_t0.yaml`, profile swap only, seeds `0..49`) passed
-50/50 with `pass1=1.00` in run `m0-5-so101-final-v2`; the prior candidate's
+50/50 with `pass1=1.00` in run `m0-5-so101-final-v4`; the prior candidate's
 39/50 result is retained as negative evidence for the fixed-frame bug. Issue
 #13's deferred M0-5 gate is therefore satisfied.

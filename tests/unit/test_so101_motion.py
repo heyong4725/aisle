@@ -26,7 +26,7 @@ from aisle.nodes.ik_trajectory import (
     rotation_to_quat,
     so101_radial_rotation,
 )
-from aisle.scenes.pharmacy import load_meds, load_physics, scaled_meds
+from aisle.scenes.pharmacy import load_meds, load_physics
 
 pytestmark = pytest.mark.unit
 
@@ -167,7 +167,7 @@ def test_so101_staged_plan_uses_five_arm_joints_and_official_tcp():
     the profile's five-joint home pose."""
     limits = load_limits("so101")
     profile = load_physics()["embodiment"]["so101"]
-    med = scaled_meds(load_meds(), profile["med_scale"])["amoxicillin"]
+    med = load_meds()["amoxicillin"]
     tray_top = profile["tray_pos"][2] + profile["tray_size"][2] / 2
     home = np.asarray(limits.fallback_qpos, dtype=np.float32)
     grasp_pos = np.array([0.369, 0.0, 0.115], dtype=np.float32)
@@ -213,7 +213,7 @@ def test_so101_staged_plan_covers_seed_zero_offset_grasp():
     straight-chord singularity without changing the T0 graph."""
     limits = load_limits("so101")
     profile = load_physics()["embodiment"]["so101"]
-    med = scaled_meds(load_meds(), profile["med_scale"])["amoxicillin"]
+    med = load_meds()["amoxicillin"]
     tray_top = profile["tray_pos"][2] + profile["tray_size"][2] / 2
     # Recorded from seed 0 after applying the official-mesh jaw offsets.
     grasp = np.array(

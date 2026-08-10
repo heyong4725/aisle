@@ -66,7 +66,7 @@ restriction in (12) is lifted.
 
 M0-5 closed on 2026-08-08: the unchanged T0 graph with the SO-101 profile
 passed 50/50 seeds (`0..49`, `pass1=1.00`, run
-`m0-5-so101-final-v2`). The profile is supported rather than merely
+`m0-5-so101-final-v4`). The profile is supported rather than merely
 advertised.
 
 ## Amendments after PR #8 review round 2

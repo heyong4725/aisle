@@ -123,21 +123,29 @@ up to roughly 40% (rule of three). This establishes that the failure mode is
 not rampant; it does not establish a small rate. Treat it as a floor to
 build on, not a clean bill.
 
-## Combined result
+## Combined result — CORRECTED at n=25 (see the correction note below)
+
+The first version of this file reported agreement 0.40 on 5 positives and
+0.73 combined. **Both were a lucky seed range.** A 20-episode run (seeds
+10..29) scored 1/20 where seeds 3..7 scored 2/5, so over 25 positives:
 
 | | episodes | agreement | false success | false fail |
 |---|---|---|---|---|
-| positives (`fidelity-I9`) | 5 | 0.40 | n/a | 0.60 |
-| negatives (`fidelity-neg2-I2`, induced) | 6 | 1.00 | 0.00 | n/a |
-| **combined** | **11** | **0.73** | **0.00 (0/6)** | **0.60 (3/5)** |
+| positives (seeds 3..7 + 10..29) | 25 | **0.12** | n/a | 0.88 |
+| negatives (induced, velocity-limited) | 6 | 1.00 | **0.00** | n/a |
+| **combined** | **31** | **0.29** | **0.00 (0/6)** | 0.88 (22/25) |
 
-The asymmetry is the point, and it is the one VER-3 and VER-13 were designed
-to produce: this verifier **rejects correct behaviour** more often than we
-would like, and so far **never accepts incorrect behaviour**. For A7 — the
-loop driven by the realistic verifier with the oracle held out — that is the
-safer failure direction, but a 0.60 false-fail rate would still have the
-agent optimising against a verifier that rejects most of what works. The
-false-fail cause is entirely the wrist (#107).
+The asymmetry is unchanged and is still the point: this verifier **rejects
+correct behaviour** far more often than we would like, and across 31
+episodes it has **never** accepted incorrect behaviour. But the false-fail
+rate is 0.88, not 0.60 — so a loop driven by this verdict today would reject
+almost everything that works, and A7 is further away than the first number
+suggested.
+
+Stage attribution over the 20-episode run (offline judging): `identity_wrist`
+18/20, `containment` 15/20, `upright` 14/20, `identity_overhead` 13/20 —
+consistent with the n=5 finding that the wrist dominates, but with the
+overhead now contributing substantially too.
 
 ## What this does NOT establish
 
@@ -192,3 +200,16 @@ uv run python -m aisle.harness.fidelity --run-dir runs/<id>
 The frames are bytes on disk, so a verifier change can be re-scored against
 the SAME episodes without re-simulating — which is the point of #105, and
 what made both corrections above cheap to find.
+
+### 3. I generalised from five episodes
+
+The first two versions of this note reported 0.40 agreement (5 positives) and
+0.73 combined, and PR #114 landed those numbers. A 20-episode run on
+different seeds scored **1/20**, taking the honest positive-side agreement to
+**0.12** and the combined figure to **0.29**.
+
+Nothing about the measurement changed — the seed range did. Seeds 3..7 were
+unrepresentatively easy, and I reported a headline number from them without
+checking whether it held. The lesson is the cheap one: n=5 on a stochastic
+scene constrains almost nothing, and the run that would have caught it cost
+ten minutes.

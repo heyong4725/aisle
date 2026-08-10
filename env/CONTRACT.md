@@ -44,6 +44,7 @@ floor accordingly.
 | `rgb_overhead`  | `rgb8_image`       | h*w*3     | 30 Hz   | overhead camera; meta `{h, w, enc:"rgb8"}` | store |
 | `rgb_wrist`     | `rgb8_image`       | h*w*3     | 30 Hz   | wrist camera (attached to EE link); meta `{h, w, enc:"rgb8"}` | flange |
 | `depth_overhead`| `depth_f32`        | h*w       | 15 Hz   | overhead depth (m; 0 = invalid)          | store |
+| `seg_overhead`  | `seg_i32`          | h*w       | 15 Hz   | per-pixel segmentation ids; L1 ONLY (TC-9); 0 = background; ids from the map in `bridge_info` | store |
 | `reset_done`    | `reset_done_u32`   | 1         | on reset| acknowledges a `reset`; meta `seed, mode, t_reset_ms` (TC-6) | —     |
 | `bridge_info`   | `json_utf8`        | 1         | best_effort | startup announce (dof count, genesis version, env_hash) | — |
 | `base_pose`     | `base_pose3d_f32`  | 3         | 50 Hz   | base origin `(x, y, yaw)` (m, m, rad) (mobile) | store |

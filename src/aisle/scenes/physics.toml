@@ -195,9 +195,6 @@ gripper_kv = [2.731]
 # physical jaw opening used only by placement/grasp clearance geometry
 gripper_open_m = 0.03
 gripper_finger_clear_m = 0.006
-# Scale the T0 cartons to the hobby arm's official usable jaw opening; the
-# shelf/tray are already embodiment-scaled by this same scene profile.
-med_scale = 0.50
 # ADR-27 / ADR-18 pattern: Genesis cannot retain the official hobby pinch
 # under horizontal motion, so close captures the nearest in-envelope carton
 # in the hand frame and open releases it back to physics. No target identity.
@@ -214,23 +211,26 @@ center_separation_m = 0.18
 # Seed-randomized medicine-to-slot assignment plus global jitter retains
 # SCN-3 randomization while guaranteeing the measured 180 mm centre spacing.
 placement_slots_xy = [
-  [0.30,  -0.28],
-  [0.415, -0.14],
-  [0.30,  0.00],
-  [0.415,  0.14],
-  [0.30,   0.28],
+  [0.302, -0.28],
+  [0.416, -0.14],
+  [0.302,  0.00],
+  [0.416,  0.14],
+  [0.302,  0.28],
 ]
 placement_global_jitter_m = 0.001
 # Radial-front grasps do not require the top-down hand column; reduce the
 # upper-rail exclusion so both staggered x columns remain open.
 shelf_hand_clearance_m = 0.05
+# The canonical cartons need 15 mm of board-edge margin at the measured slot
+# lattice; this remains larger than the ±1 mm placement jitter.
+shelf_edge_margin_m = 0.015
 # staggered two-level shelf scaled to the official SO-101 chain: the upper level is
 # geometry-only (the reach pre-filter excludes it, hand clearance leaves
 # no usable band); the lower open band is moved forward into the realized
 # radial-front workspace and fits all five meds across 0.68 m — verified over
 # 200 placement seeds.
-# Initial carton centres remain at 80–85 mm, above the oracle's floor/drop
-# boundary, while the effective finger-mesh contact crosses their centres.
+# Canonical carton centres remain above the oracle's floor/drop boundary;
+# medicine dimensions always come directly from meds.toml (SCN-2).
 shelf_level_heights = [0.045, 0.24]
 # The unreachable upper level is a 10 mm rear rail; this leaves a wider
 # collision-free front-grasp band on the reachable lower board.
@@ -240,7 +240,7 @@ shelf_level_depths = [0.30, 0.01]
 shelf_level_size = [0.30, 0.68]
 # Raised side tray outside the shelf footprint and shelf-approach arm sweep:
 # its x edge ends at 0.23 m, 20 mm before the shelf front. The 80 mm top keeps
-# every half-scale carton resting above the oracle's 70 mm floor/drop boundary;
+# every canonical carton resting above the oracle's 70 mm floor/drop boundary;
 # -39 degrees halves the original loaded base-pan turn.
 tray_pos = [0.20, -0.20, 0.04]
 tray_size = [0.06, 0.12, 0.08]

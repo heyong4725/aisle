@@ -6,7 +6,8 @@ STREAM format — readable batch-by-batch even if the recorder dies before
 a clean close (the FILE format needs a footer, and a SIGKILL'd recorder
 left unreadable truncated files in the T09 smoke). Numeric payloads fill
 the data column, JSON payloads the text column, image topics record
-metadata-only rows with pixels in overhead.mp4 (10 fps; ADR-11). SIGTERM
+payload-free rows with pixels in overhead.mp4 (10 fps; ADR-11) — except
+seg_overhead rows, whose text carries mask PROVENANCE (#131). SIGTERM
 is handled so teardown flushes writers. Measurement only: this node runs in
 the rollout runner's INSTRUMENTED copy of the graph, which is never the
 graph that the HAR-2 validation gate checks — VAL-6's oracle isolation
@@ -28,6 +29,8 @@ expensive: 140 KB per instant measured over a live two-episode run
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import signal
 import sys
@@ -42,9 +45,10 @@ TRACE_SCHEMA = pa.schema(
         ("sim_time_ns", pa.int64()),
         ("env_id", pa.int32()),
         ("seq", pa.int64()),
-        # exactly one of data/text is non-null per row: numeric payloads in
-        # data, JSON payloads in text; image topics record metadata-only
-        # rows (both null) — pixels live in the mp4 (ADR-11)
+        # at most one of data/text is non-null per row: numeric payloads
+        # in data, JSON payloads in text; image rows carry no payload
+        # (pixels live in the mp4, ADR-11) except seg_overhead, whose text
+        # is the #131 provenance JSON — never the mask itself
         ("data", pa.list_(pa.float64())),
         ("text", pa.string()),
     ]
@@ -58,6 +62,25 @@ BATCH_ROWS = 100
 # read (PR #11 round 2) — periodic flushing bounds any loss to this many
 # seconds of tail
 FLUSH_EVERY_S = 5.0
+# endpoints whose rows are METADATA-ONLY. Anything not listed here goes down the
+# generic numeric path, which calls .tolist() on the payload: a 640x480
+# seg_overhead mask is 307,200 float64 list values per frame, ~2.5 MB, ~37 MB/s
+# at 15 Hz, buffered BATCH_ROWS deep. (Earlier revisions of this comment cited
+# "ADR-11's ~17 MB budget" — that figure is ADR-11's MEASUREMENT of the opt-in
+# npz capture set for a 600 s episode, as this module's own docstring states,
+# not a trace budget. The arithmetic above is what justifies the routing.)
+IMAGE_ENDPOINTS = ("__rgb_overhead", "__rgb_wrist", "__depth_overhead", "__seg_overhead")
+
+
+def is_image_endpoint(topic: str) -> bool:
+    """Whether this endpoint's row is PAYLOAD-FREE (ADR-11, TC-9; seg rows
+    additionally carry #131 provenance text, never the mask itself).
+
+    A named function, not an inline `topic.endswith(IMAGE_ENDPOINTS)`, so the
+    routing decision itself is what a test binds: asserting only on the
+    constant left `IMAGE_ENDPOINTS[:-1]` at the call site green while masks went
+    back down the numeric path."""
+    return topic.endswith(IMAGE_ENDPOINTS)
 
 
 def decode_frame(metadata: dict, value) -> np.ndarray | None:
@@ -73,7 +96,30 @@ def decode_frame(metadata: dict, value) -> np.ndarray | None:
         return np.asarray(value.to_numpy(zero_copy_only=False), dtype=np.uint8).reshape(h, w, 3)
     if enc == "depth32f":
         return np.asarray(value.to_numpy(zero_copy_only=False), dtype=np.float32).reshape(h, w)
+    if enc == "seg_i32":
+        # issue #131, amending #129's decline: at L1 the mask IS the pose's
+        # determining input, so it decodes — into the VER-9 capture set and
+        # the per-row provenance hash. The mp4 stays rgb-only via the
+        # stream-name guard in main().
+        return np.asarray(value.to_numpy(zero_copy_only=False), dtype=np.int32).reshape(h, w)
     return None
+
+
+def seg_provenance(frame: np.ndarray) -> str:
+    """JSON for a mask's trace row (issue #131 option 2): a sha256 and the
+    labeled-pixel count — enough to prove WHICH mask produced an L1
+    target_pose (or refusal) at ~100 bytes, where the payload itself is
+    ~1.2 MB per frame and stays out of the trace (ADR-11 budget).
+
+    `nonzero_px` counts every labeled pixel in the SCENE — it is not the
+    estimator's `mask_pixels`, which counts the target's mask alone; the
+    sha256 is the cross-artifact anchor, the count a coarse sanity bound."""
+    return json.dumps(
+        {
+            "mask_sha256": hashlib.sha256(np.ascontiguousarray(frame).tobytes()).hexdigest(),
+            "nonzero_px": int(np.count_nonzero(frame)),
+        }
+    )
 
 
 class CaptureSchedule:
@@ -142,11 +188,57 @@ def capture_frames(frames_dir: Path, latest: dict[str, tuple[int, np.ndarray]]) 
     rgb, depth = latest.get("rgb_overhead"), latest.get("depth_overhead")
     if rgb is None or depth is None or rgb[0] != depth[0]:
         return None
-    write_camera_frame(frames_dir, "overhead", rgb[0], {"rgb": rgb[1], "depth": depth[1]})
+    arrays = {"rgb": rgb[1], "depth": depth[1]}
+    seg = latest.get("seg_overhead")
+    # issue #131: at L1 the mask rides with the judged pair — but only from
+    # the SAME render pass (the TC-9 stamp rule); a mask from another tick
+    # would attest a scene this pair never saw. L0 runs have no seg stream
+    # and the npz is unchanged.
+    if seg is not None and seg[0] == rgb[0]:
+        arrays["seg"] = seg[1]
+    write_camera_frame(frames_dir, "overhead", rgb[0], arrays)
     wrist = latest.get("rgb_wrist")
     if wrist is not None:
         write_camera_frame(frames_dir, "wrist", wrist[0], {"rgb": wrist[1]})
     return rgb[0]
+
+
+def record_image_frame(
+    stream: str,
+    sim_time_ns: int,
+    frame: np.ndarray,
+    schedule: CaptureSchedule,
+    latest: dict,
+    frames_dir: Path,
+) -> str | None:
+    """Retention-order and boundary-capture logic for ONE image frame;
+    returns the provenance text for seg rows (None otherwise). Extracted
+    from the event loop so the ORDER is what a test drives with the real
+    30/15 Hz interleave (PR #134 review P1/P2).
+
+    The order is load-bearing and asymmetric:
+
+    * rgb/depth retain AFTER the boundary check — the captured pair must be
+      the last one at or before the boundary (VER-9's at-or-before rule);
+    * seg retains BEFORE it. Seg can never complete the rgb/depth pair, so
+      pair selection is unaffected — but when the boundary lands in the
+      second half of a render period, the capture fires ON the seg event
+      itself, and retained-after, the matching mask is in hand yet omitted.
+      Not a transient race: the 5 s capture period is an exact multiple of
+      the 15 Hz render period, so the boundary phase repeats for every
+      checkpoint of an episode and a second-half-phase episode loses the
+      mask at ALL its mid-episode captures (measured as the 4/15 misses in
+      the PR's first live run — one all-miss episode, not scattered)."""
+    row_text = None
+    if stream == "seg_overhead":
+        latest[stream] = (sim_time_ns, frame)
+        row_text = seg_provenance(frame)
+    if schedule.crossed(sim_time_ns):
+        if capture_frames(frames_dir, latest) is not None:
+            schedule.advance(sim_time_ns)
+    if stream != "seg_overhead":
+        latest[stream] = (sim_time_ns, frame)
+    return row_text
 
 
 def write_camera_frame(
@@ -160,7 +252,7 @@ def write_camera_frame(
 
 
 def load_frames(trace_dir: Path) -> dict[str, dict[int, dict[str, np.ndarray]]]:
-    """`frames[camera][sim_time_ns] -> {"rgb", "depth"}` — exactly the
+    """`frames[camera][sim_time_ns] -> {"rgb", "depth"[, "seg"]}` — the
     mapping `verifier.realistic.judge_frames` consumes, so an offline
     replay (VER-6) reads the same arrays the live judge saw. Empty when
     the run was recorded without frame capture."""
@@ -244,20 +336,26 @@ def main() -> None:
                 continue
             topic = event["id"]  # <producer>__<topic> endpoint key
             metadata = event.get("metadata") or {}
-            if topic.endswith(("__rgb_overhead", "__rgb_wrist", "__depth_overhead")):
-                # image endpoints: metadata-only rows; overhead pixels go to
-                # the mp4 and, when capture is on, raw arrays (ADR-11)
+            if is_image_endpoint(topic):
+                # image endpoints: payload-free rows; overhead pixels go to
+                # the mp4 and, when capture is on, raw arrays (ADR-11).
+                # seg_overhead (TC-9, L1) is routed here or nowhere: the
+                # generic numeric path below would call .tolist() on 640x480 =
+                # 307,200 float64s per frame, ~2.5 MB, ~37 MB/s at 15 Hz.
+                # Issue #131: its row carries PROVENANCE (hash + labeled px)
+                # in text, and the decoded mask joins the capture set — the
+                # mp4 stays rgb-only via the stream guard below.
                 stream = topic.rsplit("__", 1)[-1]
                 frame = decode_frame(metadata, event["value"])
+                row_text = None
                 if frame is not None:
                     sim_time_ns = int(metadata.get("sim_time_ns", 0))
-                    # BEFORE retaining this frame: if it proves the pending
-                    # boundary has passed, the frame still retained is the
-                    # last one at or before it — the one VER-9 judges
-                    if schedule.crossed(sim_time_ns):
-                        if capture_frames(frames_dir, latest) is not None:
-                            schedule.advance(sim_time_ns)
-                    latest[stream] = (sim_time_ns, frame)
+                    # retention order + boundary capture live in
+                    # record_image_frame — the order is load-bearing and
+                    # test-driven (PR #134 review)
+                    row_text = record_image_frame(
+                        stream, sim_time_ns, frame, schedule, latest, frames_dir
+                    )
                     if stream == "rgb_overhead":
                         h, w = frame.shape[0], frame.shape[1]
                         if video is None:
@@ -267,7 +365,7 @@ def main() -> None:
                             frame_shape = (h, w)
                         if (h, w) == frame_shape:
                             video.append_data(frame)
-                buffer_row(topic, metadata, None, None)
+                buffer_row(topic, metadata, None, row_text)
                 continue
             value = event["value"]
             if pa.types.is_string(value.type) or pa.types.is_large_string(value.type):
