@@ -501,13 +501,17 @@ def test_store_scene_refuses_the_l1_rung():
     require_supported_perception(
         BridgeConfig(seed=0, embodiment="mobile", n_envs=1, scene="store", perception="L0")
     )
-    # L2 is admitted by PERCEPTION_RUNGS but implemented by nothing: TC-9 defers
-    # it and rung_topic_rates pops BOTH pose sources, so an L2 bridge would start
-    # happily and publish no pose source at all — the same unserviceable-config
-    # shape as store+L1, one line away in the same function
-    with pytest.raises(ValueError, match="rung L2 is deferred"):
+    # L2 is SERVED since detected-pose landed (idea I7): the desk scene at
+    # L2 must pass — the old deferral's premise ("no estimator consumes rgb
+    # alone") is obsolete there. The STORE at L2 stays refused for the same
+    # namespace reason as store+L1: the detector vocabulary is the desk med
+    # list, so every estimate would refuse.
+    require_supported_perception(
+        BridgeConfig(seed=0, embodiment="franka", n_envs=1, perception="L2")
+    )
+    with pytest.raises(ValueError, match="rung L2 is not supported for the store"):
         require_supported_perception(
-            BridgeConfig(seed=0, embodiment="franka", n_envs=1, perception="L2")
+            BridgeConfig(seed=0, embodiment="mobile", n_envs=1, scene="store", perception="L2")
         )
 
 
