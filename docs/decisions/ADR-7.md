@@ -1,5 +1,7 @@
 # ADR-7: T05 bridge interpretations and measured performance (SPEC 030)
 
+Status: ACCEPTED
+
 Interpretations chosen (CON-15): (1) Bridge configuration (seed, embodiment,
 n_envs, repo root) comes from node env vars (AISLE_*) in the dataflow YAML —
 dora's native per-node configuration channel. (2) The post-reset

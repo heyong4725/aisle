@@ -1,7 +1,9 @@
 # ADR-25 — Reset-anchored startup: no physics step before the first reset (issue #71)
 
-Status: PROPOSED (agent-drafted 2026-08-02, CON-15). Trigger: issue #71
-(CON-5 violation — attested expert_s1 pair diverged on identical seeds).
+Status: ACCEPTED (implemented and verified by PR #80; ratified by dependency in ADR-26).
+
+Trigger: issue #71 (CON-5 violation — attested expert_s1 pair diverged on
+identical seeds).
 Relates to SPEC 030 BRG-1/BRG-4, SPEC 010 TC-6, CON-5.
 
 ## Problem

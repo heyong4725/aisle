@@ -1,5 +1,7 @@
 # ADR-8: T06 verifier/reset interpretations (SPEC 040)
 
+Status: ACCEPTED
+
 Interpretations chosen (CON-15): (1) VER-2's robot-home condition requires
 joint_state, which VER-1's subscription list omits — the verifier manifest
 gains a joint_state input, and the home-error snapshot rides into the

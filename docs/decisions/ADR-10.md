@@ -1,5 +1,7 @@
 # ADR-10: T08 expert graph interpretations and findings
 
+Status: ACCEPTED
+
 Interpretations chosen (CON-15) while building graphs/expert_t0.yaml and
 the CAP-5 pipeline nodes:
 

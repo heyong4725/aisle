@@ -1,10 +1,13 @@
-# ADR-27 — The perception rung governs TOPICS a policy consumes, not information in the scene
+# ADR-28 — The perception rung governs TOPICS a policy consumes, not information in the scene
 
-Status: ACCEPTED (owner decision 2026-08-08, CON-15). Renumbered from 26 to 27
-in the same review round that created it: 26 was already taken by the ratified
-CON-5 layered-reproducibility ADR that specs/000-constitution.md cites, so the
-original number pointed readers at an unrelated document. Relates to SPEC 010 TC-9,
-SPEC 060 VAL-6/VAL-8, SPEC 040 VER-1..3.
+Status: ACCEPTED (owner decision 2026-08-08, CON-15)
+
+Renumbering note: this decision was drafted as ADR-26 and then published as
+ADR-27, but both identities were already occupied by the layered-reproducibility
+and official SO-101 decisions. ADR-28 is its first unique identity. Historical
+PR #125/#129 references to the perception decision as ADR-27 resolve here; the
+old path remains visible in git rename history. Relates to SPEC 010 TC-9, SPEC
+060 VAL-6/VAL-8, SPEC 040 VER-1..3.
 
 ## Problem
 

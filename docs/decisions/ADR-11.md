@@ -1,5 +1,7 @@
 # ADR-11: T09 rollout-runner interpretations (SPEC 070)
 
+Status: ACCEPTED
+
 Interpretations chosen (CON-15): (1) The trace recorder (HAR-4) runs in
 the rollout runner's INSTRUMENTED copy of the graph and subscribes every
 traceable topic including oracle_state; VAL-6's oracle isolation governs

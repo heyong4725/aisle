@@ -1,5 +1,7 @@
 # ADR-2: argparse --help/usage output is a CON-8 carve-out
 
+Status: ACCEPTED
+
 CON-8 requires every tool to emit a single JSON object on stdout with exit 0
 iff ok. Interpretation chosen (CON-15, prompted by the PR 1 cross-review):
 argparse's built-in `--help` (help text on stdout, exit 0) and usage errors

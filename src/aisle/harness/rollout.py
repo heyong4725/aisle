@@ -484,7 +484,7 @@ def instrumented_graph(
     # then cannot carry the NON-privileged ground-truth pose endpoint,
     # instead of relying on the bridge's runtime restraint. (oracle_state
     # remains recorded at every rung: it is the verifier's privileged input,
-    # governed by VAL-6/ADR-27, not by the rung.) FAIL CLOSED on unreadable
+    # governed by VAL-6/ADR-28, not by the rung.) FAIL CLOSED on unreadable
     # rungs (PR #135 round-2 review): this function re-reads graph and
     # registry at launch AND at every wall-clamp relaunch, hours after the
     # HAR-2 gate validated — a registry broken in between must refuse the

@@ -1,5 +1,7 @@
 # ADR-9: T07 budget-guard interpretations (SPEC 080)
 
+Status: ACCEPTED
+
 Interpretations chosen (CON-15): (1) The EE workspace check (BG-2) uses
 pure modified-DH forward kinematics for the Panda (official parameters,
 verified against the textbook zero-pose flange position (0.088, 0,

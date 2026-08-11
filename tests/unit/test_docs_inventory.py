@@ -259,6 +259,44 @@ def test_adr_status_is_the_first_status_line_only(tmp_path: Path):
     assert rows[0]["status"] == "PROPOSED"
 
 
+def test_adr_inventory_rejects_duplicate_identity(tmp_path: Path):
+    """Issue #144: two files must never render as the same decision id.
+
+    A duplicate ADR-27 made every bare cross-reference ambiguous even though
+    the generated table faithfully listed both files."""
+    decisions = tmp_path / "docs" / "decisions"
+    decisions.mkdir(parents=True)
+    for name in ("ADR-27.md", "ADR-27-perception.md"):
+        (decisions / name).write_text(
+            "# ADR-27 — a decision\n\nStatus: ACCEPTED\n", encoding="utf-8"
+        )
+
+    with pytest.raises(ValueError, match="duplicate ADR identity ADR-27"):
+        inventory_module()._adr_inventory(tmp_path, None)
+
+
+def test_adr_inventory_requires_declared_status(tmp_path: Path):
+    """Issue #144: inventory generation fails instead of inferring status."""
+    decisions = tmp_path / "docs" / "decisions"
+    decisions.mkdir(parents=True)
+    (decisions / "ADR-1.md").write_text("# ADR-1 — a decision\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="ADR has no declared Status"):
+        inventory_module()._adr_inventory(tmp_path, None)
+
+
+def test_adr_inventory_requires_filename_to_match_identity(tmp_path: Path):
+    """Issue #144: the stable path and heading cannot name different ADRs."""
+    decisions = tmp_path / "docs" / "decisions"
+    decisions.mkdir(parents=True)
+    (decisions / "ADR-28.md").write_text(
+        "# ADR-27 — a decision\n\nStatus: ACCEPTED\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="filename identity ADR-28 does not match heading ADR-27"):
+        inventory_module()._adr_inventory(tmp_path, None)
+
+
 def test_suite_directories_are_directories(tmp_path: Path):
     """Grouping by parts[0] rendered a module sitting directly in tests/ as if
     the file itself were a suite directory."""

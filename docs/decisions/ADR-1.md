@@ -1,5 +1,7 @@
 # ADR-1: trace_check scoping pre-M0 (HAR-9 interpretation)
 
+Status: ACCEPTED
+
 HAR-9 says trace_check "exits nonzero listing uncovered MUSTs", but the
 self-host test (`tests/unit/test_trace_check_selfhost.py`) must pass from T01
 onward, while most specs are unimplemented until T02–T10. Interpretation
