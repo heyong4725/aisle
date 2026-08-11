@@ -116,7 +116,10 @@ def load_graph(path: Path) -> tuple[list | None, list[dict]]:
         return None, [_entry("GRAPH_INVALID", where, detail, hint)]
 
     try:
-        data = yaml.safe_load(path.read_text())
+        # encoding pinned: graphs carry em dashes in their header comments, so
+        # the locale default (LC_ALL=C in a minimal container or cron) turned
+        # every graph into "cannot read graph: 'ascii' codec can't decode"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError) as exc:
         return invalid(f"cannot read graph: {exc}", "pass a readable UTF-8 dataflow YAML path")
     except yaml.YAMLError as exc:

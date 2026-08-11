@@ -254,7 +254,8 @@ def search(root: Path, provides: str, embodiment: str | None, installed_only: bo
     return {"ok": True, "matches": annotated}
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Build the registry CLI parser for execution and generated docs."""
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     lint_parser = subparsers.add_parser("lint", help="validate every manifest")
@@ -268,7 +269,11 @@ def main() -> int:
         action="store_true",
         help="only manifests whose source can launch here (issue #39)",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
 
     if args.command == "lint":
         report = lint(args.root)

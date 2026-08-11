@@ -1,5 +1,10 @@
 # AISLE — Agentic In-Store Learning Environment
 
+New contributor? Start with the
+**[AISLE contributor wiki](docs/contributor-wiki.md)** for a source-linked
+project overview, architecture, use cases, extension guide, code map, research
+status, and known limitations.
+
 Agentic auto-research for robot manipulation on open infrastructure:
 coding agents (Claude Code / Codex) compose and evolve **typed dora-rs
 dataflows** against a **Genesis** physics scene, with frozen
@@ -75,6 +80,9 @@ enforces this in CI); agents implement tasks from `TASKS.md` under the
 milestones. Gates before every commit: `ruff format --check`,
 `ruff check`, `pytest -m unit`, trace_check. Conventional commits; one
 concern per PR.
+
+The local CI script also checks requirement traceability, the generated
+contributor inventory, and the committed frozen-environment hash.
 
 The experiment's integrity rules are structural, not behavioral: the
 environment/verifier/reset set is hash-frozen (rollouts refuse to start

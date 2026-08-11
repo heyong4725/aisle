@@ -35,6 +35,8 @@ uv run ruff format --check .
 uv run ruff check .
 uv run pytest -m unit
 uv run python tools/trace_check.py
+uv run python tools/docs_inventory.py --check
+uv run python tools/env_hash.py --check
 ```
 
 Touched sim or graph code? Add `uv run pytest -m "sim or graph"`. CI
