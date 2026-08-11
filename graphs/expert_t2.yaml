@@ -19,8 +19,8 @@ nodes:
   path: ../src/aisle/nodes/dora_genesis.py
   env:
     AISLE_PERCEPTION: L2
-    AISLE_LABELS: "1"
-    AISLE_SHUFFLE_COLORS: "1"
+    AISLE_LABELS: '1'
+    AISLE_SHUFFLE_COLORS: '1'
   inputs:
     tick: dora/timer/millis/10
     joint_cmd:
@@ -98,8 +98,6 @@ nodes:
       source: dora-genesis/bridge_info
       queue_size: 100
     rgb_wrist:
-      # latest-wins: the reader reads the CURRENT parked view, never a
-      # frame queued up from mid-flight
       source: dora-genesis/rgb_wrist
       queue_size: 1
     read_request:
@@ -137,6 +135,7 @@ nodes:
   - joint_cmd
   - gripper_cmd
   - move_done
+  - plan_done
 - id: verifier-oracle
   path: ../src/aisle/verifier/oracle.py
   inputs:
@@ -155,6 +154,7 @@ nodes:
   path: ../src/aisle/nodes/task_state_machine.py
   env:
     AISLE_TASK_TIER: T2
+    AISLE_MAX_RETRIES: '8'
   inputs:
     tick: dora/timer/millis/1000
     episode_goal:
@@ -175,6 +175,9 @@ nodes:
     read_result:
       source: ocr-label/read_result
       queue_size: 100
+    plan_done:
+      source: ik-trajectory/plan_done
+      queue_size: 100
   outputs:
   - target_request
   - episode_feedback
@@ -190,6 +193,9 @@ nodes:
       queue_size: 100
     episode_result:
       source: verifier-oracle/episode_result
+      queue_size: 100
+    episode_feedback:
+      source: task-state-machine/episode_feedback
       queue_size: 100
   outputs:
   - reset

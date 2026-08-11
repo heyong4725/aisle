@@ -187,7 +187,13 @@ class TestTaskStateMachine:
         out = machine.on_goal({"target_med": "ibuprofen", "timeout_s": 30}, "ep-1")
         assert out == [("target_request", {"target_med": "ibuprofen"}, {"goal_id": "ep-1"})]
         out = machine.on_tick()
-        assert out == [("episode_feedback", {"t": 1, "phase": "executing"}, {"goal_id": "ep-1"})]
+        assert out == [
+            (
+                "episode_feedback",
+                {"t": 1, "phase": "executing", "retries": 0},
+                {"goal_id": "ep-1"},
+            )
+        ]
         assert machine.on_result() == []
         assert machine.on_tick() == []  # idle: no feedback
 
@@ -376,6 +382,108 @@ class TestT2ScanTour:
         assert machine.candidates is None
         out = machine.on_target_pose([0.4, 0.1, 0.2], dict(self.META), [])
         assert out[0][0] == "read_move"  # sane estimate tours
+
+
+class TestInContextRetries:
+    """HAR-3: plan_done with no verdict arms a retry after a grace
+    window; the retry count rides in feedback; max_retries bounds it;
+    pass@8 is in-context, never best-of-8 independent episodes."""
+
+    def _machine(self, max_retries=8):
+        from aisle.nodes.task_state_machine import TaskStateMachine
+
+        machine = TaskStateMachine(max_retries=max_retries)
+        machine.on_goal({"target_med": "ibuprofen"}, "ep-1")
+        return machine
+
+    def _tick_until_retry(self, machine, limit=10):
+        from aisle.nodes.task_state_machine import RETRY_GRACE_TICKS
+
+        for _ in range(RETRY_GRACE_TICKS + 1):
+            out = machine.on_tick()
+            if out and out[0][0] == "target_request":
+                return out
+        return []
+
+    def test_plan_done_without_verdict_retries_after_grace(self):
+        machine = self._machine()
+        machine.on_plan_done()
+        out = self._tick_until_retry(machine)
+        assert out[0] == (
+            "target_request",
+            {"target_med": "ibuprofen"},
+            {"goal_id": "ep-1"},
+        )
+        # the same tick's feedback carries the incremented count
+        assert out[1][0] == "episode_feedback"
+        assert out[1][1]["retries"] == 1
+
+    def test_no_retry_before_the_grace_window_elapses(self):
+        """The grace pin: a retry inside the window could yank the
+        DELIVERED box out of the tray while the verdict is in flight —
+        the ticks BEFORE retry_due must emit feedback only."""
+        from aisle.nodes.task_state_machine import RETRY_GRACE_TICKS
+
+        assert RETRY_GRACE_TICKS >= 2  # oracle verdict latency headroom
+        machine = self._machine()
+        machine.on_plan_done()
+        for _ in range(RETRY_GRACE_TICKS - 1):
+            out = machine.on_tick()
+            assert [topic for topic, _, _ in out] == ["episode_feedback"]
+        assert machine.on_tick()[0][0] == "target_request"
+
+    def test_verdict_within_grace_cancels_the_retry(self):
+        """A success verdict lands ~1 tick after the plan finishes;
+        retrying anyway could yank the DELIVERED box from the tray."""
+        machine = self._machine()
+        machine.on_plan_done()
+        machine.on_result()
+        machine.on_goal({"target_med": "metformin"}, "ep-2")
+        for _ in range(8):
+            out = machine.on_tick()
+            assert all(topic != "target_request" for topic, _, _ in out)
+        assert machine.retries == 0
+
+    def test_max_retries_bounds_the_loop(self):
+        machine = self._machine(max_retries=2)
+        for expected in (1, 2):
+            machine.on_plan_done()
+            out = self._tick_until_retry(machine)
+            assert out and out[1][1]["retries"] == expected
+        machine.on_plan_done()  # budget spent: no third retry
+        assert self._tick_until_retry(machine) == []
+        assert machine.retries == 2
+
+    def test_default_zero_is_one_attempt(self):
+        """ADR-10 compatibility: max_retries=0 never retries — the graph
+        must opt in (AISLE_MAX_RETRIES, attested)."""
+        machine = self._machine(max_retries=0)
+        machine.on_plan_done()
+        assert self._tick_until_retry(machine) == []
+
+    def test_t2_retry_unlatches_the_tour(self):
+        from aisle.nodes.task_state_machine import TaskStateMachine
+
+        machine = TaskStateMachine(tier="T2", max_retries=8)
+        machine.on_goal({"target_med": "metformin", "target_sx": 0.10}, "ep-1")
+        meta = {"target_med": "metformin", "neighbours": "[]"}
+        machine.on_target_pose([0.5, 0.1, 0.2], dict(meta), [])
+        machine.on_move_done({"ok": True, "range_m": 0.13, "attempt_used": 0}, "ep-1/read0.0")
+        machine.on_read_result({"label": "metformin", "margin": 0.2}, "ep-1/read0.0")
+        assert machine.toured is True
+        machine.on_plan_done()
+        self._tick_until_retry(machine)
+        assert machine.toured is False  # a fresh estimate starts a fresh tour
+        assert machine.on_target_pose([0.5, 0.1, 0.2], dict(meta), []) != []
+
+    def test_retry_count_resets_per_goal(self):
+        machine = self._machine()
+        machine.on_plan_done()
+        self._tick_until_retry(machine)
+        machine.on_result()
+        machine.on_goal({"target_med": "metformin"}, "ep-2")
+        assert machine.retries == 0
+        assert machine.on_tick()[0][1]["retries"] == 0
 
 
 class TestNeighbourConstraints:

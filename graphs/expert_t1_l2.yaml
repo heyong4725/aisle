@@ -105,6 +105,7 @@ nodes:
   outputs:
   - joint_cmd
   - gripper_cmd
+  - plan_done
 - id: verifier-oracle
   path: ../src/aisle/verifier/oracle.py
   inputs:
@@ -132,9 +133,14 @@ nodes:
     violation:
       source: budget-guard/violation
       queue_size: 100
+    plan_done:
+      source: ik-trajectory/plan_done
+      queue_size: 100
   outputs:
   - target_request
   - episode_feedback
+  env:
+    AISLE_MAX_RETRIES: '8'
 - id: rollout-client
   path: ../src/aisle/harness/rollout_client.py
   inputs:
@@ -144,6 +150,9 @@ nodes:
       queue_size: 100
     episode_result:
       source: verifier-oracle/episode_result
+      queue_size: 100
+    episode_feedback:
+      source: task-state-machine/episode_feedback
       queue_size: 100
   outputs:
   - reset
