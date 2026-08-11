@@ -529,7 +529,7 @@ def instrumented_graph(
             },
         }
     )
-    if verifier == "both":
+    if verifier in ("both", "realistic"):
         realistic = realistic_verifier_node(root, run_dir, doc, episode_timeout_s)
         doc["nodes"].append(realistic)
         # the recorder's inputs were computed BEFORE this node existed, so its
@@ -541,6 +541,17 @@ def instrumented_graph(
                 "source": f"{realistic['id']}/{topic}",
                 "queue_size": 100,
             }
+    if verifier == "realistic":
+        # A7 mode (Phase-2 DoD): the LOOP advances on the realistic verdict —
+        # both episode_result consumers rewire to the sidecar — while the
+        # ORACLE stays in the graph, held out for scoring: its endpoint
+        # remains recorded above, so the analysis compares what the loop
+        # believed against ground truth. `both` never rewires (its design is
+        # judging WITHOUT perturbing control flow).
+        for node in doc["nodes"]:
+            src = (node.get("inputs") or {}).get("episode_result", {})
+            if isinstance(src, dict) and src.get("source") == "verifier-oracle/episode_result":
+                src["source"] = "verifier-realistic/episode_result"
     out_path = run_dir / name
     out_path.write_text(yaml.safe_dump(doc, sort_keys=False))
     return out_path
@@ -698,16 +709,7 @@ def rollout(
     root = root.resolve()
     if reset_mode != "teleport":
         return {"ok": False, "error": "behavioral reset is Phase 2 (RST-2)"}
-    if verifier == "realistic":
-        # A7 mode drives the LOOP from the realistic verdict, which means
-        # rewiring the rollout client's episode_result source away from the
-        # oracle. That changes control flow and is a separate change;
-        # `both` runs the realistic judge ALONGSIDE without touching it.
-        return {
-            "ok": False,
-            "error": "verifier=realistic (A7 mode) needs the client rewired; use --verifier both",
-        }
-    if verifier not in ("oracle", "both"):
+    if verifier not in ("oracle", "both", "realistic"):
         return {"ok": False, "error": f"unknown verifier {verifier!r}"}
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", run_id):
         return {"ok": False, "error": f"unsafe run_id {run_id!r}"}
@@ -920,7 +922,7 @@ def rollout(
     finally:
         # let the realistic judge finish the LAST episode before teardown
         # (it judges on the next goal, and the last episode has none)
-        if verifier == "both":
+        if verifier in ("both", "realistic"):
             await_realistic_sidecar(run_dir, episodes)
         # ADR-21 round 3: reconcile the reservation with actuals no matter
         # how the run ended — crash paths settle too. Count from the RESULTS
@@ -938,7 +940,7 @@ def rollout(
             settle_budget(root, run_id, actual_episodes, time.monotonic() - started)
         _terminate(proc)
         reap_orphans(run_dir)
-        if verifier == "both":
+        if verifier in ("both", "realistic"):
             # count AFTER teardown, not before: the node can still land the
             # last record during the SIGTERM grace, and reporting the
             # pre-teardown count said "2/3" for a run that ended with 3/3

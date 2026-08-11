@@ -229,3 +229,60 @@ def test_recorder_subscribes_to_the_realistic_verdicts(tmp_path):
 
     assert "verifier-realistic__episode_result" in nodes["trace-recorder"]["inputs"]
     assert nodes["verifier-realistic"]["inputs"]["joint_state"]["queue_size"] == 1
+
+
+def test_a7_mode_rewires_the_loop_to_the_realistic_verdict(tmp_path):
+    """A7 (design doc ablation table; Phase-2 DoD): `--verifier realistic`
+    drives the LOOP from the realistic verdict — the rollout client and the
+    task-state-machine advance on verifier-realistic/episode_result — while
+    the ORACLE stays in the graph, held out for scoring: its own
+    episode_result endpoint remains recorded so the A7 analysis can compare
+    what the loop believed against ground truth. `both` mode is unchanged
+    (sidecar only, loop on the oracle)."""
+    import yaml
+
+    from aisle.harness.rollout import instrumented_graph
+
+    root = __import__("pathlib").Path(__file__).resolve().parents[2]
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    out = instrumented_graph(
+        root / "graphs" / "expert_t0.yaml",
+        root,
+        run_dir,
+        verifier="realistic",
+        episode_timeout_s=60.0,
+    )
+    doc = yaml.safe_load(out.read_text())
+    nodes = {n["id"]: n for n in doc["nodes"]}
+
+    assert "verifier-realistic" in nodes
+    assert "verifier-oracle" in nodes  # held out for scoring, not removed
+    for consumer in ("rollout-client", "task-state-machine"):
+        src = nodes[consumer]["inputs"]["episode_result"]["source"]
+        assert src == "verifier-realistic/episode_result", (consumer, src)
+    # BOTH verdict streams recorded: the loop's (realistic) and the score's
+    recorder = nodes["trace-recorder"]
+    assert "verifier-oracle__episode_result" in recorder["inputs"]
+    assert "verifier-realistic__episode_result" in recorder["inputs"]
+    # the A7 premise inherited from both-mode: no privileged state
+    assert "oracle_state" not in nodes["verifier-realistic"]["inputs"]
+
+
+def test_both_mode_loop_still_advances_on_the_oracle(tmp_path):
+    """The A7 rewire must not leak into `both`: its whole design is the
+    sidecar judging WITHOUT perturbing control flow."""
+    import yaml
+
+    from aisle.harness.rollout import instrumented_graph
+
+    root = __import__("pathlib").Path(__file__).resolve().parents[2]
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    out = instrumented_graph(
+        root / "graphs" / "expert_t0.yaml", root, run_dir, verifier="both", episode_timeout_s=60.0
+    )
+    nodes = {n["id"]: n for n in yaml.safe_load(out.read_text())["nodes"]}
+    for consumer in ("rollout-client", "task-state-machine"):
+        src = nodes[consumer]["inputs"]["episode_result"]["source"]
+        assert src == "verifier-oracle/episode_result", (consumer, src)
