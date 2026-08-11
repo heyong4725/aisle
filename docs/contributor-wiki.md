@@ -140,7 +140,7 @@ This table is more useful than a single “done/not done” label.
 | T0 expert desk graph | Implemented and M0-signed-off | Historical M0 result: 0.98 over 50 seeds. |
 | L0 oracle-pose perception | Implemented | Non-privileged `poses`; not appropriate for higher perception claims. |
 | L1 segmentation + depth | Implemented | Uses synchronized segmentation/depth and scene-published ID map. |
-| L2 open-vocabulary RGB/depth | Implemented | Newer than wording in SPEC 010 that still calls L2 deferred. |
+| L2 open-vocabulary RGB/depth | Implemented | RGB supplies identity; same-stamp ordinary sensor depth supplies metric geometry. |
 | Oracle verifier/reset | Implemented and frozen | Oracle result is the metric ground truth. |
 | Realistic verifier | Implemented, measured | Conservative but currently high false-fail rate; not a replacement oracle. |
 | Capability registry/validator | Implemented | Installability checks exist; some hub capabilities remain unavailable locally. |

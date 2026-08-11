@@ -111,10 +111,9 @@ def test_expert_t1_l1_episode_succeeds(tmp_path):
 def test_expert_t1_l2_episode_succeeds(tmp_path):
     """TC-9 end-to-end at rung L2 (idea I7): the seeded episode runs through
     graphs/expert_t1_l2.yaml verbatim — the bridge publishes NEITHER
-    ground-truth pose topic, detected-pose grounds the target with the
-    pinned OWLv2 detector under the measured identity-margin floor, and the
-    episode closes with status=success. The one live test where no ground
-    truth of any kind reaches the policy side.
+    simulator ground-truth pose nor segmentation, detected-pose identifies the
+    target from RGB under the measured identity-margin floor, same-stamp sensor
+    depth supplies metric geometry, and the episode closes with status=success.
 
     The target is cetirizine, never confused in the I7 shelf measurement.
     Ibuprofen is deliberately NOT this test's target: OWLv2 systematically

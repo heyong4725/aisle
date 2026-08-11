@@ -77,7 +77,7 @@ which question?*
 
 | Role | Question it answers | Common implementations | AISLE status |
 |---|---|---|---|
-| Perception / reasoning | What is present; what does the instruction mean? | detector/segmenter, VLM | L0/L1/L2 perception ladder implemented (oracle poses, segmentation+depth, pixels); VLM reasoning planned |
+| Perception / reasoning | What is present; what does the instruction mean? | detector/segmenter, VLM | L0/L1/L2 perception ladder implemented (oracle poses, segmentation+depth, RGB identity + sensor-depth geometry); VLM reasoning planned |
 | Action policy | What action (or action chunk) next? | state machine, VLA, WAM | classical graph nodes now; VLA/WAM nodes planned |
 | Predictive dynamics | What follows if action `a` is taken in state `s`? | explicit simulator, state-space or video world model | Genesis (explicit sim) now; learned world-model environment planned |
 | Execution / control | How do targets become safe high-rate commands? | IK, trajectory generation, servo loops | **implemented** (`ik-trajectory`, drivers, guard) |
@@ -173,7 +173,7 @@ domain randomization is *one* mitigation, not the definition:
 |---|---|---|
 | Contact/friction & actuator dynamics | system identification, parameter calibration | **[implemented]** `physics.toml` — hand-tuned contact parameters, versioned, never inline |
 | Visual distribution shift | domain randomization, photoreal rendering | **[implemented]** DR toggles in the scene builders (poses, lighting, textures, friction, camera jitter); exercised by tests, not yet by scored L2 runs |
-| Perception difficulty conflated with loop capability | staged perception ladder | **[implemented]** the ladder is L0 oracle object poses → L1 ground-truth segmentation with estimated poses (`segmented-pose`, `graphs/expert_t1.yaml`) → L2 camera pixels (`l2-pose`, `graphs/expert_t1_l2.yaml`). The rung rides the GRAPH, so the graph hash attests which pose source a result used; `harness rollout --perception` asserts it and refuses a mismatch (TC-9, VAL-8) |
+| Perception difficulty conflated with loop capability | staged perception ladder | **[implemented]** the ladder is L0 oracle object poses → L1 ground-truth segmentation with estimated poses (`segmented-pose`, `graphs/expert_t1.yaml`) → L2 RGB-only identity with same-stamp ordinary sensor depth for metric geometry (`l2-pose`, `graphs/expert_t1_l2.yaml`). The rung rides the GRAPH, so the graph hash attests which pose source a result used; `harness rollout --perception` asserts it and refuses a mismatch (TC-9, VAL-8) |
 | Embodiment mismatch | contract-first driver abstraction | **[implemented]** the topic contract (SPEC 010, `src/aisle/topics.py`): obs/cmd topics are the hardware driver interface — Phase 4 sim-to-real is a driver-node swap, not a rewrite; `--embodiment` swaps profiles with zero YAML edits |
 | Observation/action latency & rates | rate-typed contracts, latency classes | **[implemented]** manifest `rate_hz`/`latency_class` fields checked by the validator |
 | Reset parity | behavioral (physical) reset | **[planned — SPEC 040 phase 2]** the robot re-shelving the box; ablation A6 measures what teleport hides. Today only teleport runs (`--reset behavioral` raises NotImplementedError by design) |
