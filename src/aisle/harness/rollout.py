@@ -47,15 +47,24 @@ STALL_S = 180
 # kill a HEALTHY retail episode at 60 sim s / 150 wall s (PR #21)
 RETAIL_EPISODE_TIMEOUT_S = 600
 RETAIL_PER_EPISODE_BUDGET_S = 2100
+# T2's scan tour reads up to six candidate faces before the grasp (~8-10
+# sim s per read cycle + ~30 s grasp): the desk 60 s cap made the tier
+# structurally impossible — the first acceptance probe timed out MID-TOUR
+# on every non-trivial episode (run 20260811-161222-dda648)
+T2_EPISODE_TIMEOUT_S = 150
+T2_PER_EPISODE_BUDGET_S = 400
 
 
 def tier_budgets(tier: str) -> tuple[int, int]:
     """(episode timeout in SIM seconds, per-episode WALL budget in seconds)
     for a tier: `harness rollout` is the public path for EVERY tier (HAR-1,
-    RS-6), so retail tiers get nightly-suite-scale budgets, desk tiers keep
-    the tight ADR-11 ones."""
+    RS-6), so retail tiers get nightly-suite-scale budgets, the T2 scan
+    tour gets room to visit every candidate, and the other desk tiers
+    keep the tight ADR-11 ones."""
     if tier in ("S1", "S2", "S3"):
         return RETAIL_EPISODE_TIMEOUT_S, RETAIL_PER_EPISODE_BUDGET_S
+    if tier == "T2":
+        return T2_EPISODE_TIMEOUT_S, T2_PER_EPISODE_BUDGET_S
     return EPISODE_TIMEOUT_S, PER_EPISODE_BUDGET_S
 
 
@@ -484,7 +493,7 @@ def instrumented_graph(
     # then cannot carry the NON-privileged ground-truth pose endpoint,
     # instead of relying on the bridge's runtime restraint. (oracle_state
     # remains recorded at every rung: it is the verifier's privileged input,
-    # governed by VAL-6/ADR-27, not by the rung.) FAIL CLOSED on unreadable
+    # governed by VAL-6/ADR-28, not by the rung.) FAIL CLOSED on unreadable
     # rungs (PR #135 round-2 review): this function re-reads graph and
     # registry at launch AND at every wall-clamp relaunch, hours after the
     # HAR-2 gate validated — a registry broken in between must refuse the
@@ -565,6 +574,11 @@ SCRUBBED_ENV = (
     # T2: the label toggle changes the SCENE'S PIXELS -- graph-declared for
     # the same attestation reason as the rung below
     "AISLE_LABELS",
+    # T2: the color permutation changes which box LOOKS like the target
+    "AISLE_SHUFFLE_COLORS",
+    # T2: the tier switches the state machine into the scan tour; ambient
+    # leakage would run a tour on a T0/T1 graph with no reader wired
+    "AISLE_TASK_TIER",
     # TC-9: the perception rung. The bridge reads it via parse_bridge_config(
     # os.environ), so an ambient AISLE_PERCEPTION=L1 would set the rung of a
     # run whose graph never declared one — and the validator, which sees only

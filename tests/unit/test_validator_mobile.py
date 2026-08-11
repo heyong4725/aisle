@@ -96,11 +96,11 @@ def test_guarded_base_cmd_passes_the_motion_gate(tmp_path):
     ],
 )
 def test_mobile_guard_must_wire_pose_and_tick(tmp_path, extra):
-    """MOB-3 (PR #14 re-review, retimed by ADR-28): on a mobile graph the
+    """MOB-3 (PR #14 re-review, retimed by ADR-29): on a mobile graph the
     guard (it outputs base_cmd_safe) MUST wire base_pose (keep-out + the
     watchdog's sim clock) AND tick (BG-5 stats + the fail-closed wall-net
     sweep) — missing either (the realistic partial regression is a stale
-    pre-ADR-28 graph shape) silently disables a safety mechanism."""
+    pre-ADR-29 graph shape) silently disables a safety mechanism."""
     graph = _write(
         tmp_path,
         [
@@ -191,7 +191,7 @@ def test_mobile_guard_pose_must_come_from_the_bridge(tmp_path):
 def test_complete_mobile_guard_passes_the_wiring_rule(tmp_path):
     """MOB-3: a guard wiring base_pose + tick is complete — the pose
     stream carries keep-out feedback AND the watchdog clock, the stats
-    tick carries the wall-net sweep (ADR-28); no dedicated watchdog
+    tick carries the wall-net sweep (ADR-29); no dedicated watchdog
     wall-timer input exists anymore (CON-5)."""
     graph = _write(
         tmp_path,

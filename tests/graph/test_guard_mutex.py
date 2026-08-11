@@ -154,14 +154,14 @@ def _write_watchdog_graph(
     recorder_s: float | None = None,
 ) -> Path:
     """One-command-then-silent driver + guard. stamp_poses=False exercises
-    the ADR-28 wall net (unstamped poses blind the sim clock); pose_count=N
+    the ADR-29 wall net (unstamped poses blind the sim clock); pose_count=N
     stops the pose stream after N ticks (a hung sim — only the stats-tick
     sweep can act). Both need a `tick` (sweep_ms) wired; guard_stats then
     also feeds the recorder so the capture window can settle after the
     command stream dies."""
     guard_inputs = {
         "base_cmd": {"source": "driver/base_cmd", "queue_size": 100},
-        # the watchdog clock (ADR-28)
+        # the watchdog clock (ADR-29)
         "base_pose": {"source": "driver/base_pose", "queue_size": 100},
     }
     rec_inputs = {
@@ -224,7 +224,7 @@ def _assert_latched_command_stopped(rows, reason: str) -> None:
 
 
 def test_watchdog_stops_latched_base_command(tmp_path, dataflow):
-    """MOB-3 (PR #14 re-review; sim-anchored per ADR-28): the driver sends
+    """MOB-3 (PR #14 re-review; sim-anchored per ADR-29): the driver sends
     ONE forward base_cmd then goes silent while sim-stamped base_pose keeps
     flowing. The bridge would integrate that latched command forever, so
     the guard's pose-driven watchdog emits [0,0] + a base_stale violation
@@ -236,7 +236,7 @@ def test_watchdog_stops_latched_base_command(tmp_path, dataflow):
 
 
 def test_wall_net_stops_latched_command_without_sim_stamps(tmp_path, dataflow):
-    """MOB-3 fail-closed (ADR-28 wall net, PR review): a pose source that
+    """MOB-3 fail-closed (ADR-29 wall net, PR review): a pose source that
     carries NO sim stamps blinds the sim-time staleness check (every stamp
     reads 0), and the producer dies after one forward base_cmd. The wall
     net swept on the stats tick must still stop the latched command within
@@ -257,7 +257,7 @@ def test_wall_net_stops_latched_command_without_sim_stamps(tmp_path, dataflow):
 
 
 def test_tick_sweep_stops_latched_command_when_poses_cease(tmp_path, dataflow):
-    """MOB-3 fail-closed (ADR-28 wall net, sweep path): a HUNG sim — the
+    """MOB-3 fail-closed (ADR-29 wall net, sweep path): a HUNG sim — the
     driver sends validly-stamped poses for ~0.5 s, one forward base_cmd,
     then the pose stream dies. The pose handler never runs again, sim
     staleness cannot advance, so ONLY the stats-tick sweep can stop the

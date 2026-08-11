@@ -28,9 +28,9 @@ class BaseLimits:
     # shelf keep-out engages (home ~0.31 m is not reaching)
     arm_extended_reach_m: float
     # a base_cmd older than this in SIM seconds is stale -> the guard stops
-    # the base (MOB-3; sim-anchored per ADR-28)
+    # the base (MOB-3; sim-anchored per ADR-29)
     base_staleness_s: float
-    # fail-closed wall net behind the sim-time check (ADR-28): stop a moving
+    # fail-closed wall net behind the sim-time check (ADR-29): stop a moving
     # base when no base_cmd arrived for this many WALL seconds
     base_wall_backstop_s: float
 
@@ -146,7 +146,7 @@ def base_watchdog_reason(
       seconds past the command's reference stamp (the newest base_pose
       stamp seen when it arrived). Sim-time staleness bounds the runaway
       TRAJECTORY (v x sim seconds) identically at every host rtf, where
-      the old wall-clock window did not (CON-5, ADR-28). A None stamp
+      the old wall-clock window did not (CON-5, ADR-29). A None stamp
       (unstamped source, or no pose yet) skips this check rather than
       failing open silently — the wall net below still bounds it.
     - ``base_stale_wall``: the fail-closed net — no base_cmd for

@@ -38,7 +38,7 @@ def _write_graph(tmp: Path, rec_out: Path) -> Path:
                 "path": str(GUARD),
                 "inputs": {
                     "base_cmd": {"source": "base-driver/base_cmd", "queue_size": 100},
-                    # keep-out pose feedback + the watchdog clock (MOB-3, ADR-28)
+                    # keep-out pose feedback + the watchdog clock (MOB-3, ADR-29)
                     "base_pose": {"source": "bridge/base_pose", "queue_size": 100},
                 },
                 "outputs": ["base_cmd_safe", "violation"],

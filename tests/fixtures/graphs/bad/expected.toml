@@ -243,3 +243,9 @@ codes = ["GRAPH_INVALID"]
 # against today's bridge manifest and test nothing about the rung.
 [perception_rung_l1_uses_poses]
 codes = ["PERCEPTION_RUNG_VIOLATION"]
+
+[perception_rung_store_unsupported]
+# Issue #130: a store+L1 graph is schema-valid but the bridge refuses it at
+# config time because the store item-id namespace and desk estimator queries
+# cannot intersect. Validation is the earlier, actionable gate (VAL-7/VAL-8).
+codes = ["PERCEPTION_RUNG_VIOLATION"]

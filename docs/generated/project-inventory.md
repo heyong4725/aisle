@@ -11,7 +11,7 @@ architecture, and contribution guidance remain in the
 
 | Surface | Count |
 |---|---:|
-| Graphs | 7 |
+| Graphs | 8 |
 | Capability manifests | 30 |
 | CLI command entries | 11 |
 | ADR files | 36 |
@@ -27,6 +27,7 @@ architecture, and contribution guidance remain in the
 | [graphs/expert_t0.yaml](../../graphs/expert_t0.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 9 |
 | [graphs/expert_t1.yaml](../../graphs/expert_t1.yaml) | pharmacy (default) / — | franka (default) | L1 | 9 |
 | [graphs/expert_t1_l2.yaml](../../graphs/expert_t1_l2.yaml) | pharmacy (default) / — | franka (default) | L2 | 9 |
+| [graphs/expert_t2.yaml](../../graphs/expert_t2.yaml) | pharmacy (default) / — | franka (default) | L2 | 10 |
 
 ### Graph node membership
 
@@ -37,6 +38,7 @@ architecture, and contribution guidance remain in the
 - **graphs/expert_t0.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
 - **graphs/expert_t1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
 - **graphs/expert_t1_l2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `detected-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
+- **graphs/expert_t2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `detected-pose`, `ocr-label`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
 
 ## Capability manifests
 
@@ -54,7 +56,7 @@ architecture, and contribution guidance remain in the
 | [registry/manifests/ik-trajectory.yaml](../../registry/manifests/ik-trajectory.yaml) | trajectory_generation | franka, so101 | motion | hub | `src/aisle/nodes/ik_trajectory.py` |
 | [registry/manifests/misplacement-detector.yaml](../../registry/manifests/misplacement-detector.yaml) | misplacement_detection | franka | perception | hub | `src/aisle/nodes/misplacement_detector.py` |
 | [registry/manifests/nav-action.yaml](../../registry/manifests/nav-action.yaml) | navigation | franka | motion | hub | `src/aisle/nodes/nav_action.py` |
-| [registry/manifests/ocr-label.yaml](../../registry/manifests/ocr-label.yaml) | label_text | franka, so101 | perception | hub | `pip:dora-ocr` |
+| [registry/manifests/ocr-label.yaml](../../registry/manifests/ocr-label.yaml) | label_text | franka | perception | hub | `src/aisle/nodes/label_reader.py` |
 | [registry/manifests/oracle-pose.yaml](../../registry/manifests/oracle-pose.yaml) | object_pose | franka, so101 | perception | hub | `src/aisle/nodes/oracle_pose.py` |
 | [registry/manifests/order-reader.yaml](../../registry/manifests/order-reader.yaml) | order_reading | franka, so101 | perception | hub | `src/aisle/nodes/order_reader.py` |
 | [registry/manifests/patrol-planner.yaml](../../registry/manifests/patrol-planner.yaml) | patrol_planning | franka | decision | hub | `src/aisle/nodes/patrol_planner.py` |
@@ -91,14 +93,15 @@ architecture, and contribution guidance remain in the
 
 ## Architecture decision records
 
-Status is the literal first `Status:` line when present; `not declared` is not
-an inferred decision state.
+Every ADR is validated to have a unique identity matching its filename and a
+declared `Status:`. The table renders the literal first status line without
+inference.
 
 | ADR | Title | Declared status |
 |---|---|---|
-| [docs/decisions/ADR-1.md](../decisions/ADR-1.md) | ADR-1: trace_check scoping pre-M0 (HAR-9 interpretation) | not declared |
-| [docs/decisions/ADR-10.md](../decisions/ADR-10.md) | ADR-10: T08 expert graph interpretations and findings | not declared |
-| [docs/decisions/ADR-11.md](../decisions/ADR-11.md) | ADR-11: T09 rollout-runner interpretations (SPEC 070) | not declared |
+| [docs/decisions/ADR-1.md](../decisions/ADR-1.md) | ADR-1: trace_check scoping pre-M0 (HAR-9 interpretation) | ACCEPTED |
+| [docs/decisions/ADR-10.md](../decisions/ADR-10.md) | ADR-10: T08 expert graph interpretations and findings | ACCEPTED |
+| [docs/decisions/ADR-11.md](../decisions/ADR-11.md) | ADR-11: T09 rollout-runner interpretations (SPEC 070) | ACCEPTED |
 | [docs/decisions/ADR-12.md](../decisions/ADR-12.md) | ADR-12 — T10: staggered two-level shelf (M0 env-change) and the M0 gate suite | accepted (owner decision: "Two-level shelf" option, 2026-07-18). |
 | [docs/decisions/ADR-13.md](../decisions/ADR-13.md) | ADR-13 — Mobile base modeling: kinematic base (T11, SPEC 210) | accepted (CON-15: SPEC 210 does not fix the base model; the agent |
 | [docs/decisions/ADR-14.md](../decisions/ADR-14.md) | ADR-14 — Mobile guard limits: reuse the franka arm limits (T11, SPEC 210 MOB-3) | accepted (CON-15: SPEC 210 does not say where the mobile profile's |
@@ -107,29 +110,29 @@ an inferred decision state.
 | [docs/decisions/ADR-17.md](../decisions/ADR-17.md) | ADR-17 — Retail capability registry extension (T14, design doc §11.4) | accepted (CON-15: §11.4 names the capabilities but not their |
 | [docs/decisions/ADR-18.md](../decisions/ADR-18.md) | ADR-18 — S1 expert graph design (T15, SPEC 200 acceptance) | accepted (CON-15: SPEC 200 names the gate but not the expert's |
 | [docs/decisions/ADR-19.md](../decisions/ADR-19.md) | ADR-19 — Episode-independent store build; scenario resets by teleport (T16) | accepted (CON-15: SPEC 200 defines the scenarios and generators |
-| [docs/decisions/ADR-2.md](../decisions/ADR-2.md) | ADR-2: argparse --help/usage output is a CON-8 carve-out | not declared |
+| [docs/decisions/ADR-2.md](../decisions/ADR-2.md) | ADR-2: argparse --help/usage output is a CON-8 carve-out | ACCEPTED |
 | [docs/decisions/ADR-20.md](../decisions/ADR-20.md) | ADR-20 — The research contract is code-pinned prose (T17) | accepted (CON-15: the design doc mandates harness/CLAUDE.research.md |
 | [docs/decisions/ADR-21.md](../decisions/ADR-21.md) | ADR-21 — Trusted frozen-set baseline; enforced campaign budgets (T17 round 2) | accepted (CON-15). Task: T17 (PR #24 review). Relates to |
 | [docs/decisions/ADR-22.md](../decisions/ADR-22.md) | ADR-22 — Skill registration mechanics (T18) | accepted (CON-15: design doc §8.4 item 1 / §3 rule 3 / §9.2 |
 | [docs/decisions/ADR-23.md](../decisions/ADR-23.md) | ADR-23 — Per-episode wall clamp in `harness rollout` | accepted (CON-15). Trigger: H3 campaign 2, W/S2 holdout. |
 | [docs/decisions/ADR-24.md](../decisions/ADR-24.md) | ADR-24 — Installed-environment attestation (issue #38) | ACCEPTED (owner-resolved 2026-07-30; v1 revised per the |
-| [docs/decisions/ADR-25.md](../decisions/ADR-25.md) | ADR-25 — Reset-anchored startup: no physics step before the first reset (issue #71) | PROPOSED (agent-drafted 2026-08-02, CON-15). Trigger: issue #71 |
+| [docs/decisions/ADR-25.md](../decisions/ADR-25.md) | ADR-25 — Reset-anchored startup: no physics step before the first reset (issue #71) | ACCEPTED (implemented and verified by PR #80; ratified by dependency in ADR-26). |
 | [docs/decisions/ADR-26.md](../decisions/ADR-26.md) | ADR-26 — CON-5 layered reproducibility: outcomes are statistical (issue #71) | RATIFIED (owner decision 2026-08-05, in-session; enacted by the |
-| [docs/decisions/ADR-27-perception-rung-governs-topics.md](../decisions/ADR-27-perception-rung-governs-topics.md) | ADR-27 — The perception rung governs TOPICS a policy consumes, not information in the scene | ACCEPTED (owner decision 2026-08-08, CON-15). Renumbered from 26 to 27 |
 | [docs/decisions/ADR-27.md](../decisions/ADR-27.md) | ADR-27 — Official SO-101 model and 5+1 topic contract (issue #13) | ACCEPTED 2026-08-08. Owner: @heyong4725. |
-| [docs/decisions/ADR-28.md](../decisions/ADR-28.md) | ADR-28 — Sim-anchored S1 control loops: retime waypoint-nav and the base watchdog onto base_pose (issue #71) | PROPOSED (agent-drafted 2026-08-11 at the owner's direction — the |
-| [docs/decisions/ADR-3.md](../decisions/ADR-3.md) | ADR-3: sim-driver evalcards are pending until M0 (CAP-6 interpretation) | not declared |
-| [docs/decisions/ADR-4.md](../decisions/ADR-4.md) | ADR-4: validator interpretations for T03 (SPEC 060) | not declared |
-| [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | not declared |
-| [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | not declared |
-| [docs/decisions/ADR-7.md](../decisions/ADR-7.md) | ADR-7: T05 bridge interpretations and measured performance (SPEC 030) | not declared |
-| [docs/decisions/ADR-8.md](../decisions/ADR-8.md) | ADR-8: T06 verifier/reset interpretations (SPEC 040) | not declared |
-| [docs/decisions/ADR-9.md](../decisions/ADR-9.md) | ADR-9: T07 budget-guard interpretations (SPEC 080) | not declared |
+| [docs/decisions/ADR-28.md](../decisions/ADR-28.md) | ADR-28 — The perception rung governs TOPICS a policy consumes, not information in the scene | ACCEPTED (owner decision 2026-08-08, CON-15) |
+| [docs/decisions/ADR-29.md](../decisions/ADR-29.md) | ADR-29 — Sim-anchored S1 control loops: retime waypoint-nav and the base watchdog onto base_pose (issue #71) | PROPOSED (agent-drafted 2026-08-11 at the owner's direction — the |
+| [docs/decisions/ADR-3.md](../decisions/ADR-3.md) | ADR-3: sim-driver evalcards are pending until M0 (CAP-6 interpretation) | SUPERSEDED by ADR-10 amendment (10); the temporary carve-out was retired. |
+| [docs/decisions/ADR-4.md](../decisions/ADR-4.md) | ADR-4: validator interpretations for T03 (SPEC 060) | ACCEPTED; amended by ADR-5's ratified safety-class boundary. |
+| [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | ACCEPTED (owner-ratified 2026-08-03) |
+| [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |
+| [docs/decisions/ADR-7.md](../decisions/ADR-7.md) | ADR-7: T05 bridge interpretations and measured performance (SPEC 030) | ACCEPTED |
+| [docs/decisions/ADR-8.md](../decisions/ADR-8.md) | ADR-8: T06 verifier/reset interpretations (SPEC 040) | ACCEPTED |
+| [docs/decisions/ADR-9.md](../decisions/ADR-9.md) | ADR-9: T07 budget-guard interpretations (SPEC 080) | ACCEPTED |
 | [docs/decisions/ADR-M0.md](../decisions/ADR-M0.md) | ADR-M0 — Milestone M0 sign-off (SPEC 090, M0-6) | SIGNED 2026-07-21 (option (a), M0-5 deferred); RE-AFFIRMED on |
 | [docs/decisions/ADR-h1-protocol.md](../decisions/ADR-h1-protocol.md) | ADR-h1-protocol — H1 composition-experiment protocol (design doc §8.2.4) | accepted (CON-15: §8.2.4 defines what to record but not the |
 | [docs/decisions/ADR-h2-campaign-protocol.md](../decisions/ADR-h2-campaign-protocol.md) | ADR-h2-campaign-protocol — single-scenario research campaign runner (design doc §8.3 item 6) | accepted (CON-15: §8.3 names the campaign but not the mechanics; |
 | [docs/decisions/ADR-h3-campaign-protocol.md](../decisions/ADR-h3-campaign-protocol.md) | ADR-h3-campaign-protocol — H3 accumulation campaign, S1→S2→S3 (design doc §11.5, §8.4) | accepted 2026-07-27 (decisions D1–D6 resolved by human; D1 |
-| [docs/decisions/ADR-h4-iteration-protocol.md](../decisions/ADR-h4-iteration-protocol.md) | ADR: H4 iteration-latency protocol (hot-swap vs relaunch) | ACCEPTED (CON-15 — interpretation recorded, proceeding). |
+| [docs/decisions/ADR-h4-iteration-protocol.md](../decisions/ADR-h4-iteration-protocol.md) | ADR-h4-iteration-protocol — H4 iteration-latency protocol (hot-swap vs relaunch) | ACCEPTED (CON-15 — interpretation recorded, proceeding). |
 | [docs/decisions/ADR-powder-spike.md](../decisions/ADR-powder-spike.md) | ADR-powder-spike — T20 solver spike for the powder family (SPEC 300 PW-0) | **DRAFT** — numbers measured; the go/no-go and the TBD-SPIKE |
 | [docs/decisions/ADR-realistic-verifier.md](../decisions/ADR-realistic-verifier.md) | ADR-realistic-verifier — accepted design (D1–D6 ratified 2026-08-05) | ACCEPTED — D1–D6 ratified by the owner 2026-08-05 |
 

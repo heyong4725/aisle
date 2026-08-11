@@ -1,6 +1,6 @@
 """Test fixture (MOB-3 watchdog): send ONE forward base_cmd then go silent
 on the command topic, while publishing a base_pose stream each tick — the
-watchdog's clock (ADR-28) — so the guard must stop the latched command with
+watchdog's clock (ADR-29) — so the guard must stop the latched command with
 [0,0]. Poses carry advancing sim stamps by default (the sim-time staleness
 path); LATCH_STAMP_POSES=0 publishes them UNSTAMPED (a blind sim clock the
 wall net must still stop), and LATCH_POSE_COUNT=N stops the pose stream

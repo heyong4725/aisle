@@ -1,5 +1,7 @@
 # ADR-6: T04 scene interpretations (SPEC 020)
 
+Status: ACCEPTED
+
 Interpretations chosen (CON-15): (1) genesis-world and torch live in an
 optional `sim` extra, not default dependencies — neither is CUDA-only
 (macOS wheels are MPS/CPU, CON-1-clean), but they add gigabytes to the

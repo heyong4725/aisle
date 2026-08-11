@@ -25,7 +25,7 @@ def main() -> None:
             cmd = [float(c[0]), float(c[1])]
         elif event["id"] == "tick":
             pose = integrate_base_pose(pose, cmd, dt)
-            # TC-2 sim stamp: base_pose is the control clock (ADR-28), so the
+            # TC-2 sim stamp: base_pose is the control clock (ADR-29), so the
             # mock advances sim time like the bridge would
             sim_ns += int(dt * 1e9)
             node.send_output(

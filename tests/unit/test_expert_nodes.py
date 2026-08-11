@@ -185,9 +185,9 @@ class TestTaskStateMachine:
         ends the episode (feedback stops)."""
         machine = TaskStateMachine()
         out = machine.on_goal({"target_med": "ibuprofen", "timeout_s": 30}, "ep-1")
-        assert out == [("target_request", {"target_med": "ibuprofen"}, "ep-1")]
+        assert out == [("target_request", {"target_med": "ibuprofen"}, {"goal_id": "ep-1"})]
         out = machine.on_tick()
-        assert out == [("episode_feedback", {"t": 1, "phase": "executing"}, "ep-1")]
+        assert out == [("episode_feedback", {"t": 1, "phase": "executing"}, {"goal_id": "ep-1"})]
         assert machine.on_result() == []
         assert machine.on_tick() == []  # idle: no feedback
 
@@ -198,7 +198,7 @@ class TestTaskStateMachine:
         machine.on_goal({"target_med": "ibuprofen"}, "ep-1")
         assert machine.on_goal({"target_med": "cetirizine"}, "ep-2") == []
         out = machine.on_tick()
-        assert out[0][2] == "ep-1"
+        assert out[0][2] == {"goal_id": "ep-1"}
 
     def test_violations_are_counted_into_feedback(self):
         machine = TaskStateMachine()
@@ -217,6 +217,165 @@ class TestTaskStateMachine:
         machine.on_result()
         machine.on_goal({"target_med": "metformin"}, "ep-2")
         assert machine.on_tick()[0][1]["t"] == 1
+
+
+class TestT2ScanTour:
+    """T2 scan tour (design doc §3, idea I13): candidates from
+    target_pose + neighbour rows; read_move -> move_done -> read_request
+    -> read_result per candidate; a matching label promotes the
+    candidate to grasp_target; refusals and mismatches advance; an
+    exhausted tour idles (the episode times out honestly)."""
+
+    META = {"target_med": "metformin", "neighbours": "[]", "sim_time_ns": 7}
+
+    def _touring_machine(self):
+        machine = TaskStateMachine(tier="T2")
+        machine.on_goal({"target_med": "metformin", "target_sx": 0.10}, "ep-1")
+        out = machine.on_target_pose([0.5, 0.1, 0.2], dict(self.META), [[0.5, -0.2], None])
+        return machine, out
+
+    def test_tour_starts_at_the_claimed_target_with_the_face_point(self):
+        machine, out = self._touring_machine()
+        assert out == [("read_move", {"face": [0.45, 0.1, 0.2]}, {"request_id": "ep-1/read0.0"})]
+
+    def test_none_neighbour_rows_are_not_candidates(self):
+        machine, _ = self._touring_machine()
+        assert len(machine.candidates) == 2  # target + one real row
+
+    def test_move_done_asks_the_reader_relaying_the_camera_pose(self):
+        machine, _ = self._touring_machine()
+        pose = {"face": [1, 2, 3], "cam_pos": [4, 5, 6], "cam_rot_cv": list(range(9))}
+        out = machine.on_move_done(
+            {"ok": True, "range_m": 0.16, "attempt_used": 0, **pose}, "ep-1/read0.0"
+        )
+        assert out == [("read_request", {"range_m": 0.16, **pose}, {"request_id": "ep-1/read0.0"})]
+
+    def test_matching_read_promotes_candidate_to_grasp_target(self):
+        machine, _ = self._touring_machine()
+        machine.on_move_done({"ok": True, "range_m": 0.13}, "ep-1/read0.0")
+        out = machine.on_read_result({"label": "metformin", "margin": 0.2}, "ep-1/read0.0")
+        assert out[0][0] == "grasp_target"
+        assert out[0][1] == {"pos": [0.5, 0.1, 0.2]}
+        # the perception metadata is relayed so the grasp planner sees
+        # the same keys target_pose carries, goal_id restamped (TC-7)
+        assert out[0][2]["target_med"] == "metformin"
+        assert out[0][2]["goal_id"] == "ep-1"
+
+    def test_default_refusal_advances_one_park_per_candidate(self):
+        """MAX_READS_PER_CANDIDATE = 1 by measurement: every correct
+        offline read landed on the first tracked entry, and a retry's
+        extra home->shelf transit knocked a box 3 cm (live `collision`,
+        run 6). A refusal must advance, not re-park."""
+        machine, _ = self._touring_machine()
+        machine.on_move_done({"ok": True, "range_m": 0.16, "attempt_used": 3}, "ep-1/read0.0")
+        out = machine.on_read_result({"label": None, "margin": 0.02}, "ep-1/read0.0")
+        assert out == [("read_move", {"face": [0.45, -0.2, 0.2]}, {"request_id": "ep-1/read1.0"})]
+
+    def test_refused_read_retries_from_the_next_ladder_entry_when_enabled(self, monkeypatch):
+        """The retry MECHANISM (kept for loop agents to tune): with the
+        budget raised, a refusal re-parks the same candidate starting
+        past the attempt that refused, then advances."""
+        from aisle.nodes import task_state_machine as module
+
+        monkeypatch.setattr(module, "MAX_READS_PER_CANDIDATE", 2)
+        machine, _ = self._touring_machine()
+        machine.on_move_done({"ok": True, "range_m": 0.13, "attempt_used": 2}, "ep-1/read0.0")
+        out = machine.on_read_result({"label": None, "margin": 0.01}, "ep-1/read0.0")
+        assert out == [
+            (
+                "read_move",
+                {"face": [0.45, 0.1, 0.2], "attempt_offset": 3},
+                {"request_id": "ep-1/read0.1"},
+            )
+        ]
+        machine.on_move_done({"ok": True, "range_m": 0.16, "attempt_used": 4}, "ep-1/read0.1")
+        out = machine.on_read_result({"label": None, "margin": 0.02}, "ep-1/read0.1")
+        # retries exhausted: next candidate, offset reset
+        assert out == [("read_move", {"face": [0.45, -0.2, 0.2]}, {"request_id": "ep-1/read1.0"})]
+
+    def test_foreign_read_advances_without_retry(self):
+        """A DIFFERENT med read confidently is a truly different box —
+        retrying it would waste tour budget."""
+        machine, _ = self._touring_machine()
+        machine.on_move_done({"ok": True, "range_m": 0.13, "attempt_used": 0}, "ep-1/read0.0")
+        out = machine.on_read_result({"label": "ibuprofen", "margin": 0.3}, "ep-1/read0.0")
+        assert out == [("read_move", {"face": [0.45, -0.2, 0.2]}, {"request_id": "ep-1/read1.0"})]
+        machine.on_move_done({"ok": True, "range_m": 0.13, "attempt_used": 0}, "ep-1/read1.0")
+        out = machine.on_read_result({"label": "ibuprofen", "margin": 0.3}, "ep-1/read1.0")
+        assert out == []  # exhausted: idle, the episode times out honestly
+        assert machine.candidates is None
+
+    def test_unreachable_face_skips_the_candidate(self):
+        machine, _ = self._touring_machine()
+        out = machine.on_move_done({"ok": False}, "ep-1/read0.0")
+        assert out == [("read_move", {"face": [0.45, -0.2, 0.2]}, {"request_id": "ep-1/read1.0"})]
+
+    def test_stale_request_ids_are_ignored(self):
+        machine, _ = self._touring_machine()
+        assert machine.on_move_done({"ok": True, "range_m": 0.13}, "ep-1/read9.0") == []
+        assert machine.on_read_result({"label": "metformin"}, "ep-1/read9.0") == []
+
+    def test_t1_machine_never_tours(self):
+        machine = TaskStateMachine()
+        machine.on_goal({"target_med": "metformin"}, "ep-1")
+        assert machine.on_target_pose([0.5, 0.1, 0.2], dict(self.META), []) == []
+
+    def test_republished_target_pose_after_promotion_starts_no_second_tour(self):
+        """Perception republishes target_pose every frame pair; a tour
+        restart after promotion raced the grasp plan out of the executor
+        ('one plan at a time') and the first live T2 episode closed
+        never_grasped. One tour per goal."""
+        machine, _ = self._touring_machine()
+        machine.on_move_done({"ok": True, "range_m": 0.13}, "ep-1/read0.0")
+        machine.on_read_result({"label": "metformin", "margin": 0.2}, "ep-1/read0.0")
+        assert machine.on_target_pose([0.5, 0.1, 0.2], dict(self.META), []) == []
+        # a NEW goal tours again
+        machine.on_result()
+        machine.on_goal({"target_med": "metformin", "target_sx": 0.10}, "ep-2")
+        assert machine.on_target_pose([0.5, 0.1, 0.2], dict(self.META), []) != []
+
+    def test_second_target_pose_does_not_restart_a_running_tour(self):
+        machine, _ = self._touring_machine()
+        assert machine.on_target_pose([0.9, 0.9, 0.9], dict(self.META), []) == []
+        assert machine.candidates[0][0] == [0.5, 0.1, 0.2]
+
+    def test_result_and_new_goal_clear_the_tour(self):
+        machine, _ = self._touring_machine()
+        machine.on_result()
+        assert machine.candidates is None
+        machine.on_goal({"target_med": "ibuprofen", "target_sx": 0.06}, "ep-2")
+        out = machine.on_target_pose([0.4, 0.0, 0.2], dict(self.META), [])
+        assert out == [("read_move", {"face": [0.37, 0.0, 0.2]}, {"request_id": "ep-2/read0.0"})]
+
+    def test_scanning_phase_is_reported_in_feedback(self):
+        machine, _ = self._touring_machine()
+        assert machine.on_tick()[0][1]["phase"] == "scanning"
+
+    def test_out_of_bounds_candidates_are_dropped_not_toured(self):
+        """A candidate outside the shelf's occupiable volume is a garbage
+        estimate, not a box: the first acceptance probe toured a phantom
+        at z=0.38 / x=0.59 and the transit knocked a real box
+        (`collision`, run 20260811-161222-dda648). With bounds set, the
+        phantom is dropped and the tour starts at the surviving row."""
+        bounds = {"x": (0.3, 0.5), "y": (-0.3, 0.3), "z": (0.05, 0.35)}
+        machine = TaskStateMachine(tier="T2", candidate_bounds=bounds)
+        machine.on_goal({"target_med": "metformin", "target_sx": 0.10}, "ep-1")
+        out = machine.on_target_pose([0.59, -0.04, 0.38], dict(self.META), [[0.4, 0.1], None])
+        assert len(machine.candidates) == 1  # phantom target dropped on x
+        # the neighbour survives with the inherited garbage z CLAMPED
+        # into the shelf band (the reader re-snaps z per hypothesis)
+        assert out[0][1]["face"] == pytest.approx([0.35, 0.1, 0.35])
+
+    def test_all_candidates_garbage_leaves_the_tour_unlatched(self):
+        """Every row out of bounds: no tour, and the latch stays OPEN so
+        a later, sane estimate can still start one."""
+        bounds = {"x": (0.3, 0.5), "y": (-0.3, 0.3), "z": (0.05, 0.35)}
+        machine = TaskStateMachine(tier="T2", candidate_bounds=bounds)
+        machine.on_goal({"target_med": "metformin", "target_sx": 0.10}, "ep-1")
+        assert machine.on_target_pose([0.59, -0.04, 0.38], dict(self.META), []) == []
+        assert machine.candidates is None
+        out = machine.on_target_pose([0.4, 0.1, 0.2], dict(self.META), [])
+        assert out[0][0] == "read_move"  # sane estimate tours
 
 
 class TestNeighbourConstraints:

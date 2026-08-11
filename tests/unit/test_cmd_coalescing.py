@@ -355,7 +355,7 @@ def test_reset_path_publishes_only_what_the_rung_permits():
     passed while the bridge leaked."""
     from aisle.nodes.dora_genesis import RESET_PUBLISH
 
-    # oracle_state is verifier-only at every rung: VAL-6 is the rule, ADR-27
+    # oracle_state is verifier-only at every rung: VAL-6 is the rule, ADR-28
     # records why the ladder does not widen to it
     assert "oracle_state" in RESET_PUBLISH
     assert "oracle_state" in rung_topic_rates("L1", is_mobile=False)
@@ -431,7 +431,7 @@ def test_publish_gate_blocks_forbidden_topics_including_direct_calls():
     assert reset_publish_topics(rung_topic_rates("L2", is_mobile=False)) == ("oracle_state",)
     assert may_publish("poses", l0) is True
     assert may_publish("poses", l1) is False
-    # oracle_state survives every rung (VAL-6 keeps it verifier-only; ADR-27)
+    # oracle_state survives every rung (VAL-6 keeps it verifier-only; ADR-28)
     assert may_publish("oracle_state", l0) is True
     assert may_publish("oracle_state", l1) is True
     # and the L1-only topic is gated the other way

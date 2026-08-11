@@ -1,4 +1,4 @@
-# ADR: H4 iteration-latency protocol (hot-swap vs relaunch)
+# ADR-h4-iteration-protocol — H4 iteration-latency protocol (hot-swap vs relaunch)
 
 Status: ACCEPTED (CON-15 — interpretation recorded, proceeding).
 Date: 2026-07-31. Scope: design doc §8.3 item 5, §9.1 decision 1,

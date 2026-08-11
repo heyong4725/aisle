@@ -212,7 +212,7 @@ def test_episode_timer_anchors_at_reset_not_first_command():
 
 
 def test_episode_timer_timed_out_anchors_and_flips_past_budget():
-    """BG-2 (ADR-28): timed_out is the watchdog's budget predicate — it
+    """BG-2 (ADR-29): timed_out is the watchdog's budget predicate — it
     anchors an unstarted clock like on_command (its documented side effect)
     and trips only strictly past the budget."""
     timer = EpisodeTimer()

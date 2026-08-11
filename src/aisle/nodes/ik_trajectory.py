@@ -235,6 +235,181 @@ def so101_radial_rotation(target_pos: np.ndarray, jaw_sign: float = 1.0) -> np.n
     return np.column_stack((tangential, up, radial))
 
 
+# -- T2 read poses (design doc §3, idea I13) ---------------------------------
+# Park the WRIST CAMERA looking at the box face. The ladder is
+# deterministic (CON-5): fixed (range_m, azimuth_rad, pitch_rad)
+# entries, walked in order — an entry is taken iff every earlier entry
+# had no IK solution or did not TRACK. All three axes are measured
+# (offline streamed repro, seed 3): flat 0.13 m reads at min margin
+# +0.27; far-side boxes (+y) jam the arm against the shelf at every
+# FLAT entry (0.3-0.9 rad terminal error) and read only from the
+# PITCHED rungs (camera above the face looking down — rectification
+# absorbs the tilt; cetirizine +0.27 at pitch 0.35). Pitch is CAPPED at
+# 0.35: from 0.55 up the face quad slides onto the box behind and reads
+# it confidently wrong — the one failure mode T2 must never have.
+READ_LADDER = (
+    (0.13, 0.0, 0.0),
+    (0.13, 0.25, 0.0),
+    (0.13, -0.25, 0.0),
+    (0.16, 0.0, 0.35),
+    (0.16, 0.25, 0.35),
+    (0.16, -0.25, 0.35),
+    (0.20, 0.0, 0.35),
+    (0.16, 0.0, 0.0),
+    (0.20, 0.0, 0.0),
+    (0.24, 0.0, 0.0),
+)
+# jam chirality (measured, seed 3): flat near entries TRACK for faces on
+# the -y side but JAM into the shelf for +y faces (0.3-0.9 rad terminal
+# error, 4 s of pressing that KNOCKED boxes to 40-125 degree tilts and
+# poisoned every later read of the episode). For +y faces the pitched
+# entries are moved to the FRONT of the ladder so the jamming entries
+# never execute; a deterministic function of the face (CON-5).
+FAR_SIDE_Y = 0.05
+_PITCHED_FIRST_LADDER = tuple(
+    sorted(READ_LADDER, key=lambda entry: (entry[2] == 0.0, entry[0], abs(entry[1])))
+)
+# a read parks or it retries: terminal tracking error above this means
+# the camera is NOT looking at the planned face. Wide on purpose: the
+# rectified read projects through the ACHIEVED pose, so closeness only
+# matters for keeping the face in frame — good parks measure 0.03-0.11
+# rad, shelf-jam failures 0.3-0.9, and a 0.12 tol rejected a good 0.107
+# park (offline streamed repro)
+READ_TRACK_TOL = 0.20
+# bounded ladder walk per read_move — each attempt costs a retreat+park
+READ_MAX_ATTEMPTS = 6
+# staged read approach: park first at the same view backed off along the
+# view axis, then advance — keeps the home->read joint hop clear of the
+# shelf face (upper-level transits swept boxes 12-28 cm without it).
+# Deeper backoff preferred (0.15 audited fully clean on the knock seeds);
+# 0.10 is the fallback where the deep far pose has no IK (the far-side
+# pitched entries seed 3's tour needs), still clean bar one 8.6 cm case
+# the 0.15 rung absorbs. An entry with NEITHER is dropped.
+READ_STAGE_BACKOFFS_M = (0.15, 0.10)
+READ_STAGE_BACKOFF_M = READ_STAGE_BACKOFFS_M[0]  # spy/test anchor
+# the frozen desk wrist camera (scenes/pharmacy.py add_camera): 320x240
+# at 70 degree vertical fov — the aim-prior projection must match the
+# rendered geometry exactly
+WRIST_FX = WRIST_FY = 120.0 / math.tan(math.radians(35.0))
+WRIST_CX, WRIST_CY = 160.0, 120.0
+# hand = flange @ Rz(HAND_MOUNT_YAW), zero translation — pinned against
+# the Genesis link poses to 6e-7 (test_read_pose)
+_FLANGE_TO_HAND = np.array(
+    [
+        [math.cos(HAND_MOUNT_YAW), -math.sin(HAND_MOUNT_YAW), 0.0],
+        [math.sin(HAND_MOUNT_YAW), math.cos(HAND_MOUNT_YAW), 0.0],
+        [0.0, 0.0, 1.0],
+    ]
+)
+
+
+def read_flange_targets(
+    face: np.ndarray,
+    range_m: float,
+    azimuth_rad: float,
+    mount: np.ndarray,
+    pitch_rad: float = 0.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """(tcp_pos, flange_rotation) parking the wrist camera `range_m`
+    from `face`, looking at it from `azimuth_rad` off the -x normal and
+    `pitch_rad` above the horizontal. Chain: desired camera pose (CV
+    look-at converted to the mount's GL frame via GL_TO_CV — omit that
+    factor and the camera stares at the robot's own hand) -> hand pose
+    through the inverse mount -> flange frame -> TCP position for the
+    standard IK entry point."""
+    from aisle.verifier.calibration import GL_TO_CV, lookat_rotation_cv
+
+    face = np.asarray(face, dtype=np.float64)
+    direction = np.array(
+        [
+            -math.cos(azimuth_rad) * math.cos(pitch_rad),
+            math.sin(azimuth_rad) * math.cos(pitch_rad),
+            math.sin(pitch_rad),
+        ]
+    )
+    eye = face + range_m * direction
+    camera = np.eye(4)
+    camera[:3, :3] = lookat_rotation_cv(eye, face) @ GL_TO_CV
+    camera[:3, 3] = eye
+    t_hand = camera @ np.linalg.inv(mount)
+    r_flange = t_hand[:3, :3] @ _FLANGE_TO_HAND.T
+    tcp = t_hand[:3, 3] + r_flange[:, 2] * TCP_OFFSET
+    return tcp, r_flange
+
+
+def solve_read_poses(
+    face: np.ndarray, mount: np.ndarray, q0: np.ndarray, embodiment: str = "franka"
+) -> list[tuple[np.ndarray, float]]:
+    """Every IK-solvable ladder entry as (q, range_m), ladder order.
+    NO 180-degree flip retry (unlike ik_solve): spinning the flange flips
+    the off-axis camera away from the face. franka-only — the SO-101
+    read chain is unmeasured, so it refuses rather than guesses.
+
+    The FULL list, not the first hit: IK feasibility is not
+    trackability — the first live T2 tour found read poses the
+    controller could not reach (0.45 rad terminal error, shelf
+    contact), so the executor walks this list until one TRACKS."""
+    if embodiment != "franka":
+        return []
+    face = np.asarray(face, dtype=np.float64)
+    ladder = _PITCHED_FIRST_LADDER if face[1] > FAR_SIDE_Y else READ_LADDER
+    solutions = []
+    for range_m, azimuth, pitch in ladder:
+        tcp, r_flange = read_flange_targets(face, range_m, azimuth, mount, pitch)
+        for seed in (q0, *_CANONICAL_SEEDS):
+            q = _ik_once(tcp, r_flange, seed, embodiment)
+            if q is not None:
+                # staged approach: the same view retracted along its axis
+                # (READ_STAGE_BACKOFF_M), IK'd from q first so the branch
+                # matches — the direct home->read joint hop swept boxes
+                # on upper-level layouts (T2 curve run 1: collisions at
+                # t=2.6-3.6 s, a target knocked clean off the shelf;
+                # displacement audit: 12-28 cm knocks, every one on an
+                # UNSTAGED entry). An entry with no staged approach is
+                # DROPPED: an unprotected transit is how boxes get
+                # knocked, and the ladder has more entries.
+                q_far = None
+                for backoff in READ_STAGE_BACKOFFS_M:
+                    far_tcp, far_rot = read_flange_targets(
+                        face, range_m + backoff, azimuth, mount, pitch
+                    )
+                    for far_seed in (q, *_CANONICAL_SEEDS):
+                        q_far = _ik_once(far_tcp, far_rot, far_seed, embodiment)
+                        if q_far is not None:
+                            break
+                    if q_far is not None:
+                        break
+                if q_far is not None:
+                    solutions.append((q, range_m, pitch, q_far))
+                break
+    return solutions
+
+
+def solve_read_pose(
+    face: np.ndarray, mount: np.ndarray, q0: np.ndarray, embodiment: str = "franka"
+) -> tuple[np.ndarray, float, float] | None:
+    """(q, range_m, pitch) for the first reachable ladder entry, else None."""
+    solutions = solve_read_poses(face, mount, q0, embodiment)
+    return solutions[0] if solutions else None
+
+
+def wrist_camera_pose(q_arm: np.ndarray, mount: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(cam_pos, cam_rot_cv) of the wrist camera at an arm pose, via the
+    executor's own FK — the reader rectifies the face quad through THIS
+    (the ACHIEVED pose, not the planned one: the tracked pose sags a few
+    degrees, which at read range shifts the face tens of pixels; the
+    first live T2 tour centred on a NEIGHBOUR box and read it
+    confidently wrong)."""
+    from aisle.verifier.calibration import GL_TO_CV
+
+    pos_f, rot_f = fk_flange(np.asarray(q_arm, dtype=np.float64))
+    t_hand = np.eye(4)
+    t_hand[:3, :3] = rot_f @ _FLANGE_TO_HAND
+    t_hand[:3, 3] = pos_f
+    camera = t_hand @ mount
+    return camera[:3, 3], camera[:3, :3] @ GL_TO_CV
+
+
 def _rotation_error(current: np.ndarray, target: np.ndarray) -> np.ndarray:
     """Quaternion-based orientation error (2*sign(w)*vec of target@current.T).
 
@@ -810,13 +985,14 @@ class StageStreamer:
 
 
 def main() -> None:
+    import json
     import os
     import sys
 
     import pyarrow as pa
     from dora import Node
 
-    from aisle.scenes.pharmacy import load_physics, resolve_layout
+    from aisle.scenes.pharmacy import load_physics, resolve_layout, wrist_mount_transform
     from aisle.topics import make_sender
 
     embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
@@ -827,10 +1003,41 @@ def main() -> None:
     home = np.asarray(physics["embodiment"][embodiment]["home_qpos"], dtype=np.float32)
     max_vel = float(os.environ.get("AISLE_MAX_JOINT_VEL", "1.0"))
     dt = 0.01  # joint_state contract cadence (TC-4)
+    mount = wrist_mount_transform(physics["cameras"], physics["embodiment"][embodiment]).astype(
+        np.float64
+    )
 
     node = Node()
     send = make_sender(node)
     streamer: StageStreamer | None = None
+    # while a read move runs: {request_id, face, attempts: [(q, range_m)],
+    # attempt_idx} — the executor walks the ladder until one attempt TRACKS
+    pending_read: dict | None = None
+    parked_at_read = False  # the arm sits at a shelf-front read pose
+
+    def start_read_attempt(pending: dict) -> None:
+        """Arm the streamer for the pending read's current ladder attempt.
+        EVERY read move routes via home: a direct joint-space interpolation
+        between two shelf-front poses sweeps the open fingers laterally
+        through neighbour boxes at ~13 cm range (first live T2 episode:
+        verdict `collision`)."""
+        nonlocal streamer
+        q_read, range_m, pitch, q_far = pending["attempts"][pending["attempt_idx"]]
+        print(
+            f"read attempt {pending['attempt_idx']}: range {range_m} pitch {pitch} "
+            f"face {pending['face'].tolist()}",
+            file=sys.stderr,
+        )
+        home_arm = home[: q_read.shape[0]].astype(np.float32)
+        stages = [
+            Stage(name="read-retreat", path=(home_arm,), gripper=0.0, settle_s=0.1),
+            # staged approach (T2 curve run 1): park backed-off first so
+            # the joint hop stays clear of the shelf, then advance —
+            # solve_read_poses drops any entry without a staged pose
+            Stage(name="read-stage", path=(q_far.astype(np.float32),), gripper=0.0, settle_s=0.1),
+            Stage(name="read", path=(q_read.astype(np.float32),), gripper=0.0, settle_s=0.4),
+        ]
+        streamer = StageStreamer(stages, home, dt, max_vel, embodiment=embodiment)
 
     for event in node:
         if event["type"] != "INPUT":
@@ -841,6 +1048,36 @@ def main() -> None:
             # first live run a stale stream fought the post-reset guard
             # reference until the wall timeout froze everything
             streamer = None
+            pending_read = None
+            parked_at_read = False
+        elif event["id"] == "read_move":
+            if streamer is not None and not streamer.done:
+                print("read_move refused: a plan is executing", file=sys.stderr)
+                continue
+            request = json.loads(event["value"][0].as_py())
+            face = np.asarray(request["face"], dtype=np.float64).reshape(-1)[:3]
+            # a refused READ retries the same candidate from the next
+            # ladder entry: the state machine passes back attempt_used+1
+            offset = int(request.get("attempt_offset", 0))
+            attempts = solve_read_poses(face, mount, home[: len(home) - 2].astype(np.float64))
+            if offset >= len(attempts):
+                # ladder exhausted (or unreachable face / non-franka):
+                # REPLY with failure so the tour advances instead of
+                # hanging on a silent drop
+                send(
+                    "move_done",
+                    pa.array([json.dumps({"ok": False})]),
+                    {"request_id": metadata.get("request_id", "")},
+                )
+                print(f"read_move exhausted: face {face.tolist()}", file=sys.stderr)
+                continue
+            pending_read = {
+                "request_id": metadata.get("request_id", ""),
+                "face": face,
+                "attempts": attempts[: offset + READ_MAX_ATTEMPTS],
+                "attempt_idx": offset,
+            }
+            start_read_attempt(pending_read)
         elif event["id"] == "grasp_pose":
             if streamer is not None and not streamer.done:
                 continue  # one plan at a time; re-plan only after home
@@ -855,8 +1092,25 @@ def main() -> None:
             if not candidate.ok:
                 print(f"grasp plan failed: {candidate.error}", file=sys.stderr)
                 continue
-            streamer = StageStreamer(candidate.stages, home, dt, max_vel, embodiment=embodiment)
-            print(f"plan ready: {len(candidate.stages)} stages", file=sys.stderr)
+            stages = list(candidate.stages)
+            if parked_at_read:
+                # the arm is parked at a shelf-front read pose; going
+                # straight to pregrasp drags the fingers through the
+                # shelf. T0/T1 never park (flag never set): byte-identical
+                # behavior on the frozen tiers.
+                n_arm = stages[0].path[0].shape[0]
+                stages.insert(
+                    0,
+                    Stage(
+                        name="grasp-retreat",
+                        path=(home[:n_arm].astype(np.float32),),
+                        gripper=0.0,
+                        settle_s=0.1,
+                    ),
+                )
+                parked_at_read = False
+            streamer = StageStreamer(stages, home, dt, max_vel, embodiment=embodiment)
+            print(f"plan ready: {len(stages)} stages", file=sys.stderr)
         elif event["id"] == "joint_state" and streamer is not None and not streamer.done:
             qpos = np.asarray(
                 event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
@@ -870,6 +1124,55 @@ def main() -> None:
                 print(line, file=sys.stderr)
             if streamer.done:
                 streamer = None  # finished: idle until the next episode
+                if pending_read is not None:
+                    q_read, range_m, pitch, _ = pending_read["attempts"][
+                        pending_read["attempt_idx"]
+                    ]
+                    track_err = float(np.abs(qpos[: q_read.shape[0]] - q_read).max())
+                    if track_err > READ_TRACK_TOL:
+                        # IK-feasible but untrackable (shelf contact, 0.45
+                        # rad terminal error in the first live tour): walk
+                        # the ladder instead of reading a wild view
+                        pending_read["attempt_idx"] += 1
+                        if pending_read["attempt_idx"] < len(pending_read["attempts"]):
+                            print(
+                                f"read pose untracked (err {track_err:.2f}); "
+                                f"ladder attempt {pending_read['attempt_idx']}",
+                                file=sys.stderr,
+                            )
+                            start_read_attempt(pending_read)
+                            continue
+                        send(
+                            "move_done",
+                            pa.array([json.dumps({"ok": False})]),
+                            {"request_id": pending_read["request_id"]},
+                        )
+                        print(f"read_move untrackable (err {track_err:.2f})", file=sys.stderr)
+                        pending_read = None
+                        continue
+                    parked_at_read = True
+                    cam_pos, cam_rot_cv = wrist_camera_pose(
+                        qpos[: q_read.shape[0]].astype(np.float64), mount
+                    )
+                    payload = {
+                        "ok": True,
+                        "range_m": range_m,
+                        "attempt_used": pending_read["attempt_idx"],
+                        # a pitched view carries a wrong-read hazard the
+                        # reader must guard with a higher margin floor
+                        # (measured: amoxicillin-at-pitch reads a
+                        # neighbour at +0.093)
+                        "pitched": pitch > 0.0,
+                        "face": [float(v) for v in pending_read["face"]],
+                        "cam_pos": [float(v) for v in cam_pos],
+                        "cam_rot_cv": [float(v) for v in cam_rot_cv.reshape(-1)],
+                    }
+                    send(
+                        "move_done",
+                        pa.array([json.dumps(payload)]),
+                        {"request_id": pending_read["request_id"]},
+                    )
+                    pending_read = None
 
 
 if __name__ == "__main__":

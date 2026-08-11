@@ -259,7 +259,7 @@ class TestArmMotionMutexWindow:
 
 
 class TestBaseWatchdogReason:
-    """MOB-3 watchdog verdict (CON-5, ADR-28): sim-time staleness is the
+    """MOB-3 watchdog verdict (CON-5, ADR-29): sim-time staleness is the
     primary, deterministic check — it bounds the runaway TRAJECTORY a
     latched command can drive identically at every host rtf, where the old
     wall-clock window did not. The wall net only catches what the sim clock
@@ -307,7 +307,7 @@ class TestBaseWatchdogReason:
         assert self._reason(now_wall=102.0, sim_clock_blind=True) is None
 
     def test_sim_stale_wins_over_the_wall_net(self):
-        """ADR-28 precedence: when both windows are blown, the deterministic
+        """ADR-29 precedence: when both windows are blown, the deterministic
         sim verdict is reported, not the ops-alarm wall reason."""
         assert self._reason(now_sim_ns=int(0.5e9) + 1, now_wall=200.0, sim_clock_blind=True) == (
             "base_stale"

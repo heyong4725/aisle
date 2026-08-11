@@ -1,0 +1,296 @@
+"""ocr-label reader core (CAP-5; design doc §3 T2; idea I13).
+
+The synthetic frames below emulate what the wrist camera delivers at a
+read pose: the label texture appears ROTATED by the inverse of the
+reader's unroll constant, at the med face's projected size. Building
+them with np.rot90(k=1) pins LABEL_ROTATION_K=3 (np.rot90 k=1 and k=3
+are exact inverses): mutate the constant and the read refuses.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+from PIL import Image
+
+from aisle.nodes.label_reader import (
+    MARGIN_FLOOR,
+    ReaderSession,
+    detect_box_centre,
+    ink_prob,
+    label_templates,
+    read_face,
+    verdict_from_scores,
+)
+from aisle.scenes.pharmacy import load_meds
+
+FX = FY = 171.4  # 240 px at 70 deg vertical fov
+RANGE_M = 0.13
+
+pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(scope="module")
+def meds():
+    return load_meds()
+
+
+@pytest.fixture(scope="module")
+def templates(meds):
+    return label_templates(meds)
+
+
+def camera_view_frame(
+    meds, templates, name: str, rotation_k: int = 1, centre=(160, 120)
+) -> np.ndarray:
+    """A wrist-like frame: uniform background and the med's label pasted
+    so the reader's pipeline (crop 2hw x 2hh at `centre`, unroll k=3,
+    resize-compare) reconstructs the upright template EXACTLY. The
+    camera-view paste is the inverse: the template resized to the
+    crop's post-unroll shape, re-rolled by k=1 (k=1 and k=3 are exact
+    inverses). rotation_k=0 breaks that inverse for the pin test."""
+    frame = np.full((240, 320, 3), 96, dtype=np.uint8)
+    _, sy, sz = (float(v) for v in meds[name]["size"])
+    half_w = int(FX * (sy / 2) / RANGE_M)
+    half_h = int(FY * (sz / 2) / RANGE_M)
+    face = np.asarray(
+        Image.fromarray(templates[name]).resize((2 * half_h, 2 * half_w), Image.LANCZOS)
+    )[..., :3]
+    view = np.rot90(face, k=rotation_k)
+    vh, vw = view.shape[:2]
+    cx, cy = centre
+    frame[cy - vh // 2 : cy - vh // 2 + vh, cx - vw // 2 : cx - vw // 2 + vw] = view
+    return frame
+
+
+class TestTemplates:
+    def test_templates_are_deterministic(self, meds):
+        """CON-5: same frozen texture function, same bytes."""
+        a, b = label_templates(meds), label_templates(meds)
+        assert all(np.array_equal(a[n], b[n]) for n in a)
+
+    def test_one_template_per_med(self, meds, templates):
+        assert set(templates) == set(meds)
+
+
+class TestReadFace:
+    def test_reads_every_med_from_its_camera_view(self, meds, templates):
+        """The recipe end-to-end on synthetic frames: correct label with
+        margin above the pre-registered floor, for every med."""
+        for name in meds:
+            frame = camera_view_frame(meds, templates, name)
+            verdict = read_face(frame, (160, 120), meds, templates, FX, FY, RANGE_M)
+            assert verdict.label == name
+            assert verdict.margin >= MARGIN_FLOOR
+
+    def test_unroll_direction_is_pinned_by_score_asymmetry(self, meds, templates):
+        """The k=3 pin: the correctly-rolled frame (k=1 paste) must
+        outscore the reverse-rolled one (k=3 paste, which unrolls to
+        upside-down text) by a wide gap for the SAME med — mutating
+        LABEL_ROTATION_K to 1 swaps which frame wins and fails this."""
+        correct = read_face(
+            camera_view_frame(meds, templates, "metformin", rotation_k=1),
+            (160, 120),
+            meds,
+            templates,
+            FX,
+            FY,
+            RANGE_M,
+        )
+        reverse = read_face(
+            camera_view_frame(meds, templates, "metformin", rotation_k=3),
+            (160, 120),
+            meds,
+            templates,
+            FX,
+            FY,
+            RANGE_M,
+        )
+        assert correct.scores["metformin"] > reverse.scores["metformin"] + 0.1
+
+    def test_blank_frame_is_refused(self, meds, templates):
+        frame = np.full((240, 320, 3), 96, dtype=np.uint8)
+        verdict = read_face(frame, (160, 120), meds, templates, FX, FY, RANGE_M)
+        assert verdict.label is None
+
+    def test_tiny_projected_crops_are_refused_not_scored(self, meds, templates):
+        """MIN_CROP_PX: at 10 m every hypothesis crop is sub-legible;
+        scoring noise there once produced confident nonsense."""
+        frame = camera_view_frame(meds, templates, "metformin")
+        verdict = read_face(frame, (160, 120), meds, templates, FX, FY, range_m=10.0)
+        assert verdict.label is None
+        assert all(s == -1.0 for s in verdict.scores.values())
+
+    def test_off_centre_label_read_via_detected_centre(self, meds, templates):
+        """The centre argument matters: the same frame read at the true
+        paste centre succeeds after failing at a 40 px-off guess."""
+        name = "cetirizine"
+        frame = camera_view_frame(meds, templates, name, centre=(200, 120))
+        assert read_face(frame, (200, 120), meds, templates, FX, FY, RANGE_M).label == name
+        assert read_face(frame, (160, 120), meds, templates, FX, FY, RANGE_M).label != name
+
+
+class TestVerdictRule:
+    def test_wide_margin_wins(self):
+        verdict = verdict_from_scores({"a": 0.5, "b": 0.3, "c": 0.1})
+        assert verdict.label == "a"
+        assert verdict.margin == pytest.approx(0.2)
+
+    def test_sub_floor_margin_refuses(self):
+        """MARGIN_FLOOR pin: a near-tie must refuse, however high the
+        absolute scores are."""
+        assert verdict_from_scores({"a": 0.9, "b": 0.9 - MARGIN_FLOOR / 2}).label is None
+
+    def test_just_above_floor_reads(self):
+        assert verdict_from_scores({"a": 0.5, "b": 0.5 - MARGIN_FLOOR * 1.01}).label == "a"
+
+    def test_negative_best_score_refuses_even_with_margin(self):
+        """All-negative correlations mean the crop matches NOTHING —
+        margin alone must not manufacture confidence."""
+        assert verdict_from_scores({"a": -0.02, "b": -0.5}).label is None
+
+
+class TestInkProb:
+    def test_flat_image_has_no_ink(self):
+        assert ink_prob(np.full((32, 32, 3), 120, dtype=np.uint8)).max() == 0.0
+
+    def test_ink_is_the_minority_class_regardless_of_polarity(self):
+        light = np.full((32, 32, 3), 220, dtype=np.uint8)
+        light[10:14, 4:28] = 20  # dark ink on light face
+        dark = np.full((32, 32, 3), 30, dtype=np.uint8)
+        dark[10:14, 4:28] = 230  # light ink on dark face
+        assert ink_prob(light)[12, 16] > 0.8
+        assert ink_prob(dark)[12, 16] > 0.8
+
+
+class TestReaderSession:
+    def _session(self, meds, templates, find_centre=None):
+        session = ReaderSession(meds=meds, templates=templates, find_centre=find_centre)
+        session.on_bridge_info({"calibration": {"wrist": {"intrinsics": {"fx": FX, "fy": FY}}}})
+        return session
+
+    def test_reads_once_per_request(self, meds, templates):
+        """TC-6 service discipline: one reply per request_id; further
+        frames are ignored until the next request."""
+        session = self._session(meds, templates)
+        frame = camera_view_frame(meds, templates, "omeprazole")
+        assert session.on_rgb(frame) is None  # no request yet
+        session.on_read_request({"range_m": RANGE_M}, "ep-1/read0")
+        result = session.on_rgb(frame)
+        assert result["request_id"] == "ep-1/read0"
+        assert result["label"] == "omeprazole"
+        assert session.on_rgb(frame) is None  # one-shot
+
+    def test_refused_read_still_replies(self, meds, templates):
+        """A tour must never hang on a bad view: the reply carries
+        label null instead of being withheld."""
+        session = self._session(meds, templates)
+        session.on_read_request({"range_m": RANGE_M}, "ep-1/read2")
+        result = session.on_rgb(np.full((240, 320, 3), 96, dtype=np.uint8))
+        assert result["label"] is None
+        assert result["request_id"] == "ep-1/read2"
+
+    def test_reset_clears_the_pending_request(self, meds, templates):
+        session = self._session(meds, templates)
+        session.on_read_request({"range_m": RANGE_M}, "ep-1/read0")
+        session.on_reset_done()
+        assert session.on_rgb(camera_view_frame(meds, templates, "metformin")) is None
+
+    def test_no_calibration_no_read(self, meds, templates):
+        session = ReaderSession(meds=meds, templates=templates)
+        session.on_read_request({"range_m": RANGE_M}, "ep-1/read0")
+        assert session.on_rgb(camera_view_frame(meds, templates, "metformin")) is None
+
+    def test_detected_centre_is_used_over_frame_centre(self, meds, templates):
+        session = self._session(meds, templates, find_centre=lambda rgb, prior: (200.0, 120.0))
+        frame = camera_view_frame(meds, templates, "cetirizine", centre=(200, 120))
+        session.on_read_request({"range_m": RANGE_M}, "r")
+        assert session.on_rgb(frame)["label"] == "cetirizine"
+
+    def test_rectified_path_is_taken_when_the_request_carries_a_camera_pose(self, meds, templates):
+        """The executor's achieved-pose read: a fronto-parallel camera
+        0.13 m from the face makes rectification equivalent to the
+        centred crop — the synthetic frame must read through the
+        rectified branch (find_centre must NOT be consulted)."""
+
+        def exploding_find_centre(rgb, prior):
+            raise AssertionError("rectified path must not use the detector")
+
+        session = self._session(meds, templates, find_centre=exploding_find_centre)
+        name = "omeprazole"
+        frame = camera_view_frame(meds, templates, name)
+        # camera: CV frame at (-0.13, 0, 0) from the face, +z toward it,
+        # +x image-right = world -y, +y image-down... the synthetic frame
+        # was built in the crop convention, so use the rot90 relation the
+        # renderer realizes: view left = +y, view up = +z
+        from aisle.verifier.calibration import lookat_rotation_cv
+
+        face = np.array([0.5, 0.0, 0.2])
+        cam_pos = face + [-RANGE_M, 0.0, 0.0]
+        # a PERFECT read pose realizes exactly the look-at CV rotation
+        # (wrist_camera_pose's GL_TO_CV factors cancel): the pinned
+        # Genesis convention the synthetic frame is painted in
+        cam_rot_cv = lookat_rotation_cv(cam_pos, face)
+        session.on_read_request(
+            {
+                "range_m": RANGE_M,
+                "face": face,
+                "cam_pos": cam_pos,
+                "cam_rot_cv": [float(v) for v in cam_rot_cv.reshape(-1)],
+            },
+            "r",
+        )
+        result = session.on_rgb(frame)
+        assert result["label"] == name
+        assert result["margin"] >= MARGIN_FLOOR
+
+    def test_pitched_request_applies_the_raised_margin_floor(self, meds, templates, monkeypatch):
+        """A pitched view can slide neighbour texture into the resample
+        and read confidently wrong (+0.093 measured): the same margin
+        that reads on a flat request must REFUSE on a pitched one."""
+        from aisle.nodes import label_reader as module
+
+        mid = (MARGIN_FLOOR + module.PITCHED_MARGIN_FLOOR) / 2
+        fixed = module.ReadVerdict(label=None, margin=0.0, scores={"a": mid, "b": 0.0})
+
+        def fake_rectified(*args, floor, **kwargs):
+            return module.verdict_from_scores(fixed.scores, floor=floor)
+
+        monkeypatch.setattr(module, "read_face_rectified", fake_rectified)
+        base = {
+            "range_m": RANGE_M,
+            "face": [0.5, 0.0, 0.2],
+            "cam_pos": [0.37, 0.0, 0.2],
+            "cam_rot_cv": [float(v) for v in np.eye(3).reshape(-1)],
+        }
+        frame = np.zeros((240, 320, 3), dtype=np.uint8)
+        session = self._session(meds, templates)
+        session.on_read_request(dict(base), "flat")
+        assert session.on_rgb(frame)["label"] == "a"
+        session.on_read_request({**base, "pitched": True}, "pitched")
+        assert session.on_rgb(frame)["label"] is None
+
+
+class TestDetectBoxCentre:
+    DETS = [
+        {"label": "metformin", "score": 0.4, "box": [140, 100, 180, 140]},  # centred
+        {"label": "ibuprofen", "score": 0.9, "box": [0, 60, 60, 200]},  # off-centre
+        {"label": "amoxicillin", "score": 0.05, "box": [150, 110, 170, 130]},  # sub-floor
+    ]
+
+    def test_best_near_centre_detection_wins_and_labels_are_ignored(self, monkeypatch):
+        """T2 no-color-prior: the color-worded detection is ONLY a
+        centre; the off-centre 0.9 hit and the sub-floor hit both lose
+        to the centred 0.4 one."""
+        from aisle.verifier import models
+
+        monkeypatch.setattr(models, "detect_meds", lambda rgb, names, model_pair: self.DETS)
+        rgb = np.zeros((240, 320, 3), dtype=np.uint8)
+        assert detect_box_centre(rgb, ["metformin"], None) == (160.0, 120.0)
+
+    def test_no_qualifying_detection_returns_none(self, monkeypatch):
+        from aisle.verifier import models
+
+        monkeypatch.setattr(models, "detect_meds", lambda rgb, names, model_pair: self.DETS[1:])
+        rgb = np.zeros((240, 320, 3), dtype=np.uint8)
+        assert detect_box_centre(rgb, ["metformin"], None) is None

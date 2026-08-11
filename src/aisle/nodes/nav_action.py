@@ -6,7 +6,7 @@ consumes `nav_goal` (goal_id pattern, TC-7) and `base_pose`, and publishes
 The control loop is clocked by `base_pose` itself (50 Hz SIM cadence,
 MOB-1), not a wall timer: exactly one control iteration per serviced pose,
 so the command sequence is a function of the sim trajectory alone (CON-5,
-ADR-28 — a wall tick raced the pose stream and made the recompute count
+ADR-29 — a wall tick raced the pose stream and made the recompute count
 host-dependent, issue #71).
 
 The lifecycle and controller are pure (aisle.mobility.nav) and unit-tested;
@@ -78,7 +78,7 @@ def main() -> None:
                 event["value"].to_numpy(zero_copy_only=False).tolist(),
                 int(metadata.get("sim_time_ns", 0)),
             )
-            # one control iteration per pose (ADR-28): drive toward the
+            # one control iteration per pose (ADR-29): drive toward the
             # target (if navigating), then advance the lifecycle; on a
             # terminal result, stop the base
             if machine.target is not None and machine.pose is not None:

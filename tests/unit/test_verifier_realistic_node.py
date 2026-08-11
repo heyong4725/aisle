@@ -62,6 +62,32 @@ def test_judged_set_matches_the_production_selector():
     assert sorted(buf.frames["overhead"]) == expected
 
 
+@pytest.mark.parametrize("start_ms", [0, 40], ids=["first-half-phase", "second-half-phase"])
+def test_live_selector_retains_the_matched_pair_before_each_boundary(start_ms):
+    """Issue #136 / VER-6/VER-7: the live verifier shares the recorder's
+    30 Hz RGB / 15 Hz depth interleave and must make the same at-or-before
+    choice even when an RGB-only tick precedes every checkpoint."""
+    period = int(5e9)
+    start = start_ms * 10**6
+    buf = _buffer(start_ns=start)
+    half = 33_333_333
+    full_stamps = []
+    for k in range(320):
+        stamp = k * half
+        buf.observe_frame("rgb_overhead", stamp, np.zeros((4, 4, 3), np.uint8))
+        if k % 2 == 0:
+            full_stamps.append(stamp)
+            buf.observe_frame("depth_overhead", stamp, np.zeros((4, 4), np.float32))
+            buf.observe_frame("rgb_wrist", stamp, np.zeros((3, 3, 3), np.uint8))
+
+    boundaries = list(range(start, 320 * half, period))
+    expected = [
+        max((stamp for stamp in full_stamps if stamp <= boundary), default=full_stamps[0])
+        for boundary in boundaries
+    ]
+    assert sorted(buf.frames.get("overhead", {})) == expected
+
+
 def test_judged_frames_have_the_shape_judge_frames_consumes():
     """`frames[camera][sim_time_ns] -> {"rgb", "depth"}` — the same mapping
     the offline replay builds, so the two paths cannot drift."""

@@ -167,7 +167,7 @@ def _write_nav_graph(tmp: Path, rec_out: Path) -> Path:
                 "path": str(NAV),
                 "inputs": {
                     "nav_goal": {"source": "injector/nav_goal", "queue_size": 4},
-                    # the control clock (ADR-28): one iteration per sim-stamped pose
+                    # the control clock (ADR-29): one iteration per sim-stamped pose
                     "base_pose": {"source": "mock-base/base_pose", "queue_size": 400},
                 },
                 "outputs": ["nav_feedback", "nav_result", "base_cmd"],

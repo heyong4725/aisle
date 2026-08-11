@@ -241,6 +241,9 @@ class BridgeConfig:
     # run's pixels carried text -- same reasoning as the rung; ambient env
     # is scrubbed by rollout. Default off: pre-T2 scenes stay byte-identical.
     labels: bool = False
+    # T2 no-color-prior (AISLE_SHUFFLE_COLORS): seeded permutation of box
+    # colors across meds; graph-declared and hash-attested like labels
+    shuffle_colors: bool = False
 
 
 PERCEPTION_RUNGS = ("L0", "L1", "L2")
@@ -273,6 +276,13 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
         # same refuse-don't-guess rule as the rung: a typo'd toggle must not
         # silently pick a scene whose pixels the run then attests
         raise ValueError(f"unknown AISLE_LABELS value {labels_raw!r}; use 0/1")
+    shuffle_raw = (
+        str(env.get("AISLE_SHUFFLE_COLORS") or "").strip().lower()
+        if "AISLE_SHUFFLE_COLORS" in env
+        else "0"
+    )
+    if shuffle_raw not in ("0", "1", "true", "false", "yes", "no"):
+        raise ValueError(f"unknown AISLE_SHUFFLE_COLORS value {shuffle_raw!r}; use 0/1")
     sim_backend = env.get("AISLE_SIM_BACKEND")
     if sim_backend is not None:
         sim_backend = str(sim_backend).strip().lower()
@@ -292,6 +302,7 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
         in ("1", "true", "yes"),
         sim_backend=sim_backend,
         labels=labels_raw in ("1", "true", "yes"),
+        shuffle_colors=shuffle_raw in ("1", "true", "yes"),
     )
 
 
@@ -664,7 +675,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             embodiment=cfg.embodiment,
             n_envs=cfg.n_envs,
             headless=cfg.headless,
-            cfg=SceneCfg(labels=cfg.labels),
+            cfg=SceneCfg(labels=cfg.labels, shuffle_colors=cfg.shuffle_colors),
             sim_backend=cfg.sim_backend,
         )
     robot = handle.robot

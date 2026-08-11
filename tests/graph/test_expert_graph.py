@@ -131,3 +131,30 @@ def test_expert_t1_l2_episode_succeeds(tmp_path):
     records = [json.loads(line) for line in results.read_text().splitlines() if line.strip()]
     assert len(records) == 1, (records, (stderr or "")[-2000:])
     assert records[0]["status"] == "success", (records[0], (stderr or "")[-2000:])
+
+
+def test_expert_t2_episode_succeeds(tmp_path):
+    """T2 end-to-end (design doc §3 tier table; idea I13, closed `up`):
+    the seeded episode runs through graphs/expert_t2.yaml verbatim — the
+    scene renders label textures with COLORS PERMUTED across meds
+    (no-color-prior), so detected-pose's color-worded identity is noise
+    and only positions survive; the state machine tours candidates with
+    read_move/move_done, ocr-label reads each parked face under the
+    pre-registered margin floor, the matching candidate is promoted to
+    grasp_target, and the episode closes with status=success — the
+    oracle verifier (sim identity, color-blind) is the judge, so a
+    color-prior shortcut CANNOT pass this test by luck at a shuffled
+    seed.
+
+    The generous timeout covers the tour: up to five read poses plus
+    one OWLv2 query (~2 s) each, before the ordinary grasp."""
+    results, stderr = _run_expert_graph(
+        tmp_path,
+        "expert_t2.yaml",
+        {"AISLE_SEEDS": "3", "AISLE_TARGET_MEDS": "cetirizine", "AISLE_TIMEOUT_S": "150"},
+    )
+
+    assert results.exists(), f"no results written; stderr tail: {(stderr or '')[-3000:]}"
+    records = [json.loads(line) for line in results.read_text().splitlines() if line.strip()]
+    assert len(records) == 1, (records, (stderr or "")[-2000:])
+    assert records[0]["status"] == "success", (records[0], (stderr or "")[-2000:])

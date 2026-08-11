@@ -90,7 +90,7 @@ nodes:
         source: s3-driver-v1/nav_goal
         queue_size: 100
       base_pose:
-        # the control clock (ADR-28): one iteration per pose. Deep enough
+        # the control clock (ADR-29): one iteration per pose. Deep enough
         # that scheduler jitter never drops a clock edge (not latest-wins),
         # shallow enough to bound stale-pose replay under pathological load
         source: dora-genesis/base_pose

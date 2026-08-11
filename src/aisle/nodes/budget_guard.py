@@ -389,7 +389,7 @@ def main(clock=None) -> None:
             # commanded arm-target change pushes it out, silence lets it pass
             "arm_motion_deadline": float("-inf"),
             "base_pose": None,  # latest base_pose feedback (MOB-3 keep-out)
-            # the watchdog's clocks (ADR-28, see run_watchdog): newest pose
+            # the watchdog's clocks (ADR-29, see run_watchdog): newest pose
             # sim stamp (None = sim clock blind), the pose stamp referenced
             # by the last base_cmd, the last base_cmd's wall time (the wall
             # net's reference), and the last pose's wall arrival (the pose
@@ -418,7 +418,7 @@ def main(clock=None) -> None:
             print(f"guard violation: {payload}", file=sys.stderr)
 
     def run_watchdog(env_id: int, state: dict, now: float) -> None:
-        # MOB-3 watchdog (ADR-28): stop a latched moving base ONCE when the
+        # MOB-3 watchdog (ADR-29): stop a latched moving base ONCE when the
         # pure verdict says so. Called from the base_pose handler (the sim
         # clock — alive exactly when the base can move) and swept over all
         # envs on the BG-5 stats tick (the wall net's home: it also covers
@@ -547,7 +547,7 @@ def main(clock=None) -> None:
                 )
             # the bridge latches the last base_cmd_safe and integrates it
             # every tick, so a dead producer or a timed-out episode would
-            # drive forever — the pose stream is the watchdog's clock (ADR-28)
+            # drive forever — the pose stream is the watchdog's clock (ADR-29)
             run_watchdog(env_id, state, now)
         elif event["id"] == "base_cmd" and is_mobile:
             # MOB-3: base velocity limits, arm/base mutual exclusion (base
@@ -557,7 +557,7 @@ def main(clock=None) -> None:
             env_id = parse_env_id(metadata)
             state = envs.setdefault(env_id, new_state())
             # commands carry no sim stamp: the staleness reference is the
-            # newest pose stamp the guard has seen (ADR-28)
+            # newest pose stamp the guard has seen (ADR-29)
             state["last_base_cmd_sim_ns"] = state["base_pose_sim_ns"]
             state["last_base_cmd_wall_t"] = now
             timed_out = state["timer"].timed_out(now, limits.wall_timeout_s)
@@ -632,7 +632,7 @@ def main(clock=None) -> None:
                 state["last_base_cmd_wall_t"] = None
                 state["last_base_safe"] = [0.0, 0.0]
         elif event["id"] == "tick":
-            # the wall net's sweep (ADR-28): every env, fail-closed, on the
+            # the wall net's sweep (ADR-29): every env, fail-closed, on the
             # BG-5 cadence — it can only fire on a pathological run
             if is_mobile:
                 for env_id, state in envs.items():

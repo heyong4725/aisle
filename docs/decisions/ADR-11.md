@@ -1,5 +1,7 @@
 # ADR-11: T09 rollout-runner interpretations (SPEC 070)
 
+Status: ACCEPTED
+
 Interpretations chosen (CON-15): (1) The trace recorder (HAR-4) runs in
 the rollout runner's INSTRUMENTED copy of the graph and subscribes every
 traceable topic including oracle_state; VAL-6's oracle isolation governs
@@ -69,4 +71,8 @@ from goal receipt (PR #105 review). The
 overhead rgb/depth pair is written only when both come from ONE render
 (BRG-2 co-renders them when both are due): the geometry stages fuse the
 two, so a mismatched pair would measure a scene that never existed, and
-a gap is the safe outcome.
+a gap is the safe outcome. Issue #136 closes the rate-asymmetry hole in
+that rule: 30 Hz RGB can advance between 15 Hz RGB/depth pairs, so recorder
+and live verifier retain the last complete pair separately from per-stream
+latest values. A second-half-phase checkpoint therefore selects the complete
+pair before its boundary rather than waiting for a complete pair after it.
