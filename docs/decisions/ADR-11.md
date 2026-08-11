@@ -76,3 +76,12 @@ that rule: 30 Hz RGB can advance between 15 Hz RGB/depth pairs, so recorder
 and live verifier retain the last complete pair separately from per-stream
 latest values. A second-half-phase checkpoint therefore selects the complete
 pair before its boundary rather than waiting for a complete pair after it.
+
+(15) Issue #128's graph attestation uses one immutable in-memory capture of
+the authored graph for the perception-rung check, HAR-2 validation, every
+instrumented launch/relaunch, and the authored hash. The capture keeps the
+original graph path as provenance: VAL-2 resolves relative node paths from
+that path's directory, not from the run artifact's directory, so closing the
+read/validate/launch TOCTOU does not weaken `PATH_MANIFEST_MISMATCH`. The exact
+authored bytes are also persisted beside the execution copies, making both
+hash families independently verifiable after an in-place source edit.
