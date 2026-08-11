@@ -54,13 +54,14 @@ def test_recorder_still_subscribes_to_poses_at_l0(tmp_path):
 
 
 def test_manifest_attests_authored_and_executed_hashes_end_to_end(tmp_path, monkeypatch):
-    """Round-2 review P1 + CON-5: the attestation FIELDS this concern exists for
-    (#128) were asserted nowhere — deleting the exec hash append or
-    recording the authored hash twice passed the whole suite. This drives
-    the REAL rollout() end to end (gates, instrumentation, manifest) with
-    only the dora spawn stubbed, and pins each hash to independently
-    computed bytes: graph_hash == sha256(authored file), exec_graph_hashes
-    == [sha256(the instrumented copy on disk)], and the two differ."""
+    """HAR-2/HAR-4/CON-5: one authored capture crosses gate and launch (#128).
+
+    Mutating the source graph immediately after the real validation gate is
+    the original TOCTOU reproduction. The active run must still execute and
+    attest the captured L1 graph, persist its exact authored bytes, and hash
+    the independently inspectable instrumented copy. The edit belongs only
+    to a later run.
+    """
     import hashlib
     import json
 
@@ -70,6 +71,7 @@ def test_manifest_attests_authored_and_executed_hashes_end_to_end(tmp_path, monk
 
     root = _fake_root(tmp_path)
     graph = root / "graphs" / "expert_t1.yaml"
+    authored_bytes = graph.read_bytes()
     spawned = {}
 
     def fake_spawn(exec_graph, run_dir, env):
@@ -93,6 +95,17 @@ def test_manifest_attests_authored_and_executed_hashes_end_to_end(tmp_path, monk
 
     monkeypatch.setattr(rollout_module, "_spawn_dora", fake_spawn)
     monkeypatch.setattr(rollout_module, "_terminate", lambda proc: None)
+    real_run_gates = rollout_module.run_gates
+
+    def mutate_after_gate(*args, **kwargs):
+        result = real_run_gates(*args, **kwargs)
+        doc = yaml.safe_load(graph.read_text())
+        bridge = next(node for node in doc["nodes"] if node["id"] == "dora-genesis")
+        bridge["env"]["AISLE_PERCEPTION"] = "L0"
+        graph.write_text(yaml.safe_dump(doc, sort_keys=False))
+        return result
+
+    monkeypatch.setattr(rollout_module, "run_gates", mutate_after_gate)
     monkeypatch.setattr(
         rollout_module,
         "resolve_sim_identity",
@@ -121,12 +134,16 @@ def test_manifest_attests_authored_and_executed_hashes_end_to_end(tmp_path, monk
     )
     assert report["ok"] is True, report
     manifest = json.loads((root / "runs" / "attest-unit" / "manifest.json").read_text())
-    assert manifest["graph_hash"] == hashlib.sha256(graph.read_bytes()).hexdigest()
+    assert manifest["graph_hash"] == hashlib.sha256(authored_bytes).hexdigest()
+    snapshot = root / manifest["graph_snapshot"]
+    assert snapshot.read_bytes() == authored_bytes
+    assert graph.read_bytes() != authored_bytes  # the reproduction really changed the source
     exec_copy = root / "runs" / "attest-unit" / "graph.yaml"
     assert manifest["exec_graph_hashes"] == [hashlib.sha256(exec_copy.read_bytes()).hexdigest()]
     assert manifest["exec_graph_hashes"][0] != manifest["graph_hash"]
     executed = yaml.safe_load(exec_copy.read_text())
     bridge = next(node for node in executed["nodes"] if node["id"] == "dora-genesis")
+    assert bridge["env"]["AISLE_PERCEPTION"] == "L1"
     assert bridge["env"]["AISLE_SIM_BACKEND"] == "cuda"
     assert manifest["perception"] == "L1"
     assert manifest["sim_extra"] == "cuda"

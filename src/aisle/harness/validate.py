@@ -108,8 +108,13 @@ def _gated_source(
     return result
 
 
-def load_graph(path: Path) -> tuple[list | None, list[dict]]:
-    """Parse the dataflow YAML and check its structure; returns (nodes, errors)."""
+def load_graph(path: Path, graph_snapshot: bytes | None = None) -> tuple[list | None, list[dict]]:
+    """Parse a graph path or captured bytes; return ``(nodes, errors)``.
+
+    ``path`` remains the graph's provenance even when ``graph_snapshot`` is
+    supplied. In particular, validate() uses its parent as VAL-2's one and
+    only relative-path base; the snapshot is content, not a staged identity.
+    """
     where = {"node": str(path)}
 
     def invalid(detail: str, hint: str) -> tuple[None, list[dict]]:
@@ -119,7 +124,12 @@ def load_graph(path: Path) -> tuple[list | None, list[dict]]:
         # encoding pinned: graphs carry em dashes in their header comments, so
         # the locale default (LC_ALL=C in a minimal container or cron) turned
         # every graph into "cannot read graph: 'ascii' codec can't decode"
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        text = (
+            graph_snapshot.decode("utf-8")
+            if graph_snapshot is not None
+            else path.read_text(encoding="utf-8")
+        )
+        data = yaml.safe_load(text)
     except (OSError, UnicodeDecodeError) as exc:
         return invalid(f"cannot read graph: {exc}", "pass a readable UTF-8 dataflow YAML path")
     except yaml.YAMLError as exc:
@@ -898,7 +908,13 @@ def _validate_edge(
         )
 
 
-def validate(graph_path: Path, root: Path, embodiment: str, allow_unproven: bool) -> dict:
+def validate(
+    graph_path: Path,
+    root: Path,
+    embodiment: str,
+    allow_unproven: bool,
+    graph_snapshot: bytes | None = None,
+) -> dict:
     report = {"ok": False, "graph": str(graph_path), "errors": [], "warnings": [], "dist_state": {}}
     # ADR-24 D5 (PR #69 review F4): the diagnostic is computed from the
     # REGISTRY alone, before any graph parsing — early graph errors still
@@ -916,7 +932,7 @@ def validate(graph_path: Path, root: Path, embodiment: str, allow_unproven: bool
         report["dist_state"] = dict(sorted(report["dist_state"].items()))
     except Exception:  # noqa: BLE001 — a broken registry surfaces via its own errors
         pass
-    nodes, errors = load_graph(graph_path)
+    nodes, errors = load_graph(graph_path, graph_snapshot)
     if nodes is None:
         report["errors"] = errors
         return report

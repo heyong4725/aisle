@@ -312,6 +312,7 @@ def run_gates(
     env_baseline: str = "origin/main",
     episodes: int = 0,
     sim_extra: str = "sim",
+    graph_snapshot: bytes | None = None,
 ) -> dict:
     """HAR-2: refuse on env-hash mismatch (TRUSTED baseline by default,
     ADR-21: the baseline commit is fetched from the remote SERVER and
@@ -384,7 +385,13 @@ def run_gates(
     # validate against the embodiment that will actually run (M0-5): a
     # graph whose nodes do not support it must refuse HERE, not crash
     # hours into the rollout
-    validation = validate(graph, root, embodiment, allow_unproven=False)
+    validation = validate(
+        graph,
+        root,
+        embodiment,
+        allow_unproven=False,
+        graph_snapshot=graph_snapshot,
+    )
     if not validation["ok"]:
         return {"ok": False, "gate": "validate", "detail": validation["errors"]}
     gates = {
@@ -475,6 +482,7 @@ def instrumented_graph(
     verifier: str = "oracle",
     episode_timeout_s: float = 60.0,
     sim_backend: str | None = None,
+    graph_snapshot: bytes | None = None,
 ) -> Path:
     """The input graph plus a trace-recorder node (HAR-4) with absolutized
     node paths, written under the run dir (dora's cwd becomes the run dir,
@@ -485,7 +493,12 @@ def instrumented_graph(
     from aisle.harness.registry import load_manifests
     from aisle.harness.validate import FORBIDDEN_BY_RUNG, graph_perception_rung
 
-    doc = yaml.safe_load(graph.read_text())
+    text = (
+        graph_snapshot.decode("utf-8")
+        if graph_snapshot is not None
+        else graph.read_text(encoding="utf-8")
+    )
+    doc = yaml.safe_load(text)
     for node in doc["nodes"]:
         node["path"] = str((graph.parent / node["path"]).resolve())
     # issue #128 (TC-9): the recorder subscribes to declared endpoints, but a
@@ -494,10 +507,10 @@ def instrumented_graph(
     # instead of relying on the bridge's runtime restraint. (oracle_state
     # remains recorded at every rung: it is the verifier's privileged input,
     # governed by VAL-6/ADR-28, not by the rung.) FAIL CLOSED on unreadable
-    # rungs (PR #135 round-2 review): this function re-reads graph and
-    # registry at launch AND at every wall-clamp relaunch, hours after the
-    # HAR-2 gate validated — a registry broken in between must refuse the
-    # launch loudly, not silently record an unfiltered trace.
+    # rungs (PR #135 round-2 review). Registry state is deliberately re-read
+    # at launch and every wall-clamp relaunch, hours after the HAR-2 gate: a
+    # registry broken in between must refuse loudly. The graph content comes
+    # from rollout's one capture, so relaunches cannot silently change graphs.
     manifest_list, manifest_errors = load_manifests(root)
     rung, bridge_ids, rung_errors = graph_perception_rung(
         doc["nodes"], {} if manifest_errors else {m["id"]: m for _, m in manifest_list}
@@ -655,7 +668,12 @@ def _graph_hash(graph: Path) -> str:
     return hashlib.sha256(graph.read_bytes()).hexdigest()
 
 
-def perception_check(root: Path, graph: Path, requested: str | None) -> dict:
+def perception_check(
+    root: Path,
+    graph: Path,
+    requested: str | None,
+    graph_snapshot: bytes | None = None,
+) -> dict:
     """HAR-1/TC-9: the graph DECLARES the perception rung, where the graph
     hash attests it, and rollout scrubs ambient AISLE_PERCEPTION for the same
     reason — so --perception cannot inject a rung. It ASSERTS one: a mismatch
@@ -666,7 +684,7 @@ def perception_check(root: Path, graph: Path, requested: str | None) -> dict:
     from aisle.harness.registry import load_manifests
     from aisle.harness.validate import graph_perception_rung, load_graph
 
-    nodes, _ = load_graph(graph)
+    nodes, _ = load_graph(graph, graph_snapshot)
     manifest_list, manifest_errors = load_manifests(root)
     if nodes is None or manifest_errors:
         # run_gates' validate owns the full structured report for a broken
@@ -732,17 +750,31 @@ def rollout(
         return {"ok": False, "error": f"unsafe run_id {run_id!r}"}
     if (root / "runs" / run_id).exists():
         return {"ok": False, "error": f"run_id {run_id!r} already exists; refusing to overwrite"}
-    perception_gate = perception_check(root, graph, perception)
+    # Issue #128 / HAR-2: one read is the run's immutable authored graph.
+    # Rung detection, validation, instrumentation, relaunches, and the
+    # authored hash all consume these exact bytes. The original path remains
+    # provenance for VAL-2 relative-path identity checks.
+    try:
+        graph_snapshot = graph.read_bytes()
+    except OSError as exc:
+        return {
+            "ok": False,
+            "refused": {
+                "gate": "validate",
+                "detail": [
+                    {
+                        "code": "GRAPH_INVALID",
+                        "node": str(graph),
+                        "detail": f"cannot read graph: {exc}",
+                        "hint": "pass a readable UTF-8 dataflow YAML path",
+                    }
+                ],
+            },
+        }
+    perception_gate = perception_check(root, graph, perception, graph_snapshot)
     if not perception_gate["ok"]:
         return {"ok": False, "refused": perception_gate}
-    # issue #128: hash the authored graph HERE, adjacent to the rung read and
-    # before the gates. This NARROWS the straddle window between the attested
-    # hash and the attested rung — it does not close it: perception_check and
-    # this hash are still two reads, as are the gates' and instrumentation's
-    # (round-2 review). Full closure needs the one-snapshot design that
-    # conflicts with PATH_MANIFEST_MISMATCH's identity check — open on #128;
-    # exec_graph_hashes bounds the damage by attesting what actually ran.
-    authored_graph_hash = _graph_hash(graph)
+    authored_graph_hash = hashlib.sha256(graph_snapshot).hexdigest()
     gates = run_gates(
         root,
         graph,
@@ -752,6 +784,7 @@ def rollout(
         env_baseline,
         episodes,
         sim_extra,
+        graph_snapshot=graph_snapshot,
     )
     if not gates["ok"]:
         return {"ok": False, "refused": gates}
@@ -769,6 +802,8 @@ def rollout(
     run_dir = root / "runs" / run_id
     traces_dir = run_dir / "traces"
     traces_dir.mkdir(parents=True, exist_ok=True)
+    authored_snapshot_path = run_dir / "authored-graph.yaml"
+    authored_snapshot_path.write_bytes(graph_snapshot)
     # budgets before the graph: the realistic verifier node needs the episode
     # SIM timeout declared in the graph, since it ends episodes on its own
     # budget rather than waiting for the oracle (VER-5, increment 1b)
@@ -781,6 +816,7 @@ def rollout(
             verifier=verifier,
             episode_timeout_s=episode_timeout_s,
             sim_backend=gates["sim_backend"],
+            graph_snapshot=graph_snapshot,
         )
     except RuntimeError as exc:
         return {"ok": False, "refused": {"gate": "perception", "detail": str(exc)}}
@@ -914,6 +950,7 @@ def rollout(
                         verifier=verifier,
                         episode_timeout_s=episode_timeout_s,
                         sim_backend=gates["sim_backend"],
+                        graph_snapshot=graph_snapshot,
                     )
                 except RuntimeError as exc:
                     # fail closed mid-run too: a registry broken since the
@@ -1007,10 +1044,10 @@ def rollout(
         "env_hash": env_hash,
         "platform": platform_module.platform(),
         "graph": str(graph),
-        # issue #128: graph_hash is the AUTHORED graph (CON-3's reproducibility
-        # key, hashed at gate time adjacent to the rung read); exec_graph_hashes
-        # attest the instrumented copies that actually RAN, one per launch
+        # Issue #128: graph_hash and graph_snapshot attest the one AUTHORED
+        # capture; exec_graph_hashes attest each derived copy that actually ran.
         "graph_hash": authored_graph_hash,
+        "graph_snapshot": str(authored_snapshot_path.relative_to(root)),
         "exec_graph_hashes": exec_graph_hashes,
         "tier": tier,
         # TC-9: the run attests which pose source produced it, read from the
