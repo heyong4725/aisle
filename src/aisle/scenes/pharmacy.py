@@ -453,13 +453,20 @@ def wrist_mount_rotation(cam_cfg: dict) -> np.ndarray:
             [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
             [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
         ],
-        dtype=np.float32,
+        # float64: this rotation reaches the PUBLISHED calibration block,
+        # whose wrist check is EXACT against the float64 nominal (VER-8 e).
+        # float32 here broke every realistic-verifier episode after #122
+        # (0.05 -> 0.05000000074, stage-0 refusal) -- found by the first
+        # A7 run, where the realistic verdict became load-bearing.
+        dtype=np.float64,
     )
 
 
 def ee_frame_transform(profile: dict | None) -> np.ndarray:
-    """EE-link-to-official-TCP transform; identity when no fixed frame is configured."""
-    fixed = np.eye(4, dtype=np.float32)
+    """EE-link-to-official-TCP transform; identity when no fixed frame is
+    configured. float64: composes into the published calibration (VER-8 e
+    exact wrist check) -- see wrist_mount_rotation."""
+    fixed = np.eye(4, dtype=np.float64)
     if not profile or "ee_frame_offset_xyz" not in profile:
         return fixed
     roll, pitch, yaw = (float(v) for v in profile["ee_frame_offset_rpy"])
@@ -472,7 +479,7 @@ def ee_frame_transform(profile: dict | None) -> np.ndarray:
             [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
             [-sp, cp * sr, cp * cr],
         ],
-        dtype=np.float32,
+        dtype=np.float64,
     )
     fixed[:3, 3] = profile["ee_frame_offset_xyz"]
     return fixed
@@ -481,7 +488,9 @@ def ee_frame_transform(profile: dict | None) -> np.ndarray:
 def wrist_mount_transform(cam_cfg: dict, profile: dict | None = None) -> np.ndarray:
     """EE-link-to-camera transform, including an official fixed TCP frame
     when the simulator collapses that massless URDF link (SCN-5, ADR-27)."""
-    camera = np.eye(4, dtype=np.float32)
+    # float64 end to end: the position published from this transform must
+    # equal the config value EXACTLY (VER-8 e) -- see wrist_mount_rotation
+    camera = np.eye(4, dtype=np.float64)
     camera[:3, :3] = wrist_mount_rotation(cam_cfg)
     camera[:3, 3] = cam_cfg["wrist_offset_m"]
     fixed = ee_frame_transform(profile)

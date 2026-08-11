@@ -252,3 +252,58 @@ def test_stage0_accepts_the_scene_mount_and_refuses_a_different_one():
     stale["_overhead_lookat"] = OVERHEAD_LOOKAT
     refusal, _ = calibration_report(published, stale, 0.05)
     assert refusal is not None and "cam_to_ee" in refusal, refusal
+
+
+def test_published_wrist_mount_is_bit_exact_against_the_nominal():
+    """VER-8 check (e) compares the wrist cam_to_ee EXACTLY (np.array_equal
+    — deliberate: DR never perturbs the mount). #122's profile-aware
+    wrist_mount_transform rebuilt the chain in float32, so the bridge
+    published 0.05000000074 against the float64 nominal 0.05 and stage 0
+    refused EVERY realistic-verifier episode from #122 until this fix —
+    silently degrading both-mode fidelity sidecars, and surfacing only
+    when A7 made the realistic verdict load-bearing. This drives the REAL
+    publish path (wrist_mount_transform -> build_calibration_v1) against
+    the REAL nominal path (config values direct) and demands stage 0
+    passes."""
+    import numpy as np
+
+    from aisle.scenes.pharmacy import (
+        load_physics,
+        wrist_mount_rotation,
+        wrist_mount_transform,
+    )
+    from aisle.verifier.calibration import build_calibration_v1, check_calibration
+
+    phys = load_physics()
+    cams = phys["cameras"]
+    profile = phys["embodiment"]["franka"]
+    wrist_transform = wrist_mount_transform(cams, profile)
+    # the bridge's publish path (dora_genesis builds the block from the
+    # transform); overhead uses config values so only the wrist differs
+    published = build_calibration_v1(
+        cams["overhead_pos"],
+        cams["overhead_lookat"],
+        (640, 480),
+        55.0,
+        wrist_transform[:3, 3].tolist(),
+        (320, 240),
+        70.0,
+        wrist_transform[:3, :3],
+    )
+    # the verifier node's nominal path (config values direct)
+    nominal = build_calibration_v1(
+        cams["overhead_pos"],
+        cams["overhead_lookat"],
+        (640, 480),
+        55.0,
+        cams["wrist_offset_m"],
+        (320, 240),
+        70.0,
+        wrist_mount_rotation(cams),
+    )
+    nominal["_overhead_lookat"] = cams["overhead_lookat"]
+    refusal = check_calibration(published, nominal, jitter_bound_m=0.05)
+    assert refusal is None, refusal
+    # and the root invariant: the transform preserves config floats exactly
+    assert wrist_transform[:3, 3].tolist() == [float(v) for v in cams["wrist_offset_m"]]
+    assert wrist_transform.dtype == np.float64
