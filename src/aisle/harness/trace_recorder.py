@@ -17,7 +17,9 @@ $AISLE_FRAME_CAPTURE_PERIOD_S (default 0 = off) additionally persists RAW
 pixels as `frames/<camera>/<sim_time_ns>.npz` at VER-9's judged-frame
 cadence — ADR-11 clause 14. `CaptureSchedule` reproduces
 `checkpoint_stamps`' choice online: last frame at or before each
-boundary, counted from each episode's goal receipt. The mp4
+boundary, counted from each episode's goal receipt. The last complete
+RGB/depth pair is retained separately so an intervening 30 Hz RGB-only tick
+cannot evict it before a 15 Hz pair crosses the boundary (issue #136). The mp4
 is lossy, 10 fps and carries no depth at all, so a run recorded without
 this captures NOTHING the realistic verifier can replay (VER-5/VER-6):
 its containment and upright stages need the overhead depth, and byte
@@ -128,9 +130,10 @@ class CaptureSchedule:
     `checkpoint_stamps()` snaps each wanted stamp to the nearest rendered
     frame AT OR BEFORE it, and counts checkpoints from GOAL RECEIPT. A
     recorder cannot see future frames, so it reproduces the same choice by
-    retaining the newest frame and writing it once a later frame proves the
-    boundary has passed. Both details are what make the persisted set the
-    judged set rather than merely a periodic sample (PR #105 review):
+    retaining the newest capture-ready frame set and writing it once a later
+    frame proves the boundary has passed. Both details are what make the
+    persisted set the judged set rather than merely a periodic sample
+    (PR #105 review, issue #136):
 
     * at-or-BEFORE: with renders at 4.967 s and 5.033 s around a 5.000 s
       checkpoint, the verifier judges 4.967 s — writing the current frame
@@ -176,7 +179,7 @@ class CaptureSchedule:
             self.next_boundary_ns += self.period_ns
 
 
-def capture_frames(frames_dir: Path, latest: dict[str, tuple[int, np.ndarray]]) -> int | None:
+def capture_frames(frames_dir: Path, retained: dict[str, tuple[int, np.ndarray]]) -> int | None:
     """Persist the retained payloads as one npz per camera, keyed by the
     frame's own sim stamp, and return the overhead stamp written.
 
@@ -185,11 +188,11 @@ def capture_frames(frames_dir: Path, latest: dict[str, tuple[int, np.ndarray]]) 
     (VER-10/VER-11), so a pair from different ticks is worse than a gap.
     BRG-2 renders both in one pass whenever both are due, so a mismatch
     means the frames did not come from one render."""
-    rgb, depth = latest.get("rgb_overhead"), latest.get("depth_overhead")
+    rgb, depth = retained.get("rgb_overhead"), retained.get("depth_overhead")
     if rgb is None or depth is None or rgb[0] != depth[0]:
         return None
     arrays = {"rgb": rgb[1], "depth": depth[1]}
-    seg = latest.get("seg_overhead")
+    seg = retained.get("seg_overhead")
     # issue #131: at L1 the mask rides with the judged pair — but only from
     # the SAME render pass (the TC-9 stamp rule); a mask from another tick
     # would attest a scene this pair never saw. L0 runs have no seg stream
@@ -197,10 +200,42 @@ def capture_frames(frames_dir: Path, latest: dict[str, tuple[int, np.ndarray]]) 
     if seg is not None and seg[0] == rgb[0]:
         arrays["seg"] = seg[1]
     write_camera_frame(frames_dir, "overhead", rgb[0], arrays)
-    wrist = latest.get("rgb_wrist")
+    wrist = retained.get("rgb_wrist")
     if wrist is not None:
         write_camera_frame(frames_dir, "wrist", wrist[0], {"rgb": wrist[1]})
     return rgb[0]
+
+
+def retain_capture_frame(
+    latest: dict[str, tuple[int, np.ndarray]],
+    ready: dict[str, tuple[int, np.ndarray]],
+    stream: str,
+    sim_time_ns: int,
+    frame: np.ndarray,
+) -> None:
+    """Retain one stream and preserve the newest CAPTURE-READY frame set.
+
+    RGB runs at 30 Hz while overhead depth runs at 15 Hz. A faster RGB-only
+    tick therefore makes ``latest`` temporarily mismatched; issue #136 showed
+    that using it directly destroys the complete pair needed by the next
+    at-or-before checkpoint. ``ready`` advances only when RGB and depth share
+    a stamp. Wrist RGB remains independent, and segmentation joins only the
+    overhead pair from its own render pass."""
+    retained = (int(sim_time_ns), frame)
+    latest[stream] = retained
+    if stream == "rgb_wrist":
+        ready[stream] = retained
+
+    rgb, depth = latest.get("rgb_overhead"), latest.get("depth_overhead")
+    if rgb is None or depth is None or rgb[0] != depth[0]:
+        return
+    ready["rgb_overhead"] = rgb
+    ready["depth_overhead"] = depth
+    seg = latest.get("seg_overhead")
+    if seg is not None and seg[0] == rgb[0]:
+        ready["seg_overhead"] = seg
+    else:
+        ready.pop("seg_overhead", None)
 
 
 def record_image_frame(
@@ -209,6 +244,7 @@ def record_image_frame(
     frame: np.ndarray,
     schedule: CaptureSchedule,
     latest: dict,
+    ready: dict,
     frames_dir: Path,
 ) -> str | None:
     """Retention-order and boundary-capture logic for ONE image frame;
@@ -218,26 +254,23 @@ def record_image_frame(
 
     The order is load-bearing and asymmetric:
 
-    * rgb/depth retain AFTER the boundary check — the captured pair must be
-      the last one at or before the boundary (VER-9's at-or-before rule);
-    * seg retains BEFORE it. Seg can never complete the rgb/depth pair, so
-      pair selection is unaffected — but when the boundary lands in the
-      second half of a render period, the capture fires ON the seg event
-      itself, and retained-after, the matching mask is in hand yet omitted.
-      Not a transient race: the 5 s capture period is an exact multiple of
-      the 15 Hz render period, so the boundary phase repeats for every
-      checkpoint of an episode and a second-half-phase episode loses the
-      mask at ALL its mid-episode captures (measured as the 4/15 misses in
-      the PR's first live run — one all-miss episode, not scattered)."""
+    * rgb/depth retain AFTER the boundary check — capture uses the separate
+      last capture-ready pair, which a faster RGB-only tick cannot destroy
+      (issue #136; VER-9's at-or-before rule);
+    * seg retains BEFORE it. If no pre-boundary pair exists yet, a seg event
+      can be the event that makes the first post-boundary capture complete;
+      retaining first includes that pair's same-render mask. When a prior
+      capture-ready pair exists, the earlier rgb event already captured it
+      and advanced the schedule before any post-boundary payload replaced it."""
     row_text = None
     if stream == "seg_overhead":
-        latest[stream] = (sim_time_ns, frame)
+        retain_capture_frame(latest, ready, stream, sim_time_ns, frame)
         row_text = seg_provenance(frame)
     if schedule.crossed(sim_time_ns):
-        if capture_frames(frames_dir, latest) is not None:
+        if capture_frames(frames_dir, ready) is not None:
             schedule.advance(sim_time_ns)
     if stream != "seg_overhead":
-        latest[stream] = (sim_time_ns, frame)
+        retain_capture_frame(latest, ready, stream, sim_time_ns, frame)
     return row_text
 
 
@@ -322,6 +355,7 @@ def main() -> None:
     )
     frames_dir = trace_dir / "frames"
     latest: dict[str, tuple[int, np.ndarray]] = {}
+    ready: dict[str, tuple[int, np.ndarray]] = {}
 
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # run finally
     node = Node()
@@ -354,7 +388,7 @@ def main() -> None:
                     # record_image_frame — the order is load-bearing and
                     # test-driven (PR #134 review)
                     row_text = record_image_frame(
-                        stream, sim_time_ns, frame, schedule, latest, frames_dir
+                        stream, sim_time_ns, frame, schedule, latest, ready, frames_dir
                     )
                     if stream == "rgb_overhead":
                         h, w = frame.shape[0], frame.shape[1]
@@ -378,7 +412,7 @@ def main() -> None:
                 if schedule.enabled and topic.endswith("__episode_result"):
                     # the TERMINAL frame is always judged (VER-9), and it is
                     # the one a mid-period episode end would otherwise drop
-                    capture_frames(frames_dir, latest)
+                    capture_frames(frames_dir, ready)
                 continue
             values = np.asarray(value.to_numpy(zero_copy_only=False), dtype=np.float64).reshape(-1)
             buffer_row(topic, metadata, values.tolist(), None)

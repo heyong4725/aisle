@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from aisle.harness.trace_recorder import CaptureSchedule, decode_frame
+from aisle.harness.trace_recorder import CaptureSchedule, decode_frame, retain_capture_frame
 
 # the wrist judged-frame set needs the EE pose at each frame's stamp (VER-8);
 # joints arrive at 100 Hz, so only the latest is kept and sampled per frame
@@ -67,7 +67,11 @@ class EpisodeBuffer:
     schedule: CaptureSchedule
     frames: dict[str, dict[int, dict]] = field(default_factory=dict)
     ee_poses: dict[int, tuple] = field(default_factory=dict)
+    # `latest` assembles independently delivered streams; `ready` advances
+    # only on a complete overhead pair, so a 30 Hz RGB-only tick cannot evict
+    # the 15 Hz pair needed by an at-or-before checkpoint (issue #136).
     latest: dict[str, tuple[int, np.ndarray]] = field(default_factory=dict)
+    ready: dict[str, tuple[int, np.ndarray]] = field(default_factory=dict)
     joints: tuple[int, np.ndarray] | None = None
 
     def observe_joints(self, sim_time_ns: int, qpos: np.ndarray) -> None:
@@ -80,15 +84,15 @@ class EpisodeBuffer:
         if self.schedule.crossed(sim_time_ns) and self._promote():
             self.schedule.advance(sim_time_ns)
             promoted = True
-        self.latest[stream] = (int(sim_time_ns), frame)
+        retain_capture_frame(self.latest, self.ready, stream, sim_time_ns, frame)
         return promoted
 
     def _promote(self) -> bool:
         """Move the retained payloads into the judged set. The overhead pair
         must come from ONE render (BRG-2) or the geometry stages would fuse
         pixels from two ticks — same rule as the recorder."""
-        rgb = self.latest.get("rgb_overhead")
-        depth = self.latest.get("depth_overhead")
+        rgb = self.ready.get("rgb_overhead")
+        depth = self.ready.get("depth_overhead")
         if rgb is None or depth is None or rgb[0] != depth[0]:
             return False
         if rgb[0] in self.frames.get("overhead", {}):
@@ -98,7 +102,7 @@ class EpisodeBuffer:
             # meaningless. The boundary still advances (the caller does it).
             return True
         self.frames.setdefault("overhead", {})[rgb[0]] = {"rgb": rgb[1], "depth": depth[1]}
-        wrist = self.latest.get("rgb_wrist")
+        wrist = self.ready.get("rgb_wrist")
         if wrist is not None:
             self.frames.setdefault("wrist", {})[wrist[0]] = {"rgb": wrist[1]}
             if self.joints is not None and abs(self.joints[0] - wrist[0]) <= EE_POSE_MAX_SKEW_NS:
