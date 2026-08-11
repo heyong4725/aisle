@@ -144,11 +144,14 @@ planned — each behind the same typed topic contract (design doc §7.5):
    detector + segmentation + *rules* pipeline (OWLv2 detection,
    depth-assisted judgment, CPU-pinned for bit-identical replay)
    scoring episodes from camera pixels. Its fidelity vs. the oracle
-   (VER-6) is measured, not pending: over 31 episodes agreement is
-   **0.29**, with a **0.00** false-SUCCESS rate and a **0.88**
-   false-FAIL rate (`analysis/ver6-fidelity/`) — conservative, and not
-   yet interchangeable with the oracle. NOT a VLM — the ADR records
-   that an open-vocabulary detector alone cannot judge the task.
+   (VER-6) is measured, not pending: the current VER-13 fusion recomputes
+   the same 31 episodes at **0.45** agreement, **0.00** false SUCCESS
+   (0/6), and **0.68** false FAIL (17/25). The preserved first,
+   pre-amendment finding was 0.29 / 0.00 / 0.88
+   (`analysis/ver6-fidelity/`; recomputation in SPEC 040 VER-13) — still
+   conservative, and not yet interchangeable with the oracle. NOT a VLM —
+   the ADR records that an open-vocabulary detector alone cannot judge the
+   task.
 2. `vlm-verifier` nodes (later, optional) — a Cosmos-Reason-class VLM
    as an ALTERNATIVE judge alongside the detector+rules verifier; the
    design compares both verifiers' fidelity.
@@ -174,7 +177,7 @@ domain randomization is *one* mitigation, not the definition:
 | Embodiment mismatch | contract-first driver abstraction | **[implemented]** the topic contract (SPEC 010, `src/aisle/topics.py`): obs/cmd topics are the hardware driver interface — Phase 4 sim-to-real is a driver-node swap, not a rewrite; `--embodiment` swaps profiles with zero YAML edits |
 | Observation/action latency & rates | rate-typed contracts, latency classes | **[implemented]** manifest `rate_hz`/`latency_class` fields checked by the validator |
 | Reset parity | behavioral (physical) reset | **[planned — SPEC 040 phase 2]** the robot re-shelving the box; ablation A6 measures what teleport hides. Today only teleport runs (`--reset behavioral` raises NotImplementedError by design) |
-| Verifier portability | verifier-fidelity measurement | **[implemented, first measurement in]** `src/aisle/harness/fidelity.py` compares the camera-based verifier against the oracle; over 31 episodes agreement 0.29, false SUCCESS 0.00, false FAIL 0.88 (`analysis/ver6-fidelity/`) |
+| Verifier portability | verifier-fidelity measurement | **[implemented, measured]** `src/aisle/harness/fidelity.py` compares the camera-based verifier against the oracle; current VER-13 recomputation over 31 episodes is agreement 0.45, false SUCCESS 0.00, false FAIL 0.68. The preserved pre-amendment finding is 0.29 / 0.00 / 0.88 (`analysis/ver6-fidelity/`; SPEC 040 VER-13) |
 | Sim-specific physics exploits | cross-simulator checks | **[planned]** the MuJoCo grasp micro-benchmark cross-check (design doc §7) |
 
 **Real-to-sim** is the reverse direction: building the sim from

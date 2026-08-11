@@ -20,12 +20,12 @@ sim-to-real, agentic auto-research), `docs/physical-ai-primer.md`.
 
 ## Status
 
-**This table is the single current status page** (issue #142). Every other
-overview links here rather than restating a verdict; if they disagree, this
-one is right. Status as of **2026-08-10**, commit `0a19154`. Each row states
-the verdict its committed evidence supports, with that evidence's own
-qualifications — a hypothesis with no admissible data says so rather than
-reading as progress.
+**This table is the single current status page** (issue #142). Other overview
+pages link here; protocol and evidence pages may retain dated summaries for
+context, but must identify their snapshot and defer to this table on conflict.
+Status as of **2026-08-10**, commit `0a19154`. Each row states the verdict its
+committed evidence supports, with that evidence's own qualifications — a
+hypothesis with no admissible data says so rather than reading as progress.
 
 Exact graph/manifest/CLI/ADR catalogs are generated, never hand-counted:
 [`docs/generated/project-inventory.md`](docs/generated/project-inventory.md).
@@ -33,7 +33,7 @@ Orientation for contributors: [`docs/contributor-wiki.md`](docs/contributor-wiki
 
 | Milestone | State |
 |---|---|
-| M0 — verified pharmacy-pick loop (SPEC 090) | signed off; expert graph 0.98 pass@1 over 50 seeds, deterministic replicate |
+| M0 — verified pharmacy-pick loop (SPEC 090) | signed off; expert graph 0.98 pass@1 over 50 seeds, with the milestone replicate independently re-satisfying the gate |
 | H1 — zero-shot composition | measured, target not met: 40/40 schema-valid graphs, but 15% (claude) / 65% (codex) launch zero-shot; single dominant failure is uninstalled hub packages (`analysis/h1/`) |
 | H2 — iteration to ≥90% | claude arm **met** held-out (1.0 pass@1); codex arm 0.875 held-out at N=8 (one `dropped`), with dev-side evidence of a ≥0.9 system — see `analysis/h2/` for the full verdict |
 | H3 — skill accumulation (S1→S3 transfer) | **verdict PENDING** (`met: null`, `complete: false`) — S2 and S3 both UNDECIDED. No admissible library-arm cell survived the integrity audit (repo, treatment or runtime drift); the wiped arm's clean cells never succeeded at S2/S3. A formal verdict needs an owner-accepted incomplete closure or a budget-corrected new campaign (`analysis/h3/`) |
@@ -42,8 +42,8 @@ Orientation for contributors: [`docs/contributor-wiki.md`](docs/contributor-wiki
 | Retail suite S1–S3 (mobile, long-horizon) | implemented: store scene, planogram verifier, mobility contract, S1 expert graph |
 | Perception ladder L0/L1/L2 (TC-9) | implemented: L0 oracle poses, L1 segmentation + depth (`segmented-pose`), L2 pixels (`l2-pose`); the rung rides the graph and is asserted per run (`--perception`) |
 | Realistic verifier (VER-5) | implemented (`src/aisle/verifier/realistic.py`, OWLv2 + rules, CPU-pinned); ADR at `docs/decisions/ADR-realistic-verifier.md` |
-| VER-6 verifier fidelity | first measurement over 31 episodes: agreement **0.29**, false SUCCESS **0.00** (0/6), false FAIL **0.88** (22/25) — the realistic verifier is conservative, not yet interchangeable with the oracle (`analysis/ver6-fidelity/`) |
-| CON-5 determinism on S1 | **open defect**: two rollouts at one recorded pin produced different results; scheduler backpressure/startup ordering is the lead candidate (`analysis/s1-determinism/`, issue #71, ADR-25) |
+| VER-6 verifier fidelity | current VER-13 fusion recomputed over the same 31 recorded episodes: agreement **0.45**, false SUCCESS **0.00** (0/6), false FAIL **0.68** (17/25). The preserved first, pre-amendment measurement was 0.29 / 0.00 / 0.88 (`analysis/ver6-fidelity/`; current recomputation in SPEC 040 VER-13). Conservative, not yet interchangeable with the oracle |
+| CON-5 reproducibility on S1 | **original violation dispositioned**: ADR-25 fixed and verified reset-anchored startup; ADR-26 defines full-episode outcomes as statistical under Metal noise. Issue #71 remains open for wall-coupled command/control timing and possible frozen-set retiming — per-seed outcome flips are not themselves a CON-5 violation |
 
 ## Quickstart
 
