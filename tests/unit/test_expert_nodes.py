@@ -351,6 +351,32 @@ class TestT2ScanTour:
         machine, _ = self._touring_machine()
         assert machine.on_tick()[0][1]["phase"] == "scanning"
 
+    def test_out_of_bounds_candidates_are_dropped_not_toured(self):
+        """A candidate outside the shelf's occupiable volume is a garbage
+        estimate, not a box: the first acceptance probe toured a phantom
+        at z=0.38 / x=0.59 and the transit knocked a real box
+        (`collision`, run 20260811-161222-dda648). With bounds set, the
+        phantom is dropped and the tour starts at the surviving row."""
+        bounds = {"x": (0.3, 0.5), "y": (-0.3, 0.3), "z": (0.05, 0.35)}
+        machine = TaskStateMachine(tier="T2", candidate_bounds=bounds)
+        machine.on_goal({"target_med": "metformin", "target_sx": 0.10}, "ep-1")
+        out = machine.on_target_pose([0.59, -0.04, 0.38], dict(self.META), [[0.4, 0.1], None])
+        assert len(machine.candidates) == 1  # phantom target dropped on x
+        # the neighbour survives with the inherited garbage z CLAMPED
+        # into the shelf band (the reader re-snaps z per hypothesis)
+        assert out[0][1]["face"] == pytest.approx([0.35, 0.1, 0.35])
+
+    def test_all_candidates_garbage_leaves_the_tour_unlatched(self):
+        """Every row out of bounds: no tour, and the latch stays OPEN so
+        a later, sane estimate can still start one."""
+        bounds = {"x": (0.3, 0.5), "y": (-0.3, 0.3), "z": (0.05, 0.35)}
+        machine = TaskStateMachine(tier="T2", candidate_bounds=bounds)
+        machine.on_goal({"target_med": "metformin", "target_sx": 0.10}, "ep-1")
+        assert machine.on_target_pose([0.59, -0.04, 0.38], dict(self.META), []) == []
+        assert machine.candidates is None
+        out = machine.on_target_pose([0.4, 0.1, 0.2], dict(self.META), [])
+        assert out[0][0] == "read_move"  # sane estimate tours
+
 
 class TestNeighbourConstraints:
     """The `neighbours` payload contract between both pose sources and the
