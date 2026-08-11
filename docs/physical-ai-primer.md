@@ -77,11 +77,11 @@ which question?*
 
 | Role | Question it answers | Common implementations | AISLE status |
 |---|---|---|---|
-| Perception / reasoning | What is present; what does the instruction mean? | detector/segmenter, VLM | classical/oracle perception now; realistic + VLM verifiers planned |
+| Perception / reasoning | What is present; what does the instruction mean? | detector/segmenter, VLM | L0/L1/L2 perception ladder implemented (oracle poses, segmentation+depth, pixels); VLM reasoning planned |
 | Action policy | What action (or action chunk) next? | state machine, VLA, WAM | classical graph nodes now; VLA/WAM nodes planned |
 | Predictive dynamics | What follows if action `a` is taken in state `s`? | explicit simulator, state-space or video world model | Genesis (explicit sim) now; learned world-model environment planned |
 | Execution / control | How do targets become safe high-rate commands? | IK, trajectory generation, servo loops | **implemented** (`ik-trajectory`, drivers, guard) |
-| Verifier / reward | Did the task succeed; how did it fail? | oracle rules, detector+rules, VLM judge | oracle/planogram **implemented**; realistic + VLM alternatives planned |
+| Verifier / reward | Did the task succeed; how did it fail? | oracle rules, detector+rules, VLM judge | oracle/planogram AND realistic (detector+rules) **implemented**, oracle-fidelity measured; VLM judge planned |
 | Research outer loop | What should change between rollouts? | coding agent (ENPIRE-like) | **implemented and under experiment** (H1–H3) |
 | Trust envelope | Which changes/runs are admissible? | validator, motion guard, frozen set, attestation | **implemented**, with documented limits (§5) |
 
@@ -136,16 +136,19 @@ contribution is cleanly isolated*. The AI in AISLE's runs is the
 treatment record); they write pipelines between episodes and never
 execute inside one.
 
-**Where models will enter** — all PLANNED, none running today — each
-behind the same typed topic contract (design doc §7.5):
+**Where models enter** — item 1 is implemented; items 2 onward remain
+planned — each behind the same typed topic contract (design doc §7.5):
 
-1. **The realistic verifier** (Phase 2; PROPOSED — its ADR
-   `decisions/ADR-realistic-verifier.md` is DRAFT with decisions
-   D1–D6 open): a detector + segmentation + *rules* pipeline
-   (OWLv2-class detection, MobileSAM/depth-assisted judgment) scoring
-   episodes from camera pixels, with fidelity vs. the oracle (VER-6)
-   as a first-class result. NOT a VLM — the ADR records that an
-   open-vocabulary detector alone cannot judge the task.
+1. **The realistic verifier** — **[implemented]** `src/aisle/verifier/
+   realistic.py` (VER-5, ADR `decisions/ADR-realistic-verifier.md`): a
+   detector + segmentation + *rules* pipeline (OWLv2 detection,
+   depth-assisted judgment, CPU-pinned for bit-identical replay)
+   scoring episodes from camera pixels. Its fidelity vs. the oracle
+   (VER-6) is measured, not pending: over 31 episodes agreement is
+   **0.29**, with a **0.00** false-SUCCESS rate and a **0.88**
+   false-FAIL rate (`analysis/ver6-fidelity/`) — conservative, and not
+   yet interchangeable with the oracle. NOT a VLM — the ADR records
+   that an open-vocabulary detector alone cannot judge the task.
 2. `vlm-verifier` nodes (later, optional) — a Cosmos-Reason-class VLM
    as an ALTERNATIVE judge alongside the detector+rules verifier; the
    design compares both verifiers' fidelity.
@@ -167,11 +170,11 @@ domain randomization is *one* mitigation, not the definition:
 |---|---|---|
 | Contact/friction & actuator dynamics | system identification, parameter calibration | **[implemented]** `physics.toml` — hand-tuned contact parameters, versioned, never inline |
 | Visual distribution shift | domain randomization, photoreal rendering | **[implemented]** DR toggles in the scene builders (poses, lighting, textures, friction, camera jitter); exercised by tests, not yet by scored L2 runs |
-| Perception difficulty conflated with loop capability | staged perception ladder | **[implemented at L0 only]** the ladder is L0 oracle object poses → L1 ground-truth segmentation with estimated poses → L2 camera pixels; every scored run to date uses `oracle-pose`, hence L0 (its docstring says exactly that). L1, L2, and formal per-run rung configuration/reporting remain planned with the realistic-perception work |
+| Perception difficulty conflated with loop capability | staged perception ladder | **[implemented]** the ladder is L0 oracle object poses → L1 ground-truth segmentation with estimated poses (`segmented-pose`, `graphs/expert_t1.yaml`) → L2 camera pixels (`l2-pose`, `graphs/expert_t1_l2.yaml`). The rung rides the GRAPH, so the graph hash attests which pose source a result used; `harness rollout --perception` asserts it and refuses a mismatch (TC-9, VAL-8) |
 | Embodiment mismatch | contract-first driver abstraction | **[implemented]** the topic contract (SPEC 010, `src/aisle/topics.py`): obs/cmd topics are the hardware driver interface — Phase 4 sim-to-real is a driver-node swap, not a rewrite; `--embodiment` swaps profiles with zero YAML edits |
 | Observation/action latency & rates | rate-typed contracts, latency classes | **[implemented]** manifest `rate_hz`/`latency_class` fields checked by the validator |
 | Reset parity | behavioral (physical) reset | **[planned — SPEC 040 phase 2]** the robot re-shelving the box; ablation A6 measures what teleport hides. Today only teleport runs (`--reset behavioral` raises NotImplementedError by design) |
-| Verifier portability | verifier-fidelity measurement | **[planned — VER-6, ADR DRAFT]** the camera-based verifier scored against the oracle; no `harness/fidelity.py` exists yet |
+| Verifier portability | verifier-fidelity measurement | **[implemented, first measurement in]** `src/aisle/harness/fidelity.py` compares the camera-based verifier against the oracle; over 31 episodes agreement 0.29, false SUCCESS 0.00, false FAIL 0.88 (`analysis/ver6-fidelity/`) |
 | Sim-specific physics exploits | cross-simulator checks | **[planned]** the MuJoCo grasp micro-benchmark cross-check (design doc §7) |
 
 **Real-to-sim** is the reverse direction: building the sim from
@@ -224,7 +227,7 @@ different questions — don't blend them:
    validator refuses graphs where motion bypasses it (VAL-5), and
    live hot-swap refuses to touch trust anchors (HAR-10).
 2. **Task judgment** — did the task actually succeed? Frozen
-   verifiers (oracle now; realistic/VLM planned) own this; the
+   verifiers (oracle and realistic now; VLM planned) own this; the
    unroutable `oracle_state` topic (VAL-6) keeps ground truth out of
    policies. Honest limit on the record: the guard cannot gate
    `extra_item` (picking up a neighbor item) — that's
@@ -251,16 +254,21 @@ plus tamper *evidence* in artifacts, which the audits check.
 ## 6. AISLE today vs. not yet (one box)
 
 **Today (runnable in this repo):** Genesis as the only environment;
-classical model-free pipelines; L0 oracle perception; oracle/planogram
-verifiers; teleport reset; the full agentic outer loop (validate →
-guard → rollout → verify → traces → idea tree) with campaign runners;
-typed contracts + registry + skill registration; Arrow/video traces;
-the integrity and attestation gates of §5.
+classical model-free pipelines; the full L0/L1/L2 perception ladder;
+oracle/planogram verifiers AND the realistic (detector+rules) verifier
+with a measured oracle-fidelity number; teleport reset; the full
+agentic outer loop (validate → guard → rollout → verify → traces →
+idea tree) with campaign runners; typed contracts + registry + skill
+registration; Arrow/video traces; the integrity and attestation gates
+of §5.
 
-**Not yet (design/spec/ADR only):** any physical-robot evidence;
-L1/L2 perception; the realistic (detector+rules) verifier and the VLM
-verifier; behavioral reset; VLA/WAM policy nodes; a neural-simulator
-environment; verifier-fidelity measurement; the MuJoCo cross-check.
+**Not yet (design/spec/ADR only):** any physical-robot evidence; the
+VLM verifier; behavioral reset; VLA/WAM policy nodes; a
+neural-simulator environment; the MuJoCo cross-check.
+
+Current verdicts and their qualifications live in one place — [the
+README status table](../README.md#status). This primer explains
+concepts; it deliberately does not restate experiment results.
 
 ## 7. A learning path
 

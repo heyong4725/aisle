@@ -49,7 +49,7 @@ culprit.
 ## 2. Verify the install
 
 ```bash
-uv run pytest -m unit          # ~547 tests, no simulator, about 90 seconds
+uv run pytest -m unit          # no simulator, about 90 seconds
 uv run pytest -m "sim or graph"   # brings up Genesis; several minutes
 ```
 

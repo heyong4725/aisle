@@ -1,5 +1,19 @@
 # TASKS.md — implementation order and paste-ready prompts
 
+> **HISTORICAL ROADMAP — not a to-do list.** This file records the
+> dependency order the build followed and the prompt templates used to
+> drive it. Most tasks below have landed: T01–T10 (M0) are signed off,
+> and the retail suite T11–T15 is implemented. Do **not** read an entry
+> here as outstanding work.
+>
+> For what is actually true now, see **[the README status
+> table](README.md#status)** (the single current status page, issue
+> #142); for exact catalogs of graphs, manifests, CLI commands and
+> ADRs, see the generated
+> [`docs/generated/project-inventory.md`](docs/generated/project-inventory.md);
+> for orientation, [`docs/contributor-wiki.md`](docs/contributor-wiki.md).
+> The prompt templates below remain useful verbatim for new work.
+
 Dependency order (each task = one PR; tests-first per CLAUDE.md loop):
 
 T01 bootstrap        → repo skeleton per CON-6; pyproject (uv); ruff, pytest markers

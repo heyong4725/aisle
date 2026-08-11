@@ -839,9 +839,12 @@ argparse carve-out.
 | `graph` | Launches a dora dataflow | Wiring, guard, lifecycle, runtime behavior. |
 | `accept` | Requirement-citing acceptance | Spec gates and release confidence. |
 
-The repository currently contains about 70 test modules and extensive validator
-goldens/adversarial cases. Test count is less important than the requirement-ID
-traceability checked by [`tools/trace_check.py`](../tools/trace_check.py).
+The repository carries extensive validator goldens and adversarial cases across
+these suites. Module counts are deliberately not quoted here — run
+`pytest --collect-only` for the current number. What matters more is the
+requirement-ID traceability checked by
+[`tools/trace_check.py`](../tools/trace_check.py), which fails CI when a MUST
+has no citing test.
 
 ### 13.2 Required development loop
 
