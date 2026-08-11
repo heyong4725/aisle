@@ -294,32 +294,91 @@ def test_masks_survive_both_boundary_phases_of_the_real_interleave(tmp_path, goa
     contract-rate interleave — rgb+depth+seg on each 15 Hz render tick
     (bridge publish order), rgb alone on the 30 Hz tick between. The 5 s
     capture period is an exact multiple of the render period, so the
-    boundary phase repeats for EVERY checkpoint of an episode: with seg
-    retained after the boundary check, a second-half-phase boundary fires
-    capture ON the seg event and omits the in-hand mask at every
-    mid-episode capture (the first live run's 4/15 misses were one
-    all-miss episode, not a scattered race). Seg retained first, both
-    phases carry the mask."""
+    boundary phase repeats for EVERY checkpoint of an episode. The retained
+    capture-ready pair must carry its same-stamp mask through the intervening
+    RGB-only tick; both phases therefore persist masks at every judged
+    instant (covering PR #134's omission and issue #136's pair retention)."""
     from aisle.harness.trace_recorder import record_image_frame
 
     schedule = CaptureSchedule(int(5e9))
     schedule.start(goal_offset_ms * 10**6)  # goal receipt re-bases (VER-9)
     latest: dict = {}
+    ready: dict = {}
     frames_dir = tmp_path / "frames"
     half = 33_333_333  # the 30 Hz rgb cadence; full render ticks at even k
     for k in range(160):  # ~5.3 s: two checkpoints per phase
         t = k * half
         rgb = np.full((4, 4, 3), k % 251, dtype=np.uint8)
-        record_image_frame("rgb_overhead", t, rgb, schedule, latest, frames_dir)
+        record_image_frame("rgb_overhead", t, rgb, schedule, latest, ready, frames_dir)
         if k % 2 == 0:
             depth = np.full((4, 4), 0.5 + k, dtype=np.float32)
             seg = np.full((4, 4), k % 17 + 1, dtype=np.int32)
-            record_image_frame("depth_overhead", t, depth, schedule, latest, frames_dir)
-            record_image_frame("seg_overhead", t, seg, schedule, latest, frames_dir)
+            record_image_frame("depth_overhead", t, depth, schedule, latest, ready, frames_dir)
+            record_image_frame("seg_overhead", t, seg, schedule, latest, ready, frames_dir)
     frames = load_frames(tmp_path).get("overhead", {})
     assert len(frames) >= 1, "no captures fired"
     missing = [stamp for stamp, arrays in frames.items() if "seg" not in arrays]
     assert missing == [], f"maskless judged instants at {missing}"
+
+
+@pytest.mark.parametrize("goal_offset_ms", [0, 40], ids=["first-half-phase", "second-half-phase"])
+def test_rate_faithful_interleave_never_captures_an_after_boundary_pair(tmp_path, goal_offset_ms):
+    """Issue #136 / VER-6/VER-7: 30 Hz RGB ticks must not destroy the last
+    matched 15 Hz RGB/depth pair before a checkpoint crosses.
+
+    The second-half phase is the regression: an RGB-only tick lands before
+    each boundary, so `latest` becomes mismatched. The next full render must
+    capture the retained PRE-boundary pair, never its new post-boundary pair."""
+    from aisle.harness.trace_recorder import record_image_frame
+
+    period = int(5e9)
+    start = goal_offset_ms * 10**6
+    schedule = CaptureSchedule(period)
+    schedule.start(start)
+    latest: dict = {}
+    ready: dict = {}
+    frames_dir = tmp_path / "frames"
+    half = 33_333_333
+    full_stamps = []
+    for k in range(320):  # >10 s: three checkpoints with a stable phase
+        stamp = k * half
+        record_image_frame(
+            "rgb_overhead",
+            stamp,
+            np.full((4, 4, 3), k % 251, dtype=np.uint8),
+            schedule,
+            latest,
+            ready,
+            frames_dir,
+        )
+        if k % 2 == 0:
+            full_stamps.append(stamp)
+            record_image_frame(
+                "depth_overhead",
+                stamp,
+                np.full((4, 4), 0.5 + k, dtype=np.float32),
+                schedule,
+                latest,
+                ready,
+                frames_dir,
+            )
+            record_image_frame(
+                "seg_overhead",
+                stamp,
+                np.full((4, 4), k % 17 + 1, dtype=np.int32),
+                schedule,
+                latest,
+                ready,
+                frames_dir,
+            )
+
+    boundaries = list(range(start, 320 * half, period))
+    expected = [
+        max((stamp for stamp in full_stamps if stamp <= boundary), default=full_stamps[0])
+        for boundary in boundaries
+    ]
+    captured = sorted(load_frames(tmp_path).get("overhead", {}))
+    assert captured == expected
 
 
 def test_npz_mask_hash_matches_the_provenance_contract(tmp_path):
