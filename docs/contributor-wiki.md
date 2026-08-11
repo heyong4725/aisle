@@ -13,9 +13,13 @@ engineering loop around a modular physical-AI system.
 
 This guide is the broad map. Use the linked specifications for normative
 requirements and the linked code for exact behavior. Exact graph, capability,
-CLI, ADR, and test catalogs are maintained in the source-derived
+CLI, and ADR catalogs are maintained in the source-derived
 [`project-inventory.md`](generated/project-inventory.md) appendix and checked
-for drift in CI.
+for drift in CI. Tests appear there as suite directories and configured
+markers only, not as a module-by-module catalog: enumerating every module made
+two independently-green PRs merge, without conflict, into a main whose
+appendix was already stale. For per-module truth run `pytest --collect-only`;
+for requirement coverage run [`tools/trace_check.py`](../tools/trace_check.py).
 
 ## 1. Read this first
 
@@ -1033,8 +1037,8 @@ entry point. From here there are four sensible publication paths.
 ### Option A — Repository-native Markdown (lowest maintenance)
 
 Keep this page as the canonical overview and link specialized existing docs.
-Add a small generated appendix for graph/manifests/test counts. Best when code
-review is the primary contributor workflow.
+Add a small generated appendix for graph/manifest catalogs and test suites.
+Best when code review is the primary contributor workflow.
 
 ### Option B — MkDocs Material site (recommended next step)
 
@@ -1099,7 +1103,9 @@ Whichever renderer is chosen, generate rather than hand-maintain:
 - graph nodes/edges and perception rung from YAML;
 - manifest catalog, safety class, embodiment, source, and launchability;
 - CLI syntax from argparse help/parser tests;
-- test counts and requirement trace coverage;
+- test suites and markers, plus requirement trace coverage from
+  `tools/trace_check.py` (a per-module list is deliberately not generated —
+  it goes stale on main with no merge conflict to catch it);
 - ADR index and supersession markers;
 - source links pinned to the documentation build commit.
 

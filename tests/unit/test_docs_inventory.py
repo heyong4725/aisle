@@ -146,25 +146,48 @@ def test_committed_inventory_matches_this_tree():
     assert report["ok"] is True
 
 
-def test_untracked_scratch_files_do_not_stale_the_gate(tmp_path: Path):
+def test_untracked_residue_is_excluded_from_the_documented_surfaces(tmp_path: Path):
     """The gate documents COMMITTED surfaces: an untracked scratch test or an
     agent-authored graph is experiment residue, not documentation drift.
 
     `harness swap` rewrites graphs/ and `harness skill register` writes
     registry/manifests/ mid-session; globbing the working tree let that
-    residue block every unrelated commit, and `--write` would commit it."""
-    scratch_test = REPO_ROOT / "tests" / "unit" / "test_zz_untracked_probe.py"
-    scratch_graph = REPO_ROOT / "graphs" / "zz_untracked_probe.yaml"
-    scratch_test.write_text("# untracked scratch\n", encoding="utf-8")
-    scratch_graph.write_text("nodes:\n  - id: zz\n    outputs: [x]\n", encoding="utf-8")
-    try:
-        proc = run_inventory("--root", str(REPO_ROOT), "--check")
-        report = json.loads(proc.stdout)
-        assert proc.returncode == 0, report
-        assert report["reason"] == "current"
-    finally:
-        scratch_test.unlink()
-        scratch_graph.unlink()
+    residue block every unrelated commit, and `--write` would commit it.
+
+    Exercised in a THROWAWAY git repo under tmp_path: an earlier version of
+    this test wrote and then unlinked fixed paths inside REPO_ROOT, which
+    truncates and deletes a contributor's real file if the name collides and
+    races a concurrent run (PR #141 review, P1). A unit test must never
+    mutate the checkout it is running in."""
+    module = inventory_module()
+    graphs = tmp_path / "graphs"
+    graphs.mkdir()
+    committed = graphs / "expert_demo.yaml"
+    committed.write_text("nodes: []\n", encoding="utf-8")
+    (graphs / "agent_scratch.yaml").write_text("nodes: []\n", encoding="utf-8")
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, capture_output=True)
+    # `git ls-files` reads the INDEX, so staging is enough to make a file
+    # tracked — no commit, and therefore no committer identity, required
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", "graphs/expert_demo.yaml"],
+        check=True,
+        capture_output=True,
+    )
+
+    tracked = module._tracked_paths(tmp_path)
+    assert tracked == {"graphs/expert_demo.yaml"}
+    assert module._select(graphs.glob("*.yaml"), tmp_path, tracked) == [committed]
+
+
+def test_selection_falls_back_to_the_glob_outside_a_git_tree(tmp_path: Path):
+    """Tracked-file selection is an exclusion of residue, not a hard git
+    dependency: an export or tarball with no .git still renders."""
+    module = inventory_module()
+    (tmp_path / "only.yaml").write_text("nodes: []\n", encoding="utf-8")
+
+    assert module._tracked_paths(tmp_path) is None
+    assert module._select(tmp_path.glob("*.yaml"), tmp_path, None) == [tmp_path / "only.yaml"]
 
 
 def test_adding_a_test_module_does_not_stale_the_inventory(tmp_path: Path):
