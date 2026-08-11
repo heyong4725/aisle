@@ -744,8 +744,8 @@ def rollout(
     # AISLE_TRACE_DIR strings would resolve to a nested runs/<id>/runs/<id>/
     # tree the stall watcher never sees (T18 live shakeout)
     root = root.resolve()
-    if reset_mode != "teleport":
-        return {"ok": False, "error": "behavioral reset is Phase 2 (RST-2)"}
+    if reset_mode not in ("teleport", "behavioral"):
+        return {"ok": False, "error": f"unknown reset mode {reset_mode!r}"}
     if verifier not in ("oracle", "both", "realistic"):
         return {"ok": False, "error": f"unknown verifier {verifier!r}"}
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", run_id):
@@ -848,6 +848,8 @@ def rollout(
             "AISLE_SIM_BACKEND": gates["sim_backend"],
             "AISLE_TIMEOUT_S": str(episode_timeout_s),
             "AISLE_RESULTS": str(results_path),
+            # RST-2: the client stamps every reset request with the mode
+            "AISLE_RESET_MODE": reset_mode,
         }
     )
     started = time.monotonic()
