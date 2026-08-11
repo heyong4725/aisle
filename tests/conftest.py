@@ -56,11 +56,25 @@ def write_bridge_dataflow(
     with_guard: bool = False,
     driver_waits_for_bridge_info: bool = False,
     step_without_reset: bool = True,
+    recorder_wait_for: tuple[str, int] | None = None,
 ) -> Path:
     """step_without_reset defaults True: most fixture drivers never send a
     reset, and without the opt-out the ADR-25 bridge holds at sim step 0
     forever — the test then fails 420 s later, opaquely. Tests that exercise
-    the production (reset-anchored) startup pass step_without_reset=False."""
+    the production (reset-anchored) startup pass step_without_reset=False.
+
+    ``recorder_wait_for=(input_id, count)`` anchors the recorder's duration
+    window after the requested evidence. This avoids deriving capture
+    completion from a producer's nominal wall schedule under load."""
+    recorder_wait_env = {}
+    if recorder_wait_for is not None:
+        wait_id, wait_count = recorder_wait_for
+        if not wait_id or wait_count < 1:
+            raise ValueError("recorder_wait_for requires a non-empty id and count >= 1")
+        recorder_wait_env = {
+            "RECORDER_WAIT_FOR_ID": wait_id,
+            "RECORDER_WAIT_FOR_COUNT": str(wait_count),
+        }
     recorder_inputs = {t: f"bridge/{t}" for t in BRIDGE_OUTPUTS}
     if with_guard:
         recorder_inputs["violation"] = _q("budget-guard/violation")
@@ -181,6 +195,7 @@ def write_bridge_dataflow(
                 "env": {
                     "RECORDER_OUT": str(record_out),
                     "RECORDER_DURATION_S": str(duration_s),
+                    **recorder_wait_env,
                 },
             },
         ]
@@ -236,10 +251,11 @@ def run_dataflow(graph: Path, timeout_s: float) -> DataflowRun:
 def run_dataflow_until_settled(graph: Path, record_out: Path, deadline_s: float) -> None:
     """Launch the dataflow and stop as soon as the duration-aware recorder
     writes its explicit `__recorder_done__` sentinel (its window elapsed with
-    the stream flowing), then kill the group and reap. Unlike run_dataflow's
-    fixed window the wall time is (genesis build + capture window), NOT the
-    whole deadline: the bridge never self-exits, so a fixed timeout would
-    always elapse.
+    the stream flowing). The window may begin at the first event or at an
+    optional evidence condition encoded in the graph. Then kill the group and
+    reap. Unlike run_dataflow's fixed window the wall time is (genesis build +
+    capture window), NOT the whole deadline: the bridge never self-exits, so a
+    fixed timeout would always elapse.
 
     The sentinel is written only when an event arrives AFTER the window, i.e.
     the stream flowed through the whole window. A mid-capture STALL therefore

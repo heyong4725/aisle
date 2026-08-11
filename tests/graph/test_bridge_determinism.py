@@ -37,7 +37,6 @@ PHYSICS_TOPICS = ("joint_state", "gripper_state", "oracle_state", "poses")
 # and a wall window holds far fewer sim ticks than nominal (first CI run
 # of this test: 0.4 s wall of seed-7 window held 0.04 s of sim)
 TOPIC_HZ = {"joint_state": 100, "gripper_state": 100, "oracle_state": 30, "poses": 15}
-DRIVER_TICK_S = 0.05  # conftest wires the driver to dora/timer/millis/50
 EARLY_SPACING, LATE_SPACING = 40, 97
 TAIL_S = 8.0  # wall capture time after the second reset
 # CON-5 layer (c): the NORMATIVE comparison window is the first 1.0 s
@@ -66,7 +65,11 @@ def _run_pair_member(tmp_path, dataflow, name: str, spacing_ticks: int) -> list[
         },
         driver_waits_for_bridge_info=True,
         step_without_reset=False,  # the production startup path IS the test
-        duration_s=TAIL_S + spacing_ticks * DRIVER_TICK_S * 2,
+        # Issue #94: anchor the capture tail to observed reset evidence,
+        # not the driver's nominal wall schedule (which stretches under
+        # suite load and used to race the recorder deadline).
+        recorder_wait_for=("reset_done", 2),
+        duration_s=TAIL_S,
     )
     # sequential on purpose: concurrent dataflows would need port-isolated
     # dora coordinators and contend for the GPU during the genesis builds
