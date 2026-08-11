@@ -210,13 +210,22 @@ def test_tier_budgets_scale_for_retail_tiers():
         PER_EPISODE_BUDGET_S,
         RETAIL_EPISODE_TIMEOUT_S,
         RETAIL_PER_EPISODE_BUDGET_S,
+        T2_EPISODE_TIMEOUT_S,
+        T2_PER_EPISODE_BUDGET_S,
         tier_budgets,
     )
 
     for tier in ("S1", "S2", "S3"):
         assert tier_budgets(tier) == (RETAIL_EPISODE_TIMEOUT_S, RETAIL_PER_EPISODE_BUDGET_S)
-    for tier in ("T0", "T1", "T2"):
+    for tier in ("T0", "T1"):
         assert tier_budgets(tier) == (EPISODE_TIMEOUT_S, PER_EPISODE_BUDGET_S)
+    # T2's scan tour: up to six ~8-10 sim-s read cycles before a ~30 s
+    # grasp — the 60 s desk cap timed out MID-TOUR on every non-trivial
+    # episode of the first acceptance probe (run 20260811-161222-dda648);
+    # the observed successful episode closed at t_end 49.2 s WITH the
+    # target found at the fourth candidate
+    assert tier_budgets("T2") == (T2_EPISODE_TIMEOUT_S, T2_PER_EPISODE_BUDGET_S)
+    assert T2_EPISODE_TIMEOUT_S >= 6 * 10 + 30 + 30
     # the S1 gate's observed shape: ~101.5 sim s episode, ~28:39 wall total
     # (ADR-18) — the retail budgets must clear both with headroom
     assert RETAIL_EPISODE_TIMEOUT_S > 102

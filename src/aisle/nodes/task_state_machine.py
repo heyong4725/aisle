@@ -37,8 +37,13 @@ class TaskStateMachine:
     Metadata carries goal_id (TC-7) and, for tour topics, request_id
     (TC-6 service pattern)."""
 
-    def __init__(self, tier: str = "T1") -> None:
+    def __init__(self, tier: str = "T1", candidate_bounds: dict | None = None) -> None:
         self.tier = tier
+        # T2: {x: (lo, hi), y: (lo, hi), z: (lo, hi)} — a candidate row
+        # outside the shelf's occupiable volume is a garbage estimate,
+        # not a box (the first acceptance probe toured a phantom at
+        # z=0.38/x=0.59 and the transit knocked a real box: `collision`)
+        self.candidate_bounds = candidate_bounds
         self.goal: dict | None = None
         self.goal_id: str | None = None
         self.violations: dict[str, int] = {}
@@ -112,6 +117,21 @@ class TaskStateMachine:
         rows = [list(pos)[:3]] + [
             [float(r[0]), float(r[1]), z] for r in neighbours if r is not None
         ]
+        if self.candidate_bounds is not None:
+            # x/y outside the shelf volume = garbage estimate, dropped;
+            # z is CLAMPED instead — a garbage claimed z is inherited by
+            # every neighbour row, and the reader re-snaps hypothesis z
+            # to board geometry anyway
+            bounds = self.candidate_bounds
+            rows = [
+                [row[0], row[1], min(max(row[2], bounds["z"][0]), bounds["z"][1])]
+                for row in rows
+                if bounds["x"][0] <= row[0] <= bounds["x"][1]
+                and bounds["y"][0] <= row[1] <= bounds["y"][1]
+            ]
+        if not rows:
+            self.toured = False  # nothing plausible yet: allow a fresh estimate
+            return []
         # face point: the requested med's own x-depth is the best
         # available guess for EVERY candidate — identity is unknown
         # until read, and the read ladder tolerates the ~2 cm spread
@@ -193,15 +213,30 @@ def main() -> None:
     if tier not in ("T1", READ_TIER):
         raise ValueError(f"AISLE_TASK_TIER must be T1 or {READ_TIER}, got {tier!r}")
     target_sx = None
+    candidate_bounds = None
     if tier == READ_TIER:
-        from aisle.scenes.pharmacy import load_meds
+        from aisle.scenes.pharmacy import load_meds, load_physics, resolve_layout
 
         meds = load_meds()
         target_sx = {name: float(spec["size"][0]) for name, spec in meds.items()}
+        # the shelf's occupiable volume from public geometry (SCN-2),
+        # padded by the largest med half-extent: candidate rows outside
+        # it are garbage estimates, not boxes
+        layout = resolve_layout(load_physics(), os.environ.get("AISLE_EMBODIMENT", "franka"))
+        shelf = layout["shelf"]
+        pad = max(max(float(v) for v in spec["size"]) for spec in meds.values())
+        half_x, half_y = shelf["level_size"][0] / 2.0, shelf["level_size"][1] / 2.0
+        z_lo = shelf["pos"][2] + shelf["level_heights"][0]
+        z_hi = shelf["pos"][2] + shelf["level_heights"][-1] + shelf["board_thickness"] + pad
+        candidate_bounds = {
+            "x": (shelf["pos"][0] - half_x - pad, shelf["pos"][0] + half_x + pad),
+            "y": (shelf["pos"][1] - half_y - pad, shelf["pos"][1] + half_y + pad),
+            "z": (z_lo, z_hi),
+        }
 
     node = Node()
     send = make_sender(node)
-    machine = TaskStateMachine(tier=tier)
+    machine = TaskStateMachine(tier=tier, candidate_bounds=candidate_bounds)
 
     def emit(emissions) -> None:
         for topic, payload, metadata in emissions:

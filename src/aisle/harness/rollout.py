@@ -47,15 +47,24 @@ STALL_S = 180
 # kill a HEALTHY retail episode at 60 sim s / 150 wall s (PR #21)
 RETAIL_EPISODE_TIMEOUT_S = 600
 RETAIL_PER_EPISODE_BUDGET_S = 2100
+# T2's scan tour reads up to six candidate faces before the grasp (~8-10
+# sim s per read cycle + ~30 s grasp): the desk 60 s cap made the tier
+# structurally impossible — the first acceptance probe timed out MID-TOUR
+# on every non-trivial episode (run 20260811-161222-dda648)
+T2_EPISODE_TIMEOUT_S = 150
+T2_PER_EPISODE_BUDGET_S = 400
 
 
 def tier_budgets(tier: str) -> tuple[int, int]:
     """(episode timeout in SIM seconds, per-episode WALL budget in seconds)
     for a tier: `harness rollout` is the public path for EVERY tier (HAR-1,
-    RS-6), so retail tiers get nightly-suite-scale budgets, desk tiers keep
-    the tight ADR-11 ones."""
+    RS-6), so retail tiers get nightly-suite-scale budgets, the T2 scan
+    tour gets room to visit every candidate, and the other desk tiers
+    keep the tight ADR-11 ones."""
     if tier in ("S1", "S2", "S3"):
         return RETAIL_EPISODE_TIMEOUT_S, RETAIL_PER_EPISODE_BUDGET_S
+    if tier == "T2":
+        return T2_EPISODE_TIMEOUT_S, T2_PER_EPISODE_BUDGET_S
     return EPISODE_TIMEOUT_S, PER_EPISODE_BUDGET_S
 
 
