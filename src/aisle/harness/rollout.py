@@ -63,7 +63,7 @@ def tier_budgets(tier: str) -> tuple[int, int]:
     keep the tight ADR-11 ones."""
     if tier in ("S1", "S2", "S3"):
         return RETAIL_EPISODE_TIMEOUT_S, RETAIL_PER_EPISODE_BUDGET_S
-    if tier == "T2":
+    if tier in ("T2", "T3"):
         return T2_EPISODE_TIMEOUT_S, T2_PER_EPISODE_BUDGET_S
     return EPISODE_TIMEOUT_S, PER_EPISODE_BUDGET_S
 
@@ -594,6 +594,8 @@ SCRUBBED_ENV = (
     "AISLE_TASK_TIER",
     # HAR-3: the retry budget changes pass@8 semantics — graph-attested
     "AISLE_MAX_RETRIES",
+    # T3: the occlusion layout changes the SCENE — graph-attested
+    "AISLE_OCCLUSION",
     # TC-9: the perception rung. The bridge reads it via parse_bridge_config(
     # os.environ), so an ambient AISLE_PERCEPTION=L1 would set the rung of a
     # run whose graph never declared one — and the validator, which sees only
