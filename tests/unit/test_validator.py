@@ -67,7 +67,7 @@ def test_corpus_minimums():
 
 @pytest.mark.parametrize("stem", sorted(EXPECTED))
 def test_bad_corpus_all_rejected_with_expected_codes(stem):
-    """VAL-1, VAL-2, VAL-4, VAL-5, VAL-6: every bad-corpus graph is rejected
+    """VAL-1, VAL-2, VAL-4, VAL-5, VAL-6, VAL-7: every bad-corpus graph is rejected
     with EXACTLY its expected stable error codes (so a regression can neither
     drop the named code nor sneak in a second one), or flagged with its
     expected warning code for warning-class checks; exit 0 iff ok (CON-8)."""
@@ -1038,6 +1038,54 @@ def test_perception_rung_l1_allows_estimated_pose_path(tmp_path):
     )
     _, report = run_validate(graph, "--root", str(root))
     assert "PERCEPTION_RUNG_VIOLATION" not in codes(report, "errors"), report
+
+
+@pytest.mark.parametrize("rung", ["L1", "L2"])
+def test_store_rejects_unsupported_estimated_perception_rungs_at_validation(tmp_path, rung):
+    """VAL-7/VAL-8, issue #130: the store's item-id namespace cannot be
+    queried by the desk L1 or L2 estimators. Reject that unsupported pairing
+    during validation, before a full Genesis build reaches the bridge's
+    belt-and-braces refusal and produces zero episodes."""
+    root = fixture_root(tmp_path, {"dora-genesis": {}})
+    graph = write_graph(
+        root,
+        [
+            {
+                "id": "dora-genesis",
+                "env": {"AISLE_SCENE": "store", "AISLE_PERCEPTION": rung},
+                "outputs": ["rgb_overhead", "depth_overhead"],
+            }
+        ],
+    )
+
+    code, report = run_validate(graph, "--root", str(root))
+    violations = [e for e in report["errors"] if e["code"] == "PERCEPTION_RUNG_VIOLATION"]
+    assert code != 0 and report["ok"] is False
+    assert len(violations) == 1, report
+    assert violations[0]["node"] == "dora-genesis"
+    assert rung in violations[0]["detail"] and "store" in violations[0]["detail"]
+    assert "store namespace" in violations[0]["hint"] and "L0" in violations[0]["hint"]
+
+
+def test_store_allows_supported_l0_perception_at_validation(tmp_path):
+    """VAL-8, issue #130: store L0 remains supported. The compatibility
+    check must not reject every store graph merely because AISLE_SCENE is
+    declared on its bridge."""
+    root = fixture_root(tmp_path, {"dora-genesis": {}})
+    graph = write_graph(
+        root,
+        [
+            {
+                "id": "dora-genesis",
+                "env": {"AISLE_SCENE": "store", "AISLE_PERCEPTION": "L0"},
+                "outputs": ["poses"],
+            }
+        ],
+    )
+
+    code, report = run_validate(graph, "--root", str(root))
+    assert code == 0 and report["ok"] is True, report
+    assert "PERCEPTION_RUNG_VIOLATION" not in codes(report, "errors")
 
 
 def test_perception_rung_violation_not_hidden_by_schema_error(tmp_path):
