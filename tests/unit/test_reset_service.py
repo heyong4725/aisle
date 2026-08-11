@@ -16,11 +16,58 @@ def test_teleport_routes_to_bridge():
     assert route_reset(0) == "bridge"
 
 
-def test_behavioral_is_refused_loudly():
-    """RST-2: behavioral mode is Phase 2 — refused loudly, never silently
-    downgraded to teleport."""
-    with pytest.raises(NotImplementedError, match="Phase 2"):
-        route_reset(1)
+def test_behavioral_routes_to_the_attempt_loop():
+    """RST-2: behavioral mode dispatches to the attempt loop (whose
+    exhaustion ALSO ends at the bridge, carrying fallback metadata — the
+    loop never hangs on a reset)."""
+    assert route_reset(1) == "behavioral"
+
+
+class TestBehavioralAttemptLoop:
+    """RST-2 semantics: retry <=3, then teleport fallback with
+    fallback: true in the reply metadata."""
+
+    def test_attempts_exhaust_into_fallback(self):
+        from aisle.reset.behavioral import MAX_ATTEMPTS, BehavioralReset
+
+        calls = []
+
+        def failing():
+            calls.append(1)
+            return False
+
+        outcome = BehavioralReset(attempt=failing).run()
+        assert outcome.fallback is True
+        assert outcome.attempts == MAX_ATTEMPTS == 3  # the spec's <=3
+        assert len(calls) == 3
+
+    def test_success_stops_the_loop_without_fallback(self):
+        from aisle.reset.behavioral import BehavioralReset
+
+        results = iter([False, True])
+        outcome = BehavioralReset(attempt=lambda: next(results)).run()
+        assert outcome.fallback is False
+        assert outcome.attempts == 2
+
+    def test_no_motion_strategy_always_falls_back(self):
+        """PR-1 production wiring: no motion capability exists yet, so a
+        behavioral request must deterministically reach the teleport
+        fallback (never hang, never pretend)."""
+        from aisle.reset.behavioral import BehavioralReset, no_motion_available
+
+        outcome = BehavioralReset(attempt=no_motion_available).run()
+        assert outcome.fallback is True
+
+    def test_reply_metadata_carries_the_audit_trail(self):
+        from aisle.reset.behavioral import (
+            BehavioralOutcome,
+            behavioral_reply_metadata,
+        )
+
+        meta = behavioral_reply_metadata(
+            {"request_id": "req-3"}, BehavioralOutcome(fallback=True, attempts=3)
+        )
+        assert meta == {"request_id": "req-3", "fallback": True, "behavioral_attempts": 3}
 
 
 def test_unknown_mode_is_rejected():
