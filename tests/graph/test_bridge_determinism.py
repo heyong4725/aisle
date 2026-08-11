@@ -67,6 +67,14 @@ def _run_pair_member(tmp_path, dataflow, name: str, spacing_ticks: int) -> list[
         driver_waits_for_bridge_info=True,
         step_without_reset=False,  # the production startup path IS the test
         duration_s=TAIL_S + spacing_ticks * DRIVER_TICK_S * 2,
+        # issue #94: under suite load the wall window guessed wrong and
+        # closed before the SECOND reset_done landed, truncating the capture
+        # mid-protocol ("expected 2 reset_done, got 1"). The window now
+        # awaits both resets and guarantees TAIL_S after the second, however
+        # late load makes it; a genuinely missing reset still fails loudly
+        # at the settle deadline below.
+        recorder_await="reset_done:2",
+        recorder_await_tail_s=TAIL_S,
     )
     # sequential on purpose: concurrent dataflows would need port-isolated
     # dora coordinators and contend for the GPU during the genesis builds

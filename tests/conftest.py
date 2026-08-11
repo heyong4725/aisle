@@ -51,6 +51,8 @@ def write_bridge_dataflow(
     bridge_env: dict | None = None,
     driver_env: dict | None = None,
     duration_s: float = 10.0,
+    recorder_await: str | None = None,
+    recorder_await_tail_s: float | None = None,
     with_verifier_stub: bool = False,
     with_reset_service: bool = False,
     with_guard: bool = False,
@@ -181,6 +183,16 @@ def write_bridge_dataflow(
                 "env": {
                     "RECORDER_OUT": str(record_out),
                     "RECORDER_DURATION_S": str(duration_s),
+                    # "topic:count" — the window may not close before the
+                    # Nth row of the topic, and that row re-anchors the
+                    # deadline (issue #94: wall-only windows truncate
+                    # mid-protocol under suite load)
+                    **({"RECORDER_AWAIT": recorder_await} if recorder_await else {}),
+                    **(
+                        {"RECORDER_AWAIT_TAIL_S": str(recorder_await_tail_s)}
+                        if recorder_await_tail_s is not None
+                        else {}
+                    ),
                 },
             },
         ]
