@@ -258,6 +258,51 @@ class TestArmMotionMutexWindow:
         assert not (1.5 > 0 and 1.5 < deadline)  # 1.5 s later: released
 
 
+class TestBaseWatchdogReason:
+    """MOB-3 watchdog verdict (CON-5, ADR-28): sim-time staleness is the
+    primary, deterministic check — it bounds the runaway TRAJECTORY a
+    latched command can drive identically at every host rtf, where the old
+    wall-clock window did not. The wall net only catches what the sim clock
+    cannot see, and the BG-2 episode timeout wins over both."""
+
+    def _reason(self, **kw):
+        from aisle.mobility.guard import base_watchdog_reason, load_base_limits
+
+        defaults = dict(
+            episode_timed_out=False,
+            last_cmd_sim_ns=0,
+            now_sim_ns=0,
+            last_cmd_wall_t=100.0,
+            now_wall=100.0,
+            limits=load_base_limits("mobile"),
+        )
+        return base_watchdog_reason(**{**defaults, **kw})
+
+    def test_fresh_command_is_left_alone(self):
+        assert self._reason(now_sim_ns=int(0.5e9)) is None  # exactly at the window
+
+    def test_command_goes_stale_past_the_sim_window(self):
+        assert self._reason(now_sim_ns=int(0.5e9) + 1) == "base_stale"
+
+    def test_pre_pose_command_is_not_sim_stale(self):
+        """A command with no sim reference (unstamped source, or latched
+        before the first pose) must not fail open OR spuriously trip: the
+        sim check is skipped, and only the wall net can stop it."""
+        assert self._reason(last_cmd_sim_ns=None, now_sim_ns=10**12) is None
+
+    def test_wall_net_catches_what_the_sim_clock_cannot_see(self):
+        assert self._reason(last_cmd_sim_ns=None, now_sim_ns=None, now_wall=111.0) == (
+            "base_stale_wall"
+        )
+
+    def test_wall_net_sits_far_above_any_healthy_command_gap(self):
+        # 2 s wall since the last cmd = a healthy gap even at rtf 0.01
+        assert self._reason(now_wall=102.0) is None
+
+    def test_episode_timeout_wins_over_staleness(self):
+        assert self._reason(episode_timed_out=True, now_sim_ns=10**12) == "base_timeout"
+
+
 class TestMobileValidation:
     """MOB-4: the mobile profile's arm subtree is franka-identical, and
     base-requiring nodes need a base profile."""

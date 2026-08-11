@@ -91,13 +91,22 @@ arm_motion_hold_s = 1.0
 # reaching, so the base may still approach a shelf to set up before the arm
 # extends to manipulate (MOB-3, CON-15 ADR-14)
 arm_extended_reach_m = 0.40
-# base watchdog: a base_cmd whose accepting tick is older than this is stale;
-# the guard emits a stop [0,0] so a latched command cannot integrate forever
-# after the producer dies or the episode times out (MOB-3/BG-2)
-# 0.5: under sim backpressure (store rtf ~0.1) dora timers stretch and
-# a 0.1 s staleness zeroed the base between every nav command (T15 live
-# round 2); 0.5 still stops a dead producer within half a second
+# base watchdog: a base_cmd whose reference stamp is older than this in SIM
+# seconds is stale; the guard emits a stop [0,0] so a latched command cannot
+# integrate forever after the producer dies or the episode times out
+# (MOB-3/BG-2). Sim seconds (ADR-28): the runaway TRAJECTORY a latched
+# command can drive (v x sim seconds) is bounded identically at every rtf —
+# the old wall window stopped a dead producer within half a wall second but
+# covered a different amount of trajectory per machine.
 base_staleness_s = 0.5
+# fail-closed WALL net behind the sim-time watchdog (ADR-28): swept on the
+# guard's 0.2 Hz stats tick, it stops a latched moving base when NO base_cmd
+# has arrived for this many wall seconds — covering the paths the sim clock
+# cannot see (unstamped pose sources, a hung sim, an env_id absent from the
+# pose stream). 10.0: an order of magnitude above the worst healthy command
+# gap at any plausible rtf (50 Hz sim at rtf 0.01 = 2 s wall between cmds),
+# so it never fires on a healthy run and still bounds a runaway to seconds.
+base_wall_backstop_s = 10.0
 # nav action lifecycle (MOB-2): arrival tolerances (position m, yaw rad) and
 # the timeout / stall tick budgets before a nav fails timeout / blocked
 # 0.05: the pick IK chain must solve at the WORST arrival corner — the

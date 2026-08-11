@@ -143,6 +143,9 @@ class NavStateMachine:
         return [("nav_result", result, goal_id)]
 
     def on_tick(self) -> list:
+        """One lifecycle step; the CALLER is the clock — since ADR-28 the
+        nav node calls this once per serviced base_pose (50 Hz sim), so
+        `ticks` counts poses, while stall/timeout stay pure sim-time."""
         if self.target is None or self.pose is None:
             return []
         self.ticks += 1

@@ -8,8 +8,9 @@ provides: [waypoint_navigation]
 requires: []
 inputs:
   nav_goal: {schema: json_utf8, rate_hz: 1}
+  # base_pose is also the control clock (ADR-28): one control iteration per
+  # pose, so the loop cadence is the 50 Hz SIM cadence (CON-5) — no wall tick
   base_pose: {schema: base_pose3d_f32, rate_hz: 50}
-  tick: {schema: timer_tick, rate_hz: 50}
 outputs:
   nav_feedback: {schema: json_utf8, latency_class: best_effort}
   nav_result: {schema: json_utf8, latency_class: best_effort}

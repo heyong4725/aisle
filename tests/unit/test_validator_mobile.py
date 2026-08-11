@@ -87,10 +87,11 @@ def test_guarded_base_cmd_passes_the_motion_gate(tmp_path):
     assert "MOTION_UNGATED" not in _codes(report)
 
 
-def test_mobile_guard_must_wire_pose_and_watchdog(tmp_path):
-    """MOB-3 (PR #14 re-review): on a mobile graph the guard (it outputs
-    base_cmd_safe) MUST wire base_pose + base_watchdog, or keep-out and the
-    stale-command watchdog are silently disabled."""
+def test_mobile_guard_must_wire_pose_and_tick(tmp_path):
+    """MOB-3 (PR #14 re-review, retimed by ADR-28): on a mobile graph the
+    guard (it outputs base_cmd_safe) MUST wire base_pose (keep-out + the
+    watchdog's sim clock) and tick (BG-5 stats + the fail-closed wall-net
+    sweep), or they are silently disabled."""
     graph = _write(
         tmp_path,
         [
@@ -113,7 +114,10 @@ def test_mobile_guard_must_wire_pose_and_watchdog(tmp_path):
 
 
 def test_complete_mobile_guard_passes_the_wiring_rule(tmp_path):
-    """MOB-3: a guard wiring base_pose + base_watchdog is complete."""
+    """MOB-3: a guard wiring base_pose + tick is complete — the pose
+    stream carries keep-out feedback AND the watchdog clock, the stats
+    tick carries the wall-net sweep (ADR-28); no dedicated watchdog
+    wall-timer input exists anymore (CON-5)."""
     graph = _write(
         tmp_path,
         [
@@ -123,7 +127,7 @@ def test_complete_mobile_guard_passes_the_wiring_rule(tmp_path):
                 "inputs": {
                     "base_cmd": "nav-action/base_cmd",
                     "base_pose": "dora-genesis/base_pose",
-                    "base_watchdog": "dora/timer/millis/50",
+                    "tick": "dora/timer/millis/5000",
                 },
                 "outputs": ["base_cmd_safe"],
             },

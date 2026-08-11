@@ -1,7 +1,13 @@
 """Navigation action node (SPEC 210 MOB-2): the running dora ACTION that
-consumes `nav_goal` (goal_id pattern, TC-7), `base_pose`, and ticks, and
-publishes `nav_feedback` / `nav_result` (the >=2 Hz lifecycle) plus the
-diff-drive `base_cmd` that drives the base toward the goal.
+consumes `nav_goal` (goal_id pattern, TC-7) and `base_pose`, and publishes
+`nav_feedback` / `nav_result` (the >=2 Hz lifecycle) plus the diff-drive
+`base_cmd` that drives the base toward the goal.
+
+The control loop is clocked by `base_pose` itself (50 Hz SIM cadence,
+MOB-1), not a wall timer: exactly one control iteration per serviced pose,
+so the command sequence is a function of the sim trajectory alone (CON-5,
+ADR-28 — a wall tick raced the pose stream and made the recompute count
+host-dependent, issue #71).
 
 The lifecycle and controller are pure (aisle.mobility.nav) and unit-tested;
 this file is the dora wiring (CON-12: dora imported inside main). base_cmd
@@ -72,9 +78,9 @@ def main() -> None:
                 event["value"].to_numpy(zero_copy_only=False).tolist(),
                 int(metadata.get("sim_time_ns", 0)),
             )
-        elif event["id"] == "tick":
-            # drive toward the target THIS tick (if navigating), then advance
-            # the lifecycle; on a terminal result, stop the base
+            # one control iteration per pose (ADR-28): drive toward the
+            # target (if navigating), then advance the lifecycle; on a
+            # terminal result, stop the base
             if machine.target is not None and machine.pose is not None:
                 v, omega = base_cmd_toward(
                     machine.pose,

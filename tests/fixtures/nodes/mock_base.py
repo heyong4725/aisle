@@ -15,6 +15,7 @@ def main() -> None:
     dt = float(os.environ.get("MOCK_DT", "0.02"))
     pose = [0.0, 0.0, 0.0]
     cmd = [0.0, 0.0]
+    sim_ns = 0
     node = Node()
     for event in node:
         if event["type"] != "INPUT":
@@ -24,7 +25,14 @@ def main() -> None:
             cmd = [float(c[0]), float(c[1])]
         elif event["id"] == "tick":
             pose = integrate_base_pose(pose, cmd, dt)
-            node.send_output("base_pose", pa.array(np.array(pose, dtype=np.float32)), metadata={})
+            # TC-2 sim stamp: base_pose is the control clock (ADR-28), so the
+            # mock advances sim time like the bridge would
+            sim_ns += int(dt * 1e9)
+            node.send_output(
+                "base_pose",
+                pa.array(np.array(pose, dtype=np.float32)),
+                metadata={"sim_time_ns": sim_ns},
+            )
 
 
 if __name__ == "__main__":

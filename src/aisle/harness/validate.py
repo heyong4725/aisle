@@ -505,11 +505,12 @@ def validate_nodes(
             (warnings if allow_unproven else errors).append(entry)
 
         # SPEC 210 MOB-3: on a mobile graph the guard (it outputs
-        # base_cmd_safe) MUST also wire base_pose + base_watchdog, or the
-        # keep-out and stale-command watchdog are silently disabled — the
-        # validator otherwise does not require every manifest input.
+        # base_cmd_safe) MUST also wire base_pose (keep-out feedback AND the
+        # sim-time watchdog's clock, ADR-28) and tick (BG-5 stats AND the
+        # watchdog's fail-closed wall-net sweep) — the validator otherwise
+        # does not require every manifest input.
         if embodiment == "mobile" and "base_cmd_safe" in (manifest.get("outputs") or {}):
-            missing = {"base_pose", "base_watchdog"} - set(node.get("inputs") or {})
+            missing = {"base_pose", "tick"} - set(node.get("inputs") or {})
             if missing:
                 errors.append(
                     _entry(
@@ -517,8 +518,8 @@ def validate_nodes(
                         {"node": node_id},
                         f"{node_id} guards the base on a mobile graph but does not "
                         f"wire {sorted(missing)}",
-                        "wire base_pose and base_watchdog into the guard so MOB-3 "
-                        "keep-out and the stale-command watchdog stay active",
+                        "wire base_pose (MOB-3 keep-out + the watchdog's sim clock) "
+                        "and tick (BG-5 stats + the ADR-28 wall-net sweep) into the guard",
                     )
                 )
 
