@@ -562,6 +562,9 @@ def instrumented_graph(
 SCRUBBED_ENV = (
     # ADR-25 (issue #71): the bridge's bring-up opt-out
     "AISLE_STEP_WITHOUT_RESET",
+    # T2: the label toggle changes the SCENE'S PIXELS -- graph-declared for
+    # the same attestation reason as the rung below
+    "AISLE_LABELS",
     # TC-9: the perception rung. The bridge reads it via parse_bridge_config(
     # os.environ), so an ambient AISLE_PERCEPTION=L1 would set the rung of a
     # run whose graph never declared one — and the validator, which sees only
