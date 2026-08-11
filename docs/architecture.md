@@ -95,10 +95,13 @@ now, `behavioral` (robot re-shelves the box) later.
 
 `registry/manifests/*.yaml` — one typed manifest per node: provides/
 requires, input/output schemas and rates, params with ranges,
-embodiment support, `safety_class`, eval status. 26 manifests cover
+embodiment support, `safety_class`, eval status. The manifests cover
 the desk stack, the retail additions (base driver, waypoint nav,
 patrol, order reader, stock/misplacement detectors, placement
-controller, task planner), and system nodes. The registry is what
+controller, task planner), the perception rungs, and system nodes —
+the exact, current catalog is generated into
+[`generated/project-inventory.md`](generated/project-inventory.md)
+rather than counted by hand here. The registry is what
 makes graph composition an LLM-reliable operation — and its deliberate
 gaps are experiment probes (uninstalled hub packages were H1's dominant
 failure; see `analysis/h1/`).

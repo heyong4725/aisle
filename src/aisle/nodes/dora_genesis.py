@@ -348,10 +348,9 @@ def require_supported_perception(cfg: BridgeConfig) -> None:
     reaches an operator through dora's per-node log
     (`runs/<id>/out/<dataflow>/log_dora-genesis.jsonl`, which carries
     `"stream":"stderr"` rows), not through the rollout result JSON."""
-    # L2 is served since detected-pose landed (idea I7): the desk deferral
-    # this guard used to enforce ("no estimator consumes rgb alone yet") is
-    # obsolete for the desk scene — rgb_overhead + depth_overhead feed the
-    # detector-based estimator. The STORE stays refused at both estimated
+    # L2 is served since detected-pose landed (idea I7): RGB alone supplies
+    # identity, while same-stamp ordinary sensor depth supplies metric
+    # geometry. The STORE stays refused at both estimated
     # rungs for the same namespace reason: the estimators ask by desk MED
     # NAME (segmented_pose's id map keys; detected-pose's detector
     # vocabulary), while the store keys items by slot/category ids.

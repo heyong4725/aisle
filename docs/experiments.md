@@ -1,9 +1,14 @@
 # Experiments: hypotheses, status, and where results live
 
-Status as of 2026-07-28. Design: `Project_AISLE_Experiment_Design.md`
-§6 (hypotheses/metrics/ablations) and §11.5 (retail transfer).
-Committed findings live in `analysis/`; raw run data in `runs/`
-(gitignored — findings files copy in what the claims need).
+Status as of 2026-08-10 (commit `0a19154`). Design:
+`Project_AISLE_Experiment_Design.md` §6 (hypotheses/metrics/ablations)
+and §11.5 (retail transfer). Committed findings live in `analysis/`;
+raw run data in `runs/` (gitignored — findings files copy in what the
+claims need).
+
+The canonical status table is [the README's](../README.md#status) (issue
+#142). This page carries protocol and evidence detail; if a verdict here
+ever disagrees with the README, the README is right and this page is stale.
 
 ## Hypotheses
 
@@ -11,9 +16,9 @@ Committed findings live in `analysis/`; raw run data in `runs/`
 |---|---|---|
 | H1 | Zero-shot graph composition ≥80% | **Measured, not met** — 40/40 schema-valid, but 15% (claude) / 65% (codex) launch zero-shot; the gap is one mechanism: manifests pointing at uninstalled hub packages. Validator now surfaces `INSTALL_MISSING`. → `analysis/h1/` |
 | H2 | EN-loop iteration to ≥90% pass@1 | Claude arm **met** held-out (1.0); codex arm 0.875 held-out at N=8 (one `dropped`), with dev-side evidence of a ≥0.9 system (30-episode dev run at 0.967). Both at commit `e8f163ab`. → `analysis/h2/` for the full verdict |
-| H3 | Persistent skill library ≥2x faster on later tasks | **Campaign in flight** (S1→S2→S3, arms with/without library). Protocol: `decisions/ADR-h3-campaign-protocol.md`; records land in `runs/h3/`, analysis in `analysis/h3/` when complete. |
-| H4 | Hot-swap iteration beats relaunch | Machinery landed (`harness swap`/`probe`, HAR-10..12 event log); measured comparison queued behind H3. |
-| H5 | wrong-object stays 0 under free iteration | **Holding** on committed evidence: 0 wrong-object in 224/224 episodes across the three H2 runs (`analysis/h2/`). The in-flight H3 campaign extends the denominator when its records are committed to `analysis/h3/`. |
+| H3 | Persistent skill library ≥2x faster on later tasks | **Verdict PENDING** (`met: null`, `complete: false`) — campaign ran; both tiers UNDECIDED. Every library-arm cell fell to drift (repo, treatment or runtime) under the ADR-h3 admissibility amendment, and the wiped arm's clean cells never succeeded at S2/S3, so one arm cannot decide a ratio tier. The earlier "NOT MET" headline was dissolved by the retroactive `treatment_drift` flag on L/S2, not replaced by a met verdict. → `analysis/h3/h3_findings.md` |
+| H4 | Hot-swap iteration beats relaunch | **Measured at T0**, phase-randomized (ADR-h4 rev 2): hot-swap median 32.4 s vs relaunch 41.8 s (ratio 1.29), n=6 per path, zero infra failures; the mutation mechanism alone is ~1.7x faster (2.4 s vs 4.0–4.7 s). Extremes overlap and no significance/equivalence claim is made at n=6. **UNATTESTED** dev measurement (ADR-24): no reproducibility claim. Two superseded designs are retained as evidence. → `analysis/h4/h4_findings.md` |
+| H5 | wrong-object stays 0 under free iteration | **Holding** on committed evidence: 0 wrong-object in 224/224 episodes across the three H2 runs (`analysis/h2/`). H3's records do not extend the denominator: its cells are inadmissible for verdict purposes (above). |
 
 Ablation A1 (agent-composed vs expert graphs) has a provenance-explicit
 data inventory at `analysis/a1/a1_table.md` — read its "what the

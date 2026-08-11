@@ -9,6 +9,9 @@ uv run ruff format --check .
 uv run ruff check .
 uv run pytest -m unit
 uv run python tools/trace_check.py
+# Contributor reference is source-derived; graph, manifest, CLI, ADR, and
+# test changes must regenerate docs/generated/project-inventory.md.
+uv run python tools/docs_inventory.py --check
 # CON-7/HAR-2: the committed env hash must match the frozen set — any PR
 # touching frozen files regenerates it with tools/env_hash.py --write
 uv run python tools/env_hash.py --check

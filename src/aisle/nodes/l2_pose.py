@@ -1,11 +1,13 @@
-"""L2 perception: pose from DETECTION on rendered rgb (TC-9's top rung).
+"""L2 perception: RGB identity plus sensor-depth metric pose (TC-9's top rung).
 
-No ground truth of any kind reaches the graph at L2 — the bridge publishes
-neither `poses` nor `seg_overhead`, and this node runs the pinned OWLv2
-detector (the frozen verifier's model, imported read-only) on the
-`rgb_overhead`/`depth_overhead` pair, then pushes the detection box through
-the SAME top-surface geometry as L1's mask (segmented_pose.estimate_pose
-over a synthetic bbox mask).
+No simulator pose or segmentation ground truth reaches the graph at L2 — the
+bridge publishes neither `poses` nor `seg_overhead`. This node runs the pinned
+OWLv2 detector (the frozen verifier's model, imported read-only) on
+`rgb_overhead` alone. It pairs the RGB detection with ordinary same-stamp
+`depth_overhead` only to reconstruct metric geometry, using the SAME
+top-surface calculation
+as L1's mask (segmented_pose.estimate_pose over a synthetic bbox mask). Depth
+never supplies class or instance identity.
 
 The identity-safety rules are measured, not guessed (idea I7, shelf frames
 from run l1-mask-audit-r2): the detector found 19/19 med instances (0%

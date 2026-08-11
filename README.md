@@ -1,5 +1,10 @@
 # AISLE — Agentic In-Store Learning Environment
 
+New contributor? Start with the
+**[AISLE contributor wiki](docs/contributor-wiki.md)** for a source-linked
+project overview, architecture, use cases, extension guide, code map, research
+status, and known limitations.
+
 Agentic auto-research for robot manipulation on open infrastructure:
 coding agents (Claude Code / Codex) compose and evolve **typed dora-rs
 dataflows** against a **Genesis** physics scene, with frozen
@@ -13,18 +18,32 @@ New to the repo? Start with `docs/getting-started.md` — and for the
 concepts behind it all (Physical AI, VLM/VLA/world models/WAMs,
 sim-to-real, agentic auto-research), `docs/physical-ai-primer.md`.
 
-## Status (July 2026)
+## Status
+
+**This table is the single current status page** (issue #142). Other overview
+pages link here; protocol and evidence pages may retain dated summaries for
+context, but must identify their snapshot and defer to this table on conflict.
+Status as of **2026-08-10**, commit `0a19154`. Each row states the verdict its
+committed evidence supports, with that evidence's own qualifications — a
+hypothesis with no admissible data says so rather than reading as progress.
+
+Exact graph/manifest/CLI/ADR catalogs are generated, never hand-counted:
+[`docs/generated/project-inventory.md`](docs/generated/project-inventory.md).
+Orientation for contributors: [`docs/contributor-wiki.md`](docs/contributor-wiki.md).
 
 | Milestone | State |
 |---|---|
-| M0 — verified pharmacy-pick loop (SPEC 090) | signed off; expert graph 0.98 pass@1 over 50 seeds, deterministic replicate |
+| M0 — verified pharmacy-pick loop (SPEC 090) | signed off; expert graph 0.98 pass@1 over 50 seeds, with the milestone replicate independently re-satisfying the gate |
 | H1 — zero-shot composition | measured, target not met: 40/40 schema-valid graphs, but 15% (claude) / 65% (codex) launch zero-shot; single dominant failure is uninstalled hub packages (`analysis/h1/`) |
 | H2 — iteration to ≥90% | claude arm **met** held-out (1.0 pass@1); codex arm 0.875 held-out at N=8 (one `dropped`), with dev-side evidence of a ≥0.9 system — see `analysis/h2/` for the full verdict |
-| H3 — skill accumulation (S1→S3 transfer) | measured campaign in flight (`docs/decisions/ADR-h3-campaign-protocol.md`) |
-| H4 — hot-swap vs relaunch iteration | machinery landed (`harness swap` / `harness probe`, SPEC 070 HAR-10..12); experiment queued |
+| H3 — skill accumulation (S1→S3 transfer) | **verdict PENDING** (`met: null`, `complete: false`) — S2 and S3 both UNDECIDED. No admissible library-arm cell survived the integrity audit (repo, treatment or runtime drift); the wiped arm's clean cells never succeeded at S2/S3. A formal verdict needs an owner-accepted incomplete closure or a budget-corrected new campaign (`analysis/h3/`) |
+| H4 — hot-swap vs relaunch iteration | **measured at T0**, phase-randomized (ADR-h4 rev 2): hot-swap median iteration latency 32.4 s vs relaunch 41.8 s (ratio 1.29), n=6 per path, zero infra failures. Extremes overlap; no significance or equivalence claim at n=6. UNATTESTED dev measurement — makes no reproducibility claim (`analysis/h4/`) |
 | H5 — zero wrong-object under free iteration | holding on committed evidence: 0 wrong-object in 224/224 episodes across the three H2 campaign runs (`analysis/h2/`) |
 | Retail suite S1–S3 (mobile, long-horizon) | implemented: store scene, planogram verifier, mobility contract, S1 expert graph |
-| Realistic verifier | decision brief at `docs/decisions/ADR-realistic-verifier.md`; implementation pending |
+| Perception ladder L0/L1/L2 (TC-9) | implemented: L0 oracle poses, L1 segmentation + depth (`segmented-pose`), L2 RGB identity + same-stamp sensor-depth geometry (`l2-pose`); the rung rides the graph and is asserted per run (`--perception`) |
+| Realistic verifier (VER-5) | implemented (`src/aisle/verifier/realistic.py`, OWLv2 + rules, CPU-pinned); ADR at `docs/decisions/ADR-realistic-verifier.md` |
+| VER-6 verifier fidelity | current VER-13 fusion recomputed over the same 31 recorded episodes: agreement **0.45**, false SUCCESS **0.00** (0/6), false FAIL **0.68** (17/25). The preserved first, pre-amendment measurement was 0.29 / 0.00 / 0.88 (`analysis/ver6-fidelity/`; current recomputation in SPEC 040 VER-13). Conservative, not yet interchangeable with the oracle |
+| CON-5 reproducibility on S1 | **original violation dispositioned**: ADR-25 fixed and verified reset-anchored startup; ADR-26 defines full-episode outcomes as statistical under Metal noise. Issue #71 remains open for wall-coupled command/control timing and possible frozen-set retiming — per-seed outcome flips are not themselves a CON-5 violation |
 
 ## Quickstart
 
@@ -38,7 +57,7 @@ uv sync --extra sim        # plain `uv sync` REMOVES the sim extras
 cargo install --git https://github.com/dora-rs/dora --rev cd597e705 dora-cli --locked
 dora --version             # warns if CLI and python API revs drift
 
-uv run pytest -m unit                            # fast, no sim (~547 tests)
+uv run pytest -m unit                            # fast, no simulator (~90 s)
 uv run harness validate graphs/expert_t0.yaml    # typed-graph validation
 uv run harness rollout --graph graphs/expert_t0.yaml --tier T0 \
     --episodes 2 --seeds 0..1 --no-idea-gate --env-baseline local
@@ -55,16 +74,22 @@ Never install with bare pip/conda.
 CLAUDE.md          development-agent contract (read first if you are an agent)
 specs/             numbered specs with MUST IDs (000 = constitution)
 TASKS.md           implementation order + kickoff prompts
-registry/          capability schema + 26 node manifests
-graphs/            expert baseline dataflows (T0 desk pick, S1 retail)
+registry/          capability schema + typed node manifests
+graphs/            expert baseline dataflows (T0/T1 desk pick, S1 retail)
 src/aisle/         scenes, bridge, verifier, reset, harness, mobility, nodes
 harness CLIs       `uv run harness {validate,rollout,traces,report,skill,swap,probe}`
-tools/             CI, trace_check, env_hash, campaign runners (H1/H2/H3)
+tools/             CI, trace_check, env_hash, campaign runners (H1/H2/H3/H4)
 tests/             unit / sim / graph markers; every MUST cited by a test
-analysis/          committed experiment findings (h1, h2, a1)
-docs/              guides, design doc, decisions/ (ADRs)
+analysis/          committed experiment findings (h1, h2, h3, h4, a1,
+                   ver6-fidelity, s1-determinism, postmortems, transcripts)
+docs/              guides, design doc, contributor wiki, decisions/ (ADRs),
+                   generated/project-inventory.md (source-derived catalogs)
 runs/              gitignored: traces, videos, run manifests
 ```
+
+Structural counts (graphs, manifests, CLI commands, ADRs) are deliberately
+absent here — they went stale faster than anyone noticed. The generated
+appendix carries them and CI fails when it drifts.
 
 ## How development works
 
@@ -75,6 +100,9 @@ enforces this in CI); agents implement tasks from `TASKS.md` under the
 milestones. Gates before every commit: `ruff format --check`,
 `ruff check`, `pytest -m unit`, trace_check. Conventional commits; one
 concern per PR.
+
+The local CI script also checks requirement traceability, the generated
+contributor inventory, and the committed frozen-environment hash.
 
 The experiment's integrity rules are structural, not behavioral: the
 environment/verifier/reset set is hash-frozen (rollouts refuse to start

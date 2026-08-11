@@ -146,8 +146,9 @@ def test_expert_t1_with_poses_routed_is_rejected(tmp_path):
 def test_expert_t1_l2_is_good():
     """VAL-7 for graphs/expert_t1_l2.yaml, validated in place: the T1
     baseline at rung L2 (TC-9's top rung — the bridge publishes NEITHER
-    ground-truth pose topic; perception is detection on rendered rgb, idea
-    I7) passes NORMAL validation with zero errors and zero warnings."""
+    simulator ground-truth pose nor segmentation; identity comes from RGB and
+    same-stamp sensor depth supplies metric geometry, idea I7) passes NORMAL
+    validation with zero errors and zero warnings."""
     code, report = run_validate(REPO_ROOT / "graphs" / "expert_t1_l2.yaml")
     assert code == 0, report
     assert report["ok"] is True and report["errors"] == []
@@ -1058,9 +1059,10 @@ def test_perception_rung_violation_not_hidden_by_schema_error(tmp_path):
 
 def test_perception_rung_table_matches_tc9():
     """VAL-8, TC-9's ladder as a table: L0 forbids nothing, L1 forbids the
-    ground-truth pose, L2 additionally forbids ground-truth segmentation
-    (pixels only). The L2 end-to-end edge case joins the golden corpus with
-    the PR that makes `seg_overhead` a real bridge port."""
+    ground-truth pose, and L2 additionally forbids semantic segmentation
+    while retaining ordinary sensor depth for metric geometry. The L2
+    end-to-end edge case joins the golden corpus with the PR that makes
+    `seg_overhead` a real bridge port."""
     from aisle.harness.validate import (
         FORBIDDEN_BY_RUNG,
         RUNG_REMEDY,
@@ -1070,6 +1072,7 @@ def test_perception_rung_table_matches_tc9():
     assert FORBIDDEN_BY_RUNG["L0"] == ()
     assert FORBIDDEN_BY_RUNG["L1"] == ("poses",)
     assert set(FORBIDDEN_BY_RUNG["L2"]) == {"poses", "seg_overhead"}
+    assert "depth_overhead" in RUNG_REMEDY["L2"]
     # declared on whichever node carries it, case-insensitively, defaulting to
     # L0, and a clean read carries no errors
     # read from the sim_bridge node, case-insensitively, defaulting to L0 when

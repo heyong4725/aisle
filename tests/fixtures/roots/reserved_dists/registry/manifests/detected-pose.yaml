@@ -1,5 +1,6 @@
-# The L2 rung's pose source (TC-9): pose from the pinned OWLv2 detector on
-# rendered rgb + same-stamp depth -- no ground truth of any kind. Refuses
+# The L2 rung's pose source (TC-9): identity from the pinned OWLv2 detector
+# on rendered RGB only, plus same-stamp ordinary sensor depth for metric
+# geometry -- no simulator pose or segmentation ground truth. Refuses
 # on missing detections AND on low identity margins (measured wrong-id
 # signature, idea I7): under the asymmetric goal a wrong-medicine pick is
 # 10x worse than a refusal. Drop-in for the target_pose edge.
