@@ -1223,6 +1223,27 @@ def test_perception_rung_conflicting_declarations_are_refused(tmp_path):
     )
     assert any("conflicting perception rungs" in e["detail"] for e in errors), errors
 
+    # PR #154 review: an omitted declaration is not neutral on a second
+    # bridge — that process defaults to L0 at runtime. Treat its EFFECTIVE L0
+    # as part of conflict detection instead of applying the desk bridge's L1
+    # graph-wide and falsely reporting the already-L0 store as store+L1.
+    rung, _, errors = graph_perception_rung(
+        [
+            {"id": "store", "env": {"AISLE_SCENE": "store"}},
+            {
+                "id": "desk",
+                "env": {"AISLE_SCENE": "pharmacy", "AISLE_PERCEPTION": "L1"},
+            },
+        ],
+        {
+            "store": {"provides": ["sim_bridge"]},
+            "desk": {"provides": ["sim_bridge"]},
+        },
+    )
+    assert rung == "L2"  # strictest fallback while the declaration is invalid
+    assert any("conflicting perception rungs ['L0', 'L1']" in e["detail"] for e in errors)
+    assert not any("not supported for AISLE_SCENE='store'" in e["detail"] for e in errors)
+
 
 def test_perception_rung_binds_nodes_without_manifests(tmp_path):
     """VAL-8 inherits VAL-6's manifest-less fallback: the rung binds the

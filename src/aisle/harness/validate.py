@@ -557,10 +557,10 @@ def graph_perception_rung(nodes: list, manifests: dict) -> tuple[str, list[str],
       wiring ground-truth `poses` validated ok=true, exit 0. The bridge
       normalizes with .strip().upper() and REFUSES an unknown rung, so the
       un-stripped read also disagreed with the runtime about the same text.
-    * two nodes declaring DIFFERENT rungs. Node order in a dataflow YAML is
-      arbitrary, so first-wins let an L0 declaration sitting above the
-      bridge's L1 downgrade the whole graph. An ambiguous attestation is not
-      a thing to resolve by position; it is a thing to reject.
+    * two bridge processes with DIFFERENT effective rungs. Node order in a
+      dataflow YAML is arbitrary, and an omitted key defaults that bridge to
+      L0 at runtime, so neither first-wins nor applying one explicit value
+      graph-wide describes what the processes actually run.
     """
     errors: list[dict] = []
     declared = {}
@@ -611,15 +611,22 @@ def graph_perception_rung(nodes: list, manifests: dict) -> tuple[str, list[str],
                 "unrecognized rung would forbid nothing and silently pass the check",
             )
         )
-    distinct = sorted(set(declared.values()))
+    # Every bridge has an EFFECTIVE runtime rung: an omitted key is L0, not a
+    # vote of abstention. This matters for the future multi-bridge case — one
+    # explicit L1 bridge plus one omitted/default-L0 bridge runs two different
+    # contracts and cannot be represented by one graph-level attestation.
+    effective = {bridge_id: declared.get(bridge_id, "L0") for bridge_id in bridge_ids}
+    distinct = sorted(set(effective.values()))
     if len(distinct) > 1:
         errors.append(
             _entry(
                 "PERCEPTION_RUNG_VIOLATION",
-                {"node": sorted(declared)[0]},
-                f"conflicting perception rungs {distinct} declared by {sorted(declared)} (VAL-8)",
-                "declare AISLE_PERCEPTION once, on the sim-bridge node — node order "
-                "in the YAML is arbitrary, so a graph with two rungs attests neither",
+                {"node": sorted(effective)[0]},
+                f"conflicting perception rungs {distinct} across sim bridges "
+                f"{sorted(effective)} (VAL-8)",
+                "declare the same AISLE_PERCEPTION on every sim-bridge node — an "
+                "omitted key defaults that process to L0, and a graph with two "
+                "effective rungs attests neither",
             )
         )
     # on any bad declaration, enforce the STRICTEST rung the table has rather
