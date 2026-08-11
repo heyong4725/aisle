@@ -907,6 +907,54 @@ def _path_manifest(mid, source):
     }
 
 
+def test_snapshot_validation_keeps_authored_path_provenance(tmp_path):
+    """HAR-2/VAL-2: captured bytes retain the authored graph's directory.
+
+    Snapshot validation must close rollout's read race without treating the
+    run artifact as the graph identity or adding a second resolution base.
+    A source-file edit after capture is ignored, while the relative node path
+    in the capture still resolves from the original graph directory.
+    """
+    from aisle.harness.validate import validate
+
+    root = make_registry_root(tmp_path / "root")
+    source = root / "src" / "node.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("# vetted node\n")
+    write_manifest(root, _path_manifest("snapshot-node", "src/node.py"))
+    graph_dir = root / "graphs"
+    graph_dir.mkdir()
+    graph = graph_dir / "snapshot.yaml"
+    graph.write_text(
+        yaml.safe_dump(
+            {
+                "nodes": [
+                    {
+                        "id": "snapshot-node",
+                        "path": "../src/node.py",
+                        "inputs": {},
+                        "outputs": [],
+                    }
+                ]
+            },
+            sort_keys=False,
+        )
+    )
+    snapshot = graph.read_bytes()
+    graph.write_text(graph.read_text().replace("../src/node.py", "../src/other.py"))
+
+    captured = validate(
+        root=root,
+        graph_path=graph,
+        embodiment="franka",
+        allow_unproven=False,
+        graph_snapshot=snapshot,
+    )
+    current = validate(graph, root, "franka", False)
+    assert captured["ok"] is True, captured
+    assert "PATH_MANIFEST_MISMATCH" in {entry["code"] for entry in current["errors"]}
+
+
 def test_source_invalid_requires_contained_regular_file(tmp_path):
     """PR #63 review P1: `root / source` is NOT containment — an absolute
     source (`/etc/hosts`) survives the join, `../` escapes the root, a

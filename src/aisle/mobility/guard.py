@@ -7,6 +7,7 @@ from __future__ import annotations
 import math
 import tomllib
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 
 _LIMITS = Path(__file__).resolve().parents[3] / "env" / "limits.toml"
@@ -26,8 +27,18 @@ class BaseLimits:
     # flange horizontal reach past which the arm counts as "reaching" and the
     # shelf keep-out engages (home ~0.31 m is not reaching)
     arm_extended_reach_m: float
-    # a base_cmd older than this is stale -> the guard stops the base (MOB-3)
+    # a base_cmd older than this in SIM seconds is stale -> the guard stops
+    # the base (MOB-3; sim-anchored per ADR-29)
     base_staleness_s: float
+    # fail-closed wall net behind the sim-time check (ADR-29): stop a moving
+    # base when no base_cmd arrived for this many WALL seconds
+    base_wall_backstop_s: float
+
+    # precomputed off the per-pose path (BG-4); cached_property writes the
+    # instance __dict__ directly, so frozen is preserved
+    @cached_property
+    def base_staleness_ns(self) -> int:
+        return int(self.base_staleness_s * 1e9)
 
 
 def load_base_limits(embodiment: str) -> BaseLimits:
@@ -46,6 +57,7 @@ def load_base_limits(embodiment: str) -> BaseLimits:
         arm_motion_hold_s=float(p["arm_motion_hold_s"]),
         arm_extended_reach_m=float(p["arm_extended_reach_m"]),
         base_staleness_s=float(p["base_staleness_s"]),
+        base_wall_backstop_s=float(p["base_wall_backstop_s"]),
     )
 
 
@@ -73,6 +85,30 @@ def valid_base_pose(pose) -> bool:
         return False
 
 
+def parse_env_id(metadata: dict) -> int:
+    """TOTAL env_id read (BG-3, PR #156 review): a malformed env_id from an
+    upstream node must not crash the guard's event loop — it degrades to the
+    default env 0, it never kills the safety gate."""
+    try:
+        return int(metadata.get("env_id", 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def parse_sim_stamp(metadata: dict) -> int | None:
+    """TOTAL sim_time_ns read (BG-3, PR #156 review): None when the stamp is
+    absent, zero, or malformed — all three mean 'no usable sim clock on this
+    message'. Zero maps to None because topics.stamp() defaults missing
+    stamps to 0, so a genuine 0 is indistinguishable from an unstamped
+    source, and anchoring staleness at 0 against a monotonic run-long sim
+    clock would falsely stale-stop the next healthy command."""
+    try:
+        stamp = int(metadata.get("sim_time_ns", 0))
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return stamp if stamp > 0 else None
+
+
 def _dist_to_aabb(px: float, py: float, cx: float, cy: float, hx: float, hy: float) -> float:
     """Planar distance from point (px,py) to the AABB centered (cx,cy) with
     half-extents (hx,hy); 0 inside."""
@@ -89,6 +125,56 @@ def base_creep_deadline(
     base. `arm_in_motion` is then simply `now < deadline`. Pure/deterministic
     (CON-5): the caller injects `now`."""
     return now + hold_s if target_changed else prev_deadline
+
+
+def base_watchdog_reason(
+    *,
+    episode_timed_out: bool,
+    last_cmd_sim_ns: int | None,
+    now_sim_ns: int | None,
+    last_cmd_wall_t: float | None,
+    now_wall: float,
+    sim_clock_blind: bool,
+    limits: BaseLimits,
+) -> str | None:
+    """MOB-3 watchdog verdict for a latched MOVING base (the caller gates on
+    that): the violation reason to stop it with, or None to leave it alone.
+
+    - ``base_timeout``: the BG-2 episode WALL budget elapsed (wall by
+      design — it is a budget, not a control signal).
+    - ``base_stale``: the sim advanced more than ``base_staleness_s`` SIM
+      seconds past the command's reference stamp (the newest base_pose
+      stamp seen when it arrived). Sim-time staleness bounds the runaway
+      TRAJECTORY (v x sim seconds) identically at every host rtf, where
+      the old wall-clock window did not (CON-5, ADR-29). A None stamp
+      (unstamped source, or no pose yet) skips this check rather than
+      failing open silently — the wall net below still bounds it.
+    - ``base_stale_wall``: the fail-closed net — no base_cmd for
+      ``base_wall_backstop_s`` WALL seconds, ONLY when the sim clock is
+      demonstrably blind (``sim_clock_blind``: the caller saw no valid
+      stamp on the latest pose, no pose at all for this env, or the pose
+      stream itself went silent past the backstop). The gate makes a
+      healthy-but-slow sim structurally unable to trip the net at ANY
+      rtf (PR #156 review): while valid stamps flow, the sim-time check
+      above owns the verdict. Distinct reason: this firing is an ops
+      alarm, not the sim-time mechanism working as designed.
+
+    Pure/deterministic: the caller injects every stamp and clock reading."""
+    if episode_timed_out:
+        return "base_timeout"
+    if (
+        last_cmd_sim_ns is not None
+        and now_sim_ns is not None
+        and now_sim_ns - last_cmd_sim_ns > limits.base_staleness_ns
+    ):
+        return "base_stale"
+    if (
+        sim_clock_blind
+        and last_cmd_wall_t is not None
+        and now_wall - last_cmd_wall_t > limits.base_wall_backstop_s
+    ):
+        return "base_stale_wall"
+    return None
 
 
 def clamp_base_cmd(

@@ -5,10 +5,10 @@ requires: []
 inputs:
   # SPEC 210 MOB-2: goal_id action — {location} or {pose:[x,y,yaw]}
   nav_goal: {schema: json_utf8, rate_hz: 1}
-  # base pose feedback (MOB-1) the controller drives from
+  # base pose feedback (MOB-1) the controller drives from — also the control
+  # clock (ADR-29): one iteration per pose at the 50 Hz SIM cadence, so the
+  # >=2 Hz MOB-2 feedback needs no wall timer (CON-5)
   base_pose: {schema: base_pose3d_f32, rate_hz: 50}
-  # >=2 Hz feedback/controller cadence (MOB-2); wire from dora/timer/millis/<=500
-  tick: {schema: timer_tick, rate_hz: 50}
 outputs:
   # >=2 Hz lifecycle (MOB-2): {t, dist_remaining} then {status, failure, t_end}
   nav_feedback: {schema: json_utf8, latency_class: best_effort}
