@@ -35,11 +35,16 @@ def main() -> None:
     tier = os.environ.get("AISLE_TIER", "T0")
     retail = tier in ("S1", "S2", "S3")  # RS-6: rollout gains --tier
     meds_env = os.environ.get("AISLE_TARGET_MEDS", "")
-    targets = (
-        meds_env.split(",")
-        if meds_env
-        else [MED_NAMES[i % len(MED_NAMES)] for i in range(len(seeds))]
-    )
+    if tier == "T3" and not meds_env:
+        # T3: the scene occludes med (seed % n) — the episode targets
+        # exactly that med (aisle.scenes.pharmacy.occluded_target rule)
+        targets = [MED_NAMES[s % len(MED_NAMES)] for s in seeds]
+    else:
+        targets = (
+            meds_env.split(",")
+            if meds_env
+            else [MED_NAMES[i % len(MED_NAMES)] for i in range(len(seeds))]
+        )
     # refuse bad config LOUDLY at startup: an unknown med deadlocks the run
     # (the verifier refuses the goal without emitting a result), and a
     # short target list would IndexError mid-run. Retail tiers carry no

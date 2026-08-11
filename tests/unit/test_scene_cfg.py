@@ -403,6 +403,58 @@ class TestLabelTextures:
         with pytest.raises(ValueError, match="AISLE_LABELS"):
             parse_bridge_config({"AISLE_LABELS": "maybe"})
 
+    def test_occlusion_layout_geometry_and_parity(self):
+        """T3 (design doc §3): the occlusion post-pass parks the blocker
+        directly in front of the seed-designated target — same row, same
+        level, 1.5 cm face gap (inside min_separation: occlusion IS the
+        tier) — deterministically; placements are untouched when off."""
+        from aisle.scenes.pharmacy import (
+            apply_occlusion,
+            load_meds,
+            load_physics,
+            occluded_target,
+            resolve_layout,
+            sample_placements,
+        )
+
+        meds = load_meds()
+        names = list(meds)
+        layout = resolve_layout(load_physics(), "franka")
+        for seed in (0, 3, 7):
+            base = sample_placements(seed, names, layout)
+            occ = apply_occlusion(base, seed, names, layout)
+            assert occ == apply_occlusion(base, seed, names, layout)  # CON-5
+            target = occluded_target(seed, names)
+            assert target == names[seed % len(names)]
+            blocker = names[(seed + 1) % len(names)]
+            t = {p.name: p for p in occ}[target]
+            b = {p.name: p for p in occ}[blocker]
+            gap = t.x - meds[target]["size"][0] / 2 - (b.x + meds[blocker]["size"][0] / 2)
+            assert gap == pytest.approx(0.015, abs=1e-9)
+            assert t.y == b.y and t.level == b.level
+            assert b.x < t.x  # blocker in FRONT (smaller x = shelf front)
+            untouched = {p.name for p in base} - {target, blocker}
+            for p in occ:
+                if p.name in untouched:
+                    assert p == {q.name: q for q in base}[p.name]
+
+    def test_occlusion_toggle_default_off_scrubbed_and_junk_refused(self):
+        """Same attestation contract as labels/shuffle: default off,
+        graph-declared only (ambient scrubbed), junk refused."""
+        import pytest
+
+        from aisle.harness.rollout import SCRUBBED_ENV, scrub_bringup_env
+        from aisle.nodes.dora_genesis import parse_bridge_config
+        from aisle.scenes.pharmacy import SceneCfg
+
+        assert SceneCfg().occlusion is False
+        assert parse_bridge_config({}).occlusion is False
+        assert parse_bridge_config({"AISLE_OCCLUSION": "1"}).occlusion is True
+        assert "AISLE_OCCLUSION" in SCRUBBED_ENV
+        assert scrub_bringup_env({"AISLE_OCCLUSION": "1"}) == {}
+        with pytest.raises(ValueError, match="AISLE_OCCLUSION"):
+            parse_bridge_config({"AISLE_OCCLUSION": "maybe"})
+
     def test_shuffle_colors_default_off_scrubbed_and_junk_refused(self):
         """T2 no-color-prior toggle (AISLE_SHUFFLE_COLORS): same contract
         as AISLE_LABELS — default off (pre-T2 scenes byte-identical),
