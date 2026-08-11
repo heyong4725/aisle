@@ -59,6 +59,12 @@ def main() -> None:
     episode = 0
     phase = "reset_pending"  # -> awaiting_reset -> running -> (next)
     retries_seen: dict[str, int] = {}  # goal_id -> latest feedback retries (HAR-3)
+    # the sim stamp of the episode_result that ended the last episode: rides
+    # every reset request (TC-2), so the realistic verifier can bound the
+    # ended episode's frame window BEFORE any reset motion enters the scene
+    # (issue #120) — under RST-2 behavioral resets the frames between the
+    # result and reset_done show the med being picked back OUT of the tray
+    last_result_sim_ns = 0
     # append, not truncate: after a wall-clamp relaunch (ADR-23) this
     # process is the SECOND writer to the same run's results file — a
     # truncate would erase the episodes and synthetic clamp records the
@@ -73,7 +79,10 @@ def main() -> None:
                 send(
                     "reset",
                     pa.array(np.array([seeds[episode], 0], dtype=np.uint32)),
-                    {"request_id": f"reset-{episode:04d}-{seeds[episode]}"},
+                    {
+                        "request_id": f"reset-{episode:04d}-{seeds[episode]}",
+                        "sim_time_ns": last_result_sim_ns,
+                    },
                 )
                 phase = "awaiting_reset"
         elif event["id"] == "reset_done" and phase == "awaiting_reset":
@@ -113,6 +122,7 @@ def main() -> None:
                 retries_seen[goal_id] = int(feedback["retries"])
         elif event["id"] == "episode_result" and phase == "running":
             result = json.loads(event["value"][0].as_py())
+            last_result_sim_ns = int((event.get("metadata") or {}).get("sim_time_ns", 0))
             record = {"episode": episode, "seed": seeds[episode], **result}
             record["retries"] = retries_seen.pop(record.get("goal_id", ""), 0)
             print(f"episode {episode} result: {record}", file=sys.stderr)
@@ -127,7 +137,7 @@ def main() -> None:
                 send(
                     "reset",
                     pa.array(np.array([seeds[0], 0], dtype=np.uint32)),
-                    {"request_id": "reset-cleanup"},
+                    {"request_id": "reset-cleanup", "sim_time_ns": last_result_sim_ns},
                 )
                 phase = "done"
                 break  # client exits; dataflow teardown is the runner's job

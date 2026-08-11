@@ -9,9 +9,11 @@ import numpy as np
 import pytest
 
 from aisle.harness.trace_recorder import CaptureSchedule
-from aisle.nodes.verifier_realistic import EpisodeBuffer, episode_result
+from aisle.nodes.verifier_realistic import EpisodeBuffer, EpisodeRouter, episode_result
 
 pytestmark = pytest.mark.unit
+
+S = 1_000_000_000  # 1 sim second in ns
 
 
 def _buffer(period_s=5.0, timeout_s=60.0, start_ns=0):
@@ -151,6 +153,201 @@ def test_episode_ends_on_its_own_sim_budget_not_the_oracle():
     assert buf.expired(70_000_000_000)
 
 
+def _router(period_s=5.0, timeout_s=60.0):
+    finished = []
+
+    def finish(buf, end_ns, failure):
+        finished.append((buf, end_ns, failure))
+
+    return EpisodeRouter(int(period_s * 1e9), int(timeout_s * 1e9), finish), finished
+
+
+def _frame(router, stamp_ns, wrist=False):
+    router.on_frame("rgb_overhead", stamp_ns, np.zeros((4, 4, 3), np.uint8))
+    router.on_frame("depth_overhead", stamp_ns, np.zeros((4, 4), np.float32))
+    if wrist:
+        router.on_frame("rgb_wrist", stamp_ns, np.zeros((3, 3, 3), np.uint8))
+
+
+def test_deferred_close_judges_the_true_terminal_frame():
+    """Issue #120 mechanism (VER-7/VER-9): the node runs seconds behind, so
+    the NEXT goal is processed while the ended episode's last camera frames
+    still sit in its queues. Judging at that moment reads a stale terminal
+    frame — live judged systematically worse frames than a replay of the
+    SAME run (23 stage votes over 19 episodes). The router must keep the
+    ended episode open for stamp-routed late frames and judge only once
+    both overhead streams have delivered past its end."""
+    router, finished = _router()
+    router.on_goal("ep-0000", "omeprazole", 0)
+    for stamp in (1 * S, 2 * S, 3 * S):
+        _frame(router, stamp)
+    # the next goal arrives FIRST (queue backlog) ...
+    router.on_goal("ep-0001", "cetirizine", 6 * S)
+    assert finished == []  # not judged yet: the streams haven't caught up
+    # ... then the ended episode's remaining frames drain from the queues
+    for stamp in (4 * S, 5 * S):
+        _frame(router, stamp)
+    assert finished == []
+    # a frame past the boundary on BOTH streams proves ep-0000 is complete
+    _frame(router, 6 * S + 500_000_000)
+    assert [(buf.goal_id, end, failure) for buf, end, failure in finished] == [
+        ("ep-0000", 6 * S, "never_delivered")
+    ]
+    # the judged terminal frame is the TRUE last frame of the episode
+    assert max(finished[0][0].frames["overhead"]) == 5 * S
+
+
+def test_stale_frames_do_not_pollute_the_next_episode():
+    """The other half of issue #120: old frames processed after the next
+    goal must not enter the new episode's buffer — the previous delivery
+    would sit in its tray and poison the wrong-object latch on frame one,
+    the live twin of the offline reset-boundary bug."""
+    router, finished = _router()
+    router.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router, 1 * S)
+    router.on_goal("ep-0001", "cetirizine", 6 * S)
+    _frame(router, 5 * S)  # late old frame, drains after the new goal
+    _frame(router, 6 * S)  # boundary render: still the OLD scene — nobody's
+    _frame(router, 7 * S)  # first frame of the new episode
+    router.flush(8 * S)
+
+    by_id = {buf.goal_id: buf for buf, _, _ in finished}
+    assert set(by_id["ep-0000"].frames["overhead"]) == {1 * S, 5 * S, 6 * S}
+    assert set(by_id["ep-0001"].frames["overhead"]) == {7 * S}
+
+
+def test_reset_request_bounds_the_window_before_reset_motion():
+    """RST-2: frames between the client's reset request and the next goal
+    show the behavioral reset picking the med back OUT of the tray. The
+    stamped reset request ends the episode there, so neither the ended
+    episode nor the next one judges reset motion (issue #120)."""
+    router, finished = _router()
+    router.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router, 5 * S)
+    router.on_reset(5 * S + 300_000_000)  # stamped with the result's sim time
+    _frame(router, 5 * S + 600_000_000)  # reset motion: belongs to nobody
+    router.on_goal("ep-0001", "cetirizine", 6 * S)
+    _frame(router, 7 * S)
+    router.flush(8 * S)
+
+    by_id = {buf.goal_id: (buf, end) for buf, end, _ in finished}
+    buf0, end0 = by_id["ep-0000"]
+    assert end0 == 5 * S + 300_000_000
+    assert set(buf0.frames["overhead"]) == {5 * S}
+    assert set(by_id["ep-0001"][0].frames["overhead"]) == {7 * S}
+
+
+def test_expiry_verdict_waits_for_both_overhead_streams():
+    """A7 ends an episode on its own sim budget, but the verdict must still
+    wait for the lagging half of the overhead pair: the terminal judged
+    frame is the last COMPLETE pair at or before the budget (VER-9)."""
+    router, finished = _router(timeout_s=60.0)
+    router.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router, 55 * S)
+    router.on_frame("rgb_overhead", 59 * S, np.zeros((4, 4, 3), np.uint8))
+    # rgb passes the budget -> the episode closes, but depth still lags
+    router.on_frame("rgb_overhead", 61 * S, np.zeros((4, 4, 3), np.uint8))
+    assert finished == []
+    router.on_frame("depth_overhead", 59 * S, np.zeros((4, 4), np.float32))
+    assert finished == []
+    router.on_frame("depth_overhead", 61 * S, np.zeros((4, 4), np.float32))
+    assert [(buf.goal_id, end, failure) for buf, end, failure in finished] == [
+        ("ep-0000", 60 * S, "timeout")
+    ]
+    assert max(finished[0][0].frames["overhead"]) == 59 * S
+
+
+def test_flush_judges_closing_and_current_in_episode_order():
+    """Teardown judges everything still open, oldest first — the LAST
+    episode has no next goal, and losing it (or an unresolved closing one)
+    was 19 sidecar records for 20 episodes (issue #120)."""
+    router, finished = _router()
+    router.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router, 1 * S)
+    router.on_goal("ep-0001", "cetirizine", 6 * S)  # ep-0000 closing, unresolved
+    _frame(router, 7 * S)
+    router.flush(8 * S)
+
+    assert [buf.goal_id for buf, _, _ in finished] == ["ep-0000", "ep-0001"]
+    assert finished[1][1] == 8 * S  # the last episode ends at the last stamp
+
+
+def test_late_close_is_capped_at_the_sim_budget():
+    """A goal that arrives long after the previous episode's budget expired
+    (camera stall, extreme backlog) must not stretch its window past the
+    budget — the offline judge ends a timeout episode there too."""
+    router, finished = _router(timeout_s=60.0)
+    router.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router, 55 * S)
+    router.on_goal("ep-0001", "cetirizine", 70 * S)
+    _frame(router, 71 * S)
+    router.flush(72 * S)
+
+    by_id = {buf.goal_id: (end, failure) for buf, end, failure in finished}
+    assert by_id["ep-0000"] == (60 * S, "timeout")
+
+
+def test_dead_gating_stream_does_not_block_verdicts_forever():
+    """Liveness (PR review): if one overhead stream dies, its high-water
+    freezes and no episode would ever be judged — in A7 the client then
+    hangs until the wall clamp. Once the sibling stream runs well past the
+    end, the episode is judged with the pairs it has."""
+    router, finished = _router()
+    router.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router, 3 * S)
+    router.on_goal("ep-0001", "cetirizine", 6 * S)
+    # depth dies; rgb alone keeps flowing past end + slack (5 s)
+    for stamp in (7 * S, 9 * S, 12 * S):
+        router.on_frame("rgb_overhead", stamp, np.zeros((4, 4, 3), np.uint8))
+    assert [buf.goal_id for buf, _, _ in finished] == ["ep-0000"]
+    assert max(finished[0][0].frames["overhead"]) == 3 * S  # last complete pair
+
+
+def test_undecodable_frame_still_advances_the_clocks():
+    """PR review: a camera payload that fails to decode must still advance
+    the sim-budget expiry and the arrival proof — an undecodable stream
+    would otherwise stall the loop forever (the old code checked expiry on
+    every camera event, decoded or not)."""
+    router, finished = _router(timeout_s=60.0)
+    router.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router, 55 * S)
+    # payloads stop decoding, but their stamps keep arriving
+    router.on_frame("rgb_overhead", 61 * S, None)
+    router.on_frame("depth_overhead", 61 * S, None)
+    assert [(buf.goal_id, end, failure) for buf, end, failure in finished] == [
+        ("ep-0000", 60 * S, "timeout")
+    ]
+    assert max(finished[0][0].frames["overhead"]) == 55 * S
+
+
+def test_first_episode_start_accepts_a_zero_reset_stamp():
+    """PR review: under ADR-25 the first reset lands at sim 0, so the goal's
+    reset_sim_ns is legitimately 0 — presence decides, not truthiness, or
+    episode 0's window opens at the node's stale clock instead."""
+    from aisle.nodes.verifier_realistic import goal_start_ns
+
+    assert goal_start_ns({"reset_sim_ns": 0}, fallback_ns=4 * S) == 0
+    assert goal_start_ns({"reset_sim_ns": 6 * S}, fallback_ns=4 * S) == 6 * S
+    assert goal_start_ns({}, fallback_ns=4 * S) == 4 * S  # pre-field goals
+
+
+def test_joints_route_to_the_episode_their_stamp_belongs_to():
+    """VER-8/VER-12: the ended episode's terminal joints (home stage) must
+    come from ITS window, not from whatever arrived while the node was
+    processing the backlog."""
+    router, finished = _router()
+    router.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router, 5 * S)
+    router.on_goal("ep-0001", "cetirizine", 6 * S)
+    router.on_joints(5 * S + 100_000_000, np.ones(9))  # late, old episode's
+    router.on_joints(7 * S, np.zeros(9))  # new episode's
+    router.flush(8 * S)
+
+    by_id = {buf.goal_id: buf for buf, _, _ in finished}
+    assert by_id["ep-0000"].joints[0] == 5 * S + 100_000_000
+    assert by_id["ep-0001"].joints[0] == 7 * S
+
+
 def test_result_uses_the_oracle_schema_with_a_realistic_tag():
     """TC-7 unchanged: same field names, so the rollout runner and
     `harness/fidelity.py` need no special case (VER-5)."""
@@ -189,10 +386,21 @@ def test_sidecar_node_never_subscribes_to_oracle_state(tmp_path):
 
     assert "oracle_state" not in node["inputs"]
     assert not any("oracle" in src["source"] for src in node["inputs"].values())
-    # and it must actually receive what it needs to judge
-    assert {"bridge_info", "episode_goal", "joint_state", "rgb_overhead", "depth_overhead"} <= set(
-        node["inputs"]
-    )
+    # and it must actually receive what it needs to judge — including the
+    # client's reset request, the episode-end bound (issue #120)
+    assert {
+        "bridge_info",
+        "episode_goal",
+        "reset",
+        "joint_state",
+        "rgb_overhead",
+        "depth_overhead",
+    } <= set(node["inputs"])
+    assert node["inputs"]["reset"]["source"] == "rollout-client/reset"
+    # the router's arrival proof only holds if camera queues never drop
+    # during a 3-5 s judge (issue #120): 100 deep was ~3.3 s at 30 Hz
+    for stream in ("rgb_overhead", "depth_overhead", "rgb_wrist"):
+        assert node["inputs"][stream]["queue_size"] >= 400, stream
 
 
 def test_sidecar_node_is_absent_unless_asked_for():

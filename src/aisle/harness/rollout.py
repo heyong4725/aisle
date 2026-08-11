@@ -424,18 +424,20 @@ def run_gates(
 
 
 def realistic_verifier_node(root: Path, run_dir: Path, doc: dict, timeout_s: float) -> dict:
-    """The VER-5 judge as a SIDECAR node (increment 1b, `--verifier both`).
+    """The VER-5 judge as a live node (increment 1b).
 
-    It publishes its own `episode_result` but nothing consumes it: the
-    rollout client advances on the ORACLE's result, and a second producer
-    on that edge would step its state machine twice per episode. What the
-    comparison actually needs is the VER-14 sidecar, which `judge_frames`
-    writes to the run dir — so `harness/fidelity.py` gets a LIVE number
-    without perturbing the loop's control flow.
+    In `--verifier both` it is a SIDECAR: nothing consumes its
+    `episode_result` (the loop advances on the oracle's), and what the
+    comparison needs is the VER-14 sidecar `judge_frames` writes to the run
+    dir. In `--verifier realistic` (A7) the caller rewires the loop's
+    consumers onto this node's verdict.
 
-    ORACLE-FREE: subscribes to camera frames, joint_state, bridge_info and
-    episode_goal only. `oracle_state` is deliberately absent, and a test
-    asserts that — A7's whole premise is that this verdict never saw it."""
+    ORACLE-FREE: subscribes to camera frames, joint_state, bridge_info,
+    episode_goal, and the client's own `reset` request — never
+    `oracle_state`, and a test asserts that; A7's whole premise is that
+    this verdict never saw privileged state. The reset request carries
+    only episode-boundary TIMING (which the next goal encodes anyway),
+    no verdict content (issue #120)."""
     producers = {
         topic: f"{node['id']}/{topic}"
         for node in doc["nodes"]
@@ -444,6 +446,12 @@ def realistic_verifier_node(root: Path, run_dir: Path, doc: dict, timeout_s: flo
     wanted = (
         "bridge_info",
         "episode_goal",
+        # the client's reset REQUEST ends the running episode before any
+        # RST-2 reset motion enters the frame window (issue #120) — the
+        # client's own action signal, not the oracle's verdict, so the
+        # oracle-free premise holds (episode_goal timing already encodes
+        # the same episode boundary)
+        "reset",
         "joint_state",
         "rgb_overhead",
         "depth_overhead",
@@ -456,11 +464,23 @@ def realistic_verifier_node(root: Path, run_dir: Path, doc: dict, timeout_s: flo
         # reasoning graphs/expert_t0.yaml gives for the executor. With a deep
         # queue the node reads STALE poses after falling behind during a
         # judge, and a wrist ROI composed from one describes a different arm
-        # than the pixels show (VER-8).
+        # than the pixels show (VER-8). CAMERA queues must survive a 3-5 s
+        # judge WITHOUT dropping (issue #120): the router's arrival proof
+        # (a later stamp means no earlier frames remain on that stream)
+        # only holds if the queue never overflows, and 100 deep is ~3.3 s
+        # at 30 Hz. 400 covers two back-to-back judges; the transient cost
+        # is bounded (~400 MB across the three streams at 640x480) and the
+        # queues sit near-empty outside judge windows.
         "inputs": {
             topic: {
                 "source": producers[topic],
-                "queue_size": 1 if topic == "joint_state" else 100,
+                "queue_size": (
+                    1
+                    if topic == "joint_state"
+                    else 400
+                    if topic in ("rgb_overhead", "depth_overhead", "rgb_wrist")
+                    else 100
+                ),
             }
             for topic in wanted
             if topic in producers
