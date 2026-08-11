@@ -3,7 +3,7 @@ recorder subscription (TC-9): an L1 run's trace cannot carry the
 NON-privileged ground-truth pose endpoint (`poses`), rather than relying on
 the bridge's runtime restraint alone. `oracle_state` is deliberately still
 recorded at every rung — it is the verifier's privileged input, governed by
-VAL-6/ADR-27, not by the rung (round-2 review: the earlier docstring's
+VAL-6/ADR-28, not by the rung (round-2 review: the earlier docstring's
 "physically unable to contain ground-truth pose" overclaimed)."""
 
 from pathlib import Path

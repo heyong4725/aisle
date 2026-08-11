@@ -1,5 +1,7 @@
 # ADR-5: consolidated interpretations from the T03 audit (CON-15)
 
+Status: ACCEPTED (owner-ratified 2026-08-03)
+
 Genuine ambiguities surfaced by the T03 audit and the T02 retroactive
 review, resolved as follows (defects found alongside were fixed in code, not
 recorded here):

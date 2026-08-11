@@ -1,5 +1,7 @@
 # ADR-4: validator interpretations for T03 (SPEC 060)
 
+Status: ACCEPTED; amended by ADR-5's ratified safety-class boundary.
+
 Interpretations chosen (CON-15) where SPEC 060 is ambiguous or blocked:
 (1) VAL-7's good corpus ships three valid graphs now; `graphs/expert_t0.yaml`
 joins at T08 — it does not exist yet and its oracle rung is blocked on the

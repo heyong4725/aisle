@@ -1,5 +1,7 @@
 # ADR-3: sim-driver evalcards are pending until M0 (CAP-6 interpretation)
 
+Status: SUPERSEDED by ADR-10 amendment (10); the temporary carve-out was retired.
+
 CAP-6 says eval may be null only while origin=hub and safety_class!=motion,
 with the exception that "the two sim drivers ship with M0 evalcards generated
 from TC-A1..A3 runs". At T02 those acceptance runs do not exist yet (bridge

@@ -16,6 +16,7 @@ documented fallback.
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tomllib
@@ -213,7 +214,12 @@ def _adr_inventory(root: Path, tracked: set[str] | None) -> list[dict]:
         )
         if title is None:
             raise ValueError(f"{path}: ADR has no level-one heading")
-        status = "not declared"
+        match = re.match(r"^(ADR-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)(?::|\s+[—-]\s+)", title)
+        if match is None:
+            raise ValueError(f"{path}: ADR heading has no parseable identity")
+        identity = match.group(1)
+
+        status = None
         for line in lines:
             if line.startswith("Status:"):
                 # the LITERAL first Status: line, as the rendered legend
@@ -221,7 +227,26 @@ def _adr_inventory(root: Path, tracked: set[str] | None) -> list[dict]:
                 # bullet lists that the table claimed were the status
                 status = line.removeprefix("Status:").strip()
                 break
-        rows.append({"path": path, "title": title, "status": status})
+        rows.append({"path": path, "identity": identity, "title": title, "status": status})
+
+    identities: dict[str, Path] = {}
+    for row in rows:
+        path, identity = row["path"], row["identity"]
+        if identity in identities:
+            raise ValueError(
+                f"{path}: duplicate ADR identity {identity}; first declared by "
+                f"{identities[identity]}"
+            )
+        identities[identity] = path
+
+    for row in rows:
+        path, identity, status = row["path"], row["identity"], row["status"]
+        if not status:
+            raise ValueError(f"{path}: ADR has no declared Status")
+        if path.stem != identity:
+            raise ValueError(
+                f"{path}: filename identity {path.stem} does not match heading {identity}"
+            )
     return rows
 
 
@@ -342,8 +367,9 @@ def render_inventory(root: Path) -> tuple[str, dict[str, int]]:
             "",
             "## Architecture decision records",
             "",
-            "Status is the literal first `Status:` line when present; `not declared` is not",
-            "an inferred decision state.",
+            "Every ADR is validated to have a unique identity matching its filename and a",
+            "declared `Status:`. The table renders the literal first status line without",
+            "inference.",
             "",
             "| ADR | Title | Declared status |",
             "|---|---|---|",
