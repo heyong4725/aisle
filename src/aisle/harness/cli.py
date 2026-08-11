@@ -4,6 +4,7 @@ validate (SPEC 060), rollout (HAR-1..5), traces (HAR-6), report (HAR-7)."""
 import argparse
 import datetime
 import json
+import os
 import subprocess
 import sys
 import uuid
@@ -75,9 +76,10 @@ def build_parser() -> argparse.ArgumentParser:
     roll.add_argument("--run-id", default=None, help="override the generated run id (CON-5)")
     roll.add_argument(
         "--env-baseline",
-        default="origin/main",
-        help="git ref for the TRUSTED frozen-set baseline (ADR-21); "
-        "'local' is the logged dev override (humans only)",
+        default=os.environ.get("AISLE_ENV_BASELINE", "origin/main"),
+        help="TRUSTED frozen-set baseline: protected server main or a "
+        "campaign-pinned main-history OID (ADR-21); 'local' is the logged "
+        "dev override (humans only)",
     )
     roll.add_argument("--timeout-s", type=float, default=None)
 

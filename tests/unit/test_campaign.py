@@ -224,7 +224,7 @@ def test_campaign_metrics_records_provenance_and_pins_first_success(tmp_path):
         t0 + 500,
         success,
         git_sha="PIN",
-        env_baseline="origin/main",
+        env_baseline="PIN",
         env_baseline_oid="PIN",
         env_attested=True,
     )
@@ -249,6 +249,22 @@ def test_campaign_metrics_records_provenance_and_pins_first_success(tmp_path):
         env_attested=True,
     )
     assert campaign_metrics(drifted, session_t0=t0, pin="PIN")["first_success_wall_s"] is None
+
+    # Issue #91: even when main still resolves to the pin, a new
+    # campaign metric is admissible only when the selector itself is
+    # pinned; this makes an accidental moving default machine-visible.
+    moving = tmp_path / "moving"
+    _write_provenanced_run(
+        moving,
+        "trusted-but-moving",
+        t0 + 25,
+        success,
+        git_sha="PIN",
+        env_baseline="origin/main",
+        env_baseline_oid="PIN",
+        env_attested=True,
+    )
+    assert campaign_metrics(moving, session_t0=t0, pin="PIN")["first_success_wall_s"] is None
 
 
 def test_score_holdout_no_deliverable_is_structured(tmp_path):
@@ -604,17 +620,20 @@ def test_isolated_session_env_points_home_at_scratch(tmp_path):
     import campaign as c
 
     before_home = os.environ.get("HOME")
-    env, rec = c.isolated_session_env(tmp_path / "out")
+    pin = "a" * 40
+    env, rec = c.isolated_session_env(tmp_path / "out", env_baseline_oid=pin)
     assert env["HOME"] == str(tmp_path / "out" / "agent_home")
     assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path / "out" / "agent_home" / ".claude")
     assert Path(env["CLAUDE_CONFIG_DIR"]).is_dir()  # created, empty
     assert not any(Path(env["CLAUDE_CONFIG_DIR"]).iterdir())
+    assert env["AISLE_ENV_BASELINE"] == pin
     assert os.environ.get("HOME") == before_home  # parent untouched
     assert rec == {
         "home": env["HOME"],
         "claude_config_dir": env["CLAUDE_CONFIG_DIR"],
         "codex_home": env["CODEX_HOME"],
         "xdg_rebound": True,
+        "env_baseline_oid": pin,
     }
 
 
