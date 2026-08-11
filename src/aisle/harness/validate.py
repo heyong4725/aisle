@@ -540,7 +540,7 @@ def validate_nodes(
 
 
 def graph_perception_rung(nodes: list, manifests: dict) -> tuple[str, list[str], list[dict]]:
-    """The graph's perception rung (TC-9), its sim-bridge ids, and read errors.
+    """The graph's perception rung, sim-bridge ids, and VAL-8 errors (TC-9).
 
     The rung rides the GRAPH so the graph hash attests which pose source a
     result used — the same reasoning as ADR-25's bring-up scrub and ADR-11
@@ -557,10 +557,10 @@ def graph_perception_rung(nodes: list, manifests: dict) -> tuple[str, list[str],
       wiring ground-truth `poses` validated ok=true, exit 0. The bridge
       normalizes with .strip().upper() and REFUSES an unknown rung, so the
       un-stripped read also disagreed with the runtime about the same text.
-    * two nodes declaring DIFFERENT rungs. Node order in a dataflow YAML is
-      arbitrary, so first-wins let an L0 declaration sitting above the
-      bridge's L1 downgrade the whole graph. An ambiguous attestation is not
-      a thing to resolve by position; it is a thing to reject.
+    * two bridge processes with DIFFERENT effective rungs. Node order in a
+      dataflow YAML is arbitrary, and an omitted key defaults that bridge to
+      L0 at runtime, so neither first-wins nor applying one explicit value
+      graph-wide describes what the processes actually run.
     """
     errors: list[dict] = []
     declared = {}
@@ -611,15 +611,22 @@ def graph_perception_rung(nodes: list, manifests: dict) -> tuple[str, list[str],
                 "unrecognized rung would forbid nothing and silently pass the check",
             )
         )
-    distinct = sorted(set(declared.values()))
+    # Every bridge has an EFFECTIVE runtime rung: an omitted key is L0, not a
+    # vote of abstention. This matters for the future multi-bridge case — one
+    # explicit L1 bridge plus one omitted/default-L0 bridge runs two different
+    # contracts and cannot be represented by one graph-level attestation.
+    effective = {bridge_id: declared.get(bridge_id, "L0") for bridge_id in bridge_ids}
+    distinct = sorted(set(effective.values()))
     if len(distinct) > 1:
         errors.append(
             _entry(
                 "PERCEPTION_RUNG_VIOLATION",
-                {"node": sorted(declared)[0]},
-                f"conflicting perception rungs {distinct} declared by {sorted(declared)} (VAL-8)",
-                "declare AISLE_PERCEPTION once, on the sim-bridge node — node order "
-                "in the YAML is arbitrary, so a graph with two rungs attests neither",
+                {"node": sorted(effective)[0]},
+                f"conflicting perception rungs {distinct} across sim bridges "
+                f"{sorted(effective)} (VAL-8)",
+                "declare the same AISLE_PERCEPTION on every sim-bridge node — an "
+                "omitted key defaults that process to L0, and a graph with two "
+                "effective rungs attests neither",
             )
         )
     # on any bad declaration, enforce the STRICTEST rung the table has rather
@@ -629,7 +636,28 @@ def graph_perception_rung(nodes: list, manifests: dict) -> tuple[str, list[str],
     if errors:
         strictest = max(FORBIDDEN_BY_RUNG, key=lambda r: len(FORBIDDEN_BY_RUNG[r]))
         return strictest, bridge_ids, errors
-    return (distinct[0] if distinct else "L0"), bridge_ids, errors
+    rung = distinct[0] if distinct else "L0"
+    graph_nodes = {node["id"]: node for node in nodes}
+    for bridge_id in bridge_ids:
+        bridge_env = graph_nodes[bridge_id].get("env") or {}
+        scene = bridge_env.get("AISLE_SCENE", "pharmacy")
+        # Env values are not structurally restricted to strings. Do not let a
+        # malformed list/map turn this CON-8 JSON diagnostic into a TypeError;
+        # the bridge only recognizes the exact string ``store`` too.
+        scene_key = scene if isinstance(scene, str) else ""
+        if rung in UNSUPPORTED_RUNGS_BY_SCENE.get(scene_key, ()):
+            errors.append(
+                _entry(
+                    "PERCEPTION_RUNG_VIOLATION",
+                    {"node": bridge_id},
+                    f"perception rung {rung} is not supported for AISLE_SCENE={scene!r} "
+                    f"on bridge {bridge_id!r} (VAL-8)",
+                    "use AISLE_PERCEPTION=L0 for the store's supported pose path, or "
+                    "teach the estimated-pose consumer to query the store namespace "
+                    "before selecting L1/L2",
+                )
+            )
+    return rung, bridge_ids, errors
 
 
 FORBIDDEN_BY_RUNG = {
@@ -639,6 +667,13 @@ FORBIDDEN_BY_RUNG = {
     "L1": ("poses",),
     "L2": ("poses", "seg_overhead"),
 }
+
+# Issue #130: the bridge already refuses these combinations at config time.
+# Keep the same compatibility gate in validation so an author gets an
+# actionable error before paying for Genesis startup and a zero-episode run.
+# L1's id-map query and L2's detector vocabulary currently use desk med names;
+# store graspables use item ids such as ``slot#2`` and ``bin#category``.
+UNSUPPORTED_RUNGS_BY_SCENE = {"store": ("L1", "L2")}
 
 # VAL-2/VAL-3: a hint MUST NOT name an alternative that fails the NEXT
 # compile. The L1 remedy is segmentation + depth, but seg_overhead is itself

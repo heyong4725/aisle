@@ -1,0 +1,13 @@
+# VAL-7/VAL-8 (issue #130): the bridge refuses estimated-pose rungs for the
+# store scene because its item-id namespace cannot be queried by the desk
+# estimators. The validator must reject this before Genesis startup.
+nodes:
+- id: dora-genesis
+  env:
+    AISLE_SCENE: store
+    AISLE_PERCEPTION: L1
+  outputs:
+  - bridge_info
+  - rgb_overhead
+  - depth_overhead
+  - seg_overhead
