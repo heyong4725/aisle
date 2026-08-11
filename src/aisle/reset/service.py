@@ -15,11 +15,6 @@ import sys
 
 import numpy as np
 
-from aisle.reset.behavioral import (
-    BehavioralReset,
-    behavioral_reply_metadata,
-    no_motion_available,
-)
 from aisle.topics import stamp
 
 TELEPORT, BEHAVIORAL = 0, 1
@@ -51,12 +46,51 @@ def refusal_reply_metadata(request_meta: dict, payload: np.ndarray, error: str) 
 
 
 def main() -> None:
+    import json
+
     import pyarrow as pa
     from dora import Node
 
     node = Node()
     seq_reply = 0
     seq_forward = 0
+    seq_cmd = 0
+    runtime = None  # BehavioralRuntime, built lazily on first behavioral request
+    latest_sim_ns = 0
+
+    def get_runtime():
+        nonlocal runtime
+        if runtime is None:
+            from aisle.reset.runtime import BehavioralRuntime
+            from aisle.scenes.pharmacy import load_meds, load_physics, resolve_layout
+            from aisle.verifier.models import load_pinned
+
+            physics = load_physics()
+            runtime = BehavioralRuntime(
+                layout=resolve_layout(physics, "franka"),
+                meds=load_meds(),
+                home_q=np.asarray(physics["embodiment"]["franka"]["home_qpos"], dtype=np.float32),
+                model_pair=load_pinned("identity"),
+            )
+        return runtime
+
+    def fallback_teleport(seed: int, request_meta: dict, attempts: int) -> None:
+        nonlocal seq_forward
+        from aisle.reset.behavioral import BehavioralOutcome, behavioral_reply_metadata
+
+        forward_meta = dict(request_meta)
+        forward_meta.update(
+            behavioral_reply_metadata(
+                request_meta, BehavioralOutcome(fallback=True, attempts=attempts)
+            )
+        )
+        seq_forward += 1
+        node.send_output(
+            "bridge_reset",
+            pa.array(np.array([seed, TELEPORT], dtype=np.uint32)),
+            stamp(forward_meta, seq_forward),
+        )
+
     for event in node:
         if event["type"] != "INPUT":
             continue
@@ -87,30 +121,84 @@ def main() -> None:
                     stamp(refusal_reply_metadata(metadata, payload, str(refusal)), seq_reply),
                 )
                 continue
-            forward_meta = dict(metadata)
-            forward_payload = payload
             if route == "behavioral":
-                # RST-2: run the attempt loop; on success the box is back
-                # on the shelf (no state injection needed — the bridge
-                # teleport is SKIPPED in the motion PR); until the motion
-                # lands, attempts exhaust and the reply carries the
-                # fallback audit trail while the teleport restores state
-                outcome = BehavioralReset(attempt=no_motion_available).run()
-                print(
-                    f"behavioral reset: attempts {outcome.attempts}, fallback {outcome.fallback}",
-                    file=sys.stderr,
-                )
-                forward_meta.update(behavioral_reply_metadata(metadata, outcome))
-                # the bridge owns state injection (BRG-4): the fallback
-                # teleports with the requested seed, mode forced teleport
-                forward_payload = np.array([payload[0], TELEPORT], dtype=np.uint32)
+                # RST-2: start the attempt runtime; commands stream on
+                # joint_state events through the guard; the outcome
+                # settles asynchronously (success replies directly,
+                # exhaustion falls back to teleport — never hangs:
+                # every stage has a bounded bail and every attempt a
+                # bounded budget)
+                rt = get_runtime()
+                rt.start(int(payload[0]), metadata)
+                if rt.outcome == "exhausted":  # unplannable from the start
+                    print("behavioral reset: unplannable, fallback", file=sys.stderr)
+                    fallback_teleport(int(payload[0]), metadata, rt.attempts)
+                continue
             seq_forward += 1
-            node.send_output(
-                "bridge_reset", pa.array(forward_payload), stamp(forward_meta, seq_forward)
-            )
+            node.send_output("bridge_reset", pa.array(payload), stamp(dict(metadata), seq_forward))
         elif event["id"] == "reset_done":
             seq_reply += 1
             node.send_output("reset_done", event["value"], stamp(metadata, seq_reply))
+        elif event["id"] == "bridge_info":
+            # builds the runtime early so the model load (~2 s) never
+            # lands inside a reset request
+            get_runtime().on_bridge_info(json.loads(event["value"][0].as_py()))
+        elif event["id"] == "rgb_overhead":
+            h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
+            if runtime is not None and h > 0 and w > 0:
+                frame = np.asarray(event["value"].to_numpy(zero_copy_only=False))
+                runtime.on_rgb(frame.astype(np.uint8).reshape(h, w, 3))
+        elif event["id"] == "depth_overhead":
+            h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
+            if runtime is not None and h > 0 and w > 0:
+                frame = np.asarray(event["value"].to_numpy(zero_copy_only=False))
+                runtime.on_depth(frame.astype(np.float32).reshape(h, w))
+        elif event["id"] == "joint_state":
+            latest_sim_ns = int(metadata.get("sim_time_ns", latest_sim_ns))
+            if runtime is None or not runtime.active:
+                continue
+            qpos = np.asarray(
+                event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
+            ).reshape(-1)
+            cmd, grip = runtime.on_joint_state(qpos)
+            if grip is not None:
+                seq_cmd += 1
+                node.send_output(
+                    "reset_gripper_cmd",
+                    pa.array(np.array([grip], dtype=np.float32)),
+                    stamp(dict(metadata), seq_cmd),
+                )
+            if cmd is not None:
+                seq_cmd += 1
+                node.send_output("reset_joint_cmd", pa.array(cmd), stamp(dict(metadata), seq_cmd))
+            if runtime.outcome == "success":
+                # the box is verified back on the shelf: reply directly,
+                # no state injection (BRG-4 untouched). The reply's
+                # sim_time_ns is post-motion so the verifier's episode
+                # baseline can never predate the reset (BRG-4 parity)
+                from aisle.reset.behavioral import BehavioralOutcome, behavioral_reply_metadata
+
+                reply = behavioral_reply_metadata(
+                    runtime.request_meta,
+                    BehavioralOutcome(fallback=False, attempts=runtime.attempts),
+                )
+                reply["sim_time_ns"] = latest_sim_ns
+                print(
+                    f"behavioral reset: success in {runtime.attempts} attempt(s)",
+                    file=sys.stderr,
+                )
+                seq_reply += 1
+                node.send_output(
+                    "reset_done", pa.array(np.array([1], dtype=np.uint32)), stamp(reply, seq_reply)
+                )
+                runtime.outcome = None
+            elif runtime.outcome == "exhausted":
+                print(
+                    f"behavioral reset: exhausted after {runtime.attempts}, fallback",
+                    file=sys.stderr,
+                )
+                fallback_teleport(runtime.seed, runtime.request_meta, runtime.attempts)
+                runtime.outcome = None
 
 
 if __name__ == "__main__":

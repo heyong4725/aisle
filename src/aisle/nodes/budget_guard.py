@@ -477,7 +477,10 @@ def main(clock=None) -> None:
             continue
         metadata = event.get("metadata") or {}
         now = clock()
-        if event["id"] == "joint_cmd":
+        if event["id"] in ("joint_cmd", "reset_joint_cmd"):
+            # reset_joint_cmd: the behavioral reset's motion (RST-2)
+            # rides the SAME clamp path — the reset has no private
+            # channel to the arm (VAL-5)
             env_id = parse_env_id(metadata)
             state = envs.setdefault(env_id, new_state())
             timed_out = state["timer"].timed_out(now, limits.wall_timeout_s)
@@ -587,7 +590,7 @@ def main(clock=None) -> None:
             state["last_base_safe"] = safe_b
             send("base_cmd_safe", pa.array(np.asarray(safe_b, dtype=np.float32)), metadata)
             publish_violations(violations, metadata)
-        elif event["id"] == "gripper_cmd":
+        elif event["id"] in ("gripper_cmd", "reset_gripper_cmd"):
             env_id = parse_env_id(metadata)
             state = envs.setdefault(env_id, new_state())
             timed_out = state["timer"].timed_out(now, limits.wall_timeout_s)
