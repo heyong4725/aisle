@@ -1,5 +1,5 @@
-"""L2 perception (TC-9's top rung): pose from DETECTION on rendered rgb —
-no ground truth of any kind reaches the graph.
+"""L2 perception (TC-9's top rung): identity from rendered RGB plus ordinary
+same-stamp sensor depth; no simulator pose or segmentation ground truth.
 
 The identity-safety rules are measured under the IMPLEMENTED rival rule
 (PR #139 round-2 re-measurement; the first cut's any-overlap rule was a
@@ -86,6 +86,47 @@ def test_clean_detection_yields_the_box_centre():
     assert out["pos"][2] == pytest.approx(TOP_Z - BOX_H / 2)
     assert out["detection"]["score"] == 0.5
     assert out["target_med"] == "ibuprofen"
+
+
+def test_l2_rgb_identity_uses_same_stamp_sensor_depth_only_for_metric_pose():
+    """TC-9 / issue #143: L2 class identity is derived from rendered RGB,
+    while ordinary same-stamp camera depth MAY supply metric geometry. The
+    detector receives only the RGB image; changing the paired depth changes
+    reconstructed Z without becoming an identity input."""
+    seen_rgb = []
+
+    def detector(rgb):
+        seen_rgb.append(rgb.copy())
+        return [{"label": "ibuprofen", "score": 0.5, "box": [10, 20, 60, 65]}]
+
+    session = L2Session(
+        meds={"ibuprofen": {"size": [0.05, 0.045, BOX_H]}},
+        detector=detector,
+        backprojector=lambda calibration: _flat_backproject,
+        retry_gap_ns=0,
+    )
+    session.on_bridge_info({"calibration": {}})
+    session.on_target_request({"target_med": "ibuprofen"})
+
+    rgb, depth = _scene()
+    metric_top_z = 0.72
+    depth[20:65, 10:60] = metric_top_z
+    assert session.on_depth(123, depth) is None
+    out = session.on_rgb(123, rgb)
+
+    assert len(seen_rgb) == 1 and np.array_equal(seen_rgb[0], rgb)
+    assert out["pos"][2] == pytest.approx(metric_top_z - BOX_H / 2)
+
+    session.on_target_request({"target_med": "ibuprofen"})
+    shallower_depth = depth.copy()
+    shallower_top_z = 0.61
+    shallower_depth[20:65, 10:60] = shallower_top_z
+    assert session.on_depth(124, shallower_depth) is None
+    shallower_out = session.on_rgb(124, rgb)
+
+    assert len(seen_rgb) == 2 and np.array_equal(seen_rgb[1], rgb)
+    assert shallower_out["pos"][2] == pytest.approx(shallower_top_z - BOX_H / 2)
+    assert shallower_out["pos"][2] != pytest.approx(out["pos"][2])
 
 
 def test_a_rival_at_the_picks_centre_with_higher_score_is_refused():

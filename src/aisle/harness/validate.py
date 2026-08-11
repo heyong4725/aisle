@@ -647,7 +647,10 @@ FORBIDDEN_BY_RUNG = {
 # PERCEPTION_RUNG_VIOLATION. The remedy is per-rung for that reason.
 RUNG_REMEDY = {
     "L1": "estimate pose from seg_overhead + depth_overhead",
-    "L2": "estimate pose from rgb_overhead/rgb_wrist alone — L2 forbids segmentation too",
+    "L2": (
+        "derive identity from rgb_overhead/rgb_wrist; depth_overhead may supply "
+        "same-stamp metric geometry — L2 forbids semantic segmentation"
+    ),
 }
 
 

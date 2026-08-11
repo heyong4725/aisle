@@ -515,9 +515,9 @@ def test_store_scene_refuses_the_l1_rung():
     require_supported_perception(
         BridgeConfig(seed=0, embodiment="mobile", n_envs=1, scene="store", perception="L0")
     )
-    # L2 is SERVED since detected-pose landed (idea I7): the desk scene at
-    # L2 must pass — the old deferral's premise ("no estimator consumes rgb
-    # alone") is obsolete there. The STORE at L2 stays refused for the same
+    # L2 is SERVED since detected-pose landed (idea I7): RGB alone supplies
+    # identity and same-stamp sensor depth supplies metric geometry. The desk
+    # scene must pass. The STORE at L2 stays refused for the same
     # namespace reason as store+L1: the detector vocabulary is the desk med
     # list, so every estimate would refuse.
     require_supported_perception(
