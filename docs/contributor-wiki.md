@@ -18,8 +18,10 @@ CLI, and ADR catalogs are maintained in the source-derived
 for drift in CI. Tests appear there as suite directories and configured
 markers only, not as a module-by-module catalog: enumerating every module made
 two independently-green PRs merge, without conflict, into a main whose
-appendix was already stale. For per-module truth run `pytest --collect-only`;
-for requirement coverage run [`tools/trace_check.py`](../tools/trace_check.py).
+appendix was already stale. The JSON from `uv run python
+tools/docs_inventory.py --check` reports the current tracked module count;
+`uv run pytest --collect-only` reports collected test cases. For requirement
+coverage run [`tools/trace_check.py`](../tools/trace_check.py) through `uv`.
 
 ## 1. Read this first
 
@@ -144,7 +146,7 @@ This table is more useful than a single “done/not done” label.
 | Capability registry/validator | Implemented | Installability checks exist; some hub capabilities remain unavailable locally. |
 | Rollout/evidence harness | Implemented | Includes budgets, attestation, tracing, reaping, sidecars, and run manifests. |
 | Skill registration/hot swap | Implemented | H4 measured only at T0; wider claims remain open. |
-| S1–S3 retail infrastructure | Implemented | S1 runtime has observed scheduling nondeterminism; research conclusions are cautious. |
+| S1–S3 retail infrastructure | Implemented | Reset-anchored startup is fixed; full-episode outcomes are statistical, while wall-coupled timing remains an issue #71 residual. |
 | Franka embodiment | Implemented | Main desk arm. |
 | SO-101 embodiment | Implemented | Official 5+1 joint model and shared contract. |
 | Mobile base + Franka | Implemented | Kinematic/waypoint navigation, not SLAM. |
@@ -839,9 +841,13 @@ argparse carve-out.
 | `graph` | Launches a dora dataflow | Wiring, guard, lifecycle, runtime behavior. |
 | `accept` | Requirement-citing acceptance | Spec gates and release confidence. |
 
-The repository currently contains about 70 test modules and extensive validator
-goldens/adversarial cases. Test count is less important than the requirement-ID
-traceability checked by [`tools/trace_check.py`](../tools/trace_check.py).
+The repository carries extensive validator goldens and adversarial cases across
+these suites. Module counts are deliberately not quoted here — read the
+`test_modules` field from `uv run python tools/docs_inventory.py --check` when
+the current tracked count matters, or run `uv run pytest --collect-only` for
+the collected test cases. What matters more is the requirement-ID traceability checked by
+[`tools/trace_check.py`](../tools/trace_check.py), which fails CI when a MUST
+has no citing test.
 
 ### 13.2 Required development loop
 
@@ -936,15 +942,15 @@ protocols and limitations.
 
 | Study | Current result | Evidence |
 |---|---|---|
-| M0 expert baseline | T0 expert passed 49/50 (0.98) with deterministic replicate at the milestone protocol. | [`ADR-M0`](decisions/ADR-M0.md) |
+| M0 expert baseline | T0 expert passed 49/50 (0.98); the milestone replicate independently re-satisfied the acceptance gate. | [`ADR-M0`](decisions/ADR-M0.md) |
 | H1 zero-shot composition | 40/40 first validation, but launch+valid only 15% and 65% by agent arm; target not met. Missing external capabilities dominated. | [`h1_findings.md`](../analysis/h1/h1_findings.md) |
 | H2 iterative improvement | Both independent arms met the ≥0.9 supported-performance target; held-out 1.0 and 0.875. | [`h2_findings.md`](../analysis/h2/h2_findings.md) |
 | H3 skill accumulation | Verdict pending/undecidable: no admissible library cell survived the full drift audit. | [`h3_findings.md`](../analysis/h3/h3_findings.md) |
 | H4 iteration latency | T0 hot swap median 32.4 s vs relaunch 41.8 s, n=6 each; development evidence is explicitly unattested. | [`h4_findings.md`](../analysis/h4/h4_findings.md) |
 | H5 delivery precision | No delivery-class held-out failures in selected committed H3 records; placement failures remain and exposure is limited. | H3 finding section above |
 | A1 composition ablation | Zero-shot composition has a large end-to-end T1 tax; iterative agents close it. S1 comparison is inconclusive. | [`a1_table.md`](../analysis/a1/a1_table.md) |
-| S1 determinism | Back-to-back same-recorded-tuple runs diverged; scheduler/backpressure/startup ordering is the lead candidate. | [`s1-determinism/findings.md`](../analysis/s1-determinism/findings.md) |
-| Realistic verifier fidelity | 31-episode agreement 0.29; 0/6 false success, 22/25 false fail. Conservative but not operationally useful as sole judge. | [`ver6-fidelity/README.md`](../analysis/ver6-fidelity/README.md) |
+| S1 reproducibility | ADR-25 fixed the startup race; ADR-26 makes full-episode outcomes statistical. Wall-coupled command/control timing remains an issue #71 residual. | [`ADR-25`](decisions/ADR-25.md), [`ADR-26`](decisions/ADR-26.md) |
+| Realistic verifier fidelity | Current VER-13 recomputation over the same 31 episodes: agreement 0.45, 0/6 false success, 17/25 false fail. The preserved pre-amendment finding was 0.29 / 0 / 0.88. Still conservative and not operationally useful as sole judge. | [`first finding`](../analysis/ver6-fidelity/README.md), [`VER-13`](../specs/040-verifier-reset.md) |
 
 The most important research lesson so far is that **infrastructure honesty is
 part of agent capability measurement**. Registry truth, treatment isolation,
@@ -955,9 +961,9 @@ headline interpretations.
 
 ### Runtime and determinism
 
-- S1 has an observed cross-run divergence consistent with dora queue
-  backpressure/startup ordering. Trace bisection from the reset window is the
-  next diagnostic.
+- ADR-25 fixed and verified the reset/startup race. The remaining issue #71
+  residual is wall-coupled command/control timing; retiming frozen graph and
+  guard paths requires owner-reviewed environment work.
 - Metal physics cannot promise bit-identical long-horizon outcomes; statistical
   replication is required.
 - Runtime process isolation/reaping has been hardened, but long multi-process
