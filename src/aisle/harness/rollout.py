@@ -579,6 +579,8 @@ SCRUBBED_ENV = (
     # T2: the tier switches the state machine into the scan tour; ambient
     # leakage would run a tour on a T0/T1 graph with no reader wired
     "AISLE_TASK_TIER",
+    # HAR-3: the retry budget changes pass@8 semantics — graph-attested
+    "AISLE_MAX_RETRIES",
     # TC-9: the perception rung. The bridge reads it via parse_bridge_config(
     # os.environ), so an ambient AISLE_PERCEPTION=L1 would set the rung of a
     # run whose graph never declared one — and the validator, which sees only

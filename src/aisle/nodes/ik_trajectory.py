@@ -1124,6 +1124,11 @@ def main() -> None:
                 print(line, file=sys.stderr)
             if streamer.done:
                 streamer = None  # finished: idle until the next episode
+                if pending_read is None:
+                    # a GRASP plan completed (read parks reply on
+                    # move_done): tell the state machine so it can arm
+                    # an in-context retry if no verdict lands (HAR-3)
+                    send("plan_done", pa.array([json.dumps({"ok": True})]), metadata)
                 if pending_read is not None:
                     q_read, range_m, pitch, _ = pending_read["attempts"][
                         pending_read["attempt_idx"]

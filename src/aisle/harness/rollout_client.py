@@ -58,6 +58,7 @@ def main() -> None:
     send = make_sender(node)
     episode = 0
     phase = "reset_pending"  # -> awaiting_reset -> running -> (next)
+    retries_seen: dict[str, int] = {}  # goal_id -> latest feedback retries (HAR-3)
     # append, not truncate: after a wall-clamp relaunch (ADR-23) this
     # process is the SECOND writer to the same run's results file — a
     # truncate would erase the episodes and synthetic clamp records the
@@ -101,9 +102,19 @@ def main() -> None:
                 {"goal_id": f"ep-{episode:04d}"},
             )
             phase = "running"
+        elif event["id"] == "episode_feedback":
+            # HAR-3: the retry count rides in the state machine's
+            # feedback; the LATEST value per goal is what the episode
+            # record carries (pass@8 is in-context retries, never
+            # best-of-8 independent episodes)
+            feedback = json.loads(event["value"][0].as_py())
+            goal_id = (event.get("metadata") or {}).get("goal_id", "")
+            if "retries" in feedback:
+                retries_seen[goal_id] = int(feedback["retries"])
         elif event["id"] == "episode_result" and phase == "running":
             result = json.loads(event["value"][0].as_py())
             record = {"episode": episode, "seed": seeds[episode], **result}
+            record["retries"] = retries_seen.pop(record.get("goal_id", ""), 0)
             print(f"episode {episode} result: {record}", file=sys.stderr)
             if out:
                 out.write(json.dumps(record) + "\n")

@@ -2,9 +2,18 @@
 
 A goal opens an episode: emit one target_request naming the med, then
 >=1 Hz episode_feedback until the verifier's episode_result closes it.
-Violations from the guard are counted into the feedback. In-context
-retries (HAR-3, max_retries) are Phase 2 — one attempt per goal at M0
-(ADR-10).
+Violations from the guard are counted into the feedback.
+
+In-context retries (HAR-3): when the executor reports a finished grasp
+plan (`plan_done`) and no verdict has closed the episode within a grace
+window, the attempt FAILED in-flight (box missed, slipped, was refused)
+— the machine re-issues target_request, up to `max_retries` times, and
+the retry count rides in every episode_feedback so the rollout client
+can record honest pass@8 (never best-of-8 independent episodes). The
+grace window is tick-based (CON-5): a success verdict lands within a
+tick or two of plan completion, and retrying before it could re-grasp
+the DELIVERED box out of the tray. max_retries=0 (the default) is
+byte-identical to the old one-attempt behavior (ADR-10).
 
 T2 tier (design doc §3, idea I13): the medicine is identified by its
 printed label, so the machine runs a SCAN TOUR before the grasp.
@@ -30,6 +39,11 @@ READ_TIER = "T2"
 # transit knocked a box 3 cm and closed the first clean live T2 episode
 # `collision`. The retry mechanism stays for loop agents to tune.
 MAX_READS_PER_CANDIDATE = 1
+# ticks (1 Hz, sim-deterministic) between a finished grasp plan and the
+# retry it triggers: the oracle judges at 30 Hz, so a SUCCESS verdict
+# arrives within ~1 tick of the box settling — retrying sooner could
+# yank the delivered box back out of the tray
+RETRY_GRACE_TICKS = 3
 
 
 class TaskStateMachine:
@@ -37,8 +51,16 @@ class TaskStateMachine:
     Metadata carries goal_id (TC-7) and, for tour topics, request_id
     (TC-6 service pattern)."""
 
-    def __init__(self, tier: str = "T1", candidate_bounds: dict | None = None) -> None:
+    def __init__(
+        self,
+        tier: str = "T1",
+        candidate_bounds: dict | None = None,
+        max_retries: int = 0,
+    ) -> None:
         self.tier = tier
+        self.max_retries = max_retries
+        self.retries = 0
+        self.retry_due_tick: int | None = None  # armed by plan_done
         # T2: {x: (lo, hi), y: (lo, hi), z: (lo, hi)} — a candidate row
         # outside the shelf's occupiable volume is a garbage estimate,
         # not a box (the first acceptance probe toured a phantom at
@@ -73,6 +95,8 @@ class TaskStateMachine:
             return []
         self.goal, self.goal_id, self.violations = goal, goal_id, {}
         self.ticks = 0
+        self.retries = 0
+        self.retry_due_tick = None
         self._reset_tour()
         self.toured = False
         return [("target_request", {"target_med": goal["target_med"]}, {"goal_id": goal_id})]
@@ -80,18 +104,42 @@ class TaskStateMachine:
     def on_tick(self) -> list:
         """Feedback t = 1 Hz ticks since the goal (CON-5: deterministic —
         a wall-clock read would make same-seed runs emit different
-        payloads, and would span episodes rather than the current one)."""
+        payloads, and would span episodes rather than the current one).
+        A due retry fires here: the grace window passed with no verdict."""
         if self.goal is None:
             return []
         self.ticks += 1
+        emissions: list = []
+        if self.retry_due_tick is not None and self.ticks >= self.retry_due_tick:
+            self.retry_due_tick = None
+            self.retries += 1
+            self._reset_tour()
+            self.toured = False  # T2: a fresh estimate starts a fresh tour
+            emissions.append(
+                (
+                    "target_request",
+                    {"target_med": self.goal["target_med"]},
+                    {"goal_id": self.goal_id},
+                )
+            )
         phase = "scanning" if self.candidates is not None else "executing"
-        feedback: dict = {"t": self.ticks, "phase": phase}
+        feedback: dict = {"t": self.ticks, "phase": phase, "retries": self.retries}
         if self.violations:
             feedback["violations"] = dict(self.violations)
-        return [("episode_feedback", feedback, {"goal_id": self.goal_id})]
+        emissions.append(("episode_feedback", feedback, {"goal_id": self.goal_id}))
+        return emissions
+
+    def on_plan_done(self) -> None:
+        """The executor finished a grasp plan. If the verdict does not
+        arrive within the grace window, the attempt failed in-flight —
+        arm a retry (HAR-3), bounded by max_retries."""
+        if self.goal is None or self.retries >= self.max_retries:
+            return
+        self.retry_due_tick = self.ticks + RETRY_GRACE_TICKS
 
     def on_result(self) -> list:
         self.goal = None
+        self.retry_due_tick = None
         self._reset_tour()
         self.toured = False
         return []
@@ -236,7 +284,13 @@ def main() -> None:
 
     node = Node()
     send = make_sender(node)
-    machine = TaskStateMachine(tier=tier, candidate_bounds=candidate_bounds)
+    # HAR-3: graph-declared (attested) retry budget; 0 = one attempt
+    max_retries_raw = os.environ.get("AISLE_MAX_RETRIES", "0").strip()
+    if not max_retries_raw.isdigit() or not 0 <= int(max_retries_raw) <= 8:
+        raise ValueError(f"AISLE_MAX_RETRIES must be an int in [0, 8], got {max_retries_raw!r}")
+    machine = TaskStateMachine(
+        tier=tier, candidate_bounds=candidate_bounds, max_retries=int(max_retries_raw)
+    )
 
     def emit(emissions) -> None:
         for topic, payload, metadata in emissions:
@@ -267,6 +321,8 @@ def main() -> None:
             machine.on_violation(json.loads(event["value"][0].as_py()))
         elif event["id"] == "tick":
             emit(machine.on_tick())
+        elif event["id"] == "plan_done":
+            machine.on_plan_done()
         elif event["id"] == "target_pose":
             pos = (
                 np.asarray(event["value"].to_numpy(zero_copy_only=False), dtype=np.float64)

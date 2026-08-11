@@ -12,6 +12,8 @@ inputs:
   target_pose: {schema: pose7d_f32, rate_hz: 1}
   move_done: {schema: json_utf8, rate_hz: 1}
   read_result: {schema: json_utf8, rate_hz: 1}
+  # HAR-3: a finished grasp plan with no verdict arms a retry
+  plan_done: {schema: json_utf8, rate_hz: 1}
 outputs:
   target_request: {schema: json_utf8, latency_class: best_effort}
   episode_feedback: {schema: json_utf8, latency_class: best_effort}

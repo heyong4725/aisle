@@ -8,160 +8,153 @@
 # the seg_overhead + depth_overhead pair and serves the same
 # target_pose edge, so everything downstream is unchanged.
 nodes:
-  - id: dora-genesis
-    path: ../src/aisle/nodes/dora_genesis.py
-    # TC-9: rung declaration lives here because dora injects env into
-    # this node's process alone; on any other node VAL-8 rejects it
-    env:
-      AISLE_PERCEPTION: L1
-    inputs:
-      tick: dora/timer/millis/10
-      joint_cmd:
-        source: budget-guard/joint_cmd_safe
-        queue_size: 100
-      gripper_cmd:
-        source: budget-guard/gripper_cmd_safe
-        queue_size: 100
-      reset:
-        source: reset/bridge_reset
-        queue_size: 100
-    outputs:
-      - bridge_info
-      - joint_state
-      - gripper_state
-      - oracle_state
-      - rgb_overhead
-      - rgb_wrist
-      - depth_overhead
-      - seg_overhead
-      - reset_done
-
-  - id: reset
-    path: ../src/aisle/reset/service.py
-    inputs:
-      reset:
-        source: rollout-client/reset
-        queue_size: 100
-      reset_done:
-        source: dora-genesis/reset_done
-        queue_size: 100
-    outputs:
-      - bridge_reset
-      - reset_done
-
-  - id: budget-guard
-    path: ../src/aisle/nodes/budget_guard.py
-    inputs:
-      tick: dora/timer/millis/5000
-      joint_cmd:
-        source: ik-trajectory/joint_cmd
-        queue_size: 100
-      gripper_cmd:
-        source: ik-trajectory/gripper_cmd
-        queue_size: 100
-      reset_done:
-        source: dora-genesis/reset_done
-        queue_size: 100
-    outputs:
-      - joint_cmd_safe
-      - gripper_cmd_safe
-      - violation
-      - guard_stats
-
-  - id: segmented-pose
-    path: ../src/aisle/nodes/segmented_pose.py
-    inputs:
-      bridge_info:
-        source: dora-genesis/bridge_info
-        queue_size: 100
-      seg_overhead:
-        source: dora-genesis/seg_overhead
-        queue_size: 100
-      depth_overhead:
-        source: dora-genesis/depth_overhead
-        queue_size: 100
-      target_request:
-        source: task-state-machine/target_request
-        queue_size: 100
-      reset_done:
-        source: dora-genesis/reset_done
-        queue_size: 100
-    outputs:
-      - target_pose
-
-  - id: grasp-planner-topdown
-    path: ../src/aisle/nodes/grasp_topdown.py
-    inputs:
-      target_pose:
-        source: segmented-pose/target_pose
-        queue_size: 100
-    outputs:
-      - grasp_pose
-
-  - id: ik-trajectory
-    path: ../src/aisle/nodes/ik_trajectory.py
-    inputs:
-      grasp_pose:
-        source: grasp-planner-topdown/grasp_pose
-        queue_size: 100
-      joint_state:
-        source: dora-genesis/joint_state
-        # latest-wins: joint_state is STATE, not a command stream. With a
-        # deep queue the executor seeds its interpolation start from a
-        # stale pre-reset frame after an episode ends mid-plan (the reset
-        # fires on the verdict, not on plan completion) and the arm dives
-        # from home toward the stale pose through the fresh scene —
-        # confirmed in M0 run m0-1-e2e07b (episodes 12/13 cascade).
-        queue_size: 1
-      reset_done:
-        source: dora-genesis/reset_done
-        queue_size: 100
-    outputs:
-      - joint_cmd
-      - gripper_cmd
-
-  - id: verifier-oracle
-    path: ../src/aisle/verifier/oracle.py
-    inputs:
-      oracle_state:
-        source: dora-genesis/oracle_state
-        queue_size: 100
-      joint_state:
-        source: dora-genesis/joint_state
-        queue_size: 100
-      episode_goal:
-        source: rollout-client/episode_goal
-        queue_size: 100
-    outputs:
-      - episode_result
-
-  - id: task-state-machine
-    path: ../src/aisle/nodes/task_state_machine.py
-    inputs:
-      tick: dora/timer/millis/1000
-      episode_goal:
-        source: rollout-client/episode_goal
-        queue_size: 100
-      episode_result:
-        source: verifier-oracle/episode_result
-        queue_size: 100
-      violation:
-        source: budget-guard/violation
-        queue_size: 100
-    outputs:
-      - target_request
-      - episode_feedback
-
-  - id: rollout-client
-    path: ../src/aisle/harness/rollout_client.py
-    inputs:
-      tick: dora/timer/millis/1000
-      reset_done:
-        source: reset/reset_done
-        queue_size: 100
-      episode_result:
-        source: verifier-oracle/episode_result
-        queue_size: 100
-    outputs:
-      - reset
-      - episode_goal
+- id: dora-genesis
+  path: ../src/aisle/nodes/dora_genesis.py
+  env:
+    AISLE_PERCEPTION: L1
+  inputs:
+    tick: dora/timer/millis/10
+    joint_cmd:
+      source: budget-guard/joint_cmd_safe
+      queue_size: 100
+    gripper_cmd:
+      source: budget-guard/gripper_cmd_safe
+      queue_size: 100
+    reset:
+      source: reset/bridge_reset
+      queue_size: 100
+  outputs:
+  - bridge_info
+  - joint_state
+  - gripper_state
+  - oracle_state
+  - rgb_overhead
+  - rgb_wrist
+  - depth_overhead
+  - seg_overhead
+  - reset_done
+- id: reset
+  path: ../src/aisle/reset/service.py
+  inputs:
+    reset:
+      source: rollout-client/reset
+      queue_size: 100
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - bridge_reset
+  - reset_done
+- id: budget-guard
+  path: ../src/aisle/nodes/budget_guard.py
+  inputs:
+    tick: dora/timer/millis/5000
+    joint_cmd:
+      source: ik-trajectory/joint_cmd
+      queue_size: 100
+    gripper_cmd:
+      source: ik-trajectory/gripper_cmd
+      queue_size: 100
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - joint_cmd_safe
+  - gripper_cmd_safe
+  - violation
+  - guard_stats
+- id: segmented-pose
+  path: ../src/aisle/nodes/segmented_pose.py
+  inputs:
+    bridge_info:
+      source: dora-genesis/bridge_info
+      queue_size: 100
+    seg_overhead:
+      source: dora-genesis/seg_overhead
+      queue_size: 100
+    depth_overhead:
+      source: dora-genesis/depth_overhead
+      queue_size: 100
+    target_request:
+      source: task-state-machine/target_request
+      queue_size: 100
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - target_pose
+- id: grasp-planner-topdown
+  path: ../src/aisle/nodes/grasp_topdown.py
+  inputs:
+    target_pose:
+      source: segmented-pose/target_pose
+      queue_size: 100
+  outputs:
+  - grasp_pose
+- id: ik-trajectory
+  path: ../src/aisle/nodes/ik_trajectory.py
+  inputs:
+    grasp_pose:
+      source: grasp-planner-topdown/grasp_pose
+      queue_size: 100
+    joint_state:
+      source: dora-genesis/joint_state
+      queue_size: 1
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - joint_cmd
+  - gripper_cmd
+  - plan_done
+- id: verifier-oracle
+  path: ../src/aisle/verifier/oracle.py
+  inputs:
+    oracle_state:
+      source: dora-genesis/oracle_state
+      queue_size: 100
+    joint_state:
+      source: dora-genesis/joint_state
+      queue_size: 100
+    episode_goal:
+      source: rollout-client/episode_goal
+      queue_size: 100
+  outputs:
+  - episode_result
+- id: task-state-machine
+  path: ../src/aisle/nodes/task_state_machine.py
+  inputs:
+    tick: dora/timer/millis/1000
+    episode_goal:
+      source: rollout-client/episode_goal
+      queue_size: 100
+    episode_result:
+      source: verifier-oracle/episode_result
+      queue_size: 100
+    violation:
+      source: budget-guard/violation
+      queue_size: 100
+    plan_done:
+      source: ik-trajectory/plan_done
+      queue_size: 100
+  outputs:
+  - target_request
+  - episode_feedback
+  env:
+    AISLE_MAX_RETRIES: '8'
+- id: rollout-client
+  path: ../src/aisle/harness/rollout_client.py
+  inputs:
+    tick: dora/timer/millis/1000
+    reset_done:
+      source: reset/reset_done
+      queue_size: 100
+    episode_result:
+      source: verifier-oracle/episode_result
+      queue_size: 100
+    episode_feedback:
+      source: task-state-machine/episode_feedback
+      queue_size: 100
+  outputs:
+  - reset
+  - episode_goal
