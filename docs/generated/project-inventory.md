@@ -15,7 +15,6 @@ architecture, and contribution guidance remain in the
 | Capability manifests | 30 |
 | CLI command entries | 11 |
 | ADR files | 35 |
-| Test modules | 71 |
 
 ## Graphs
 
@@ -100,23 +99,23 @@ an inferred decision state.
 | [docs/decisions/ADR-1.md](../decisions/ADR-1.md) | ADR-1: trace_check scoping pre-M0 (HAR-9 interpretation) | not declared |
 | [docs/decisions/ADR-10.md](../decisions/ADR-10.md) | ADR-10: T08 expert graph interpretations and findings | not declared |
 | [docs/decisions/ADR-11.md](../decisions/ADR-11.md) | ADR-11: T09 rollout-runner interpretations (SPEC 070) | not declared |
-| [docs/decisions/ADR-12.md](../decisions/ADR-12.md) | ADR-12 — T10: staggered two-level shelf (M0 env-change) and the M0 gate suite | accepted (owner decision: "Two-level shelf" option, 2026-07-18). Task: T10. Specs: 090 (M0-1..M0-6), 020 (SCN-2/SCN-3), touching CON-5/CON-7. |
-| [docs/decisions/ADR-13.md](../decisions/ADR-13.md) | ADR-13 — Mobile base modeling: kinematic base (T11, SPEC 210) | accepted (CON-15: SPEC 210 does not fix the base model; the agent picks and records). Task: T11. Specs: 210 (MOB-1..MOB-5), extends 010/080. |
-| [docs/decisions/ADR-14.md](../decisions/ADR-14.md) | ADR-14 — Mobile guard limits: reuse the franka arm limits (T11, SPEC 210 MOB-3) | accepted (CON-15: SPEC 210 does not say where the mobile profile's ARM limits come from; the agent picks and records). Task: T11. Specs: 210 (MOB-3), extends 080 (BG-2). Relates to [[ADR-13]] (kinematic base). |
-| [docs/decisions/ADR-15.md](../decisions/ADR-15.md) | ADR-15 — Store scene design: planogram vocabulary, geometry, stocking (T12, SPEC 200) | accepted (CON-15: RS-1..3 fix the artifacts but not the product vocabulary, geometry source, or stocking model; the agent picks and records). Task: T12. Specs: 200 (RS-1..3), extends 020/210. Relates to [[ADR-13]] (kinematic base), [[ADR-14]] (mobile guard limits). |
-| [docs/decisions/ADR-16.md](../decisions/ADR-16.md) | ADR-16 — Retail verifier semantics (T13, SPEC 200 RS-4..9) | accepted (CON-15: RS-4..9 fix the criteria and success rules but not their geometric definitions or edge semantics; the agent picks and records). Task: T13. Specs: 200, extends 040 (VER-1 discipline). Relates to [[ADR-15]] (planogram/store model). |
-| [docs/decisions/ADR-17.md](../decisions/ADR-17.md) | ADR-17 — Retail capability registry extension (T14, design doc §11.4) | accepted (CON-15: §11.4 names the capabilities but not their manifest shapes, rungs, or sources; the agent picks and records). Task: T14. Specs: 050 (CAP-1..6), 200 (RS-10 ladder). Relates to [[ADR-15]] (planogram), [[ADR-16]] (retail verifier). |
-| [docs/decisions/ADR-18.md](../decisions/ADR-18.md) | ADR-18 — S1 expert graph design (T15, SPEC 200 acceptance) | accepted (CON-15: SPEC 200 names the gate but not the expert's architecture; the agent picks and records). Task: T15. Relates to [[ADR-13]] (kinematic base), [[ADR-15]] (store model), [[ADR-16]] (retail verifier), [[ADR-17]] (capabilities). |
-| [docs/decisions/ADR-19.md](../decisions/ADR-19.md) | ADR-19 — Episode-independent store build; scenario resets by teleport (T16) | accepted (CON-15: SPEC 200 defines the scenarios and generators but not how S2/S3 episodes reach the physical scene; the agent picks and records). Task: T16. Relates to [[ADR-15]] (store model), [[ADR-18]] (S1 expert; supersedes its "S2/S3 need a rebuild per episode" known limit). |
+| [docs/decisions/ADR-12.md](../decisions/ADR-12.md) | ADR-12 — T10: staggered two-level shelf (M0 env-change) and the M0 gate suite | accepted (owner decision: "Two-level shelf" option, 2026-07-18). |
+| [docs/decisions/ADR-13.md](../decisions/ADR-13.md) | ADR-13 — Mobile base modeling: kinematic base (T11, SPEC 210) | accepted (CON-15: SPEC 210 does not fix the base model; the agent |
+| [docs/decisions/ADR-14.md](../decisions/ADR-14.md) | ADR-14 — Mobile guard limits: reuse the franka arm limits (T11, SPEC 210 MOB-3) | accepted (CON-15: SPEC 210 does not say where the mobile profile's |
+| [docs/decisions/ADR-15.md](../decisions/ADR-15.md) | ADR-15 — Store scene design: planogram vocabulary, geometry, stocking (T12, SPEC 200) | accepted (CON-15: RS-1..3 fix the artifacts but not the product |
+| [docs/decisions/ADR-16.md](../decisions/ADR-16.md) | ADR-16 — Retail verifier semantics (T13, SPEC 200 RS-4..9) | accepted (CON-15: RS-4..9 fix the criteria and success rules but |
+| [docs/decisions/ADR-17.md](../decisions/ADR-17.md) | ADR-17 — Retail capability registry extension (T14, design doc §11.4) | accepted (CON-15: §11.4 names the capabilities but not their |
+| [docs/decisions/ADR-18.md](../decisions/ADR-18.md) | ADR-18 — S1 expert graph design (T15, SPEC 200 acceptance) | accepted (CON-15: SPEC 200 names the gate but not the expert's |
+| [docs/decisions/ADR-19.md](../decisions/ADR-19.md) | ADR-19 — Episode-independent store build; scenario resets by teleport (T16) | accepted (CON-15: SPEC 200 defines the scenarios and generators |
 | [docs/decisions/ADR-2.md](../decisions/ADR-2.md) | ADR-2: argparse --help/usage output is a CON-8 carve-out | not declared |
-| [docs/decisions/ADR-20.md](../decisions/ADR-20.md) | ADR-20 — The research contract is code-pinned prose (T17) | accepted (CON-15: the design doc mandates harness/CLAUDE.research.md — §8.2.3 and §5 — but no spec MUST governs its shape; the agent picks and records). Task: T17. Relates to [[ADR-19]] (S2/S3 rollouts, the campaign's other prerequisite). |
-| [docs/decisions/ADR-21.md](../decisions/ADR-21.md) | ADR-21 — Trusted frozen-set baseline; enforced campaign budgets (T17 round 2) | accepted (CON-15). Task: T17 (PR #24 review). Relates to [[ADR-20]] (the code-pinned research contract this hardens). |
-| [docs/decisions/ADR-22.md](../decisions/ADR-22.md) | ADR-22 — Skill registration mechanics (T18) | accepted (CON-15: design doc §8.4 item 1 / §3 rule 3 / §9.2 define WHAT registration does; the mechanics are recorded here). Task: T18. Artifact: `src/aisle/harness/skill.py` + `harness skill register`. This is the load-bearing prerequisite for the H3 campaigns: the skill LIBRARY is what the S1→S2→S3 transfer curve measures. |
+| [docs/decisions/ADR-20.md](../decisions/ADR-20.md) | ADR-20 — The research contract is code-pinned prose (T17) | accepted (CON-15: the design doc mandates harness/CLAUDE.research.md |
+| [docs/decisions/ADR-21.md](../decisions/ADR-21.md) | ADR-21 — Trusted frozen-set baseline; enforced campaign budgets (T17 round 2) | accepted (CON-15). Task: T17 (PR #24 review). Relates to |
+| [docs/decisions/ADR-22.md](../decisions/ADR-22.md) | ADR-22 — Skill registration mechanics (T18) | accepted (CON-15: design doc §8.4 item 1 / §3 rule 3 / §9.2 |
 | [docs/decisions/ADR-23.md](../decisions/ADR-23.md) | ADR-23 — Per-episode wall clamp in `harness rollout` | accepted (CON-15). Trigger: H3 campaign 2, W/S2 holdout. |
-| [docs/decisions/ADR-24.md](../decisions/ADR-24.md) | ADR-24 — Installed-environment attestation (issue #38) | ACCEPTED (owner-resolved 2026-07-30; v1 revised per the PR #68 review: version maps do not attest code, recorded drift does not satisfy CON-5, and collection must live inside ADR-21's self-verified boundary). Trigger: PR #34 red-team follow-up 4/5. Relates to ADR-21 (trusted baseline), SPEC 060 VAL-2/VAL-3, SPEC 050 CAP-4, CON-5. |
-| [docs/decisions/ADR-25.md](../decisions/ADR-25.md) | ADR-25 — Reset-anchored startup: no physics step before the first reset (issue #71) | PROPOSED (agent-drafted 2026-08-02, CON-15). Trigger: issue #71 (CON-5 violation — attested expert_s1 pair diverged on identical seeds). Relates to SPEC 030 BRG-1/BRG-4, SPEC 010 TC-6, CON-5. |
-| [docs/decisions/ADR-26.md](../decisions/ADR-26.md) | ADR-26 — CON-5 layered reproducibility: outcomes are statistical (issue #71) | RATIFIED (owner decision 2026-08-05, in-session; enacted by the spec-change PR that carries this ADR). Trigger: issue #71's three-part evidence chain. Relates to ADR-24 (attestation), ADR-25 (reset-anchored startup), SPEC 090 M0-2, CON-14 (this is a spec change). |
-| [docs/decisions/ADR-27-perception-rung-governs-topics.md](../decisions/ADR-27-perception-rung-governs-topics.md) | ADR-27 — The perception rung governs TOPICS a policy consumes, not information in the scene | ACCEPTED (owner decision 2026-08-08, CON-15). Renumbered from 26 to 27 in the same review round that created it: 26 was already taken by the ratified CON-5 layered-reproducibility ADR that specs/000-constitution.md cites, so the original number pointed readers at an unrelated document. Relates to SPEC 010 TC-9, SPEC 060 VAL-6/VAL-8, SPEC 040 VER-1..3. |
+| [docs/decisions/ADR-24.md](../decisions/ADR-24.md) | ADR-24 — Installed-environment attestation (issue #38) | ACCEPTED (owner-resolved 2026-07-30; v1 revised per the |
+| [docs/decisions/ADR-25.md](../decisions/ADR-25.md) | ADR-25 — Reset-anchored startup: no physics step before the first reset (issue #71) | PROPOSED (agent-drafted 2026-08-02, CON-15). Trigger: issue #71 |
+| [docs/decisions/ADR-26.md](../decisions/ADR-26.md) | ADR-26 — CON-5 layered reproducibility: outcomes are statistical (issue #71) | RATIFIED (owner decision 2026-08-05, in-session; enacted by the |
+| [docs/decisions/ADR-27-perception-rung-governs-topics.md](../decisions/ADR-27-perception-rung-governs-topics.md) | ADR-27 — The perception rung governs TOPICS a policy consumes, not information in the scene | ACCEPTED (owner decision 2026-08-08, CON-15). Renumbered from 26 to 27 |
 | [docs/decisions/ADR-27.md](../decisions/ADR-27.md) | ADR-27 — Official SO-101 model and 5+1 topic contract (issue #13) | ACCEPTED 2026-08-08. Owner: @heyong4725. |
 | [docs/decisions/ADR-3.md](../decisions/ADR-3.md) | ADR-3: sim-driver evalcards are pending until M0 (CAP-6 interpretation) | not declared |
 | [docs/decisions/ADR-4.md](../decisions/ADR-4.md) | ADR-4: validator interpretations for T03 (SPEC 060) | not declared |
@@ -125,95 +124,24 @@ an inferred decision state.
 | [docs/decisions/ADR-7.md](../decisions/ADR-7.md) | ADR-7: T05 bridge interpretations and measured performance (SPEC 030) | not declared |
 | [docs/decisions/ADR-8.md](../decisions/ADR-8.md) | ADR-8: T06 verifier/reset interpretations (SPEC 040) | not declared |
 | [docs/decisions/ADR-9.md](../decisions/ADR-9.md) | ADR-9: T07 budget-guard interpretations (SPEC 080) | not declared |
-| [docs/decisions/ADR-M0.md](../decisions/ADR-M0.md) | ADR-M0 — Milestone M0 sign-off (SPEC 090, M0-6) | SIGNED 2026-07-21 (option (a), M0-5 deferred); RE-AFFIRMED on fresh evidence 2026-08-06 (option C, PR #93 — see the re-sign section). Owner: @heyong4725. |
-| [docs/decisions/ADR-h1-protocol.md](../decisions/ADR-h1-protocol.md) | ADR-h1-protocol — H1 composition-experiment protocol (design doc §8.2.4) | accepted (CON-15: §8.2.4 defines what to record but not the mechanics; interpretations recorded here, revised per the PR #27 review). Artifact: `tools/h1_protocol.py` (Class A) + tests/unit/test_h1_protocol.py. Hypothesis under test (§6 H1): a frontier coding agent composes a VALID, LAUNCHING dataflow for T1 zero-shot ≥80% of attempts, and reaches a working (>0% success) graph within 3 validate-fix cycles. |
-| [docs/decisions/ADR-h2-campaign-protocol.md](../decisions/ADR-h2-campaign-protocol.md) | ADR-h2-campaign-protocol — single-scenario research campaign runner (design doc §8.3 item 6) | accepted (CON-15: §8.3 names the campaign but not the mechanics; interpretations recorded here). Artifact: `tools/campaign.py` (Class A) + tests/unit/test_campaign.py. Hypothesis served (§6 H2): with the EN loop, the agent raises T1 success to ≥90% pass@1 within a fixed budget. The same runner is the per-scenario core the H3 orchestrator (ADR-h3-campaign-protocol, DRAFT) will drive. |
-| [docs/decisions/ADR-h3-campaign-protocol.md](../decisions/ADR-h3-campaign-protocol.md) | ADR-h3-campaign-protocol — H3 accumulation campaign, S1→S2→S3 (design doc §11.5, §8.4) | accepted 2026-07-27 (decisions D1–D6 resolved by human; D1 claude-only, D2–D6 as recommended). Artifact: `tools/h3_campaign.py` (Class A) + tests/unit/test_h3_campaign.py, driving the ADR-h2 session machinery per scenario. Hypothesis under test (§6 H3): a persistent skill library cuts time-to-success on later scenarios by ≥2x vs a memory-wiped agent (the ASPIRE effect). The retail suite is the strongest testbed: S1, S2, S3 share navigation, shelf perception, and placement skills almost entirely (§11.5), so the S1→S2→S3 transfer curve is the headline accumulation figure. |
-| [docs/decisions/ADR-h4-iteration-protocol.md](../decisions/ADR-h4-iteration-protocol.md) | ADR: H4 iteration-latency protocol (hot-swap vs relaunch) | ACCEPTED (CON-15 — interpretation recorded, proceeding). Date: 2026-07-31. Scope: design doc §8.3 item 5, §9.1 decision 1, hypothesis §6 H4; SPEC 070 HAR-10/HAR-12. |
-| [docs/decisions/ADR-powder-spike.md](../decisions/ADR-powder-spike.md) | ADR-powder-spike — T20 solver spike for the powder family (SPEC 300 PW-0) | **DRAFT** — numbers measured; the go/no-go and the TBD-SPIKE thresholds are a HUMAN decision (PW-0). |
-| [docs/decisions/ADR-realistic-verifier.md](../decisions/ADR-realistic-verifier.md) | ADR-realistic-verifier — accepted design (D1–D6 ratified 2026-08-05) | ACCEPTED — D1–D6 ratified by the owner 2026-08-05 (in-session), every recommended option chosen: D1 OWLv2/transformers, D2 CPU inference for verifier models, D3 pinned HF snapshot + sha256 in the env attestation, D4 desk tier T1 first increment (amended 2026-08-05, PR #89 review: 3D from OVERHEAD depth only — see D4), D5 the full VER-6 fidelity contract, D6 segmentation-assisted upright. Increment one unlocks the T1 fidelity number and ablation A7 and lays groundwork for perception rung L2; tier T2 is unlocked only by the SECOND (OCR) increment, which is sequenced on the first fidelity result and is NOT part of this acceptance. Implementation follows the three-PR sketch below (spec-change first); note D2's CPU choice was reaffirmed independently of ADR-26's statistical-outcome ratification — a VERDICT source must not flicker even where episode outcomes are statistical. Scope: design doc §8.3 item 1 and §4.2; SPEC 040 VER-6 (fidelity job) is the governing requirement; the scope statement above (T1 fidelity + A7 now, L2 groundwork, T2 only with the OCR increment) is the single authoritative one. |
+| [docs/decisions/ADR-M0.md](../decisions/ADR-M0.md) | ADR-M0 — Milestone M0 sign-off (SPEC 090, M0-6) | SIGNED 2026-07-21 (option (a), M0-5 deferred); RE-AFFIRMED on |
+| [docs/decisions/ADR-h1-protocol.md](../decisions/ADR-h1-protocol.md) | ADR-h1-protocol — H1 composition-experiment protocol (design doc §8.2.4) | accepted (CON-15: §8.2.4 defines what to record but not the |
+| [docs/decisions/ADR-h2-campaign-protocol.md](../decisions/ADR-h2-campaign-protocol.md) | ADR-h2-campaign-protocol — single-scenario research campaign runner (design doc §8.3 item 6) | accepted (CON-15: §8.3 names the campaign but not the mechanics; |
+| [docs/decisions/ADR-h3-campaign-protocol.md](../decisions/ADR-h3-campaign-protocol.md) | ADR-h3-campaign-protocol — H3 accumulation campaign, S1→S2→S3 (design doc §11.5, §8.4) | accepted 2026-07-27 (decisions D1–D6 resolved by human; D1 |
+| [docs/decisions/ADR-h4-iteration-protocol.md](../decisions/ADR-h4-iteration-protocol.md) | ADR: H4 iteration-latency protocol (hot-swap vs relaunch) | ACCEPTED (CON-15 — interpretation recorded, proceeding). |
+| [docs/decisions/ADR-powder-spike.md](../decisions/ADR-powder-spike.md) | ADR-powder-spike — T20 solver spike for the powder family (SPEC 300 PW-0) | **DRAFT** — numbers measured; the go/no-go and the TBD-SPIKE |
+| [docs/decisions/ADR-realistic-verifier.md](../decisions/ADR-realistic-verifier.md) | ADR-realistic-verifier — accepted design (D1–D6 ratified 2026-08-05) | ACCEPTED — D1–D6 ratified by the owner 2026-08-05 |
 
 ## Tests
 
 Configured pytest markers: `unit`, `sim`, `graph`, `accept`.
 
-| Suite directory | Test modules |
-|---|---:|
-| `tests/accept` | 5 |
-| `tests/graph` | 7 |
-| `tests/sim` | 10 |
-| `tests/unit` | 49 |
+Suite directories, not individual modules: an exhaustive module list goes stale
+on main whenever two PRs each add a test, with no merge conflict to catch it.
 
-### Test modules
-
-- [tests/accept/test_contract.py](../../tests/accept/test_contract.py)
-- [tests/accept/test_contract_mobile.py](../../tests/accept/test_contract_mobile.py)
-- [tests/accept/test_m0_gate.py](../../tests/accept/test_m0_gate.py)
-- [tests/accept/test_rollout_m0.py](../../tests/accept/test_rollout_m0.py)
-- [tests/accept/test_s1_expert.py](../../tests/accept/test_s1_expert.py)
-- [tests/graph/test_bridge_determinism.py](../../tests/graph/test_bridge_determinism.py)
-- [tests/graph/test_bridge_minimal.py](../../tests/graph/test_bridge_minimal.py)
-- [tests/graph/test_expert_graph.py](../../tests/graph/test_expert_graph.py)
-- [tests/graph/test_guard_in_graph.py](../../tests/graph/test_guard_in_graph.py)
-- [tests/graph/test_guard_mutex.py](../../tests/graph/test_guard_mutex.py)
-- [tests/graph/test_mobile_bridge.py](../../tests/graph/test_mobile_bridge.py)
-- [tests/graph/test_verifier_wiring.py](../../tests/graph/test_verifier_wiring.py)
-- [tests/sim/test_behavioral_reset.py](../../tests/sim/test_behavioral_reset.py)
-- [tests/sim/test_calibration_matches_genesis.py](../../tests/sim/test_calibration_matches_genesis.py)
-- [tests/sim/test_hand_mount.py](../../tests/sim/test_hand_mount.py)
-- [tests/sim/test_identity_classes.py](../../tests/sim/test_identity_classes.py)
-- [tests/sim/test_l1_perception.py](../../tests/sim/test_l1_perception.py)
-- [tests/sim/test_mobile_scene.py](../../tests/sim/test_mobile_scene.py)
-- [tests/sim/test_realistic_end_to_end.py](../../tests/sim/test_realistic_end_to_end.py)
-- [tests/sim/test_scene.py](../../tests/sim/test_scene.py)
-- [tests/sim/test_store_scene.py](../../tests/sim/test_store_scene.py)
-- [tests/sim/test_verifier_determinism.py](../../tests/sim/test_verifier_determinism.py)
-- [tests/unit/test_bootstrap.py](../../tests/unit/test_bootstrap.py)
-- [tests/unit/test_calibration_tools.py](../../tests/unit/test_calibration_tools.py)
-- [tests/unit/test_campaign.py](../../tests/unit/test_campaign.py)
-- [tests/unit/test_cmd_coalescing.py](../../tests/unit/test_cmd_coalescing.py)
-- [tests/unit/test_docs_inventory.py](../../tests/unit/test_docs_inventory.py)
-- [tests/unit/test_env_hash.py](../../tests/unit/test_env_hash.py)
-- [tests/unit/test_expert_nodes.py](../../tests/unit/test_expert_nodes.py)
-- [tests/unit/test_fidelity.py](../../tests/unit/test_fidelity.py)
-- [tests/unit/test_guard_clamping.py](../../tests/unit/test_guard_clamping.py)
-- [tests/unit/test_guard_latency.py](../../tests/unit/test_guard_latency.py)
-- [tests/unit/test_h1_protocol.py](../../tests/unit/test_h1_protocol.py)
-- [tests/unit/test_h3_analysis.py](../../tests/unit/test_h3_analysis.py)
-- [tests/unit/test_h3_campaign.py](../../tests/unit/test_h3_campaign.py)
-- [tests/unit/test_h4_iteration.py](../../tests/unit/test_h4_iteration.py)
-- [tests/unit/test_idea_gate.py](../../tests/unit/test_idea_gate.py)
-- [tests/unit/test_ik_trajectory.py](../../tests/unit/test_ik_trajectory.py)
-- [tests/unit/test_judge.py](../../tests/unit/test_judge.py)
-- [tests/unit/test_judge_retail.py](../../tests/unit/test_judge_retail.py)
-- [tests/unit/test_l2_pose.py](../../tests/unit/test_l2_pose.py)
-- [tests/unit/test_manifests.py](../../tests/unit/test_manifests.py)
-- [tests/unit/test_mobility.py](../../tests/unit/test_mobility.py)
-- [tests/unit/test_perception_flag.py](../../tests/unit/test_perception_flag.py)
-- [tests/unit/test_process_rules.py](../../tests/unit/test_process_rules.py)
-- [tests/unit/test_realistic_calibration.py](../../tests/unit/test_realistic_calibration.py)
-- [tests/unit/test_realistic_judge.py](../../tests/unit/test_realistic_judge.py)
-- [tests/unit/test_realistic_stages.py](../../tests/unit/test_realistic_stages.py)
-- [tests/unit/test_research_contract.py](../../tests/unit/test_research_contract.py)
-- [tests/unit/test_reset_service.py](../../tests/unit/test_reset_service.py)
-- [tests/unit/test_retail_capabilities.py](../../tests/unit/test_retail_capabilities.py)
-- [tests/unit/test_rollout_metrics.py](../../tests/unit/test_rollout_metrics.py)
-- [tests/unit/test_run_attestation.py](../../tests/unit/test_run_attestation.py)
-- [tests/unit/test_s1_driver_v2_gate.py](../../tests/unit/test_s1_driver_v2_gate.py)
-- [tests/unit/test_s1_expert_planning.py](../../tests/unit/test_s1_expert_planning.py)
-- [tests/unit/test_s3_driver_v1.py](../../tests/unit/test_s3_driver_v1.py)
-- [tests/unit/test_scene_cfg.py](../../tests/unit/test_scene_cfg.py)
-- [tests/unit/test_segmented_pose.py](../../tests/unit/test_segmented_pose.py)
-- [tests/unit/test_skill_register.py](../../tests/unit/test_skill_register.py)
-- [tests/unit/test_so101_contract.py](../../tests/unit/test_so101_contract.py)
-- [tests/unit/test_so101_motion.py](../../tests/unit/test_so101_motion.py)
-- [tests/unit/test_stats.py](../../tests/unit/test_stats.py)
-- [tests/unit/test_store_cfg.py](../../tests/unit/test_store_cfg.py)
-- [tests/unit/test_swap.py](../../tests/unit/test_swap.py)
-- [tests/unit/test_trace_check_selfhost.py](../../tests/unit/test_trace_check_selfhost.py)
-- [tests/unit/test_trace_recorder_frames.py](../../tests/unit/test_trace_recorder_frames.py)
-- [tests/unit/test_traces_query.py](../../tests/unit/test_traces_query.py)
-- [tests/unit/test_validator.py](../../tests/unit/test_validator.py)
-- [tests/unit/test_validator_mobile.py](../../tests/unit/test_validator_mobile.py)
-- [tests/unit/test_verifier_models_lock.py](../../tests/unit/test_verifier_models_lock.py)
-- [tests/unit/test_verifier_realistic_node.py](../../tests/unit/test_verifier_realistic_node.py)
+| Suite directory |
+|---|
+| `tests/accept` |
+| `tests/graph` |
+| `tests/sim` |
+| `tests/unit` |

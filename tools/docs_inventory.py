@@ -4,23 +4,34 @@
 The committed Markdown appendix is deterministic: it contains no wall time,
 Git branch, or working-tree state. CI runs --check so graph, capability, CLI,
 ADR, and test changes cannot silently leave the contributor reference stale.
+
+Inputs are restricted to files git TRACKS. graphs/ and registry/manifests/ are
+session-writable — `harness swap` rewrites graphs and `harness skill register`
+writes manifests mid-experiment — so globbing the working tree would let
+transient experiment residue turn this CI gate red on unrelated commits (and
+`--write` would then commit that residue). Outside a git tree the glob is the
+documented fallback.
 """
 
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 import tomllib
-from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
 
 import yaml
 
+import aisle
 from aisle.harness.cli import build_parser as build_harness_parser
 from aisle.harness.registry import build_parser as build_registry_parser
+from aisle.harness.validate import load_graph
 
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = Path("docs/generated/project-inventory.md")
+BRIDGE_MODULE = "dora_genesis.py"
 
 
 def _cell(value: object) -> str:
@@ -32,37 +43,79 @@ def _link(label: str, target: str) -> str:
     return f"[{_cell(label)}]({_cell(target)})"
 
 
-def _graph_inventory(root: Path) -> list[dict]:
+def _relative(path: Path, root: Path) -> str:
+    return path.relative_to(root).as_posix()
+
+
+def _tracked_paths(root: Path) -> set[str] | None:
+    """Repo-relative posix paths git tracks, or None outside a git tree."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z"],
+            capture_output=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return {name for name in proc.stdout.decode("utf-8").split("\0") if name}
+
+
+def _select(paths: Iterable[Path], root: Path, tracked: set[str] | None) -> list[Path]:
+    """Committed files only: an untracked graph/manifest/test is experiment
+    residue, not a documented surface."""
+    if tracked is None:
+        return sorted(paths)
+    return sorted(path for path in paths if _relative(path, root) in tracked)
+
+
+def _is_bridge(node: dict) -> bool:
+    """BY MODULE PATH first, not by node id: the id is the graph author's
+    choice, and matching only "dora-genesis" used to fall through to `{}` and
+    publish "pharmacy/franka/L0 (default)" for what may be a store/mobile/L2
+    graph. The published rung is safety-relevant (TC-9)."""
+    path = node.get("path")
+    if isinstance(path, str) and path.endswith(BRIDGE_MODULE):
+        return True
+    return node.get("id") == "dora-genesis"
+
+
+def _graph_inventory(root: Path, tracked: set[str] | None) -> list[dict]:
     rows = []
-    for path in sorted((root / "graphs").glob("*.yaml")):
-        graph = yaml.safe_load(path.read_text())
-        if not isinstance(graph, dict) or not isinstance(graph.get("nodes"), list):
-            raise ValueError(f"{path}: graph must contain a nodes list")
-        nodes = graph["nodes"]
-        node_ids = [node.get("id") for node in nodes if isinstance(node, dict)]
-        if len(node_ids) != len(nodes) or not all(isinstance(node_id, str) for node_id in node_ids):
-            raise ValueError(f"{path}: every node must have a string id")
-        bridge = next((node for node in nodes if node.get("id") == "dora-genesis"), {})
-        env = bridge.get("env", {}) if isinstance(bridge, dict) else {}
+    for path in _select((root / "graphs").glob("*.yaml"), root, tracked):
+        nodes, errors = load_graph(path)
+        # nodes can come back non-None WITH structural errors (a node missing
+        # its id), so the error list is the gate, not `nodes is None`.
+        if nodes is None or errors:
+            detail = errors[0].get("detail", errors[0]) if errors else "unreadable graph"
+            raise ValueError(f"{path}: {detail}")
+        node_ids = [node["id"] for node in nodes]
+        bridge = next((node for node in nodes if _is_bridge(node)), None)
+        env = bridge.get("env") if bridge else None
         if not isinstance(env, dict):
-            env = {}
+            env = {} if bridge else None
         rows.append(
             {
                 "path": path,
-                "scene": env.get("AISLE_SCENE", "pharmacy (default)"),
-                "scenario": env.get("AISLE_SCENARIO", "—"),
-                "embodiment": env.get("AISLE_EMBODIMENT", "franka (default)"),
-                "perception": env.get("AISLE_PERCEPTION", "L0 (default)"),
+                # no bridge => the graph declares no scene/embodiment/rung at
+                # all; "—" says that, where a default would assert a falsehood
+                "scene": env.get("AISLE_SCENE", "pharmacy (default)") if env is not None else "—",
+                "scenario": env.get("AISLE_SCENARIO", "—") if env is not None else "—",
+                "embodiment": (
+                    env.get("AISLE_EMBODIMENT", "franka (default)") if env is not None else "—"
+                ),
+                "perception": (
+                    env.get("AISLE_PERCEPTION", "L0 (default)") if env is not None else "—"
+                ),
                 "nodes": node_ids,
             }
         )
     return rows
 
 
-def _capability_inventory(root: Path) -> list[dict]:
+def _capability_inventory(root: Path, tracked: set[str] | None) -> list[dict]:
     rows = []
-    for path in sorted((root / "registry" / "manifests").glob("*.yaml")):
-        manifest = yaml.safe_load(path.read_text())
+    for path in _select((root / "registry" / "manifests").glob("*.yaml"), root, tracked):
+        manifest = yaml.safe_load(path.read_text(encoding="utf-8"))
         if not isinstance(manifest, dict) or not isinstance(manifest.get("id"), str):
             raise ValueError(f"{path}: manifest must contain a string id")
         embodiment = manifest.get("embodiment", {})
@@ -113,7 +166,19 @@ def _parser_arguments(parser: argparse.ArgumentParser) -> list[str]:
     return arguments
 
 
-def _cli_inventory() -> list[dict]:
+def _cli_inventory(root: Path) -> list[dict]:
+    # The CLI table is built by INTROSPECTING the imported package, which
+    # --root cannot redirect. Refuse the mismatch rather than describe one
+    # tree's CLI in another tree's inventory: a silent wrong verdict here
+    # either blocks a correct commit or ships the drift this gate exists
+    # to catch.
+    package = Path(aisle.__file__).resolve().parent
+    if root not in package.parents:
+        raise ValueError(
+            f"imported aisle package at {package} is outside --root {root}; "
+            "run this generator against the tree whose package is installed "
+            "(uv run python tools/docs_inventory.py ...)"
+        )
     rows = [
         {
             "command": ("harness",),
@@ -137,53 +202,52 @@ def _cli_inventory() -> list[dict]:
     return rows
 
 
-def _adr_inventory(root: Path) -> list[dict]:
+def _adr_inventory(root: Path, tracked: set[str] | None) -> list[dict]:
     rows = []
-    for path in sorted((root / "docs" / "decisions").glob("*.md")):
-        lines = path.read_text().splitlines()
+    # ADR-*.md, not *.md: an index, template or README living beside the ADRs
+    # is not a malformed ADR, and used to fail the whole gate with no way out.
+    for path in _select((root / "docs" / "decisions").glob("ADR-*.md"), root, tracked):
+        lines = path.read_text(encoding="utf-8").splitlines()
         title = next(
             (line.removeprefix("# ").strip() for line in lines if line.startswith("# ")), None
         )
         if title is None:
             raise ValueError(f"{path}: ADR has no level-one heading")
         status = "not declared"
-        for index, line in enumerate(lines):
-            if not line.startswith("Status:"):
-                continue
-            parts = [line.removeprefix("Status:").strip()]
-            for continuation in lines[index + 1 :]:
-                if not continuation.strip() or continuation.startswith("#"):
-                    break
-                parts.append(continuation.strip())
-            status = " ".join(parts)
-            break
+        for line in lines:
+            if line.startswith("Status:"):
+                # the LITERAL first Status: line, as the rendered legend
+                # promises — continuation lines swept in trailing prose and
+                # bullet lists that the table claimed were the status
+                status = line.removeprefix("Status:").strip()
+                break
         rows.append({"path": path, "title": title, "status": status})
     return rows
 
 
-def _test_inventory(root: Path) -> tuple[list[dict], list[str]]:
-    modules = sorted((root / "tests").rglob("test_*.py"))
-    counts = Counter(path.relative_to(root / "tests").parts[0] for path in modules)
-    rows = [{"suite": suite, "count": count} for suite, count in sorted(counts.items())]
+def _test_inventory(root: Path, tracked: set[str] | None) -> tuple[list[str], list[str]]:
+    modules = _select((root / "tests").rglob("test_*.py"), root, tracked)
+    # Suite DIRECTORIES without per-file counts. An exhaustive module list (or
+    # any count of it) makes two independently-green PRs that each add a test
+    # merge cleanly into a main whose inventory is stale — CI red on main with
+    # no conflict to warn anyone. Directories change rarely and meaningfully.
+    suites = sorted({_relative(path.parent, root) for path in modules})
 
     with open(root / "pyproject.toml", "rb") as file:
         config = tomllib.load(file)
     configured = config["tool"]["pytest"]["ini_options"]["markers"]
     markers = [entry.split(":", 1)[0].strip() for entry in configured]
-    return rows, markers
-
-
-def _relative(path: Path, root: Path) -> str:
-    return path.relative_to(root).as_posix()
+    return suites, markers
 
 
 def render_inventory(root: Path) -> tuple[str, dict[str, int]]:
-    graphs = _graph_inventory(root)
-    capabilities = _capability_inventory(root)
-    cli_commands = _cli_inventory()
-    adrs = _adr_inventory(root)
-    test_suites, markers = _test_inventory(root)
-    test_modules = sorted((root / "tests").rglob("test_*.py"))
+    tracked = _tracked_paths(root)
+    graphs = _graph_inventory(root, tracked)
+    capabilities = _capability_inventory(root, tracked)
+    cli_commands = _cli_inventory(root)
+    adrs = _adr_inventory(root, tracked)
+    test_suites, markers = _test_inventory(root, tracked)
+    test_modules = _select((root / "tests").rglob("test_*.py"), root, tracked)
 
     lines = [
         "# Generated project inventory",
@@ -203,7 +267,6 @@ def render_inventory(root: Path) -> tuple[str, dict[str, int]]:
         f"| Capability manifests | {len(capabilities)} |",
         f"| CLI command entries | {len(cli_commands)} |",
         f"| ADR files | {len(adrs)} |",
-        f"| Test modules | {len(test_modules)} |",
         "",
         "## Graphs",
         "",
@@ -300,16 +363,15 @@ def render_inventory(root: Path) -> tuple[str, dict[str, int]]:
             "",
             f"Configured pytest markers: {', '.join(f'`{marker}`' for marker in markers)}.",
             "",
-            "| Suite directory | Test modules |",
-            "|---|---:|",
+            "Suite directories, not individual modules: an exhaustive module list goes stale",
+            "on main whenever two PRs each add a test, with no merge conflict to catch it.",
+            "",
+            "| Suite directory |",
+            "|---|",
         ]
     )
-    for row in test_suites:
-        lines.append(f"| `tests/{_cell(row['suite'])}` | {row['count']} |")
-    lines.extend(["", "### Test modules", ""])
-    for path in test_modules:
-        relative = _relative(path, root)
-        lines.append(f"- {_link(relative, f'../../{relative}')}")
+    for suite in test_suites:
+        lines.append(f"| `{_cell(suite)}` |")
     lines.append("")
 
     counts = {
@@ -327,7 +389,7 @@ def _report(ok: bool, output: Path, content: str, counts: dict[str, int], reason
         "ok": ok,
         "output": str(output),
         "reason": reason,
-        "sha256": hashlib.sha256(content.encode()).hexdigest(),
+        "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
         "counts": counts,
     }
 
@@ -345,13 +407,17 @@ def main() -> int:
     output = args.output if args.output.is_absolute() else root / args.output
     try:
         content, counts = render_inventory(root)
+        # encoding is PINNED on every read and write: the digest above is over
+        # UTF-8, so a locale-default codec (LC_ALL=C) either kills the gate
+        # with a codec error or writes bytes whose digest the same run
+        # misreports.
         if args.write:
             output.parent.mkdir(parents=True, exist_ok=True)
-            output.write_text(content)
+            output.write_text(content, encoding="utf-8")
             report = _report(True, output, content, counts, "written")
         elif not output.exists():
             report = _report(False, output, content, counts, "missing")
-        elif output.read_text() != content:
+        elif output.read_text(encoding="utf-8") != content:
             report = _report(False, output, content, counts, "stale")
         else:
             report = _report(True, output, content, counts, "current")
