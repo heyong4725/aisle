@@ -160,6 +160,12 @@ class SceneCfg:
     # a T2 graph declares it on the bridge (AISLE_LABELS), where the graph
     # hash attests it -- the same pattern as the perception rung (TC-9).
     labels: bool = False
+    # T2's "no color prior" rule: a seeded permutation reassigns the box
+    # COLORS across meds (labels, sizes and physics stay with the med),
+    # so color no longer predicts identity and only the printed word
+    # does. OFF by default; the gated draw touches no existing RNG
+    # stream, so pre-T2 scenes stay byte-identical.
+    shuffle_colors: bool = False
 
 
 @dataclass(frozen=True)
@@ -645,12 +651,22 @@ def build_scene(
     applied_frictions: dict[str, float] = {}
     applied_colors: dict[str, list[float]] = {}
     boxes: dict[str, Any] = {}
+    # T2 no-color-prior: a DEDICATED seeded stream permutes which med
+    # wears which color -- independent of the jitter streams so layouts
+    # and DR draws match the unshuffled scene at the same seed
+    color_by_med = {name: meds[name]["color"] for name in meds}
+    if cfg.shuffle_colors:
+        names = list(meds)
+        shuffled = list(np.random.default_rng(seed ^ 0x5EED).permutation(names))
+        color_by_med = {
+            name: meds[donor]["color"] for name, donor in zip(names, shuffled, strict=True)
+        }
     for placement in sample_placements(seed, list(meds), layout):
         friction = box_physics["friction"]
         if cfg.friction_jitter.enabled:
             friction *= 1.0 + (friction_rng.random() - 0.5) * dr_cfg["friction_jitter_frac"]
         applied_frictions[placement.name] = friction
-        color = list(meds[placement.name]["color"])
+        color = list(color_by_med[placement.name])
         if cfg.textures.enabled:
             scale_min, scale_range = dr_cfg["texture_scale_min"], dr_cfg["texture_scale_range"]
             color = [

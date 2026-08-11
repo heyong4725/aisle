@@ -8,9 +8,18 @@ inputs:
   violation: {schema: json_utf8, rate_hz: 1}
   # 1 Hz feedback cadence (TC-7); wire from dora/timer/millis/1000
   tick: {schema: timer_tick, rate_hz: 1}
+  # T2 scan tour (idea I13): candidate positions in, tour dialogue back
+  target_pose: {schema: pose7d_f32, rate_hz: 1}
+  move_done: {schema: json_utf8, rate_hz: 1}
+  read_result: {schema: json_utf8, rate_hz: 1}
 outputs:
   target_request: {schema: json_utf8, latency_class: best_effort}
   episode_feedback: {schema: json_utf8, latency_class: best_effort}
+  read_move: {schema: json_utf8, latency_class: best_effort}
+  read_request: {schema: json_utf8, latency_class: best_effort}
+  # the identified candidate, in target_pose's schema -- the grasp
+  # planner consumes it unchanged
+  grasp_target: {schema: pose7d_f32, latency_class: best_effort}
 params:
   max_retries: {type: int, default: 8, range: [0, 8]}
 embodiment:

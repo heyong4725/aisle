@@ -402,3 +402,23 @@ class TestLabelTextures:
 
         with pytest.raises(ValueError, match="AISLE_LABELS"):
             parse_bridge_config({"AISLE_LABELS": "maybe"})
+
+    def test_shuffle_colors_default_off_scrubbed_and_junk_refused(self):
+        """T2 no-color-prior toggle (AISLE_SHUFFLE_COLORS): same contract
+        as AISLE_LABELS — default off (pre-T2 scenes byte-identical),
+        graph-declared only (ambient scrubbed), junk refused."""
+        import pytest
+
+        from aisle.harness.rollout import SCRUBBED_ENV, scrub_bringup_env
+        from aisle.nodes.dora_genesis import parse_bridge_config
+        from aisle.scenes.pharmacy import SceneCfg
+
+        assert SceneCfg().shuffle_colors is False
+        assert parse_bridge_config({}).shuffle_colors is False
+        assert parse_bridge_config({"AISLE_SHUFFLE_COLORS": "1"}).shuffle_colors is True
+        assert "AISLE_SHUFFLE_COLORS" in SCRUBBED_ENV
+        assert "AISLE_TASK_TIER" in SCRUBBED_ENV
+        scrubbed = scrub_bringup_env({"AISLE_SHUFFLE_COLORS": "1", "AISLE_TASK_TIER": "T2"})
+        assert scrubbed == {}
+        with pytest.raises(ValueError, match="AISLE_SHUFFLE_COLORS"):
+            parse_bridge_config({"AISLE_SHUFFLE_COLORS": "maybe"})

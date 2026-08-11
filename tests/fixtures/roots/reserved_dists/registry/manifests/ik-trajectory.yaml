@@ -1,37 +1,26 @@
 id: ik-trajectory
 kind: node
-provides:
-- trajectory_generation
-requires:
-- grasp_planning
+provides: [trajectory_generation]
+requires: [grasp_planning]
 inputs:
-  grasp_pose:
-    schema: pose7d_f32
-    rate_hz: 30
-  joint_state:
-    schema: jointvec_f32
-    rate_hz: 100
-  reset_done:
-    schema: reset_done_u32
-    rate_hz: 1
+  grasp_pose: {schema: pose7d_f32, rate_hz: 30}
+  # T2 scan tour: face point to park the wrist camera at (idea I13);
+  # answered on move_done with the ladder range used
+  read_move: {schema: json_utf8, rate_hz: 1}
+  joint_state: {schema: jointvec_f32, rate_hz: 100}
+  # episode boundary: aborts any active plan (T08; stale plans froze the
+  # guard in the first live run)
+  reset_done: {schema: reset_done_u32, rate_hz: 1}
 outputs:
-  joint_cmd:
-    schema: jointvec_f32
-    latency_class: soft_rt
-  gripper_cmd:
-    schema: scalar_f32
-    latency_class: soft_rt
+  joint_cmd: {schema: jointvec_f32, latency_class: soft_rt}
+  gripper_cmd: {schema: scalar_f32, latency_class: soft_rt}
+  move_done: {schema: json_utf8, latency_class: best_effort}
 params:
-  max_joint_vel_rad_s:
-    type: float
-    default: 1.0
-    range:
-    - 0.1
-    - 2.0
+  max_joint_vel_rad_s: {type: float, default: 1.0, range: [0.1, 2.0]}
 embodiment:
-  arm:
-  - franka
-  - so101
+  # SO-101 uses its pinned official-URDF chain, five-axis radial-front IK,
+  # official limits, and normalized one-axis gripper mapping (issue #13).
+  arm: [franka, so101]
   gripper: parallel
 safety_class: motion
 eval:

@@ -1,25 +1,28 @@
+# T2's label reader (design doc §3 tier table; idea I13, closed `up`):
+# identifies the parked med box by its PRINTED LABEL word from the wrist
+# camera -- per-hypothesis projected crops (med sizes are public config),
+# ROTATE_270 to undo the label texture's wrist-roll orientation, and
+# colorless ink-NCC against the deterministic label templates. Detection
+# (pinned OWLv2, frozen verifier models read-only) supplies only the box
+# CENTRE; its identity claims are discarded -- T2's no-color-prior rule
+# holds where it matters. Refuses below the pre-registered margin floor
+# (0.04; measured min margin +0.226 under 5 mm read-pose noise): a
+# wrong-medicine pick is 10x worse than a refusal.
 id: ocr-label
 kind: node
-provides:
-- label_text
-requires:
-- rgb_stream
-- object_detection
+provides: [label_text]
+requires: [rgb_stream]
 inputs:
-  rgb:
-    schema: rgb8_image
-    rate_hz: 30
-  boxes:
-    schema: detections_f32
-    rate_hz: 30
+  bridge_info: {schema: json_utf8, rate_hz: 1}
+  rgb_wrist: {schema: rgb8_image, rate_hz: 30}
+  # TC-6 service pattern: request_id metadata pairs request and reply
+  read_request: {schema: json_utf8, rate_hz: 1}
+  # episode boundary: clears any pending read
+  reset_done: {schema: reset_done_u32, rate_hz: 1}
 outputs:
-  labels:
-    schema: labels_utf8
-    latency_class: best_effort
+  read_result: {schema: json_utf8, latency_class: best_effort}
 embodiment:
-  arm:
-  - franka
-  - so101
+  arm: [franka]
   gripper: any
 safety_class: perception
 eval: null

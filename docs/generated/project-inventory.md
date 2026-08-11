@@ -11,7 +11,7 @@ architecture, and contribution guidance remain in the
 
 | Surface | Count |
 |---|---:|
-| Graphs | 7 |
+| Graphs | 8 |
 | Capability manifests | 30 |
 | CLI command entries | 11 |
 | ADR files | 35 |
@@ -27,6 +27,7 @@ architecture, and contribution guidance remain in the
 | [graphs/expert_t0.yaml](../../graphs/expert_t0.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 9 |
 | [graphs/expert_t1.yaml](../../graphs/expert_t1.yaml) | pharmacy (default) / — | franka (default) | L1 | 9 |
 | [graphs/expert_t1_l2.yaml](../../graphs/expert_t1_l2.yaml) | pharmacy (default) / — | franka (default) | L2 | 9 |
+| [graphs/expert_t2.yaml](../../graphs/expert_t2.yaml) | pharmacy (default) / — | franka (default) | L2 | 10 |
 
 ### Graph node membership
 
@@ -37,6 +38,7 @@ architecture, and contribution guidance remain in the
 - **graphs/expert_t0.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
 - **graphs/expert_t1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
 - **graphs/expert_t1_l2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `detected-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
+- **graphs/expert_t2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `detected-pose`, `ocr-label`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
 
 ## Capability manifests
 
@@ -54,7 +56,7 @@ architecture, and contribution guidance remain in the
 | [registry/manifests/ik-trajectory.yaml](../../registry/manifests/ik-trajectory.yaml) | trajectory_generation | franka, so101 | motion | hub | `src/aisle/nodes/ik_trajectory.py` |
 | [registry/manifests/misplacement-detector.yaml](../../registry/manifests/misplacement-detector.yaml) | misplacement_detection | franka | perception | hub | `src/aisle/nodes/misplacement_detector.py` |
 | [registry/manifests/nav-action.yaml](../../registry/manifests/nav-action.yaml) | navigation | franka | motion | hub | `src/aisle/nodes/nav_action.py` |
-| [registry/manifests/ocr-label.yaml](../../registry/manifests/ocr-label.yaml) | label_text | franka, so101 | perception | hub | `pip:dora-ocr` |
+| [registry/manifests/ocr-label.yaml](../../registry/manifests/ocr-label.yaml) | label_text | franka | perception | hub | `src/aisle/nodes/label_reader.py` |
 | [registry/manifests/oracle-pose.yaml](../../registry/manifests/oracle-pose.yaml) | object_pose | franka, so101 | perception | hub | `src/aisle/nodes/oracle_pose.py` |
 | [registry/manifests/order-reader.yaml](../../registry/manifests/order-reader.yaml) | order_reading | franka, so101 | perception | hub | `src/aisle/nodes/order_reader.py` |
 | [registry/manifests/patrol-planner.yaml](../../registry/manifests/patrol-planner.yaml) | patrol_planning | franka | decision | hub | `src/aisle/nodes/patrol_planner.py` |
