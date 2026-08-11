@@ -11,7 +11,7 @@ architecture, and contribution guidance remain in the
 
 | Surface | Count |
 |---|---:|
-| Graphs | 7 |
+| Graphs | 8 |
 | Capability manifests | 30 |
 | CLI command entries | 11 |
 | ADR files | 35 |
@@ -27,6 +27,7 @@ architecture, and contribution guidance remain in the
 | [graphs/expert_t0.yaml](../../graphs/expert_t0.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 9 |
 | [graphs/expert_t1.yaml](../../graphs/expert_t1.yaml) | pharmacy (default) / — | franka (default) | L1 | 9 |
 | [graphs/expert_t1_l2.yaml](../../graphs/expert_t1_l2.yaml) | pharmacy (default) / — | franka (default) | L2 | 9 |
+| [graphs/expert_t2.yaml](../../graphs/expert_t2.yaml) | pharmacy (default) / — | franka (default) | L2 | 10 |
 
 ### Graph node membership
 
@@ -37,6 +38,7 @@ architecture, and contribution guidance remain in the
 - **graphs/expert_t0.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
 - **graphs/expert_t1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
 - **graphs/expert_t1_l2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `detected-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
+- **graphs/expert_t2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `detected-pose`, `ocr-label`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
 
 ## Capability manifests
 
