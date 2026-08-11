@@ -56,22 +56,44 @@ MOB-1; reset-anchored per ADR-25), not by wall timers:
    enforcement is preserved.
 3. **A fail-closed WALL net sweeps all envs on the BG-5 stats tick**
    (review findings on the first draft): the sim clock is blind to an
-   unstamped pose source (every stamp reads 0), a hung sim (no pose
-   events at all), and an env_id that never appears on the pose stream
-   (the old timer loop swept every env). A latched moving base with no
-   base_cmd for `base_wall_backstop_s` (10 s — an order of magnitude
-   above the worst healthy command gap at any plausible rtf) is stopped
-   under its own reason `base_stale_wall` (the net firing is an ops
-   alarm, distinguishable in guard_stats from the sim mechanism working
-   as designed); the BG-2 episode wall budget is enforced on the same
-   sweep. Wall-clocked, but it can only fire on a pathological run, so
-   healthy paths stay deterministic. The whole verdict — timeout >
-   sim-stale > wall-silent — lives in one pure function,
-   `aisle.mobility.guard.base_watchdog_reason`, evaluated identically
-   from the pose handler and the tick sweep; pinned by unit tests and
-   `test_wall_net_stops_latched_command_without_sim_stamps`. Because the
-   guard's `tick` now carries a safety sweep, MOBILE_GUARD_INCOMPLETE
-   requires it alongside `base_pose`.
+   unstamped pose source, a hung sim (no pose events at all), and an
+   env_id that never appears on the pose stream (the old timer loop
+   swept every env). A latched moving base with no base_cmd for
+   `base_wall_backstop_s` (10 s) is stopped under its own reason
+   `base_stale_wall` (the net firing is an ops alarm, distinguishable in
+   guard_stats from the sim mechanism working as designed); the BG-2
+   episode wall budget is enforced on the same sweep. **The net only
+   arms when the sim clock is demonstrably blind** (PR #156 review): the
+   latest pose carried no usable stamp, no pose ever arrived for the
+   env, or the pose stream itself went silent past the backstop — so a
+   healthy-but-slow sim structurally cannot trip it at ANY rtf; while
+   valid stamps flow, the sim-time check owns the verdict. The whole
+   verdict — timeout > sim-stale > wall-silent — lives in one pure
+   function, `aisle.mobility.guard.base_watchdog_reason`, evaluated
+   identically from the pose handler and the tick sweep; pinned by unit
+   tests, `test_wall_net_stops_latched_command_without_sim_stamps`
+   (blind clock), and `test_tick_sweep_stops_latched_command_when_poses_cease`
+   (hung sim — only the sweep can act). Because the guard's `tick` now
+   carries a safety sweep, MOBILE_GUARD_INCOMPLETE requires it alongside
+   `base_pose`.
+
+Stamp hygiene at the trust boundary (PR #156 review): metadata from
+upstream nodes is parsed TOTALLY (`parse_env_id` / `parse_sim_stamp`,
+BG-3 — a malformed field degrades, it never kills the safety gate); a
+stamp that is absent, zero (the `topics.stamp()` default for unstamped
+producers), or malformed reads as "no sim clock", never as an anchor; a
+REGRESSING stamp (bridge restart) re-anchors the staleness reference
+with a stderr note instead of leaving the sim check silently open
+forever; watchdog stops carry the last known sim stamp so traces can
+locate them; and on `reset_done` the guard EMITS an explicit [0, 0] per
+moving env — same channel as commands, so it orders after any in-flight
+pre-reset command that would otherwise re-latch unwatched. The
+validator's MOBILE_GUARD_INCOMPLETE additionally checks SOURCES, not
+just port names: guard `tick` must be a dora timer at <= 5000 ms and
+guard `base_pose` must come from a `sim_bridge` provider — an
+agent-authored graph can no longer satisfy the rule while feeding the
+watchdog a forged clock (the fuller `is_clock` manifest marker remains
+follow-up).
 4. **The validator's MOBILE_GUARD_INCOMPLETE rule requires `base_pose`
    AND `tick`** — the pose stream carries keep-out feedback plus the
    watchdog's sim clock; the stats tick carries BG-5 plus the wall-net
@@ -119,6 +141,22 @@ can move.
   Follow-up, tracked in issue #71.
 - Metal ULP nondeterminism (ADR-26 layer d) is untouched: attested S1
   pairs remain statistical at the outcome layer.
+- **Adversarial-review residuals accepted as documented behavior**
+  (PR #156): (a) under a guard backlog, the latest-wins pose queue can be
+  serviced before the queued command backlog, firing a transient
+  (fail-safe) stale stop whose trace placement is host-dependent — the
+  wall-latency residual's species, not new nondeterminism in healthy
+  runs; (b) a hung sim now silences the nav action entirely (no wall
+  heartbeat by design — the harness wall-clamp relaunch is the recovery
+  path), and MOB-2's ">=2 Hz" feedback is a SIM cadence under this ADR (a
+  wall reading at very low rtf would dip below 2 Hz; a spec clarification
+  is the owner's call); (c) a wall-timed-out latched base on a HUNG sim
+  is stopped by the sweep within ~5 s rather than the old 50 ms — while
+  the sim runs, the pose path still enforces at 50 Hz, and a hung sim
+  moves nothing; (d) draining the nav pose queue to newest under backlog
+  was proposed (performance) and REJECTED: coalescing would make the
+  control-iteration count a function of host load again, the exact
+  channel this ADR removes.
 
 ## Acceptance
 

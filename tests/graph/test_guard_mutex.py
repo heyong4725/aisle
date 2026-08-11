@@ -149,13 +149,16 @@ def _write_watchdog_graph(
     rec_out: Path,
     *,
     stamp_poses: bool = True,
+    pose_count: int = 0,
     sweep_ms: int | None = None,
     recorder_s: float | None = None,
 ) -> Path:
     """One-command-then-silent driver + guard. stamp_poses=False exercises
-    the ADR-28 wall net (unstamped poses blind the sim clock), which needs
-    a `tick` (sweep_ms) wired; guard_stats then also feeds the recorder so
-    the capture window can settle after the command stream dies."""
+    the ADR-28 wall net (unstamped poses blind the sim clock); pose_count=N
+    stops the pose stream after N ticks (a hung sim — only the stats-tick
+    sweep can act). Both need a `tick` (sweep_ms) wired; guard_stats then
+    also feeds the recorder so the capture window can settle after the
+    command stream dies."""
     guard_inputs = {
         "base_cmd": {"source": "driver/base_cmd", "queue_size": 100},
         # the watchdog clock (ADR-28)
@@ -177,7 +180,10 @@ def _write_watchdog_graph(
                 "path": str(FIXTURES / "latch_driver.py"),
                 "inputs": {"tick": "dora/timer/millis/20"},
                 "outputs": ["base_cmd", "base_pose"],
-                "env": {"LATCH_STAMP_POSES": "1" if stamp_poses else "0"},
+                "env": {
+                    "LATCH_STAMP_POSES": "1" if stamp_poses else "0",
+                    "LATCH_POSE_COUNT": str(pose_count),
+                },
             },
             {
                 "id": "guard",
@@ -197,7 +203,8 @@ def _write_watchdog_graph(
     }
     import yaml
 
-    path = tmp / ("watchdog.yaml" if stamp_poses else "wall_net.yaml")
+    name = "watchdog" if stamp_poses else "wall_net"
+    path = tmp / (f"{name}_hung.yaml" if pose_count else f"{name}.yaml")
     path.write_text(yaml.safe_dump(graph))
     return path
 
@@ -244,6 +251,30 @@ def test_wall_net_stops_latched_command_without_sim_stamps(tmp_path, dataflow):
     backstop = load_base_limits("mobile").base_wall_backstop_s
     graph = _write_watchdog_graph(
         tmp_path, rec_out, stamp_poses=False, sweep_ms=1000, recorder_s=backstop + 5
+    )
+    dataflow.run_until_settled(graph, rec_out, deadline_s=int(backstop * 3 + 30))
+    _assert_latched_command_stopped(dataflow.read(rec_out), "base_stale_wall")
+
+
+def test_tick_sweep_stops_latched_command_when_poses_cease(tmp_path, dataflow):
+    """MOB-3 fail-closed (ADR-28 wall net, sweep path): a HUNG sim — the
+    driver sends validly-stamped poses for ~0.5 s, one forward base_cmd,
+    then the pose stream dies. The pose handler never runs again, sim
+    staleness cannot advance, so ONLY the stats-tick sweep can stop the
+    latched command once the pose silence exceeds the backstop. Deleting
+    the sweep loop must fail this test (PR #156 review: the wall-net test
+    alone fires from the pose handler and would not notice)."""
+    from aisle.mobility.guard import load_base_limits
+
+    rec_out = tmp_path / "hung_sim.jsonl"
+    backstop = load_base_limits("mobile").base_wall_backstop_s
+    graph = _write_watchdog_graph(
+        tmp_path,
+        rec_out,
+        stamp_poses=True,
+        pose_count=25,
+        sweep_ms=1000,
+        recorder_s=backstop + 5,
     )
     dataflow.run_until_settled(graph, rec_out, deadline_s=int(backstop * 3 + 30))
     _assert_latched_command_stopped(dataflow.read(rec_out), "base_stale_wall")

@@ -87,18 +87,93 @@ def test_guarded_base_cmd_passes_the_motion_gate(tmp_path):
     assert "MOTION_UNGATED" not in _codes(report)
 
 
-def test_mobile_guard_must_wire_pose_and_tick(tmp_path):
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {},
+        {"base_pose": "dora-genesis/base_pose"},
+        {"tick": "dora/timer/millis/5000"},
+    ],
+)
+def test_mobile_guard_must_wire_pose_and_tick(tmp_path, extra):
     """MOB-3 (PR #14 re-review, retimed by ADR-28): on a mobile graph the
     guard (it outputs base_cmd_safe) MUST wire base_pose (keep-out + the
-    watchdog's sim clock) and tick (BG-5 stats + the fail-closed wall-net
-    sweep), or they are silently disabled."""
+    watchdog's sim clock) AND tick (BG-5 stats + the fail-closed wall-net
+    sweep) — missing either (the realistic partial regression is a stale
+    pre-ADR-28 graph shape) silently disables a safety mechanism."""
     graph = _write(
         tmp_path,
         [
             {"id": "nav-action", "outputs": ["base_cmd"]},
             {
                 "id": "budget-guard",
-                "inputs": {"base_cmd": "nav-action/base_cmd"},
+                "inputs": {"base_cmd": "nav-action/base_cmd", **extra},
+                "outputs": ["base_cmd_safe"],
+            },
+            {
+                "id": "dora-genesis",
+                "inputs": {"base_cmd": "budget-guard/base_cmd_safe"},
+                "outputs": ["base_pose"],
+            },
+        ],
+    )
+    rc, report = _validate(graph)
+    assert "MOBILE_GUARD_INCOMPLETE" in _codes(report)
+    assert rc != 0
+
+
+@pytest.mark.parametrize(
+    "tick_source",
+    [
+        "dora/timer/millis/60000",  # slower than the wall-net latency story
+        "some-node/heartbeat",  # not a timer at all: never guaranteed to fire
+    ],
+)
+def test_mobile_guard_tick_must_be_a_bounded_timer(tmp_path, tick_source):
+    """PR #156 review: the guard's tick is the wall-net sweep's clock — a
+    name-only check would let a graph wire it from a never-firing node or a
+    10-minute timer and pass validation with the fail-closed net disabled."""
+    graph = _write(
+        tmp_path,
+        [
+            {"id": "nav-action", "outputs": ["base_cmd"]},
+            {
+                "id": "budget-guard",
+                "inputs": {
+                    "base_cmd": "nav-action/base_cmd",
+                    "base_pose": "dora-genesis/base_pose",
+                    "tick": tick_source,
+                },
+                "outputs": ["base_cmd_safe"],
+            },
+            {
+                "id": "dora-genesis",
+                "inputs": {"base_cmd": "budget-guard/base_cmd_safe"},
+                "outputs": ["base_pose"],
+            },
+        ],
+    )
+    rc, report = _validate(graph)
+    assert "MOBILE_GUARD_INCOMPLETE" in _codes(report)
+    assert rc != 0
+
+
+def test_mobile_guard_pose_must_come_from_the_bridge(tmp_path):
+    """PR #156 review: base_pose is the watchdog's staleness clock and the
+    keep-out's ground truth — wired from an arbitrary node, forged or
+    absent stamps defeat both. Only a sim_bridge provider qualifies."""
+    graph = _write(
+        tmp_path,
+        [
+            {"id": "nav-action", "outputs": ["base_cmd", "base_pose"]},
+            {
+                "id": "budget-guard",
+                "inputs": {
+                    "base_cmd": "nav-action/base_cmd",
+                    # nav-action does not provide sim_bridge
+                    "base_pose": "nav-action/base_pose",
+                    "tick": "dora/timer/millis/5000",
+                },
                 "outputs": ["base_cmd_safe"],
             },
             {

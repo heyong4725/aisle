@@ -14,7 +14,7 @@ architecture, and contribution guidance remain in the
 | Graphs | 7 |
 | Capability manifests | 30 |
 | CLI command entries | 11 |
-| ADR files | 35 |
+| ADR files | 36 |
 
 ## Graphs
 
@@ -117,6 +117,7 @@ an inferred decision state.
 | [docs/decisions/ADR-26.md](../decisions/ADR-26.md) | ADR-26 — CON-5 layered reproducibility: outcomes are statistical (issue #71) | RATIFIED (owner decision 2026-08-05, in-session; enacted by the |
 | [docs/decisions/ADR-27-perception-rung-governs-topics.md](../decisions/ADR-27-perception-rung-governs-topics.md) | ADR-27 — The perception rung governs TOPICS a policy consumes, not information in the scene | ACCEPTED (owner decision 2026-08-08, CON-15). Renumbered from 26 to 27 |
 | [docs/decisions/ADR-27.md](../decisions/ADR-27.md) | ADR-27 — Official SO-101 model and 5+1 topic contract (issue #13) | ACCEPTED 2026-08-08. Owner: @heyong4725. |
+| [docs/decisions/ADR-28.md](../decisions/ADR-28.md) | ADR-28 — Sim-anchored S1 control loops: retime waypoint-nav and the base watchdog onto base_pose (issue #71) | PROPOSED (agent-drafted 2026-08-11 at the owner's direction — the |
 | [docs/decisions/ADR-3.md](../decisions/ADR-3.md) | ADR-3: sim-driver evalcards are pending until M0 (CAP-6 interpretation) | not declared |
 | [docs/decisions/ADR-4.md](../decisions/ADR-4.md) | ADR-4: validator interpretations for T03 (SPEC 060) | not declared |
 | [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | not declared |

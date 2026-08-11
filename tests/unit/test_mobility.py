@@ -274,6 +274,7 @@ class TestBaseWatchdogReason:
             now_sim_ns=0,
             last_cmd_wall_t=100.0,
             now_wall=100.0,
+            sim_clock_blind=False,
             limits=load_base_limits("mobile"),
         )
         return base_watchdog_reason(**{**defaults, **kw})
@@ -291,16 +292,58 @@ class TestBaseWatchdogReason:
         assert self._reason(last_cmd_sim_ns=None, now_sim_ns=10**12) is None
 
     def test_wall_net_catches_what_the_sim_clock_cannot_see(self):
-        assert self._reason(last_cmd_sim_ns=None, now_sim_ns=None, now_wall=111.0) == (
-            "base_stale_wall"
-        )
+        assert self._reason(
+            last_cmd_sim_ns=None, now_sim_ns=None, now_wall=111.0, sim_clock_blind=True
+        ) == ("base_stale_wall")
+
+    def test_wall_net_needs_a_blind_sim_clock(self):
+        """PR #156 review: a healthy-but-SLOW sim (valid stamps still
+        flowing, however rarely) must never trip the wall net — while the
+        sim clock works, the sim-time check owns the verdict at any rtf."""
+        assert self._reason(now_wall=200.0, sim_clock_blind=False) is None
 
     def test_wall_net_sits_far_above_any_healthy_command_gap(self):
         # 2 s wall since the last cmd = a healthy gap even at rtf 0.01
-        assert self._reason(now_wall=102.0) is None
+        assert self._reason(now_wall=102.0, sim_clock_blind=True) is None
+
+    def test_sim_stale_wins_over_the_wall_net(self):
+        """ADR-28 precedence: when both windows are blown, the deterministic
+        sim verdict is reported, not the ops-alarm wall reason."""
+        assert self._reason(now_sim_ns=int(0.5e9) + 1, now_wall=200.0, sim_clock_blind=True) == (
+            "base_stale"
+        )
 
     def test_episode_timeout_wins_over_staleness(self):
         assert self._reason(episode_timed_out=True, now_sim_ns=10**12) == "base_timeout"
+
+
+class TestGuardMetadataParsing:
+    """BG-3 (PR #156 review): metadata from upstream nodes is a trust
+    boundary — a malformed env_id or sim stamp must degrade, never crash
+    the guard's event loop (the whole safety gate dies with it)."""
+
+    def test_env_id_total_over_garbage(self):
+        from aisle.mobility.guard import parse_env_id
+
+        assert parse_env_id({"env_id": 3}) == 3
+        assert parse_env_id({}) == 0
+        for bad in (None, "abc", [1], {"x": 1}, float("nan")):
+            assert parse_env_id({"env_id": bad}) == 0
+
+    def test_sim_stamp_total_over_garbage(self):
+        from aisle.mobility.guard import parse_sim_stamp
+
+        assert parse_sim_stamp({"sim_time_ns": 10_000_000}) == 10_000_000
+        for blind in ({}, {"sim_time_ns": 0}, {"sim_time_ns": None}, {"sim_time_ns": "abc"}):
+            assert parse_sim_stamp(blind) is None
+
+    def test_zero_stamp_means_no_clock(self):
+        """topics.stamp() defaults missing stamps to 0, so 0 must read as
+        'no sim clock' — anchoring staleness at 0 against the monotonic
+        run-long sim clock would falsely stale-stop the next command."""
+        from aisle.mobility.guard import parse_sim_stamp
+
+        assert parse_sim_stamp({"sim_time_ns": 0}) is None
 
 
 class TestMobileValidation:
