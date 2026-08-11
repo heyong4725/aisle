@@ -1,9 +1,11 @@
 # The hand-written S1 retail expert graph (T15, SPEC 200 acceptance;
 # ADR-18) — the retail analog of expert_t0. Node ids ARE registry manifest
 # ids (VAL-1/2); every motion edge (arm AND base) routes through
-# budget-guard (VAL-5/MOB-3) with base_pose + base_watchdog wired
-# (MOBILE_GUARD_INCOMPLETE); oracle_state feeds only the verifier (VAL-6);
-# perception rides the non-privileged `poses` topic.
+# budget-guard (VAL-5/MOB-3) with base_pose wired (MOBILE_GUARD_INCOMPLETE;
+# it carries keep-out feedback AND the watchdog clock, ADR-29);
+# oracle_state feeds only the verifier (VAL-6); perception rides the
+# non-privileged `poses` topic. No wall-timer control loops: waypoint-nav
+# and the guard watchdog are clocked by base_pose (CON-5, issue #71).
 nodes:
   - id: dora-genesis
     path: ../src/aisle/nodes/dora_genesis.py
@@ -60,7 +62,6 @@ nodes:
       AISLE_SCENE: store
     inputs:
       tick: dora/timer/millis/5000
-      base_watchdog: dora/timer/millis/50
       joint_cmd:
         source: s1-expert/joint_cmd
         queue_size: 100
@@ -88,13 +89,15 @@ nodes:
     env:
       AISLE_EMBODIMENT: mobile
     inputs:
-      tick: dora/timer/millis/20
       nav_goal:
         source: s1-expert/nav_goal
         queue_size: 100
       base_pose:
+        # the control clock (ADR-29): one iteration per pose. Deep enough
+        # that scheduler jitter never drops a clock edge (not latest-wins),
+        # shallow enough to bound stale-pose replay under pathological load
         source: dora-genesis/base_pose
-        queue_size: 1
+        queue_size: 10
     outputs:
       - nav_feedback
       - nav_result

@@ -59,7 +59,6 @@ nodes:
       AISLE_SCENE: store
     inputs:
       tick: dora/timer/millis/5000
-      base_watchdog: dora/timer/millis/50
       joint_cmd:
         source: s3-driver-v1/joint_cmd
         queue_size: 100
@@ -87,13 +86,15 @@ nodes:
     env:
       AISLE_EMBODIMENT: mobile
     inputs:
-      tick: dora/timer/millis/20
       nav_goal:
         source: s3-driver-v1/nav_goal
         queue_size: 100
       base_pose:
+        # the control clock (ADR-29): one iteration per pose. Deep enough
+        # that scheduler jitter never drops a clock edge (not latest-wins),
+        # shallow enough to bound stale-pose replay under pathological load
         source: dora-genesis/base_pose
-        queue_size: 1
+        queue_size: 10
     outputs:
       - nav_feedback
       - nav_result

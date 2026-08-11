@@ -10,9 +10,6 @@ inputs:
   base_pose:
     schema: base_pose3d_f32
     rate_hz: 50
-  tick:
-    schema: timer_tick
-    rate_hz: 50
 outputs:
   nav_feedback:
     schema: json_utf8

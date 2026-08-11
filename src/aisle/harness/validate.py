@@ -34,6 +34,11 @@ from aisle.harness.registry import (
 # reaching the bridge MUST traverse the budget guard.
 GUARD_ID = "budget-guard"
 RATE_BAND = 0.2  # TC-4: rates are contracts within ±20%
+# ADR-29: the guard's stats tick doubles as the watchdog wall-net sweep, so
+# a mobile graph must wire it from a real dora timer no slower than this
+# (the checked-in graphs use 5000 ms; the limits.toml wall-net latency
+# story assumes it)
+GUARD_TICK_MAX_MS = 5000
 # MOB-4: each embodiment profile resolves to an ARM kind. `mobile` is the
 # franka arm on a differential-drive base, so franka-arm capabilities work
 # unchanged under `mobile`; only base-requiring nodes distinguish them.
@@ -515,11 +520,19 @@ def validate_nodes(
             (warnings if allow_unproven else errors).append(entry)
 
         # SPEC 210 MOB-3: on a mobile graph the guard (it outputs
-        # base_cmd_safe) MUST also wire base_pose + base_watchdog, or the
-        # keep-out and stale-command watchdog are silently disabled — the
-        # validator otherwise does not require every manifest input.
+        # base_cmd_safe) MUST also wire base_pose (keep-out feedback AND the
+        # sim-time watchdog's clock, ADR-29) and tick (BG-5 stats AND the
+        # watchdog's fail-closed wall-net sweep) — the validator otherwise
+        # does not require every manifest input. Port NAMES are not enough
+        # (PR #156 review): both inputs are now the watchdog's clocks, so
+        # their SOURCES are checked too — tick must be a real dora timer at
+        # a bounded period (a never-firing or slow source silently disables
+        # the wall net), and base_pose must come from a sim_bridge node (an
+        # arbitrary producer could feed forged or absent stamps and defeat
+        # staleness AND keep-out at once).
         if embodiment == "mobile" and "base_cmd_safe" in (manifest.get("outputs") or {}):
-            missing = {"base_pose", "base_watchdog"} - set(node.get("inputs") or {})
+            guard_inputs = node.get("inputs") or {}
+            missing = {"base_pose", "tick"} - set(guard_inputs)
             if missing:
                 errors.append(
                     _entry(
@@ -527,10 +540,42 @@ def validate_nodes(
                         {"node": node_id},
                         f"{node_id} guards the base on a mobile graph but does not "
                         f"wire {sorted(missing)}",
-                        "wire base_pose and base_watchdog into the guard so MOB-3 "
-                        "keep-out and the stale-command watchdog stay active",
+                        "wire base_pose (MOB-3 keep-out + the watchdog's sim clock) "
+                        "and tick (BG-5 stats + the ADR-29 wall-net sweep) into the guard",
                     )
                 )
+            if "tick" in guard_inputs:
+                raw = guard_inputs["tick"]
+                tick_src = raw.get("source") if isinstance(raw, dict) else raw
+                period = re.fullmatch(r"dora/timer/millis/(\d+)", str(tick_src or ""))
+                if period is None or int(period.group(1)) > GUARD_TICK_MAX_MS:
+                    errors.append(
+                        _entry(
+                            "MOBILE_GUARD_INCOMPLETE",
+                            {"node": node_id},
+                            f"{node_id} tick is {tick_src!r}, not a dora timer at "
+                            f"<= {GUARD_TICK_MAX_MS} ms",
+                            "wire tick from dora/timer/millis/<N> with N <= "
+                            f"{GUARD_TICK_MAX_MS} so the ADR-29 wall-net sweep "
+                            "actually runs at a bounded cadence",
+                        )
+                    )
+            if "base_pose" in guard_inputs:
+                raw = guard_inputs["base_pose"]
+                pose_src = raw.get("source") if isinstance(raw, dict) else raw
+                producer = str(pose_src or "").partition("/")[0]
+                if producer not in bridge_ids:
+                    errors.append(
+                        _entry(
+                            "MOBILE_GUARD_INCOMPLETE",
+                            {"node": node_id},
+                            f"{node_id} base_pose comes from {producer!r}, which does "
+                            "not provide sim_bridge",
+                            "wire base_pose from the sim bridge — the watchdog's "
+                            "staleness clock and the keep-out geometry both trust "
+                            "its stamps (ADR-29)",
+                        )
+                    )
 
         for port, source in (node.get("inputs") or {}).items():
             _validate_edge(

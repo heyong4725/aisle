@@ -315,6 +315,11 @@ class EpisodeTimer:
             self._start = now
         return now - self._start
 
+    def timed_out(self, now: float, budget_s: float) -> bool:
+        """BG-2: has the episode wall budget elapsed? Anchors like
+        on_command — the first caller starts the clock."""
+        return self.on_command(now) > budget_s
+
     def on_reset(self, now: float) -> None:
         self._start = now
 
@@ -337,8 +342,11 @@ def main(clock=None) -> None:
 
     from aisle.mobility.guard import (
         base_creep_deadline,
+        base_watchdog_reason,
         clamp_base_cmd,
         load_base_limits,
+        parse_env_id,
+        parse_sim_stamp,
         valid_base_pose,
     )
 
@@ -381,7 +389,15 @@ def main(clock=None) -> None:
             # commanded arm-target change pushes it out, silence lets it pass
             "arm_motion_deadline": float("-inf"),
             "base_pose": None,  # latest base_pose feedback (MOB-3 keep-out)
-            "last_base_cmd_t": None,  # wall time of the last base_cmd (watchdog)
+            # the watchdog's clocks (ADR-29, see run_watchdog): newest pose
+            # sim stamp (None = sim clock blind), the pose stamp referenced
+            # by the last base_cmd, the last base_cmd's wall time (the wall
+            # net's reference), and the last pose's wall arrival (the pose
+            # stream's own liveness signal)
+            "base_pose_sim_ns": None,
+            "last_base_cmd_sim_ns": None,
+            "last_base_cmd_wall_t": None,
+            "last_pose_wall_t": None,
             "last_base_safe": [0.0, 0.0],  # last emitted safe base cmd
             "timer": EpisodeTimer(),
         }
@@ -401,15 +417,70 @@ def main(clock=None) -> None:
             send("violation", pa.array([json.dumps(payload)]), metadata, s=s)
             print(f"guard violation: {payload}", file=sys.stderr)
 
+    def run_watchdog(env_id: int, state: dict, now: float) -> None:
+        # MOB-3 watchdog (ADR-29): stop a latched moving base ONCE when the
+        # pure verdict says so. Called from the base_pose handler (the sim
+        # clock — alive exactly when the base can move) and swept over all
+        # envs on the BG-5 stats tick (the wall net's home: it also covers
+        # unstamped sources, a hung sim, and env_ids absent from the pose
+        # stream, which the sim clock cannot see).
+        if state["last_base_safe"] == [0.0, 0.0]:
+            return
+        if state["last_base_cmd_sim_ns"] is None and state["base_pose_sim_ns"] is not None:
+            # a command latched before any pose was seen: anchor it at the
+            # FIRST pose stamp — a fair fresh reference (0 would falsely
+            # stale-stop a guard that joined mid-run; the sim clock is
+            # monotonic across episodes) that still lets a dead producer go
+            # stale base_staleness_s of sim time later
+            state["last_base_cmd_sim_ns"] = state["base_pose_sim_ns"]
+        # the wall net only arms when the sim clock is demonstrably blind
+        # (PR #156 review): the latest pose carried no usable stamp, no pose
+        # ever arrived for this env, or the pose stream itself went silent
+        # past the backstop. While valid stamps flow, the sim-time check
+        # owns the verdict — a healthy-but-slow sim can never trip the net.
+        blind = state["base_pose_sim_ns"] is None or (
+            state["last_pose_wall_t"] is not None
+            and now - state["last_pose_wall_t"] > base_limits.base_wall_backstop_s
+        )
+        reason = base_watchdog_reason(
+            episode_timed_out=state["timer"].timed_out(now, limits.wall_timeout_s),
+            last_cmd_sim_ns=state["last_base_cmd_sim_ns"],
+            now_sim_ns=state["base_pose_sim_ns"],
+            last_cmd_wall_t=state["last_base_cmd_wall_t"],
+            now_wall=now,
+            sim_clock_blind=blind,
+            limits=base_limits,
+        )
+        if reason is None:
+            return
+        # locate the stop in sim time when the clock is known (trace tooling
+        # assumes non-decreasing per-topic stamps; PR #156 review)
+        meta = {"env_id": env_id}
+        if state["base_pose_sim_ns"] is not None:
+            meta["sim_time_ns"] = state["base_pose_sim_ns"]
+        send("base_cmd_safe", pa.array(np.zeros(2, dtype=np.float32)), meta)
+        publish_violations(
+            [
+                {
+                    "reason": reason,
+                    "axis": "cmd",
+                    "requested": state["last_base_safe"],
+                    "clamped": [0.0, 0.0],
+                }
+            ],
+            meta,
+        )
+        state["last_base_safe"] = [0.0, 0.0]
+
     for event in node:
         if event["type"] != "INPUT":
             continue
         metadata = event.get("metadata") or {}
         now = clock()
         if event["id"] == "joint_cmd":
-            env_id = int(metadata.get("env_id", 0))
+            env_id = parse_env_id(metadata)
             state = envs.setdefault(env_id, new_state())
-            timed_out = state["timer"].on_command(now) > limits.wall_timeout_s
+            timed_out = state["timer"].timed_out(now, limits.wall_timeout_s)
             prev_arm = np.asarray(state["last_safe"], dtype=np.float32)[: limits.n_arm_dof]
             safe, violations = clamp_joint_cmd(
                 event["value"].to_numpy(zero_copy_only=False),
@@ -438,11 +509,29 @@ def main(clock=None) -> None:
             # MOB-3 keep-out feedback: cache the base pose. VALIDATE it first
             # (BG-3): a malformed pose must not crash clamp_base_cmd or bypass
             # keep-out — a bad pose caches None so keep-out fails closed.
-            env_id = int(metadata.get("env_id", 0))
+            env_id = parse_env_id(metadata)
             state = envs.setdefault(env_id, new_state())
+            state["last_pose_wall_t"] = now
+            stamp_ns = parse_sim_stamp(metadata)
+            if (
+                stamp_ns is not None
+                and state["last_base_cmd_sim_ns"] is not None
+                and stamp_ns < state["last_base_cmd_sim_ns"]
+            ):
+                # a regressing stamp (bridge restart, misbehaving source)
+                # would leave `now - anchor` negative and the sim-stale check
+                # silently open forever — re-anchor and say so (PR #156
+                # review), so staleness restarts from the new clock
+                print(
+                    f"guard: base_pose sim stamp regressed ({stamp_ns} < "
+                    f"{state['last_base_cmd_sim_ns']}); re-anchoring the watchdog",
+                    file=sys.stderr,
+                )
+                state["last_base_cmd_sim_ns"] = stamp_ns
+            state["base_pose_sim_ns"] = stamp_ns
             pose = event["value"].to_numpy(zero_copy_only=False).tolist()
             if valid_base_pose(pose):
-                state["base_pose"] = [float(p) for p in pose]
+                state["base_pose"] = pose
             else:
                 state["base_pose"] = None
                 publish_violations(
@@ -456,15 +545,22 @@ def main(clock=None) -> None:
                     ],
                     metadata,
                 )
+            # the bridge latches the last base_cmd_safe and integrates it
+            # every tick, so a dead producer or a timed-out episode would
+            # drive forever — the pose stream is the watchdog's clock (ADR-29)
+            run_watchdog(env_id, state, now)
         elif event["id"] == "base_cmd" and is_mobile:
             # MOB-3: base velocity limits, arm/base mutual exclusion (base
             # clamped to creep while the arm moves), the shelf keep-out (no
             # entry into a shelf zone with the arm reaching), and the BG-2
             # episode wall timeout. Never dropped (BG-3).
-            env_id = int(metadata.get("env_id", 0))
+            env_id = parse_env_id(metadata)
             state = envs.setdefault(env_id, new_state())
-            state["last_base_cmd_t"] = now
-            timed_out = state["timer"].on_command(now) > limits.wall_timeout_s
+            # commands carry no sim stamp: the staleness reference is the
+            # newest pose stamp the guard has seen (ADR-29)
+            state["last_base_cmd_sim_ns"] = state["base_pose_sim_ns"]
+            state["last_base_cmd_wall_t"] = now
+            timed_out = state["timer"].timed_out(now, limits.wall_timeout_s)
             arm_in_motion = now < state["arm_motion_deadline"]
             arm = np.asarray(state["last_safe"], dtype=np.float32)[: limits.n_arm_dof]
             ee = fk_ee_pos(arm)
@@ -492,9 +588,9 @@ def main(clock=None) -> None:
             send("base_cmd_safe", pa.array(np.asarray(safe_b, dtype=np.float32)), metadata)
             publish_violations(violations, metadata)
         elif event["id"] == "gripper_cmd":
-            env_id = int(metadata.get("env_id", 0))
+            env_id = parse_env_id(metadata)
             state = envs.setdefault(env_id, new_state())
-            timed_out = state["timer"].on_command(now) > limits.wall_timeout_s
+            timed_out = state["timer"].timed_out(now, limits.wall_timeout_s)
             raw = event["value"].to_numpy(zero_copy_only=False)
             value = float(raw[0]) if len(raw) else float("nan")
             safe_g, violations = clamp_gripper_cmd(
@@ -511,45 +607,36 @@ def main(clock=None) -> None:
             # HERE (not at the first command), and velocity/hold state is
             # re-referenced to home — the robot IS at home after a
             # teleport reset
-            for state in envs.values():
+            for env_id, state in envs.items():
+                if is_mobile and state["last_base_safe"] != [0.0, 0.0]:
+                    # a pre-reset nonzero cmd can still be IN FLIGHT to the
+                    # bridge; merely clearing our latch mirror would let it
+                    # re-latch unwatched (PR #156 review). Emitting an
+                    # explicit zero on the SAME channel orders it after any
+                    # in-flight command, closing the window structurally.
+                    send(
+                        "base_cmd_safe",
+                        pa.array(np.zeros(2, dtype=np.float32)),
+                        {**metadata, "env_id": env_id},
+                    )
                 state["timer"].on_reset(now)
                 state["last_safe"] = fallback
                 state["last_gripper"] = 0.0
                 state["arm_motion_deadline"] = float("-inf")
                 # MOB-3: clear the cached pose (keep-out fails closed until a
                 # fresh pose arrives) and the watchdog/latched-base state
+                # (the sim clock itself keeps running across episodes, so
+                # base_pose_sim_ns is NOT reset)
                 state["base_pose"] = None
-                state["last_base_cmd_t"] = None
+                state["last_base_cmd_sim_ns"] = None
+                state["last_base_cmd_wall_t"] = None
                 state["last_base_safe"] = [0.0, 0.0]
-        elif event["id"] == "base_watchdog" and is_mobile:
-            # MOB-3 watchdog on a DEDICATED fast input (separate from the 0.2 Hz
-            # BG-5 stats `tick`): the bridge latches the last base_cmd_safe and
-            # integrates it every tick, so a stale command (producer died) or a
-            # wall-timed-out episode would drive forever. Stop any latched
-            # moving base by emitting [0, 0] once.
-            for env_id, state in envs.items():
-                last_t = state["last_base_cmd_t"]
-                if last_t is None or state["last_base_safe"] == [0.0, 0.0]:
-                    continue
-                stale = now - last_t > base_limits.base_staleness_s
-                timed_out = state["timer"].on_command(now) > limits.wall_timeout_s
-                if stale or timed_out:
-                    reason = "base_timeout" if timed_out else "base_stale"
-                    meta = {"env_id": env_id}
-                    send("base_cmd_safe", pa.array(np.zeros(2, dtype=np.float32)), meta)
-                    publish_violations(
-                        [
-                            {
-                                "reason": reason,
-                                "axis": "cmd",
-                                "requested": state["last_base_safe"],
-                                "clamped": [0.0, 0.0],
-                            }
-                        ],
-                        meta,
-                    )
-                    state["last_base_safe"] = [0.0, 0.0]
         elif event["id"] == "tick":
+            # the wall net's sweep (ADR-29): every env, fail-closed, on the
+            # BG-5 cadence — it can only fire on a pathological run
+            if is_mobile:
+                for env_id, state in envs.items():
+                    run_watchdog(env_id, state, now)
             # BG-5: cumulative violation counts every 5 s, timer-driven —
             # emitted even when no commands flow
             send("guard_stats", pa.array([json.dumps({"violations": counts})]), {})

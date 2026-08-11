@@ -211,6 +211,16 @@ def test_episode_timer_anchors_at_reset_not_first_command():
     assert timer.on_command(95.0) == pytest.approx(25.0)
 
 
+def test_episode_timer_timed_out_anchors_and_flips_past_budget():
+    """BG-2 (ADR-29): timed_out is the watchdog's budget predicate — it
+    anchors an unstarted clock like on_command (its documented side effect)
+    and trips only strictly past the budget."""
+    timer = EpisodeTimer()
+    assert timer.timed_out(10.0, budget_s=5.0) is False  # first call anchors at 10
+    assert timer.timed_out(15.0, budget_s=5.0) is False  # exactly at budget: not out
+    assert timer.timed_out(15.1, budget_s=5.0) is True
+
+
 def test_finger_rate_state_is_shared_across_channels():
     """BG-2 (PR review round 2): the fingers ARE the gripper — the round
     trip between the two representations is exact, so alternating

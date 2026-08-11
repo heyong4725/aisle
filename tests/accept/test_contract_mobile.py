@@ -42,7 +42,6 @@ def _write_bridge_graph(tmp: Path, rec_out: Path) -> Path:
                 "inputs": {
                     "base_cmd": {"source": "base-driver/base_cmd", "queue_size": 100},
                     "base_pose": {"source": "bridge/base_pose", "queue_size": 100},
-                    "base_watchdog": "dora/timer/millis/50",
                 },
                 "outputs": ["base_cmd_safe", "violation"],
                 "env": {"AISLE_EMBODIMENT": "mobile"},
@@ -168,8 +167,8 @@ def _write_nav_graph(tmp: Path, rec_out: Path) -> Path:
                 "path": str(NAV),
                 "inputs": {
                     "nav_goal": {"source": "injector/nav_goal", "queue_size": 4},
+                    # the control clock (ADR-29): one iteration per sim-stamped pose
                     "base_pose": {"source": "mock-base/base_pose", "queue_size": 400},
-                    "tick": tick,
                 },
                 "outputs": ["nav_feedback", "nav_result", "base_cmd"],
                 "env": {"AISLE_EMBODIMENT": "mobile"},
