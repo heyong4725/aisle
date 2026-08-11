@@ -53,6 +53,7 @@ def write_bridge_dataflow(
     duration_s: float = 10.0,
     recorder_await: str | None = None,
     recorder_await_tail_s: float | None = None,
+    recorder_await_sim_ns: int | None = None,
     with_verifier_stub: bool = False,
     with_reset_service: bool = False,
     with_guard: bool = False,
@@ -62,7 +63,16 @@ def write_bridge_dataflow(
     """step_without_reset defaults True: most fixture drivers never send a
     reset, and without the opt-out the ADR-25 bridge holds at sim step 0
     forever — the test then fails 420 s later, opaquely. Tests that exercise
-    the production (reset-anchored) startup pass step_without_reset=False."""
+    the production (reset-anchored) startup pass step_without_reset=False.
+
+    recorder_await is "topic:count" (e.g. "reset_done:2", issue #94): the
+    capture window may not close before the Nth row of the topic, which then
+    re-anchors the deadline to now + recorder_await_tail_s (default: the
+    duration); recorder_await_sim_ns additionally holds the window open until
+    the recorded sim stamps advance that far past the Nth row's stamp.
+    Misconfiguration is rejected HERE, in the pytest process, because a
+    recorder waiting on a topic it can never see burns the settle helper's
+    whole outer deadline (PR #159 review)."""
     recorder_inputs = {t: f"bridge/{t}" for t in BRIDGE_OUTPUTS}
     if with_guard:
         recorder_inputs["violation"] = _q("budget-guard/violation")
@@ -81,6 +91,24 @@ def write_bridge_dataflow(
         recorder_inputs["episode_goal"] = "driver/episode_goal"
         recorder_inputs["episode_feedback"] = "verifier/episode_feedback"
         recorder_inputs["episode_result"] = "verifier/episode_result"
+    if (recorder_await_tail_s is not None or recorder_await_sim_ns is not None) and (
+        not recorder_await
+    ):
+        raise ValueError("recorder_await_tail_s/_sim_ns without recorder_await is a silent no-op")
+    if recorder_await:
+        topic, _, count = recorder_await.partition(":")
+        if not topic or not count.isdigit() or int(count) < 1:
+            raise ValueError(f"recorder_await must be 'topic:count', got {recorder_await!r}")
+        if topic not in recorder_inputs:
+            raise ValueError(
+                f"recorder_await topic {topic!r} is not wired to the recorder "
+                f"(inputs: {sorted(recorder_inputs)}) — the await could never be met"
+            )
+        # the awaited stream must be LOSSLESS: dora's default latest-wins
+        # delivery can coalesce two awaited rows under recorder starvation,
+        # leaving the count unreachable forever (PR #159 cross-model review)
+        raw = recorder_inputs[topic]
+        recorder_inputs[topic] = _q(raw if isinstance(raw, str) else raw["source"])
     dataflow = {
         "nodes": [
             {
@@ -193,6 +221,11 @@ def write_bridge_dataflow(
                         if recorder_await_tail_s is not None
                         else {}
                     ),
+                    **(
+                        {"RECORDER_AWAIT_SIM_NS": str(recorder_await_sim_ns)}
+                        if recorder_await_sim_ns is not None
+                        else {}
+                    ),
                 },
             },
         ]
@@ -276,6 +309,8 @@ def run_dataflow_until_settled(graph: Path, record_out: Path, deadline_s: float)
         )
 
     settled = False
+    died_early = False
+    stderr_tail = ""
     try:
         deadline = time.monotonic() + deadline_s
         while time.monotonic() < deadline:
@@ -283,19 +318,38 @@ def run_dataflow_until_settled(graph: Path, record_out: Path, deadline_s: float)
             if _sentinel_written():
                 settled = True
                 break
+            if proc.poll() is not None:
+                # the dataflow died (a node crashed, e.g. a malformed
+                # recorder config): fail NOW with its stderr instead of
+                # burning the whole deadline on an opaque no-sentinel
+                # timeout (PR #159 review)
+                died_early = True
+                break
     finally:
-        os.killpg(proc.pid, signal.SIGTERM)
         try:
-            proc.communicate(timeout=15)
+            # unconditional: the leader may be dead while group members
+            # (other nodes) live on; the zombie leader keeps the pgid valid
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass  # the whole group is already gone
+        try:
+            _, err = proc.communicate(timeout=15)
         except subprocess.TimeoutExpired:
             os.killpg(proc.pid, signal.SIGKILL)
-            proc.communicate()
+            _, err = proc.communicate()
+        stderr_tail = (err or "")[-600:]
         _reap_orphan_nodes(graph.parent)
+    if died_early:
+        raise AssertionError(
+            f"the dataflow exited (rc={proc.returncode}) before the recorder settled — "
+            f"a node likely crashed; stderr tail:\n{stderr_tail}"
+        )
     if not settled:
         raise AssertionError(
             f"recorder never wrote its completion sentinel within {deadline_s}s: the "
-            "capture stalled (stream stopped mid-window) or the build never finished "
-            "— NOT a completed window, so the run is not accepted"
+            "capture stalled (stream stopped mid-window), the build never finished, "
+            "or a RECORDER_AWAIT condition was never met "
+            f"— NOT a completed window, so the run is not accepted; stderr tail:\n{stderr_tail}"
         )
 
 
