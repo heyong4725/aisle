@@ -86,9 +86,13 @@ class TestSolveReadPose:
         head, carrying the entry's RANGE for the reader's projection."""
         tried: list[tuple] = []
         targets = {READ_LADDER[3], READ_LADDER[7]}
+        backoff = ik_trajectory.READ_STAGE_BACKOFF_M
+        far_of_target = {(round(r + backoff, 3), a, p) for r, a, p in targets}
 
         def fake_ik(tcp, rot, seed, embodiment):
-            return np.zeros(7) if tried[-1] in targets else None
+            r, a, p = tried[-1]
+            solvable = (r, a, p) in targets or (round(r, 3), a, p) in far_of_target
+            return np.zeros(7) if solvable else None
 
         def spy_targets(face, range_m, azimuth, mount_arg, pitch=0.0):
             tried.append((range_m, azimuth, pitch))
@@ -97,8 +101,19 @@ class TestSolveReadPose:
         monkeypatch.setattr(ik_trajectory, "_ik_once", fake_ik)
         monkeypatch.setattr(ik_trajectory, "read_flange_targets", spy_targets)
         solutions = solve_read_poses(FACE, mount, np.zeros(7))
-        assert tried == list(READ_LADDER)
+        # each SOLVED entry additionally solves its staged (backed-off)
+        # approach pose right after — same azimuth/pitch, range+backoff;
+        # an entry whose staged pose has no IK would be DROPPED
+        expected: list[tuple] = []
+        for entry in READ_LADDER:
+            expected.append(entry)
+            if entry in targets:
+                expected.append((entry[0] + backoff, entry[1], entry[2]))
+        assert [(round(r, 3), a, p) for r, a, p in tried] == [
+            (round(r, 3), a, p) for r, a, p in expected
+        ]
         assert [s[1] for s in solutions] == [READ_LADDER[3][0], READ_LADDER[7][0]]
+        assert all(s[3] is not None for s in solutions)  # staged pose required
         tried.clear()
         assert solve_read_pose(FACE, mount, np.zeros(7))[1] == READ_LADDER[3][0]
 

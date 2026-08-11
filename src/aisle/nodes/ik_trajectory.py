@@ -278,6 +278,15 @@ _PITCHED_FIRST_LADDER = tuple(
 READ_TRACK_TOL = 0.20
 # bounded ladder walk per read_move — each attempt costs a retreat+park
 READ_MAX_ATTEMPTS = 6
+# staged read approach: park first at the same view backed off along the
+# view axis, then advance — keeps the home->read joint hop clear of the
+# shelf face (upper-level transits swept boxes 12-28 cm without it).
+# Deeper backoff preferred (0.15 audited fully clean on the knock seeds);
+# 0.10 is the fallback where the deep far pose has no IK (the far-side
+# pitched entries seed 3's tour needs), still clean bar one 8.6 cm case
+# the 0.15 rung absorbs. An entry with NEITHER is dropped.
+READ_STAGE_BACKOFFS_M = (0.15, 0.10)
+READ_STAGE_BACKOFF_M = READ_STAGE_BACKOFFS_M[0]  # spy/test anchor
 # the frozen desk wrist camera (scenes/pharmacy.py add_camera): 320x240
 # at 70 degree vertical fov — the aim-prior projection must match the
 # rendered geometry exactly
@@ -350,7 +359,28 @@ def solve_read_poses(
         for seed in (q0, *_CANONICAL_SEEDS):
             q = _ik_once(tcp, r_flange, seed, embodiment)
             if q is not None:
-                solutions.append((q, range_m, pitch))
+                # staged approach: the same view retracted along its axis
+                # (READ_STAGE_BACKOFF_M), IK'd from q first so the branch
+                # matches — the direct home->read joint hop swept boxes
+                # on upper-level layouts (T2 curve run 1: collisions at
+                # t=2.6-3.6 s, a target knocked clean off the shelf;
+                # displacement audit: 12-28 cm knocks, every one on an
+                # UNSTAGED entry). An entry with no staged approach is
+                # DROPPED: an unprotected transit is how boxes get
+                # knocked, and the ladder has more entries.
+                q_far = None
+                for backoff in READ_STAGE_BACKOFFS_M:
+                    far_tcp, far_rot = read_flange_targets(
+                        face, range_m + backoff, azimuth, mount, pitch
+                    )
+                    for far_seed in (q, *_CANONICAL_SEEDS):
+                        q_far = _ik_once(far_tcp, far_rot, far_seed, embodiment)
+                        if q_far is not None:
+                            break
+                    if q_far is not None:
+                        break
+                if q_far is not None:
+                    solutions.append((q, range_m, pitch, q_far))
                 break
     return solutions
 
@@ -992,7 +1022,7 @@ def main() -> None:
         through neighbour boxes at ~13 cm range (first live T2 episode:
         verdict `collision`)."""
         nonlocal streamer
-        q_read, range_m, pitch = pending["attempts"][pending["attempt_idx"]]
+        q_read, range_m, pitch, q_far = pending["attempts"][pending["attempt_idx"]]
         print(
             f"read attempt {pending['attempt_idx']}: range {range_m} pitch {pitch} "
             f"face {pending['face'].tolist()}",
@@ -1001,6 +1031,10 @@ def main() -> None:
         home_arm = home[: q_read.shape[0]].astype(np.float32)
         stages = [
             Stage(name="read-retreat", path=(home_arm,), gripper=0.0, settle_s=0.1),
+            # staged approach (T2 curve run 1): park backed-off first so
+            # the joint hop stays clear of the shelf, then advance —
+            # solve_read_poses drops any entry without a staged pose
+            Stage(name="read-stage", path=(q_far.astype(np.float32),), gripper=0.0, settle_s=0.1),
             Stage(name="read", path=(q_read.astype(np.float32),), gripper=0.0, settle_s=0.4),
         ]
         streamer = StageStreamer(stages, home, dt, max_vel, embodiment=embodiment)
@@ -1091,7 +1125,9 @@ def main() -> None:
             if streamer.done:
                 streamer = None  # finished: idle until the next episode
                 if pending_read is not None:
-                    q_read, range_m, pitch = pending_read["attempts"][pending_read["attempt_idx"]]
+                    q_read, range_m, pitch, _ = pending_read["attempts"][
+                        pending_read["attempt_idx"]
+                    ]
                     track_err = float(np.abs(qpos[: q_read.shape[0]] - q_read).max())
                     if track_err > READ_TRACK_TOL:
                         # IK-feasible but untrackable (shelf contact, 0.45
