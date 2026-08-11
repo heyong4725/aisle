@@ -236,6 +236,11 @@ class BridgeConfig:
     # CON-5: rollout resolves and attests this backend before launch. None is
     # the deterministic portable default for direct/debug graph execution.
     sim_backend: str | None = None
+    # T2: printed med labels rendered as box textures. Graph-declared
+    # (AISLE_LABELS on the bridge node) so the graph hash attests whether a
+    # run's pixels carried text -- same reasoning as the rung; ambient env
+    # is scrubbed by rollout. Default off: pre-T2 scenes stay byte-identical.
+    labels: bool = False
 
 
 PERCEPTION_RUNGS = ("L0", "L1", "L2")
@@ -261,6 +266,13 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
         raise ValueError(
             f"unknown perception rung {perception!r} (TC-9: {'|'.join(PERCEPTION_RUNGS)})"
         )
+    labels_raw = (
+        str(env.get("AISLE_LABELS") or "").strip().lower() if "AISLE_LABELS" in env else "0"
+    )
+    if labels_raw not in ("0", "1", "true", "false", "yes", "no"):
+        # same refuse-don't-guess rule as the rung: a typo'd toggle must not
+        # silently pick a scene whose pixels the run then attests
+        raise ValueError(f"unknown AISLE_LABELS value {labels_raw!r}; use 0/1")
     sim_backend = env.get("AISLE_SIM_BACKEND")
     if sim_backend is not None:
         sim_backend = str(sim_backend).strip().lower()
@@ -279,6 +291,7 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
         step_without_reset=env.get("AISLE_STEP_WITHOUT_RESET", "0").strip().lower()
         in ("1", "true", "yes"),
         sim_backend=sim_backend,
+        labels=labels_raw in ("1", "true", "yes"),
     )
 
 
@@ -605,6 +618,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
 
     from aisle.mobility.base import base_scan_ranges, integrate_base_pose
     from aisle.scenes.pharmacy import (
+        SceneCfg,
         build_scene,
         load_physics,
         oracle_state,
@@ -650,6 +664,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             embodiment=cfg.embodiment,
             n_envs=cfg.n_envs,
             headless=cfg.headless,
+            cfg=SceneCfg(labels=cfg.labels),
             sim_backend=cfg.sim_backend,
         )
     robot = handle.robot

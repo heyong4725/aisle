@@ -33,6 +33,7 @@ source = { editable = "." }
 dependencies = [
     { name = "jsonschema" },
     { name = "numpy" },
+    { name = "pillow" },
     { name = "pyarrow" },
     { name = "pyyaml" },
 ]
@@ -69,6 +70,7 @@ requires-dist = [
     { name = "genesis-world", marker = "extra == 'sim'", specifier = ">=1.2.3" },
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "numpy", specifier = ">=2.4.6" },
+    { name = "pillow", specifier = ">=11.3.0" },
     { name = "pyarrow", specifier = ">=17.0" },
     { name = "pyarrow", marker = "extra == 'cuda'", specifier = ">=25.0.0" },
     { name = "pyarrow", marker = "extra == 'sim'", specifier = ">=25.0.0" },

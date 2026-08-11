@@ -155,6 +155,11 @@ class SceneCfg:
     textures: DRToggle = field(default_factory=DRToggle)
     friction_jitter: DRToggle = field(default_factory=DRToggle)
     camera_jitter: DRToggle = field(default_factory=DRToggle)
+    # T2 (design doc section 7/8.3): printed med labels rendered as box
+    # textures. OFF by default so every pre-T2 scene stays byte-identical;
+    # a T2 graph declares it on the bridge (AISLE_LABELS), where the graph
+    # hash attests it -- the same pattern as the perception rung (TC-9).
+    labels: bool = False
 
 
 @dataclass(frozen=True)
@@ -518,6 +523,36 @@ def _rotation_to_quat_wxyz(rotation: np.ndarray) -> np.ndarray:
     return np.array([w, *xyz], dtype=np.float32)
 
 
+def label_texture_image(label: str, color: list, px: int = 256) -> np.ndarray:
+    """Deterministic label texture for a med box (T2, SCN-2): the med's
+    (possibly DR-jittered) color as background, the label text in the
+    contrast-picked ink (black over light colors, white over dark).
+
+    PIL's EMBEDDED bitmap font only -- a system font would make the texture
+    bytes platform-dependent and break CON-5's same-seed-same-scene
+    contract. The text FILLS the face (single word, auto-scaled to ~95%
+    width): the doc's predicted legibility pass (section 7) MEASURED the
+    alternatives -- a 2-band px//8 layout identified 2/5 even on clean
+    96 px crops, while face-filling text reads 5/5 down to 16 px under
+    blur-tolerant normalized correlation, which is what the overhead
+    camera's 20-40 px med crops actually offer."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    rgb = tuple(int(round(255 * float(c))) for c in color[:3])
+    luminance = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+    ink = (0, 0, 0) if luminance > 127 else (255, 255, 255)
+    image = Image.new("RGB", (px, px), rgb)
+    draw = ImageDraw.Draw(image)
+    size = px
+    while size > 8:
+        font = ImageFont.load_default(size=size)
+        if draw.textlength(label, font=font) <= px * 0.95:
+            break
+        size = int(size * 0.9)
+    draw.text((px / 2, px / 2), label, fill=ink, font=font, anchor="mm")
+    return np.asarray(image, dtype=np.uint8)
+
+
 def build_scene(
     seed: int,
     embodiment: str = "franka",
@@ -622,13 +657,38 @@ def build_scene(
                 min(1.0, c * (scale_min + textures_rng.random() * scale_range)) for c in color[:3]
             ] + [color[3]]
         applied_colors[placement.name] = color
-        boxes[placement.name] = scene.add_entity(
-            gs.morphs.Box(
+        if cfg.labels:
+            # T2: labels need IMAGE textures, and Genesis Box primitives
+            # carry no UVs ("Texture given but asset missing uv info", the
+            # doc's predicted legibility pass) -- labeled meds use the
+            # committed UV-mapped unit-cube MESH instead, per-axis scaled
+            # to the med size; convexify of a cube is the same box, so
+            # collision geometry matches the primitive path. The texture
+            # COMPOSES with texture DR: the jittered color is the
+            # background, so randomization perturbs appearance without
+            # erasing the text.
+            morph = gs.morphs.Mesh(
+                file=str(_SCENES_DIR / "assets" / "unit_cube_uv.obj"),
+                scale=tuple(meds[placement.name]["size"]),
+                pos=(placement.x, placement.y, placement.z),
+            )
+            surface = gs.surfaces.Default(
+                diffuse_texture=gs.textures.ImageTexture(
+                    image_array=label_texture_image(
+                        str(meds[placement.name].get("label", placement.name.upper())), color
+                    )
+                )
+            )
+        else:
+            morph = gs.morphs.Box(
                 size=tuple(meds[placement.name]["size"]),
                 pos=(placement.x, placement.y, placement.z),
-            ),
+            )
+            surface = gs.surfaces.Default(color=tuple(color))
+        boxes[placement.name] = scene.add_entity(
+            morph,
             material=gs.materials.Rigid(friction=friction, rho=box_physics["density_kg_m3"]),
-            surface=gs.surfaces.Default(color=tuple(color)),
+            surface=surface,
         )
 
     cam_cfg = physics["cameras"]

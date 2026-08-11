@@ -343,3 +343,62 @@ def test_placements_never_start_inside_tray_footprint(placements_200):
             for p in placements:
                 inside = x_min <= p.x <= x_max and y_min <= p.y <= y_max
                 assert not inside, (embodiment, seed, p)
+
+
+class TestLabelTextures:
+    """T2's rendered med labels (design doc section 7/8.3; scene sign-off
+    2026-08-10): deterministic textures from PIL's EMBEDDED font only, so
+    the same seed still builds the same scene byte-for-byte (CON-5)."""
+
+    def test_texture_is_deterministic_and_label_distinct(self):
+        import numpy as np
+
+        from aisle.scenes.pharmacy import label_texture_image
+
+        a = label_texture_image("AMOXICILLIN", [0.85, 0.2, 0.2, 1.0])
+        b = label_texture_image("AMOXICILLIN", [0.85, 0.2, 0.2, 1.0])
+        c = label_texture_image("METFORMIN", [0.85, 0.2, 0.2, 1.0])
+        assert a.dtype == np.uint8 and a.shape == (256, 256, 3)
+        assert (a == b).all()
+        assert not (a == c).all()
+
+    def test_ink_contrast_follows_background_luminance(self):
+        """Black text on light boxes, white on dark — the doc's predicted
+        legibility pass measures against this renderer, so the contrast
+        rule is part of the measured surface, not styling."""
+        from aisle.scenes.pharmacy import label_texture_image
+
+        light = label_texture_image("X", [0.9, 0.9, 0.2, 1.0])
+        dark = label_texture_image("X", [0.1, 0.1, 0.4, 1.0])
+        # ink pixels are the minority; check the extreme pixel present
+        assert (light == 0).any() and not (dark == 0).all()
+        assert (dark == 255).any()
+
+    def test_every_med_declares_a_label(self):
+        from aisle.scenes.pharmacy import load_meds
+
+        for name, spec in load_meds().items():
+            assert spec.get("label"), f"{name} has no label (T2, SCN-2)"
+
+    def test_labels_default_off_everywhere(self):
+        """Pre-T2 scenes must stay byte-identical: SceneCfg and the bridge
+        config both default labels OFF, and the ambient env cannot flip it
+        (rollout scrubs AISLE_LABELS — the graph owns the pixels it
+        attests)."""
+        from aisle.harness.rollout import SCRUBBED_ENV, scrub_bringup_env
+        from aisle.nodes.dora_genesis import parse_bridge_config
+        from aisle.scenes.pharmacy import SceneCfg
+
+        assert SceneCfg().labels is False
+        assert parse_bridge_config({}).labels is False
+        assert parse_bridge_config({"AISLE_LABELS": "1"}).labels is True
+        assert "AISLE_LABELS" in SCRUBBED_ENV
+        assert "AISLE_LABELS" not in scrub_bringup_env({"AISLE_LABELS": "1", "K": "v"})
+
+    def test_junk_label_toggle_is_refused_not_guessed(self):
+        import pytest
+
+        from aisle.nodes.dora_genesis import parse_bridge_config
+
+        with pytest.raises(ValueError, match="AISLE_LABELS"):
+            parse_bridge_config({"AISLE_LABELS": "maybe"})
