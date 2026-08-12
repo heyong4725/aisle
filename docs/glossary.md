@@ -238,8 +238,12 @@ judge. That is `VAL-6`, and it is deliberately not a rung question.
 after which the frozen set is protected. `M1`, `M2`, `M3` appear as later
 phase markers in the experiment design.
 
-The model-research questions in the research program are `MQ1`–`MQ6`, **not**
-`M1`–`M6`, precisely so that a bare `M3` is unambiguously a milestone.
+`M1`–`M6` are **also** used in [`research-program.md`](research-program.md)
+§6 for the model-research questions (when does a learned policy add value,
+does predictive planning improve action selection, and so on). Context
+disambiguates: a milestone `M` is a delivery gate with a spec, a model
+question `M` sits in a table of treatments and outcome measures. If you need
+to be unambiguous in prose, write "milestone M1" or "model question M1".
 
 ### W1, W2, W3 …
 

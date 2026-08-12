@@ -367,14 +367,14 @@ from the family name.
 
 | ID | Question | Matched contrast | Primary outcomes |
 |---|---|---|---|
-| MQ1 | When does a learned policy add value? | classical graph vs VLA vs hybrid fallback | pass/failure mix, inference cost, latency, guard intervention |
-| MQ2 | Does predictive planning improve action selection? | direct policy vs world-model reranking vs model-predictive control | held-out success, sample efficiency, planning latency, uncertainty calibration |
-| MQ3 | Is a neural environment useful for screening? | candidate-policy rankings in neural environment vs Genesis, then hardware when available | rank agreement, false promotion/rejection, cost per candidate |
-| MQ4 | Does representation survive transfer? | same task contract across perception rungs and embodiments | zero-/few-shot transfer, adapter changes, regression rate |
-| MQ5 | Can coding agents orchestrate models effectively? | fixed model catalog with and without agent graph authorship/diagnostic tools | time to working hybrid, selection quality, repair quality, budget |
-| MQ6 | Do learned policies remain governable? | matched policies behind the same action adapter and guard | unsafe proposals, clamps/rejections, wrong-object and collision outcomes |
+| M1 | When does a learned policy add value? | classical graph vs VLA vs hybrid fallback | pass/failure mix, inference cost, latency, guard intervention |
+| M2 | Does predictive planning improve action selection? | direct policy vs world-model reranking vs model-predictive control | held-out success, sample efficiency, planning latency, uncertainty calibration |
+| M3 | Is a neural environment useful for screening? | candidate-policy rankings in neural environment vs Genesis, then hardware when available | rank agreement, false promotion/rejection, cost per candidate |
+| M4 | Does representation survive transfer? | same task contract across perception rungs and embodiments | zero-/few-shot transfer, adapter changes, regression rate |
+| M5 | Can coding agents orchestrate models effectively? | fixed model catalog with and without agent graph authorship/diagnostic tools | time to working hybrid, selection quality, repair quality, budget |
+| M6 | Do learned policies remain governable? | matched policies behind the same action adapter and guard | unsafe proposals, clamps/rejections, wrong-object and collision outcomes |
 
-For MQ1-MQ6, keep task, held-out seeds, observation access, verifier, reset,
+For M1-M6, keep task, held-out seeds, observation access, verifier, reset,
 safety limits, and evidence requirements fixed. Either normalize inference and
 research compute or report both explicitly as a cost/performance frontier.
 Parameter count alone is not a compute control.

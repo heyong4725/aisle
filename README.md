@@ -29,16 +29,11 @@ we can distinguish an attributable improvement from an easier seed, changed
 scorer, environment drift, contamination, or extra compute.
 
 The current model-light runtime is an experimental control, not the intended
-limit of the architecture. The typed contract is *designed* so that VLA
-policies, world-model planners/environments, and World Action Models (WAMs)
-can later enter as ordinary swappable nodes behind the same guard, verifier,
-and evidence contract — which would make “classical pipeline vs. learned
-policy vs. predictive/hybrid system” a matched systems experiment the coding
-agent could itself propose and run. **None of those node families exists
-today**: the registry is entirely classical, and they are tracked as design
-work in [`docs/physical-ai-primer.md`](docs/physical-ai-primer.md) under
-“Not yet”. The staged agenda for getting there is §6 of the research
-program.
+limit of the architecture. VLA policies, world-model planners/environments, and
+World Action Models (WAMs) can enter as typed, swappable nodes behind the same
+action adapters, guard, verifier, and evidence contract. That makes “classical
+pipeline vs. learned policy vs. predictive/hybrid system” a matched systems
+experiment that the coding agent can itself propose and run.
 
 Read the **[AISLE research program](docs/research-program.md)** for the
 technical-report framing: research object, falsifiable questions, why

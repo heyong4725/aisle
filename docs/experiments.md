@@ -17,24 +17,52 @@ support, and how VLA/world-model/WAM comparisons fit—read the
 
 ## What is actually under experiment?
 
-The robot task is the instrument; the experimental object is the autonomous
-engineering system around it (coding agent + contract + tools + registry +
-mutable robot artifacts + dora runtime + trusted envelope + campaign budget).
-That framing — outer loop vs. inner loop, the five claim families, why a model
-family name is insufficient evidence, and the evidence/claim discipline — is
-developed once in the [AISLE research program](research-program.md#1-the-research-object).
-It is deliberately **not** restated here: this page owns protocol and evidence
-detail, and a second copy of the framing is exactly the drift issue #142 was
-opened to stop.
+The robot task is the instrument. The primary experimental object is an
+autonomous engineering system:
 
-Two consequences that bear directly on the protocols below:
+```text
+coding agent + contract + tools + registry + mutable robot artifacts
+             + dora runtime + trusted envelope + campaign budget
+```
 
-- Many episodes from one graph estimate *that graph's* task performance. They
-  are not independent replications of a research agent's ability to discover
-  the graph — independent agent sessions are the research-process replicates.
-- A run with unknown code, treatment drift, incomplete held-out scoring, or a
-  failed post-run audit can be useful diagnostic material, but it cannot
-  silently become verdict evidence. The chain is fail-closed by design.
+The agent acts between episodes. It composes a typed graph, changes nodes or
+parameters, reads trace and failure evidence, and may register an evaluated
+skill. The resulting graph acts within an episode. Separating those loops lets
+us measure two different questions: whether the coding agent can improve a
+robot system, and whether the chosen inner-loop architecture—classical, VLA,
+world-model-based, WAM, or hybrid—performs well.
+
+The H1-H5 campaign family isolates five claims:
+
+| Claim family | Named treatment or contrast | Outcomes needed for a verdict |
+|---|---|---|
+| Build | agent + registry composition under a frozen task | validation, launch, repair cycles, first task success |
+| Diagnose and improve | trace-guided research loop under a fixed budget | held-out performance and time/token/rollout cost |
+| Reuse | persistent evaluated library vs. wiped arm | matched later-task time-to-success and successful reuse |
+| Substrate | typed dataflow/hot-swap workflow vs. matched alternative | iteration latency, failure rate, change attribution |
+| Safety | free agent iteration behind fixed trust boundaries | adverse outcomes, unsafe proposals, guard interventions and bypass rejections |
+
+Learned models add treatments inside this design; they do not replace it. A
+model family name is insufficient evidence. A valid comparison also records
+the checkpoint/revision, preprocessing, precision, inference backend and
+device, observation and action contract, decoding parameters, latency, compute
+cost, and any model-specific randomness.
+
+## Evidence and claim discipline
+
+Evidence collection exists to make the causal chain inspectable:
+
+```text
+idea -> frozen treatment -> validated graph -> seeded execution
+     -> outcomes/traces/costs -> integrity audit -> scoped claim
+```
+
+The chain is deliberately fail-closed. A run with unknown code, treatment
+drift, incomplete held-out scoring, or a failed post-run audit may still be
+useful diagnostic material, but it cannot silently become verdict evidence.
+Likewise, many episodes from one graph estimate that graph's task performance;
+they are not independent replications of a research agent's ability to discover
+the graph. Independent agent sessions are the research-process replicates.
 
 ## Hypotheses
 
