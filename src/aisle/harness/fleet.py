@@ -149,9 +149,15 @@ def run_fleet(
     for agent in range(agents):
         for node in fleet_doc["nodes"]:
             if node["id"] == _agent_id("rollout-client", agent):
+                # each agent works a DISTINCT seed lane (offset by
+                # 1000*agent): identical seeds put both envs on identical
+                # marginal-contact trajectories, which the wall-coupled
+                # timing (issue #71) then flips in lockstep — and the
+                # fleet study wants independent workloads anyway
+                lane = [s + 1000 * agent for s in seeds[:episodes]]
                 node.setdefault("env", {}).update(
                     AISLE_RESULTS=str(results_paths[agent].resolve()),
-                    AISLE_SEEDS=",".join(str(s) for s in seeds[:episodes]),
+                    AISLE_SEEDS=",".join(str(s) for s in lane),
                 )
     graph_path = out_dir / "fleet_graph.yaml"
     graph_path.write_text(yaml.safe_dump(fleet_doc, sort_keys=False))

@@ -97,6 +97,7 @@ def main() -> None:
                     },
                 )
                 phase = "awaiting_reset"
+                print(f"reset sent: episode {episode} seed {seeds[episode]}", file=sys.stderr)
         elif event["id"] == "reset_done" and phase == "awaiting_reset":
             reset_meta = event.get("metadata") or {}
             if retail:
@@ -123,6 +124,7 @@ def main() -> None:
                 {"goal_id": f"ep-{episode:04d}"},
             )
             phase = "running"
+            print(f"goal sent: ep-{episode:04d} {goal.get('target_med', '')}", file=sys.stderr)
         elif event["id"] == "episode_feedback":
             # HAR-3: the retry count rides in the state machine's
             # feedback; the LATEST value per goal is what the episode

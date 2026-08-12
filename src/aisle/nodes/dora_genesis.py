@@ -1021,7 +1021,12 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                 else:
                     entity.set_pos(pos)
                     entity.set_quat(quat)
-                entity.zero_all_dofs_velocity()
+                # velocity zeroing is env-sliced too: the global zero
+                # froze the OTHER agent's carried box mid-swing (fleet
+                # probe: phantom 'dropped')
+                entity.zero_all_dofs_velocity(
+                    envs_idx=[env_id] if cfg.n_envs > 1 and env_id is not None else None
+                )
         if "home_qpos" in profile:
             home = from_wire_joint_order(
                 np.asarray(profile["home_qpos"], dtype=np.float32), wire_dof_indices
@@ -1035,7 +1040,9 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                 # re-latch the PD controller: a stale pre-reset target would
                 # drive the arm away from home on the first post-reset tick
                 robot.control_dofs_position(batched_home)
-        robot.zero_all_dofs_velocity()
+        robot.zero_all_dofs_velocity(
+            envs_idx=[env_id] if cfg.n_envs > 1 and env_id is not None else None
+        )
         # pre-reset commands must not leak into the new episode (CON-5);
         # per-env resets drain only their own env's pending commands
         commands.drain(env_id)

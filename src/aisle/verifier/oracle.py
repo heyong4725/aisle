@@ -346,11 +346,15 @@ def main() -> None:
                 node.send_output(
                     "episode_result",
                     pa.array([json.dumps(result)]),
-                    # TC-2: mandatory keys on every output
+                    # TC-2: mandatory keys on every output. env_id is the
+                    # verifier's PIN (fleet mode, BRG-5): the hardcoded 0
+                    # made every pinned client except agent 0 drop its own
+                    # verdicts — agent 1 hung in `running` forever while
+                    # agent 0 could swallow its neighbour's results
                     metadata={
                         "goal_id": goal_id,
                         "sim_time_ns": sim_time_ns,
-                        "env_id": 0,
+                        "env_id": env_pin if env_pin is not None else 0,
                         "seq": result_seq,
                     },
                 )
