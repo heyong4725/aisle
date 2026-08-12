@@ -7,6 +7,7 @@ the roles models play in a robot system, sim-to-real, and how to read
 this repo's results — and, for each, **where you can touch it here**.
 Depth: `references/Physical_AI_Unified_Report_v2.md` (a dated industry
 snapshot — read its PROVENANCE and calibration notes first),
+the technical [AISLE research program](research-program.md),
 `Project_AISLE_Experiment_Design.md`, and the numbered specs. Primary
 papers are linked where cited; "the paper reports" marks
 preprint/vendor results.
@@ -62,7 +63,7 @@ read "the agent did X."
 
 | ENPIRE module | What it is | Where in AISLE |
 |---|---|---|
-| EN — Environment | auto-reset + auto-verification the agent can call | `src/aisle/reset/` (teleport service), `src/aisle/verifier/` (oracle + planogram judges) — the CON-7 **frozen set** |
+| EN — Environment | auto-reset + auto-verification the agent can call | `src/aisle/reset/` (teleport **and** behavioral reset services), `src/aisle/verifier/` (oracle + planogram judges) — the CON-7 **frozen set** |
 | PI — Policy Improvement | agents revising policy code from evidence | agent sessions editing dataflow YAML + node code under `harness/CLAUDE.research.md` |
 | R — Rollout | budgeted physical trials with full traces | `harness rollout` (HAR-1..5): seeded episodes, Arrow traces, video, tamper-evident budget ledger |
 | E — Evolution | idea branches, log analysis, recipe reuse | idea tree (`harness report`), git worktrees per arm, campaign runners (`tools/campaign.py`, `tools/h3_campaign.py`) |
@@ -176,7 +177,7 @@ domain randomization is *one* mitigation, not the definition:
 | Perception difficulty conflated with loop capability | staged perception ladder | **[implemented]** the ladder is L0 oracle object poses → L1 ground-truth segmentation with estimated poses (`segmented-pose`, `graphs/expert_t1.yaml`) → L2 RGB-only identity with same-stamp ordinary sensor depth for metric geometry (`l2-pose`, `graphs/expert_t1_l2.yaml`). The rung rides the GRAPH, so the graph hash attests which pose source a result used; `harness rollout --perception` asserts it and refuses a mismatch (TC-9, VAL-8) |
 | Embodiment mismatch | contract-first driver abstraction | **[implemented]** the topic contract (SPEC 010, `src/aisle/topics.py`): obs/cmd topics are the hardware driver interface — Phase 4 sim-to-real is a driver-node swap, not a rewrite; `--embodiment` swaps profiles with zero YAML edits |
 | Observation/action latency & rates | rate-typed contracts, latency classes | **[implemented]** manifest `rate_hz`/`latency_class` fields checked by the validator |
-| Reset parity | behavioral (physical) reset | **[planned — SPEC 040 phase 2]** the robot re-shelving the box; ablation A6 measures what teleport hides. Today only teleport runs (`--reset behavioral` raises NotImplementedError by design) |
+| Reset parity | behavioral (physical-style) reset | **[implemented in simulation]** the robot picks the delivered box from the tray and re-shelves it through the guarded motion path, with bounded retry and teleport fallback; [A6 has durable measurement records](../analysis/a6/a6_findings.md). Hardware reset parity remains untested. |
 | Verifier portability | verifier-fidelity measurement | **[implemented, measured]** `src/aisle/harness/fidelity.py` compares the camera-based verifier against the oracle; current VER-13 recomputation over 31 episodes is agreement 0.45, false SUCCESS 0.00, false FAIL 0.68. The preserved pre-amendment finding is 0.29 / 0.00 / 0.88 (`analysis/ver6-fidelity/`; SPEC 040 VER-13) |
 | Sim-specific physics exploits | cross-simulator checks | **[planned]** the MuJoCo grasp micro-benchmark cross-check (design doc §7) |
 
@@ -259,14 +260,15 @@ plus tamper *evidence* in artifacts, which the audits check.
 **Today (runnable in this repo):** Genesis as the only environment;
 classical model-free pipelines; the full L0/L1/L2 perception ladder;
 oracle/planogram verifiers AND the realistic (detector+rules) verifier
-with a measured oracle-fidelity number; teleport reset; the full
+with a measured oracle-fidelity number; teleport and simulated behavioral
+reset; the full
 agentic outer loop (validate → guard → rollout → verify → traces →
 idea tree) with campaign runners; typed contracts + registry + skill
 registration; Arrow/video traces; the integrity and attestation gates
 of §5.
 
 **Not yet (design/spec/ADR only):** any physical-robot evidence; the
-VLM verifier; behavioral reset; VLA/WAM policy nodes; a
+VLM verifier; physical behavioral-reset evidence; VLA/WAM policy nodes; a
 neural-simulator environment; the MuJoCo cross-check.
 
 Current verdicts and their qualifications live in one place — [the
