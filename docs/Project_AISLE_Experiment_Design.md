@@ -11,6 +11,31 @@
 
 ENPIRE proved that fleets of coding agents can run the full robotics research loop on real hardware — but it did so on a bespoke, closed harness. This experiment rebuilds that loop on **open, composable infrastructure**: the agent's action space is not "edit a monolithic training script" but **compose and evolve a typed dataflow** — generating dora-rs YAML from a capability registry (dora-hub manifests), authoring new nodes as skills, and iterating against automatic reset/verification in a Genesis World pharmacy scene. The claim under test: *a typed dataflow substrate makes agentic robotics faster, more auditable, and more reusable than script-level iteration* — and it's reproducible on a laptop.
 
+The central research question is:
+
+> Can AI coding agents autonomously build, diagnose, improve, reuse, and safely operate robotic systems when those systems are composed as typed dora dataflows?
+
+The pharmacy and retail tasks are controlled instruments for answering that
+question. The object under study is the complete agentic engineering loop—not
+only the policy and not only whether one rollout succeeds. “Autonomous” means
+within a human-governed envelope: the agent may change designated robot
+artifacts, but it does not own the task definition, held-out evaluation,
+trusted verifier/reset, safety boundary, or promotion gates.
+
+Experiment and evidence machinery are therefore part of the research system.
+Every claim must connect an agent idea to the exact treatment, graph, code,
+environment, seeds, budget, execution trace, outcome, and integrity audit.
+Without that chain, a gain cannot be separated from seed selection, scorer or
+environment drift, contamination, or additional compute. Negative and
+inconclusive records are retained because they define failure modes and prevent
+later agents from treating invalid work as knowledge.
+
+The companion [AISLE research program](research-program.md) develops this into
+a technical framework: research units, falsifiable questions, measurement
+axes, reproducibility and claim discipline, and a staged agenda for VLA,
+world-model, and World Action Model (WAM) nodes. Section 6 below defines the
+original hypotheses; §7.5 locates learned models in the dataflow architecture.
+
 ---
 
 ## 1. Scenario and task definition

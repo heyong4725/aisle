@@ -11,6 +11,11 @@ harder tasks. Its central research question is not merely whether an agent can
 write a robot policy. It is whether an agent can conduct a safe, reproducible
 engineering loop around a modular physical-AI system.
 
+The full question, experimental logic, evidence standard, and advanced-model
+agenda are developed in the technical
+**[AISLE research program](research-program.md)**. This page remains the map
+from that framing to the implementation in the repository.
+
 This guide is the broad map. Use the linked specifications for normative
 requirements and the linked code for exact behavior. Exact graph, capability,
 CLI, and ADR catalogs are maintained in the source-derived

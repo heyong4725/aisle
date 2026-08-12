@@ -13,7 +13,33 @@ typed dataflow substrate makes agentic robotics faster, safer, more
 auditable, and more reusable than script-level iteration — reproducible
 on a MacBook.
 
-Full experiment design: `docs/Project_AISLE_Experiment_Design.md`.
+## Research question
+
+> Can AI coding agents autonomously build, diagnose, improve, reuse, and safely
+> operate robotic systems when those systems are composed as typed dora
+> dataflows?
+
+AISLE does not treat a successful robot demo as sufficient evidence. The object
+under study is the full engineering loop: an agent chooses and connects
+capabilities, validates the graph, runs budgeted episodes, diagnoses typed
+traces and failure classes, improves the system, and carries evaluated skills
+into later tasks. The task result, research cost, safety events, graph and code
+identity, environment, seeds, and admissibility audit are recorded together so
+we can distinguish an attributable improvement from an easier seed, changed
+scorer, environment drift, contamination, or extra compute.
+
+The current model-light runtime is an experimental control, not the intended
+limit of the architecture. VLA policies, world-model planners/environments, and
+World Action Models (WAMs) can enter as typed, swappable nodes behind the same
+action adapters, guard, verifier, and evidence contract. That makes “classical
+pipeline vs. learned policy vs. predictive/hybrid system” a matched systems
+experiment that the coding agent can itself propose and run.
+
+Read the **[AISLE research program](docs/research-program.md)** for the
+technical-report framing: research object, falsifiable questions, why
+experiments and evidence collection matter, claim discipline, and the staged
+VLA/world-model/WAM agenda. The full original experiment design is
+[`docs/Project_AISLE_Experiment_Design.md`](docs/Project_AISLE_Experiment_Design.md).
 New to the repo? Start with `docs/getting-started.md` — and for the
 concepts behind it all (Physical AI, VLM/VLA/world models/WAMs,
 sim-to-real, agentic auto-research), `docs/physical-ai-primer.md`.
