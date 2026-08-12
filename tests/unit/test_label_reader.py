@@ -181,6 +181,55 @@ class TestReaderSession:
         assert result["label"] == "omeprazole"
         assert session.on_rgb(frame) is None  # one-shot
 
+    def test_read_waits_for_frame_strictly_after_park_sim_time(self, meds, templates):
+        """CON-5/TC-2: queued frames at or before the completed read park
+        must not consume the request. The first eligible frame is selected
+        by sim time, independent of wall-clock request/frame arrival order."""
+        session = self._session(meds, templates)
+        frame = camera_view_frame(meds, templates, "omeprazole")
+        session.on_read_request(
+            {"range_m": RANGE_M, "frame_after_sim_time_ns": 42},
+            "ep-1/read0",
+        )
+
+        assert session.on_rgb(frame, sim_time_ns=41) is None
+        assert session.on_rgb(frame, sim_time_ns=42) is None
+        result = session.on_rgb(frame, sim_time_ns=43)
+        assert result["request_id"] == "ep-1/read0"
+        assert result["label"] == "omeprazole"
+
+    def test_missing_frame_stamp_cannot_bypass_park_barrier(self, meds, templates):
+        """CON-5/TC-2: a stamped request fails closed on an unstamped RGB
+        frame, while retaining the request for a later eligible frame."""
+        session = self._session(meds, templates)
+        frame = camera_view_frame(meds, templates, "metformin")
+        session.on_read_request(
+            {"range_m": RANGE_M, "frame_after_sim_time_ns": 10},
+            "ep-1/read0",
+        )
+
+        assert session.on_rgb(frame) is None
+        assert session.on_rgb(frame, sim_time_ns=11)["label"] == "metformin"
+
+    def test_request_consumes_earliest_buffered_frame_after_park(self, meds, templates):
+        """CON-5/TC-2: if RGB outruns the request/reply hops, buffer by sim
+        stamp and select the earliest eligible frame, not a wall-dependent
+        later arrival. Frames at the barrier remain ineligible."""
+        session = self._session(meds, templates)
+        at_barrier = camera_view_frame(meds, templates, "metformin")
+        first_after = camera_view_frame(meds, templates, "omeprazole")
+        later_after = camera_view_frame(meds, templates, "cetirizine")
+        assert session.on_rgb(at_barrier, sim_time_ns=42) is None
+        assert session.on_rgb(first_after, sim_time_ns=43) is None
+        assert session.on_rgb(later_after, sim_time_ns=44) is None
+
+        result = session.on_read_request(
+            {"range_m": RANGE_M, "frame_after_sim_time_ns": 42},
+            "ep-1/read0",
+        )
+        assert result["request_id"] == "ep-1/read0"
+        assert result["label"] == "omeprazole"
+
     def test_refused_read_still_replies(self, meds, templates):
         """A tour must never hang on a bad view: the reply carries
         label null instead of being withheld."""
@@ -192,9 +241,19 @@ class TestReaderSession:
 
     def test_reset_clears_the_pending_request(self, meds, templates):
         session = self._session(meds, templates)
+        frame = camera_view_frame(meds, templates, "metformin")
+        assert session.on_rgb(frame, sim_time_ns=11) is None  # buffered before request
         session.on_read_request({"range_m": RANGE_M}, "ep-1/read0")
         session.on_reset_done()
-        assert session.on_rgb(camera_view_frame(meds, templates, "metformin")) is None
+        # Neither the pending request nor the pre-reset buffered frame may
+        # cross the episode boundary.
+        assert session.on_rgb(frame) is None
+        assert (
+            session.on_read_request(
+                {"range_m": RANGE_M, "frame_after_sim_time_ns": 10}, "ep-2/read0"
+            )
+            is None
+        )
 
     def test_no_calibration_no_read(self, meds, templates):
         session = ReaderSession(meds=meds, templates=templates)

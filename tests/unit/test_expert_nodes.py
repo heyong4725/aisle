@@ -249,8 +249,16 @@ class TestT2ScanTour:
         assert len(machine.candidates) == 2  # target + one real row
 
     def test_move_done_asks_the_reader_relaying_the_camera_pose(self):
+        """CON-5/TC-2: the read request carries the completed park's
+        sim-time barrier so downstream frame selection cannot depend on
+        which queued wrist frame wins a wall-clock delivery race."""
         machine, _ = self._touring_machine()
-        pose = {"face": [1, 2, 3], "cam_pos": [4, 5, 6], "cam_rot_cv": list(range(9))}
+        pose = {
+            "face": [1, 2, 3],
+            "cam_pos": [4, 5, 6],
+            "cam_rot_cv": list(range(9)),
+            "frame_after_sim_time_ns": 42,
+        }
         out = machine.on_move_done(
             {"ok": True, "range_m": 0.16, "attempt_used": 0, **pose}, "ep-1/read0.0"
         )

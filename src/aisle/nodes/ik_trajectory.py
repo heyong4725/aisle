@@ -1166,6 +1166,12 @@ def main() -> None:
                         "ok": True,
                         "range_m": range_m,
                         "attempt_used": pending_read["attempt_idx"],
+                        # The reader must choose a frame by SIM order, not
+                        # whichever queued RGB event wins a wall-clock race
+                        # with this six-hop read dialogue (CON-5/TC-2).
+                        # Strictly-newer eligibility also guarantees one
+                        # rendered tick after the terminal tracked pose.
+                        "frame_after_sim_time_ns": int(metadata.get("sim_time_ns", 0)),
                         # a pitched view carries a wrong-read hazard the
                         # reader must guard with a higher margin floor
                         # (measured: amoxicillin-at-pitch reads a
