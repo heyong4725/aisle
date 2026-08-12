@@ -310,15 +310,21 @@ def test_both_streams_frozen_still_resolves_off_the_sim_clock():
     """PR review: renderer death freezes BOTH gating streams together (they
     come from the same renderer), so the one-laggard net never fires — in
     `both` mode goals keep arriving and closings would pile up for a whole
-    campaign. Any routed event's stamp (joint_state runs at 100 Hz) passing
-    end + slack proves the sim ran on: judge with what there is."""
+    campaign. A routed event stamp (joint_state, 100 Hz) passing end +
+    SIM_CLOCK_STALL_SLACK_NS proves the sim ran on: judge with what there
+    is. The slack sits ABOVE anything the camera queues can hold (~13 s at
+    400 deep), because the latest-wins joint clock legitimately runs ahead
+    of healthy backlogged cameras — a smaller slack judged early with
+    stale frames (Codex P1)."""
     router, finished = _router()
     router.on_goal("ep-0000", "omeprazole", 0)
     _frame(router, 3 * S)
     router.on_goal("ep-0001", "cetirizine", 6 * S)
-    router.on_joints(9 * S, np.zeros(9))  # sim alive, cameras silent
+    # sim alive, cameras silent — but still within what a healthy backlog
+    # could explain: must NOT judge yet
+    router.on_joints(20 * S, np.zeros(9))
     assert finished == []
-    router.on_joints(12 * S, np.zeros(9))  # past end + 5 s slack
+    router.on_joints(37 * S, np.zeros(9))  # past end + 30 s: cameras are dead
     assert [buf.goal_id for buf, _, _ in finished] == ["ep-0000"]
 
 
@@ -330,11 +336,83 @@ def test_expiry_fires_from_joints_when_cameras_stop():
     router.on_goal("ep-0000", "omeprazole", 0)
     _frame(router, 55 * S)
     router.on_joints(61 * S, np.zeros(9))  # budget exceeded, cameras dead
-    assert finished == []  # closed, awaiting proof or the net
-    router.on_joints(66 * S, np.zeros(9))  # past end + slack
+    assert finished == []  # closed, awaiting proof or the sim-clock net
+    router.on_joints(91 * S, np.zeros(9))  # past end + 30 s slack
     assert [(buf.goal_id, end, failure) for buf, end, failure in finished] == [
         ("ep-0000", 60 * S, "timeout")
     ]
+
+
+def test_delayed_reset_tightens_the_closed_window():
+    """Codex P1: under backlog the next goal can be dequeued BEFORE the
+    reset that preceded it (independent inputs). The goal closes the old
+    episode at the new start — a window that still contains RST-2 reset
+    motion. The delayed reset must tighten that closing window to its own
+    stamp and evict everything routed beyond it."""
+    router, finished = _router()
+    router.on_goal("ep-0000", "omeprazole", 0)
+    for stamp in (1 * S, 2 * S, 3 * S):
+        _frame(router, stamp)
+    router.on_goal("ep-0001", "cetirizine", 6 * S)  # closes ep-0000 at 6 s
+    _frame(router, 4 * S)  # late old frames drain...
+    _frame(router, 5 * S + 500_000_000)  # ...including reset MOTION at 5.5 s
+    router.on_reset(5 * S)  # the delayed reset: true end was 5 s
+    _frame(router, 7 * S)  # arrival proof for the tightened window
+    assert [(buf.goal_id, end, failure) for buf, end, failure in finished] == [
+        ("ep-0000", 5 * S, "never_delivered")
+    ]
+    # the 5.5 s reset-motion frame was evicted; the terminal is 4 s
+    assert max(finished[0][0].frames["overhead"]) == 4 * S
+
+
+def test_finish_error_retries_once_then_drops_loudly(capsys):
+    """Codex P2: a finishing error (sidecar IO, publish failure) must not
+    LOSE the episode — it stays queued for one retry — and a persistent
+    error must not wedge every later verdict behind it: after the second
+    failure the episode is dropped with a stderr note and the next episode
+    still publishes."""
+    calls = {"n": 0}
+    finished = []
+
+    def flaky_finish(buf, end_ns, failure):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OSError("sidecar disk full")
+        finished.append((buf.goal_id, end_ns, failure))
+
+    from aisle.nodes.verifier_realistic import EpisodeRouter
+
+    router = EpisodeRouter(int(5e9), int(60e9), flaky_finish)
+    router.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router, 1 * S)
+    router.on_goal("ep-0001", "cetirizine", 6 * S)
+    with pytest.raises(OSError):
+        _frame(router, 7 * S)  # first finish attempt fails
+    assert finished == []
+    _frame(router, 8 * S)  # retry succeeds; episode was not lost
+    assert [g for g, _, _ in finished] == ["ep-0000"]
+
+    # persistent failure: dropped after the second attempt, loudly
+    always = {"n": 0}
+    kept = []
+
+    def broken_finish(buf, end_ns, failure):
+        always["n"] += 1
+        if buf.goal_id == "ep-0000":
+            raise OSError("permanently broken")
+        kept.append(buf.goal_id)
+
+    router2 = EpisodeRouter(int(5e9), int(60e9), broken_finish)
+    router2.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router2, 1 * S)
+    router2.on_goal("ep-0001", "cetirizine", 6 * S)
+    for stamp in (7 * S, 8 * S):
+        with pytest.raises(OSError):
+            _frame(router2, stamp)
+    assert "dropping ep-0000" in capsys.readouterr().err
+    router2.on_goal("ep-0002", "loratadine", 12 * S)
+    _frame(router2, 13 * S)  # ep-0001 now finishes: the pipeline moved on
+    assert kept == ["ep-0001"]
 
 
 def test_resolve_drains_multiple_closings_in_episode_order():

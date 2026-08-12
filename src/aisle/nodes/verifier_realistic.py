@@ -130,6 +130,22 @@ class EpisodeBuffer:
         """VER-9 always judges the terminal frame."""
         return self._promote()
 
+    def trim_after(self, end_ns: int) -> None:
+        """Evict everything routed beyond a TIGHTENED end: a delayed reset
+        bound can arrive after the next goal already closed this episode
+        (cross-input reordering under backlog), and the frames past the
+        true end show RST-2 reset motion (PR #168 review)."""
+        for per in self.frames.values():
+            for stale in [s for s in per if s > end_ns]:
+                del per[stale]
+        for retained in (self.latest, self.ready):
+            for key in [k for k, (s, _) in retained.items() if s > end_ns]:
+                del retained[key]
+        for stale in [s for s in self.ee_poses if s > end_ns]:
+            del self.ee_poses[stale]
+        if self.joints is not None and self.joints[0] > end_ns:
+            self.joints = None
+
     def expired(self, sim_time_ns: int) -> bool:
         return sim_time_ns - self.start_ns >= self.timeout_ns
 
@@ -146,6 +162,7 @@ class ClosingEpisode:
     buffer: EpisodeBuffer
     end_ns: int
     failure: str
+    attempts: int = 0  # finishing attempts (a finish error must not LOSE it)
 
 
 # the streams whose progress PROVES an ended episode's frames have arrived:
@@ -158,9 +175,19 @@ GATING_STREAMS = ("rgb_overhead", "depth_overhead")
 # freezes and no verdict would ever publish (in A7 the client then hangs
 # until the wall clamp kills the run). Once the OTHER stream has advanced
 # this far past a closed episode's end, the laggard is presumed dead and the
-# episode is judged with the pairs it has — sim-anchored, so a healthy slow
-# run cannot trip it (both streams come from the same renderer).
+# episode is judged with the pairs it has — safe at 5 s because both streams
+# drain in the SAME event loop: if the consumer processed one stream 5 sim-s
+# past the end, the sibling's (fewer) queued events drained with it unless
+# that stream genuinely stopped.
 STREAM_STALL_SLACK_NS = 5_000_000_000
+# second net, for BOTH streams frozen (renderer death): the sim clock is read
+# from joint_state, which is latest-wins and therefore runs AHEAD of the
+# backlogged camera queues by up to their full depth (~13 s sim at 400 deep,
+# 30 Hz) — a 5 s slack here would judge early with stale frames under a
+# healthy stacked-judge backlog (review P1). 30 s exceeds any state the
+# queues can even HOLD: cameras silent for 30 sim-s are dead or overflowed,
+# and overflow voids the arrival proof anyway.
+SIM_CLOCK_STALL_SLACK_NS = 30_000_000_000
 
 
 class EpisodeRouter:
@@ -219,10 +246,21 @@ class EpisodeRouter:
         of the tray. A stamp at or before the episode's start (an
         unstamped request under backlog) is IGNORED — collapsing the
         window to empty would drop every frame; the next goal bounds the
-        episode instead (review)."""
-        self.last_seen_ns = max(self.last_seen_ns, int(end_ns))
+        episode instead (review). A DELAYED reset — dequeued after the
+        next goal already closed the episode (cross-input reordering) —
+        TIGHTENS the matching closing window and evicts what was routed
+        beyond it, or the reset motion stays in the ended episode
+        (review P1)."""
+        end_ns = int(end_ns)
+        self.last_seen_ns = max(self.last_seen_ns, end_ns)
         if self.current is not None and end_ns > self.current.start_ns:
             self._close(self.current, end_ns, "never_delivered")
+        else:
+            for closing in self.closing:
+                if closing.buffer.start_ns < end_ns < closing.end_ns:
+                    closing.end_ns = end_ns
+                    closing.buffer.trim_after(end_ns)
+                    break
         self._resolve()
 
     def on_joints(self, sim_ns: int, qpos: np.ndarray) -> None:
@@ -264,7 +302,14 @@ class EpisodeRouter:
         if self.current is not None:
             self._close(self.current, last_sim_ns, "never_delivered")
         for closing in self.closing:
-            self._finish(closing)
+            try:
+                self._finish(closing)
+            except Exception as exc:  # noqa: BLE001 — teardown cannot retry;
+                # one failed episode must not lose the ones behind it
+                print(
+                    f"verifier-realistic: flush failed for {closing.buffer.goal_id}: {exc!r}",
+                    file=sys.stderr,
+                )
         self.closing.clear()
 
     def _close(self, buffer: EpisodeBuffer, end_ns: int, failure: str) -> None:
@@ -300,18 +345,21 @@ class EpisodeRouter:
         complete (PR review): if ONE stream's clock froze while the other
         ran STREAM_STALL_SLACK_NS past the end, the laggard is presumed
         dead; if BOTH froze (renderer death) while the sim demonstrably
-        ran on — any routed event's stamp passed end + slack — the
-        episode is judged with what it has rather than never. Without the
-        second net, `both` mode (loop on the oracle, cameras irrelevant
+        ran on — a routed event stamp passed end + SIM_CLOCK_STALL_SLACK_NS,
+        a slack sized ABOVE anything the camera queues can hold, since the
+        joint-state clock legitimately runs ahead of backlogged cameras —
+        the episode is judged with what it has rather than never. Without
+        the second net, `both` mode (loop on the oracle, cameras irrelevant
         to it) would pile up unjudged episodes for a whole campaign."""
         while self.closing:
-            end_ns = self.closing[0].end_ns
+            closing = self.closing[0]
+            end_ns = closing.end_ns
             arrived = min(self.high_water.get(stream, 0) for stream in GATING_STREAMS)
             furthest = max(self.high_water.get(stream, 0) for stream in GATING_STREAMS)
             if arrived <= end_ns:
                 if (
                     furthest <= end_ns + STREAM_STALL_SLACK_NS
-                    and self.last_seen_ns <= end_ns + STREAM_STALL_SLACK_NS
+                    and self.last_seen_ns <= end_ns + SIM_CLOCK_STALL_SLACK_NS
                 ):
                     return
                 stalled = sorted(s for s in GATING_STREAMS if self.high_water.get(s, 0) <= end_ns)
@@ -319,10 +367,26 @@ class EpisodeRouter:
                     f"verifier-realistic: {', '.join(stalled)} stalled "
                     f"(high water {[self.high_water.get(s, 0) for s in stalled]} ns) while "
                     f"the run reached {max(furthest, self.last_seen_ns)} ns — judging "
-                    f"{self.closing[0].buffer.goal_id} without waiting (liveness net)",
+                    f"{closing.buffer.goal_id} without waiting (liveness net)",
                     file=sys.stderr,
                 )
-            self._finish(self.closing.pop(0))
+            # never LOSE an episode to a finishing error (review P2): keep
+            # it queued for ONE retry on the next event, then drop loudly so
+            # a persistent error cannot wedge every later verdict behind it
+            closing.attempts += 1
+            try:
+                self._finish(closing)
+            except Exception:
+                if closing.attempts >= 2:
+                    self.closing.pop(0)
+                    print(
+                        f"verifier-realistic: dropping {closing.buffer.goal_id} after "
+                        f"{closing.attempts} failed finishing attempts — no verdict "
+                        "published for it",
+                        file=sys.stderr,
+                    )
+                raise  # the caller's per-event handler logs the cause
+            self.closing.pop(0)
 
     def _finish(self, closing: ClosingEpisode) -> None:
         closing.buffer.promote_terminal()
