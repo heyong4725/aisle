@@ -38,6 +38,8 @@ MUST honor it byte-for-byte.
 | `joint_cmd` | in | Float32[n_dof] | ≤100 Hz | position targets |
 | `gripper_cmd` | in | Float32[1] | ≤30 Hz | |
 | `episode_result` | out (verifier) | JSON utf8 | per episode | see §3 |
+| `human_msg` | out (human-sim) | JSON utf8 | per event | T4 dialogue (ADR-30, PROPOSED): scripted request/confirm_reply/correction, seeded (CON-5); goal_id-correlated (TC-7) |
+| `robot_msg` | out (task-state-machine) | JSON utf8 | per event | T4 dialogue (ADR-30, PROPOSED): confirm/ack back to the human-sim |
 
 - TC-5: The bridge MUST publish `joint_state` and accept `joint_cmd` for BOTH
   embodiment profiles (`franka` n_dof=7+2, `so101` n_dof=5+1) with identical
