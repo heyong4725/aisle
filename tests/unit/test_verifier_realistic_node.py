@@ -287,11 +287,12 @@ def test_late_close_is_capped_at_the_sim_budget():
     assert by_id["ep-0000"] == (60 * S, "timeout")
 
 
-def test_dead_gating_stream_does_not_block_verdicts_forever():
+def test_dead_gating_stream_does_not_block_verdicts_forever(capsys):
     """Liveness (PR review): if one overhead stream dies, its high-water
     freezes and no episode would ever be judged — in A7 the client then
     hangs until the wall clamp. Once the sibling stream runs well past the
-    end, the episode is judged with the pairs it has."""
+    end, the episode is judged with the pairs it has, and the operator's
+    stderr names the dead stream."""
     router, finished = _router()
     router.on_goal("ep-0000", "omeprazole", 0)
     _frame(router, 3 * S)
@@ -301,6 +302,131 @@ def test_dead_gating_stream_does_not_block_verdicts_forever():
         router.on_frame("rgb_overhead", stamp, np.zeros((4, 4, 3), np.uint8))
     assert [buf.goal_id for buf, _, _ in finished] == ["ep-0000"]
     assert max(finished[0][0].frames["overhead"]) == 3 * S  # last complete pair
+    err = capsys.readouterr().err
+    assert "depth_overhead" in err and "ep-0000" in err and "liveness net" in err
+
+
+def test_both_streams_frozen_still_resolves_off_the_sim_clock():
+    """PR review: renderer death freezes BOTH gating streams together (they
+    come from the same renderer), so the one-laggard net never fires — in
+    `both` mode goals keep arriving and closings would pile up for a whole
+    campaign. Any routed event's stamp (joint_state runs at 100 Hz) passing
+    end + slack proves the sim ran on: judge with what there is."""
+    router, finished = _router()
+    router.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router, 3 * S)
+    router.on_goal("ep-0001", "cetirizine", 6 * S)
+    router.on_joints(9 * S, np.zeros(9))  # sim alive, cameras silent
+    assert finished == []
+    router.on_joints(12 * S, np.zeros(9))  # past end + 5 s slack
+    assert [buf.goal_id for buf, _, _ in finished] == ["ep-0000"]
+
+
+def test_expiry_fires_from_joints_when_cameras_stop():
+    """PR review: the budget expiry must not depend on camera events — if
+    every camera stream stops while the sim runs on, joint_state still
+    closes the episode at its budget and the sim-clock net resolves it."""
+    router, finished = _router(timeout_s=60.0)
+    router.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router, 55 * S)
+    router.on_joints(61 * S, np.zeros(9))  # budget exceeded, cameras dead
+    assert finished == []  # closed, awaiting proof or the net
+    router.on_joints(66 * S, np.zeros(9))  # past end + slack
+    assert [(buf.goal_id, end, failure) for buf, end, failure in finished] == [
+        ("ep-0000", 60 * S, "timeout")
+    ]
+
+
+def test_resolve_drains_multiple_closings_in_episode_order():
+    """PR review: a backlog burst can close several episodes before any
+    proof arrives; one frame past ALL their ends must judge them oldest
+    first, and a frame past only the FIRST end judges only the first."""
+    router, finished = _router(timeout_s=60.0)
+    router.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router, 1 * S)
+    router.on_goal("ep-0001", "cetirizine", 6 * S)
+    _frame(router, 7 * S)  # proves ep-0000 complete, ep-0001 still open
+    assert [buf.goal_id for buf, _, _ in finished] == ["ep-0000"]
+    router.on_goal("ep-0002", "loratadine", 12 * S)
+    router.on_goal("ep-0003", "ibuprofen", 18 * S)  # ep-0002 closes unproven
+    assert [buf.goal_id for buf, _, _ in finished] == ["ep-0000"]
+    _frame(router, 19 * S)  # past BOTH remaining ends
+    assert [buf.goal_id for buf, _, _ in finished] == ["ep-0000", "ep-0001", "ep-0002"]
+
+
+def test_reset_with_no_episode_or_stale_stamp_is_ignored():
+    """PR review: the run's FIRST reset (no episode yet) and a reset whose
+    stamp does not exceed the episode's start (an unstamped request under
+    backlog would collapse the window to empty and drop every frame) are
+    both no-ops — the next goal bounds the episode instead."""
+    router, finished = _router()
+    router.on_reset(0)  # before any goal: no phantom closing
+    router.on_goal("ep-0000", "omeprazole", 6 * S)
+    _frame(router, 8 * S)
+    router.on_reset(6 * S)  # stale stamp at the start bound: ignored
+    assert router.current is not None and finished == []
+    router.on_goal("ep-0001", "cetirizine", 10 * S)  # the goal bounds it
+    _frame(router, 11 * S)
+    assert [(buf.goal_id, end) for buf, end, _ in finished] == [("ep-0000", 10 * S)]
+    assert 8 * S in finished[0][0].frames["overhead"]
+
+
+def test_arrival_proof_is_strictly_past_the_end():
+    """A gating frame stamped EXACTLY at the end does not prove arrival —
+    same-stamp frames can still follow on the sibling stream; only a stamp
+    strictly past the end closes the window (PR review pins the `<=`)."""
+    router, finished = _router()
+    router.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router, 1 * S)
+    router.on_goal("ep-0001", "cetirizine", 6 * S)
+    _frame(router, 6 * S)  # exactly at the boundary: not proof
+    assert finished == []
+    _frame(router, 6 * S + 1)
+    assert [buf.goal_id for buf, _, _ in finished] == ["ep-0000"]
+
+
+def test_episode_with_no_frames_finishes_without_crashing():
+    """A goal whose episode produced no frames at all (total camera outage)
+    must still finish — unjudgeable, published as a failure — and a fresh
+    router's flush is a no-op."""
+    empty_router, empty_finished = _router()
+    empty_router.flush(0)
+    assert empty_finished == []
+
+    router, finished = _router()
+    router.on_goal("ep-0000", "omeprazole", 0)
+    router.on_goal("ep-0001", "cetirizine", 6 * S)
+    _frame(router, 7 * S)
+    assert [buf.goal_id for buf, _, _ in finished] == ["ep-0000"]
+    assert finished[0][0].frames == {}  # judgeable() False -> fail publishes
+
+
+def test_wrist_never_gates_the_verdict():
+    """VER-13: the wrist is corroborating evidence — its stream neither
+    proves arrival (wrist frames past the end must not close the window)
+    nor blocks it (a frozen wrist must not delay the verdict)."""
+    router, finished = _router()
+    router.on_goal("ep-0000", "omeprazole", 0)
+    _frame(router, 1 * S, wrist=True)
+    router.on_goal("ep-0001", "cetirizine", 6 * S)
+    for stamp in (7 * S, 8 * S):
+        router.on_frame("rgb_wrist", stamp, np.zeros((3, 3, 3), np.uint8))
+    assert finished == []  # wrist past the end proves nothing
+    _frame(router, 7 * S)  # overheads past the end (wrist frozen would be fine)
+    assert [buf.goal_id for buf, _, _ in finished] == ["ep-0000"]
+
+
+def test_result_metadata_carries_the_tc2_keys():
+    """PR review: the published verdict's metadata is what the A7 client
+    reads to stamp the next reset — a regression here silently reverts
+    issue #120's reset bounding to a zero stamp."""
+    from aisle.nodes.verifier_realistic import result_metadata
+
+    meta = result_metadata({"goal_id": "ep-0007"}, end_ns=42 * S, seq=3)
+    assert meta["sim_time_ns"] == 42 * S
+    assert meta["goal_id"] == "ep-0007"
+    assert meta["seq"] == 3
+    assert meta["env_id"] == 0  # stamp() fills TC-2's remaining default
 
 
 def test_undecodable_frame_still_advances_the_clocks():
@@ -399,8 +525,11 @@ def test_sidecar_node_never_subscribes_to_oracle_state(tmp_path):
     assert node["inputs"]["reset"]["source"] == "rollout-client/reset"
     # the router's arrival proof only holds if camera queues never drop
     # during a 3-5 s judge (issue #120): 100 deep was ~3.3 s at 30 Hz
+    from aisle.harness.rollout import CAMERA_QUEUE_DEPTH
+
     for stream in ("rgb_overhead", "depth_overhead", "rgb_wrist"):
-        assert node["inputs"][stream]["queue_size"] >= 400, stream
+        assert node["inputs"][stream]["queue_size"] == CAMERA_QUEUE_DEPTH, stream
+    assert CAMERA_QUEUE_DEPTH >= 400
 
 
 def test_sidecar_node_is_absent_unless_asked_for():

@@ -423,6 +423,16 @@ def run_gates(
     return {"ok": True, **gates, "idea": ideas[-1]["id"], "no_idea_gate": False}
 
 
+# camera queue depth for the realistic verifier (issue #120): 400 covers two
+# back-to-back 3-5 s judges at 30 Hz without dropping — dropping voids the
+# router's arrival proof. HONEST worst-case transient memory if all three
+# queues fill (review: an earlier comment said ~400 MB, ~2.3x low): 400 x
+# ~0.9 MB rgb8 640x480 + 400 x ~1.2 MB depth f32 + 400 x ~0.23 MB wrist
+# 320x240 ~= 930 MB of dora shared memory, held only across stacked judges;
+# steady-state the queues sit near-empty. The unit test imports this.
+CAMERA_QUEUE_DEPTH = 400
+
+
 def realistic_verifier_node(root: Path, run_dir: Path, doc: dict, timeout_s: float) -> dict:
     """The VER-5 judge as a live node (increment 1b).
 
@@ -468,16 +478,15 @@ def realistic_verifier_node(root: Path, run_dir: Path, doc: dict, timeout_s: flo
         # judge WITHOUT dropping (issue #120): the router's arrival proof
         # (a later stamp means no earlier frames remain on that stream)
         # only holds if the queue never overflows, and 100 deep is ~3.3 s
-        # at 30 Hz. 400 covers two back-to-back judges; the transient cost
-        # is bounded (~400 MB across the three streams at 640x480) and the
-        # queues sit near-empty outside judge windows.
+        # at 30 Hz. A third back-to-back judge can still overflow silently
+        # — the residual, noted in issue #120's follow-ups.
         "inputs": {
             topic: {
                 "source": producers[topic],
                 "queue_size": (
                     1
                     if topic == "joint_state"
-                    else 400
+                    else CAMERA_QUEUE_DEPTH
                     if topic in ("rgb_overhead", "depth_overhead", "rgb_wrist")
                     else 100
                 ),
@@ -658,12 +667,14 @@ def await_realistic_sidecar(run_dir: Path, expected: int, timeout_s: float = 45.
     """Wait (bounded) for the realistic verifier's VER-14 sidecar to carry
     one record per episode before teardown, and return how many it has.
 
-    The node judges an episode when the NEXT goal arrives; the LAST episode
-    has no next goal, so its only chance is the dataflow stopping — and
-    `judge_frames` takes seconds, which it loses to teardown. Observed: 2
-    records for 3 episodes, twice. Waiting here is the fix that does not
-    require the node to win a race, and a bounded wait cannot hang a run:
-    on timeout the count is simply short and the caller reports it."""
+    The node judges an episode once its end (reset request, next goal, or
+    sim-budget expiry) is bounded AND the camera streams prove its frames
+    arrived (issue #120); the LAST episode has no next boundary, so its
+    only chance is the teardown flush — and `judge_frames` takes seconds,
+    which it loses to teardown. Observed: 2 records for 3 episodes, twice.
+    Waiting here is the fix that does not require the node to win a race,
+    and a bounded wait cannot hang a run: on timeout the count is simply
+    short and the caller reports it."""
     sidecar = run_dir / "verifier_stages.jsonl"
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:

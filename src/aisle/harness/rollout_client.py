@@ -122,7 +122,12 @@ def main() -> None:
                 retries_seen[goal_id] = int(feedback["retries"])
         elif event["id"] == "episode_result" and phase == "running":
             result = json.loads(event["value"][0].as_py())
-            last_result_sim_ns = int((event.get("metadata") or {}).get("sim_time_ns", 0))
+            try:
+                last_result_sim_ns = int((event.get("metadata") or {}).get("sim_time_ns", 0))
+            except (TypeError, ValueError):
+                # a malformed stamp degrades the reset bound, it must not
+                # kill the client mid-campaign (PR #168 review)
+                last_result_sim_ns = 0
             record = {"episode": episode, "seed": seeds[episode], **result}
             record["retries"] = retries_seen.pop(record.get("goal_id", ""), 0)
             print(f"episode {episode} result: {record}", file=sys.stderr)

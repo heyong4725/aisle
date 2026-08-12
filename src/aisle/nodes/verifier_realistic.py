@@ -63,11 +63,9 @@ from aisle.topics import stamp
 # DROPPED rather than used, and judge_frames skips that wrist frame.
 EE_POSE_MAX_SKEW_NS = 50_000_000
 
-CAMERA_STREAMS = {
-    "rgb_overhead": ("overhead", "rgb"),
-    "depth_overhead": ("overhead", "depth"),
-    "rgb_wrist": ("wrist", "rgb"),
-}
+# membership is all that matters: routing to buffer keys happens by stream
+# name inside retain_capture_frame (review: the old tuple values were dead)
+CAMERA_STREAMS = frozenset({"rgb_overhead", "depth_overhead", "rgb_wrist"})
 
 
 @dataclass
@@ -188,6 +186,11 @@ class EpisodeRouter:
         self.current: EpisodeBuffer | None = None
         self.closing: list[ClosingEpisode] = []
         self.high_water: dict[str, int] = {}
+        # the newest sim stamp seen on ANY routed event — the non-camera
+        # clock the second liveness net compares against when BOTH gating
+        # streams freeze (renderer death: joint_state keeps flowing at
+        # 100 Hz while no camera event ever advances high_water; review)
+        self.last_seen_ns = 0
 
     def on_goal(self, goal_id: str, target_med: str, start_ns: int) -> None:
         """A new episode begins at `start_ns` (the goal's reset_sim_ns — the
@@ -213,33 +216,45 @@ class EpisodeRouter:
         of the result that triggered it. Bounding here (rather than at the
         next goal) keeps RST-2 behavioral-reset motion out of the ended
         episode's window: those frames show the med being picked back OUT
-        of the tray."""
-        if self.current is not None:
+        of the tray. A stamp at or before the episode's start (an
+        unstamped request under backlog) is IGNORED — collapsing the
+        window to empty would drop every frame; the next goal bounds the
+        episode instead (review)."""
+        self.last_seen_ns = max(self.last_seen_ns, int(end_ns))
+        if self.current is not None and end_ns > self.current.start_ns:
             self._close(self.current, end_ns, "never_delivered")
         self._resolve()
 
     def on_joints(self, sim_ns: int, qpos: np.ndarray) -> None:
+        self.last_seen_ns = max(self.last_seen_ns, int(sim_ns))
         owner = self._owner(sim_ns)
         if owner is not None:
             owner.observe_joints(sim_ns, qpos)
+        self._maybe_expire(sim_ns)
+        self._resolve()
 
     def on_frame(self, stream: str, sim_ns: int, frame: np.ndarray | None) -> None:
         """A camera event advances the stream clocks even when its payload
         did not decode (frame None): the stamp still proves delivery
         progress, and the sim-budget expiry must keep firing or an
         undecodable stream would stall the loop forever (PR review)."""
+        self.last_seen_ns = max(self.last_seen_ns, int(sim_ns))
         if stream in GATING_STREAMS:
             self.high_water[stream] = max(self.high_water.get(stream, 0), int(sim_ns))
         if frame is not None:
             owner = self._owner(sim_ns)
             if owner is not None:
                 owner.observe_frame(stream, sim_ns, frame)
-        if self.current is not None and self.current.expired(sim_ns):
-            # the sim budget is this node's own end signal (A7 cannot wait
-            # for the oracle); the window is bounded at the budget, and the
-            # verdict still waits for both streams to pass it
-            self._close(self.current, self.current.start_ns + self.timeout_ns, "timeout")
+        self._maybe_expire(sim_ns)
         self._resolve()
+
+    def _maybe_expire(self, sim_ns: int) -> None:
+        """The sim budget is this node's own end signal (A7 cannot wait for
+        the oracle). Checked on joints TOO (review): if every camera stream
+        stops while the sim runs on, the expiry must still fire or no
+        verdict ever publishes."""
+        if self.current is not None and self.current.expired(sim_ns):
+            self._close(self.current, self.current.start_ns + self.timeout_ns, "timeout")
 
     def flush(self, last_sim_ns: int) -> None:
         """Teardown: judge everything still open, oldest first — the LAST
@@ -280,23 +295,31 @@ class EpisodeRouter:
 
     def _resolve(self) -> None:
         """Judge closed episodes, oldest first, once both gating streams
-        have delivered past their end — publish order is episode order. If
-        one stream's clock froze while the other ran STREAM_STALL_SLACK_NS
-        past the end, the laggard is presumed dead and the episode is
-        judged with what it has rather than never (liveness, PR review)."""
+        have delivered past their end — publish order is episode order.
+        Two liveness nets keep verdicts flowing when the proof cannot
+        complete (PR review): if ONE stream's clock froze while the other
+        ran STREAM_STALL_SLACK_NS past the end, the laggard is presumed
+        dead; if BOTH froze (renderer death) while the sim demonstrably
+        ran on — any routed event's stamp passed end + slack — the
+        episode is judged with what it has rather than never. Without the
+        second net, `both` mode (loop on the oracle, cameras irrelevant
+        to it) would pile up unjudged episodes for a whole campaign."""
         while self.closing:
             end_ns = self.closing[0].end_ns
             arrived = min(self.high_water.get(stream, 0) for stream in GATING_STREAMS)
             furthest = max(self.high_water.get(stream, 0) for stream in GATING_STREAMS)
             if arrived <= end_ns:
-                if furthest <= end_ns + STREAM_STALL_SLACK_NS:
+                if (
+                    furthest <= end_ns + STREAM_STALL_SLACK_NS
+                    and self.last_seen_ns <= end_ns + STREAM_STALL_SLACK_NS
+                ):
                     return
-                laggard = min(GATING_STREAMS, key=lambda s: self.high_water.get(s, 0))
+                stalled = sorted(s for s in GATING_STREAMS if self.high_water.get(s, 0) <= end_ns)
                 print(
-                    f"verifier-realistic: {laggard} stalled at "
-                    f"{self.high_water.get(laggard, 0)} ns while its sibling passed "
-                    f"{furthest} ns — judging {self.closing[0].buffer.goal_id} without "
-                    "waiting (liveness net)",
+                    f"verifier-realistic: {', '.join(stalled)} stalled "
+                    f"(high water {[self.high_water.get(s, 0) for s in stalled]} ns) while "
+                    f"the run reached {max(furthest, self.last_seen_ns)} ns — judging "
+                    f"{self.closing[0].buffer.goal_id} without waiting (liveness net)",
                     file=sys.stderr,
                 )
             self._finish(self.closing.pop(0))
@@ -325,6 +348,15 @@ def ee_pose_from_joints(qpos: np.ndarray) -> tuple:
 
     pos, rot = fk_flange(np.asarray(qpos, dtype=float)[:7])
     return (pos, quat_xyzw_from_rotation(rot))
+
+
+def result_metadata(record: dict, end_ns: int, seq: int) -> dict:
+    """TC-2's mandatory keys on the published verdict, now that A7
+    consumers READ them: the client stamps its next reset request with this
+    sim time, which bounds the ended episode's frame window (PR #168
+    review — an unstamped result made the reset bounding silently inert in
+    exactly the A7 mode issue #120 targets)."""
+    return stamp({"sim_time_ns": int(end_ns), "goal_id": record["goal_id"]}, seq)
 
 
 def episode_result(goal_id: str, success: bool, failure: str | None, t_end_s: float) -> dict:
@@ -382,17 +414,12 @@ def main() -> None:  # pragma: no cover — dora runtime
     result_seq = 0
 
     def publish(record: dict, end_ns: int) -> None:
-        # TC-2's mandatory keys, now that A7 consumers READ them: the
-        # client stamps its next reset request with this sim time, which is
-        # what bounds the ended episode's frame window (PR review — an
-        # unstamped result made the reset bounding silently inert in
-        # exactly the A7 mode issue #120 targets)
         nonlocal result_seq
         result_seq += 1
         node.send_output(
             "episode_result",
             pa.array([json.dumps(record)]),
-            stamp({"sim_time_ns": int(end_ns), "goal_id": record["goal_id"]}, result_seq),
+            result_metadata(record, end_ns, result_seq),
         )
 
     def finish(ep: EpisodeBuffer, end_ns: int, failure: str) -> None:
@@ -428,47 +455,61 @@ def main() -> None:  # pragma: no cover — dora runtime
         )
 
     router = EpisodeRouter(period_ns, timeout_ns, finish)
+    last_sim_time_ns = 0
+
+    def dispatch(event: dict) -> None:
+        nonlocal published, last_sim_time_ns
+        topic, metadata = event["id"], (event.get("metadata") or {})
+        sim_time_ns = int(metadata.get("sim_time_ns", 0)) or last_sim_time_ns
+        last_sim_time_ns = max(last_sim_time_ns, sim_time_ns)
+        if topic == "bridge_info":
+            published = json.loads(event["value"][0].as_py())["calibration"]
+        elif topic == "episode_goal":
+            # goal_id rides the METADATA, not the payload (TC-7's goal
+            # pattern, set by the rollout client as ep-NNNN). Reading it
+            # from the payload silently produced ids like
+            # "ep-21370000000", and VER-6 correlates realistic records to
+            # oracle episodes BY goal_id -- so a wrong one makes the
+            # comparison quietly EMPTY rather than obviously wrong.
+            goal_id = metadata.get("goal_id")
+            if not goal_id:
+                print("episode_goal without goal_id: cannot correlate (TC-7)", file=sys.stderr)
+                return
+            goal = json.loads(event["value"][0].as_py())
+            router.on_goal(goal_id, goal["target_med"], goal_start_ns(goal, sim_time_ns))
+        elif topic == "reset":
+            # the client's own reset request (stamped with the sim time
+            # of the result that triggered it) ends the running episode
+            # BEFORE any reset motion enters the frames (issue #120)
+            router.on_reset(sim_time_ns)
+        elif topic == "joint_state":
+            router.on_joints(sim_time_ns, np.asarray(event["value"].to_numpy(zero_copy_only=False)))
+        elif topic in CAMERA_STREAMS:
+            # UNCONDITIONAL: a payload that fails to decode still passes
+            # None so the router advances its clocks — gating here made
+            # the undecodable-stream liveness fix unreachable (review)
+            router.on_frame(topic, sim_time_ns, decode_frame(metadata, event["value"]))
+
     # judging the LAST episode takes seconds, and the runner tears the
     # dataflow down as soon as the client exits -- without this the final
     # episode loses the race and every run silently drops one record from
     # its VER-6 comparison (observed: 2 records for 3 episodes)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    last_sim_time_ns = 0
     try:
         for event in node:
             if event["type"] != "INPUT":
                 continue
-            topic, metadata = event["id"], (event.get("metadata") or {})
-            sim_time_ns = int(metadata.get("sim_time_ns", 0)) or last_sim_time_ns
-            last_sim_time_ns = max(last_sim_time_ns, sim_time_ns)
-            if topic == "bridge_info":
-                published = json.loads(event["value"][0].as_py())["calibration"]
-            elif topic == "episode_goal":
-                # goal_id rides the METADATA, not the payload (TC-7's goal
-                # pattern, set by the rollout client as ep-NNNN). Reading it
-                # from the payload silently produced ids like
-                # "ep-21370000000", and VER-6 correlates realistic records to
-                # oracle episodes BY goal_id -- so a wrong one makes the
-                # comparison quietly EMPTY rather than obviously wrong.
-                goal_id = metadata.get("goal_id")
-                if not goal_id:
-                    print("episode_goal without goal_id: cannot correlate (TC-7)", file=sys.stderr)
-                    continue
-                goal = json.loads(event["value"][0].as_py())
-                router.on_goal(goal_id, goal["target_med"], goal_start_ns(goal, sim_time_ns))
-            elif topic == "reset":
-                # the client's own reset request (stamped with the sim time
-                # of the result that triggered it) ends the running episode
-                # BEFORE any reset motion enters the frames (issue #120)
-                router.on_reset(sim_time_ns)
-            elif topic == "joint_state":
-                router.on_joints(
-                    sim_time_ns, np.asarray(event["value"].to_numpy(zero_copy_only=False))
+            try:
+                dispatch(event)
+            except Exception as exc:  # noqa: BLE001 — the verdict source is
+                # a trust boundary (review): one malformed payload (bad
+                # JSON, missing target_med, non-numeric stamp) must drop
+                # THAT event loudly, never kill the node — a dead verifier
+                # hangs the A7 loop until the wall clamp
+                print(
+                    f"verifier-realistic: dropping malformed {event['id']} event: {exc!r}",
+                    file=sys.stderr,
                 )
-            elif topic in CAMERA_STREAMS:
-                frame = decode_frame(metadata, event["value"])
-                if frame is not None:
-                    router.on_frame(topic, sim_time_ns, frame)
     finally:
         router.flush(last_sim_time_ns)
 
