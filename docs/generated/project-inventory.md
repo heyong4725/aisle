@@ -13,7 +13,7 @@ architecture, and contribution guidance remain in the
 |---|---:|
 | Graphs | 10 |
 | Capability manifests | 30 |
-| CLI command entries | 11 |
+| CLI command entries | 12 |
 | ADR files | 36 |
 
 ## Graphs
@@ -84,6 +84,7 @@ architecture, and contribution guidance remain in the
 | Command | Arguments/options |
 |---|---|
 | `harness` | — |
+| `harness fleet` | `--graph`, `--agents`, `--episodes`, `--seeds`, `--out`, `--timeout-s`, `--root` |
 | `harness probe` | `--dataflow`, `--topic`, `--for`, `--root` |
 | `harness report close` | `--id`, `--observed`, `--verdict`, `--root` |
 | `harness report log` | `--idea`, `--parent`, `--expect`, `--root` |

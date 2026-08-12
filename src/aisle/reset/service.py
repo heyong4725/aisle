@@ -95,7 +95,13 @@ def main() -> None:
         if event["type"] != "INPUT":
             continue
         metadata = event.get("metadata") or {}
-        if event["id"] == "reset":
+        event_id = event["id"]
+        is_reset_request = event_id == "reset" or (
+            event_id.startswith("reset_")
+            and event_id != "reset_done"
+            and event_id.rsplit("_", 1)[1].isdigit()
+        )
+        if is_reset_request:
             if not metadata.get("request_id"):
                 # TC-6 correlates request/reply via request_id: with none
                 # there is nothing to reply TO — drop loudly; forwarding

@@ -264,6 +264,9 @@ def main() -> None:
     meds = load_meds()
     home = physics["embodiment"][embodiment].get("home_qpos")
 
+    from aisle.topics import env_accepts, env_pin_from_env
+
+    env_pin = env_pin_from_env(os.environ)
     node = Node()
     goal = None
     target_idx = -1
@@ -278,6 +281,8 @@ def main() -> None:
         if event["type"] != "INPUT":
             continue
         metadata = event.get("metadata") or {}
+        if not env_accepts(metadata, env_pin):
+            continue  # fleet mode (BRG-5): another env's stream
         if event["id"] == "episode_goal":
             if goal is not None:
                 # actions must not overlap (TC-7): refuse, keep the active
