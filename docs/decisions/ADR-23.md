@@ -50,9 +50,12 @@ Hardened per the PR #58 review:
 
 - `wall_clamp` joins the failure histogram as a harness-synthesized
   class, distinguishable from the verifier's sim-time `timeout`.
-- Episode indices and goal ids restart per launch; trace episode
-  windows for clamped runs are best-effort (the manifest flags the
-  relaunch count, so analyses can exclude or special-case them).
+- Episode indices, reset request ids, and goal ids continue in run-global
+  order across launches. Each relaunch receives the number of episode rows
+  already recorded as its offset, so the append-only results and VER-14
+  sidecar retain one unambiguous correlation key per attempted episode.
+  Trace files remain isolated per launch under `traces/relaunch-N/`; the
+  global ids identify their episode windows without aliasing prior launches.
 - A pathological graph that wedges every episode now finishes in
   ~N x per-episode budget with N recorded `wall_clamp` failures — a
   scored 0.0, not an empty window.

@@ -119,6 +119,9 @@ class NavStateMachine:
         self.goal_id = goal_id
         self.pose = None
         self.ticks = 0
+        # The held clock is goal-scoped: if this goal's first pose is
+        # unstamped, it must not anchor to the previous goal's last stamp.
+        self._sim_ns = None
         self._t0_ns = None
         self._progress_ns = None
         self._best_dist = math.inf

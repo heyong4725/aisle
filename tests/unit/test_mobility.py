@@ -499,6 +499,27 @@ class TestNavLifecycle:
         # no clock ever existed: t_end honestly reports 0.0, not a guess
         assert out[0][1] == {"status": "success", "failure": None, "t_end": 0.0}
 
+    def test_new_goal_does_not_inherit_prior_goal_clock(self):
+        """MOB-2/CON-5 (PR #177 review): an unstamped first pose on a
+        sequential goal must not anchor its budgets to the previous goal's
+        last sim stamp. When valid stamps resume, the new goal starts its own
+        clock instead of immediately failing from cross-goal elapsed time."""
+        m = self._machine()
+        m.on_goal([1.0, 0.0, 0.0], "nav-1")
+        m.on_base_pose([0.95, 0.0, 0.0], 1_000_000_000)
+        assert m.on_tick()[0][1]["status"] == "success"
+
+        m.on_goal([5.0, 0.0, 0.0], "nav-2")
+        m.on_base_pose([1.0, 0.0, 0.0], None)
+        out = m.on_tick()
+        assert out[0][0] == "nav_feedback"
+        assert m._t0_ns is None
+
+        m.on_base_pose([1.0, 0.0, 0.0], 2_000_000_000)
+        out = m.on_tick()
+        assert out[0][0] == "nav_feedback"
+        assert m._t0_ns == 2_000_000_000
+
     def test_yaw_must_converge_before_success(self):
         """MOB-2 (PR #14 re-review): a pose goal is NOT complete on x/y alone
         — orientation must converge too. At the target position with the

@@ -950,6 +950,10 @@ def rollout(
             "AISLE_SIM_BACKEND": gates["sim_backend"],
             "AISLE_TIMEOUT_S": str(episode_timeout_s),
             "AISLE_RESULTS": str(results_path),
+            # Runner-internal ADR-23 relaunch state: the first launch is
+            # always zero-based, regardless of ambient developer-shell state.
+            # Relaunches replace this below with the run-global row count.
+            "AISLE_EPISODE_BASE": "0",
             # RST-2: the client stamps every reset request with the mode
             "AISLE_RESET_MODE": reset_mode,
         }

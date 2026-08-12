@@ -242,6 +242,10 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
     remaining seeds so they still get scored (HAR-1; ADR-23)."""
     from aisle.harness import rollout as ro
 
+    # CON-5: this runner-internal relaunch offset must not leak in from a
+    # developer shell and renumber the initial launch.
+    monkeypatch.setenv("AISLE_EPISODE_BASE", "999")
+
     root = tmp_path / "proj"
     (root / "graphs").mkdir(parents=True)
     (root / "graphs" / "g.yaml").write_text("nodes:\n- id: n\n  path: n.py\n  outputs: [t]\n")
@@ -341,7 +345,7 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
     # numbering (episode 0 succeeded + episode 1 clamped -> next is 2), so
     # goal_ids never repeat and fidelity.load_sidecar's duplicate refusal
     # cannot void a relaunched A7/both run
-    assert episode_bases == [None, "2"]
+    assert episode_bases == ["0", "2"]
     assert report["failures"] == {"wall_clamp": 1}
     clamped = [e for e in report["episodes"] if e.get("failure") == "wall_clamp"]
     assert [e["seed"] for e in clamped] == [1]  # the wedged seed, recorded
