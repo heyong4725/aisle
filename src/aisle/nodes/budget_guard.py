@@ -612,8 +612,20 @@ def main(clock=None) -> None:
             # the authoritative episode boundary: the wall timer anchors
             # HERE (not at the first command), and velocity/hold state is
             # re-referenced to home — the robot IS at home after a
-            # teleport reset
-            for env_id, state in envs.items():
+            # teleport reset.
+            # Fleet mode (BRG-5): the boundary is PER ENV — sliced by the
+            # reply's env_id. The all-envs loop let a NEIGHBOUR's reset
+            # snap this env's last_gripper to 0.0 (OPEN) mid-carry: the
+            # next clamp opened the fingers and the box dropped at
+            # exactly the neighbour's reset moment (fleet probes 5-6,
+            # seed-3 'dropped' at t~26). A reply without env_id keeps the
+            # legacy whole-guard boundary.
+            reset_env = metadata.get("env_id")
+            if isinstance(reset_env, int) and not isinstance(reset_env, bool):
+                boundary_envs = [(reset_env, envs.setdefault(reset_env, new_state()))]
+            else:
+                boundary_envs = list(envs.items())
+            for env_id, state in boundary_envs:
                 if is_mobile and state["last_base_safe"] != [0.0, 0.0]:
                     # a pre-reset nonzero cmd can still be IN FLIGHT to the
                     # bridge; merely clearing our latch mirror would let it
