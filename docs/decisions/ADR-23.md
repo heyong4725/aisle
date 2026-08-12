@@ -50,9 +50,25 @@ Hardened per the PR #58 review:
 
 - `wall_clamp` joins the failure histogram as a harness-synthesized
   class, distinguishable from the verifier's sim-time `timeout`.
-- Episode indices and goal ids restart per launch; trace episode
-  windows for clamped runs are best-effort (the manifest flags the
-  relaunch count, so analyses can exclude or special-case them).
+- Episode indices, reset request ids, and goal ids continue in run-global
+  order across launches. Each relaunch receives the number of episode rows
+  already recorded as its offset, so no two attempts in a run share a
+  `goal_id`: the append-only results file gets one unambiguous key per
+  ATTEMPTED episode, and the VER-14 sidecar one per episode that produced
+  a verdict (a clamped attempt has no verdict, so it has no sidecar row —
+  its synthetic results record carries no `goal_id` either).
+- Trace episode windows for clamped runs remain BEST-EFFORT, and the
+  run-global ids do not yet fix them. Launch 1 writes into `traces/`
+  with each relaunch nested under `traces/relaunch-N/`, but
+  `harness/traces.py` resolves endpoints with a non-recursive glob over
+  `traces/` alone, so relaunch traces are invisible to it; `episode_window`
+  is positional (`resets[episode]`) and validates the index against the
+  run-global row count, so for a relaunch-era episode it raises IndexError
+  or returns a launch-1 window under the wrong label. `TRACE_SCHEMA`
+  records no `goal_id`/`request_id`, so id-based correlation is not
+  available in traces at all. Making trace queries launch-aware is
+  tracked separately; until then the manifest's relaunch count is the
+  signal for analyses to exclude or special-case these runs.
 - A pathological graph that wedges every episode now finishes in
   ~N x per-episode budget with N recorded `wall_clamp` failures — a
   scored 0.0, not an empty window.

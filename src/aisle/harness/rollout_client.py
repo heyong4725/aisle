@@ -26,6 +26,24 @@ import sys
 import numpy as np
 
 
+def parse_episode_base(environ) -> int:
+    """The ADR-23 run-global numbering offset, validated like every other
+    env read in this module (PR #178 review).
+
+    The runner always sets it, but a direct `dora run` from a developer
+    shell does not, so a junk value must refuse LOUDLY at startup rather
+    than die on an uncaught ValueError deep in the node. A NEGATIVE offset
+    is refused too: it would mint ids like `ep--005` and alias earlier
+    episodes, which is the exact aliasing the offset exists to prevent."""
+    raw = environ.get("AISLE_EPISODE_BASE", "0").strip()
+    if not raw.isdigit():
+        raise SystemExit(
+            f"rollout-client config refused: AISLE_EPISODE_BASE must be a "
+            f"non-negative int, got {raw!r}"
+        )
+    return int(raw)
+
+
 def main() -> None:
     import pyarrow as pa
     from dora import Node
@@ -76,7 +94,7 @@ def main() -> None:
     # A7/both run would lose its whole VER-6 comparison. The runner passes
     # the count of episodes already recorded; goal_ids/request_ids/records
     # continue the run-global sequence
-    episode_base = int(os.environ.get("AISLE_EPISODE_BASE", "0"))
+    episode_base = parse_episode_base(os.environ)
     phase = "reset_pending"  # -> awaiting_reset -> running -> (next)
     retries_seen: dict[str, int] = {}  # goal_id -> latest feedback retries (HAR-3)
     # the sim stamp of the episode_result that ended the last episode: rides
