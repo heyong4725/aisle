@@ -1,8 +1,7 @@
 # ADR-29 — Sim-anchored S1 control loops: retime waypoint-nav and the base watchdog onto base_pose (issue #71)
 
-Status: PROPOSED (agent-drafted 2026-08-11 at the owner's direction — the
-CON-7 item issue #71 left open; ratified iff the owner merges the
-`env-change` PR carrying it, which IS the CON-7 human review). Relates to
+Status: RATIFIED (owner merged the `env-change` PR #156 as `5f4ba7a` on
+2026-08-11, completing the CON-7 human review). Relates to
 ADR-25 (reset-anchored startup), ADR-26 (CON-5 layering), SPEC 210
 MOB-2/MOB-3, SPEC 080, CON-5.
 
@@ -135,15 +134,16 @@ can move.
 
 - **Pipeline wall latency still quantizes into sim ticks** (every
   tier): when a computed command reaches the bridge remains
-  wall-dependent until the sim-clock lockstep decision (SPEC 030/010,
-  open — ADR-25 residual 1). This ADR removes the S1-only TIMER
-  channel; idle-machine ops discipline (ADR-26) still applies.
+  wall-dependent until ADR-30's sim-clock lockstep contract is implemented.
+  This ADR removes the S1-only TIMER channel; idle-machine ops discipline
+  (ADR-26) still applies in the interim.
 - **The arm/base mutex hold window (`arm_motion_hold_s`) is still WALL
   seconds** (`base_creep_deadline` on the injected clock). Same species
   of rtf coupling — how much sim trajectory the creep clamp covers
   depends on host speed — but retiming it needs a sim-time reference on
   the ARM command path and a semantic review of the 1.0 s value.
-  Follow-up, tracked in issue #71.
+  Superseded by ADR-30's contract-clock decision; implementation remains
+  tracked in issue #71.
 - Metal ULP nondeterminism (ADR-26 layer d) is untouched: attested S1
   pairs remain statistical at the outcome layer.
 - **Adversarial-review residuals accepted as documented behavior**
@@ -154,8 +154,8 @@ can move.
   runs; (b) a hung sim now silences the nav action entirely (no wall
   heartbeat by design — the harness wall-clamp relaunch is the recovery
   path), and MOB-2's ">=2 Hz" feedback is a SIM cadence under this ADR (a
-  wall reading at very low rtf would dip below 2 Hz; a spec clarification
-  is the owner's call); (c) a wall-timed-out latched base on a HUNG sim
+  wall reading at very low rtf may dip below 2 Hz, which ADR-30 now defines
+  as conforming); (c) a wall-timed-out latched base on a HUNG sim
   is stopped by the sweep within ~5 s rather than the old 50 ms — while
   the sim runs, the pose path still enforces at 50 Hz, and a hung sim
   moves nothing; (d) draining the nav pose queue to newest under backlog
