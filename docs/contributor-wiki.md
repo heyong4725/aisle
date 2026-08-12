@@ -4,7 +4,7 @@
 > This page describes the implementation in this tree; dated research results
 > remain tied to the commits recorded in their evidence.
 
-AISLE is the **Agentic Inference, Safety, and Learning Environment**: an experimental system
+AISLE is the **Agentic Infrastructure for Safe Learning and Execution**: an experimental system
 in which coding agents assemble and improve typed robot dataflows, run them in
 simulation, inspect structured evidence, and carry successful components into
 harder tasks. Its central research question is not merely whether an agent can

@@ -1,13 +1,17 @@
-# AISLE — Agentic Inference, Safety, and Learning Environment
+# AISLE — Agentic Infrastructure for Safe Learning and Execution
 
 New contributor? Start with the
 **[AISLE contributor wiki](docs/contributor-wiki.md)** for a source-linked
 project overview, architecture, use cases, extension guide, code map, research
 status, and known limitations.
 
-*The name also nods to the pharmacy aisle where the first task family lives —
-but the scope is the substrate, not the store: the bench suite (SPEC 300/310)
-is laboratory powder handling, and hardware deployment is the intended path.*
+*AISLE is an **environment** in the reinforcement-learning sense — a simulated
+world with tasks, dynamics, and a frozen scorer that agents act in — and the
+**infrastructure** around it: the typed contract, registry, validator, safety
+guard, and evidence harness. The name nods to the pharmacy aisle where the
+first task family lives, but the scope is the substrate, not the store: the
+bench suite (SPEC 300/310) is laboratory powder handling, and hardware
+execution is the intended path.*
 
 Agentic auto-research for robot manipulation on open infrastructure:
 coding agents (Claude Code / Codex) compose and evolve **typed dora-rs

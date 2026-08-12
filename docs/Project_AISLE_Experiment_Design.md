@@ -1,6 +1,6 @@
 # Project AISLE: Agentic Auto-Research on an Open Dataflow Stack
 
-**AISLE** — *Agentic Inference, Safety, and Learning Environment* (formerly "Project Apothecary", renamed v0.4 when the retail suite §11 outgrew the pharmacy-desk namesake; the expansion was widened again in August 2026 when the powder/force bench suite (SPEC 300/310) and the inference-and-operation agenda outgrew "In-Store". The word AISLE is unchanged — it still nods to the pharmacy aisle of the first task family.)
+**AISLE** — *Agentic Infrastructure for Safe Learning and Execution* (formerly "Project Apothecary", renamed v0.4 when the retail suite §11 outgrew the pharmacy-desk namesake; widened again in August 2026 when the powder/force bench suite (SPEC 300/310) outgrew "In-Store", and settled on the current expansion the same month: *Infrastructure* because the substrate — typed contract, registry, validator, guard, evidence harness — is the contribution, and *Execution* because operating a running system (H6) is the deployment half of the programme. The word AISLE is unchanged; it still nods to the pharmacy aisle of the first task family.)
 
 **Experiment design — coding agents (Claude Code / Codex) as the brain, dora-rs as the execution layer, Genesis World as the physics loop**
 *Draft v0.4, July 2026 — renamed Apothecary→AISLE; retail suite added (§11); §8 expanded into a full implementation guide for the student team; §9 resolved to decisions; model-orchestration tier (§7.5); ENPIRE/ASPIRE comparison (§10)*
@@ -185,7 +185,7 @@ Two verifiers, run together:
   intervention. Registered August 2026, not yet run. This is the inference /
   operation half of the project: H1-H4 ask whether an agent can *build* a
   robot system, H6 asks whether it can *keep one running*, which is the
-  deployment condition and the reason the expansion now reads "Inference".
+  deployment condition and the reason the expansion now reads "Execution".
   Falsified if the agent cannot localize induced faults from evidence alone,
   or if restoring performance requires reaching outside its sanctioned action
   space.

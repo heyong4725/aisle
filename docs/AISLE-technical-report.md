@@ -1,6 +1,6 @@
 # AISLE — A Substrate for Autonomous Robot Engineering
 
-**Agentic Inference, Safety, and Learning Environment · Technical report · August 2026**
+**Agentic Infrastructure for Safe Learning and Execution · Technical report · August 2026**
 
 *Status snapshot: 2026-08-12. Measured results cite the
 [README status table](../README.md#status), which is canonical. Forward-looking
@@ -150,7 +150,7 @@ ask whether an agent can *build* a robot system; H6 asks whether it can *keep
 one running* — monitoring a live dataflow, diagnosing a degradation from traces
 and guard evidence, proposing a validated hot-swap, and recovering, with no
 human in the loop and no bypass of the safety structure. That is the deployment
-condition, and it is why the project's name now reads *Inference*. It needs a
+condition, and it is why the project's name now reads *Execution*. It needs a
 fault-injection protocol and a decision record before a campaign, but it runs
 almost entirely on machinery that already exists (§5.8, §5.9, §7).
 

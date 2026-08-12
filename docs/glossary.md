@@ -1,5 +1,15 @@
 # Notation and glossary
 
+**AISLE** — *Agentic Infrastructure for Safe Learning and Execution*. Each
+letter is load-bearing: **Infrastructure** is the contribution (typed contract,
+registry, validator, guard, evidence harness), **Safe** names the
+non-bypassable safety structure that H5 measures, **Learning** is the research
+loop (H1–H4), and **Execution** is operating a running system (H6). The word
+also nods to the pharmacy aisle of the first task family. Earlier expansions —
+"Project Apothecary", then "Agentic In-Store Learning Environment" — were
+outgrown as the scope widened; the lineage is recorded in
+[`Project_AISLE_Experiment_Design.md`](Project_AISLE_Experiment_Design.md).
+
 Every identifier this repository uses, expanded, with the file that defines
 it normatively. If a definition here ever disagrees with the spec it cites,
 **the spec is right and this page is stale** — same rule the README's status
