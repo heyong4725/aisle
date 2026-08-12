@@ -1,6 +1,6 @@
 # AISLE research program: agents, evidence, and model orchestration
 
-**Technical framing, August 2026.** This report states the research object,
+**Technical framing, August 2026.** Status snapshot: 2026-08-12, commit `2b4b4cc`. Any verdict restated here is a dated summary for context; the [README status table](../README.md#status) is canonical and wins on conflict (issue #142). This report states the research object,
 experimental logic, evidence standard, and model-integration agenda for AISLE.
 It is descriptive rather than normative: the numbered specifications define
 what the implementation must do, the [README](../README.md#status) owns current
@@ -109,7 +109,7 @@ parts. Each should be allowed to fail or remain undecided.
 | Can an agent build a runnable system? | H1, composition | agent, registry and task prompt under a fixed environment | schema validity, launch rate, validate-fix cycles, first nonzero success | valid graphs do not launch, or require substantial hidden human repair |
 | Can it diagnose and improve the system? | H2, iteration | access to traces, failure taxonomy, and editable artifacts | held-out pass rate, time/tokens/rollouts to threshold, idea outcomes | dev gains disappear held-out, or improvement exceeds the budget |
 | Does prior work compound? | H3, accumulation | persistent evaluated skill library versus wiped memory | later-task time-to-success, reuse count, retained performance | no matched admissible arm exists, or reuse costs more than rediscovery |
-| Does the substrate improve engineering? | H4, substrate | hot-swap/dataflow workflow versus matched alternative | iteration latency, failures, change locality, auditability | speed comes from unequal setup or evidence is not attributable |
+| Does the substrate improve engineering? | H4, substrate | hot-swap/dataflow workflow versus the registered equal-budget monolithic-script control (only hot-swap vs relaunch measured so far) | iteration latency, failures, change locality, auditability | speed comes from unequal setup or evidence is not attributable |
 | Does freedom remain bounded? | H5, safety | agent-authored policies and motion code under the same guard | wrong-object rate, guard interventions, rejected bypasses, unsafe proposals | motion bypasses the guard or harmful outcomes are hidden by the metric |
 
 H1-H5 are system hypotheses. They do not by themselves establish that one
@@ -367,14 +367,14 @@ from the family name.
 
 | ID | Question | Matched contrast | Primary outcomes |
 |---|---|---|---|
-| M1 | When does a learned policy add value? | classical graph vs VLA vs hybrid fallback | pass/failure mix, inference cost, latency, guard intervention |
-| M2 | Does predictive planning improve action selection? | direct policy vs world-model reranking vs model-predictive control | held-out success, sample efficiency, planning latency, uncertainty calibration |
-| M3 | Is a neural environment useful for screening? | candidate-policy rankings in neural environment vs Genesis, then hardware when available | rank agreement, false promotion/rejection, cost per candidate |
-| M4 | Does representation survive transfer? | same task contract across perception rungs and embodiments | zero-/few-shot transfer, adapter changes, regression rate |
-| M5 | Can coding agents orchestrate models effectively? | fixed model catalog with and without agent graph authorship/diagnostic tools | time to working hybrid, selection quality, repair quality, budget |
-| M6 | Do learned policies remain governable? | matched policies behind the same action adapter and guard | unsafe proposals, clamps/rejections, wrong-object and collision outcomes |
+| MQ1 | When does a learned policy add value? | classical graph vs VLA vs hybrid fallback | pass/failure mix, inference cost, latency, guard intervention |
+| MQ2 | Does predictive planning improve action selection? | direct policy vs world-model reranking vs model-predictive control | held-out success, sample efficiency, planning latency, uncertainty calibration |
+| MQ3 | Is a neural environment useful for screening? | candidate-policy rankings in neural environment vs Genesis, then hardware when available | rank agreement, false promotion/rejection, cost per candidate |
+| MQ4 | Does representation survive transfer? | same task contract across perception rungs and embodiments | zero-/few-shot transfer, adapter changes, regression rate |
+| MQ5 | Can coding agents orchestrate models effectively? | fixed model catalog with and without agent graph authorship/diagnostic tools | time to working hybrid, selection quality, repair quality, budget |
+| MQ6 | Do learned policies remain governable? | matched policies behind the same action adapter and guard | unsafe proposals, clamps/rejections, wrong-object and collision outcomes |
 
-For M1-M6, keep task, held-out seeds, observation access, verifier, reset,
+For MQ1-MQ6, keep task, held-out seeds, observation access, verifier, reset,
 safety limits, and evidence requirements fixed. Either normalize inference and
 research compute or report both explicitly as a cost/performance frontier.
 Parameter count alone is not a compute control.

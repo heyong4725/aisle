@@ -63,7 +63,7 @@ read "the agent did X."
 
 | ENPIRE module | What it is | Where in AISLE |
 |---|---|---|
-| EN — Environment | auto-reset + auto-verification the agent can call | `src/aisle/reset/` (teleport service), `src/aisle/verifier/` (oracle + planogram judges) — the CON-7 **frozen set** |
+| EN — Environment | auto-reset + auto-verification the agent can call | `src/aisle/reset/` (teleport **and** behavioral reset services), `src/aisle/verifier/` (oracle + planogram judges) — the CON-7 **frozen set** |
 | PI — Policy Improvement | agents revising policy code from evidence | agent sessions editing dataflow YAML + node code under `harness/CLAUDE.research.md` |
 | R — Rollout | budgeted physical trials with full traces | `harness rollout` (HAR-1..5): seeded episodes, Arrow traces, video, tamper-evident budget ledger |
 | E — Evolution | idea branches, log analysis, recipe reuse | idea tree (`harness report`), git worktrees per arm, campaign runners (`tools/campaign.py`, `tools/h3_campaign.py`) |

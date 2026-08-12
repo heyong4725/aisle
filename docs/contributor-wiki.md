@@ -1126,6 +1126,13 @@ not automatically rewrite, qualitative maturity claims.
 
 ## 19. Glossary
 
+This table covers the concepts used on this page. For the full notation
+reference — every requirement-ID prefix (`CON`, `TC`, `HAR`, `VER`, `SCN`,
+`BRG`, `CAP`, `VAL`, `MOB`, `BG`, `RS`, `PW`, `FT`, `BAL`, `TOOL`), plus
+`ADR`, `DoD`, Class A/B/C, the `H1`-`H5` hypotheses, the `A1`-`A7`
+ablations, tiers, perception rungs, and campaign-arm notation — see
+[`glossary.md`](glossary.md).
+
 | Term | Meaning |
 |---|---|
 | Episode | One reset → goal → rollout → verdict cycle. |
@@ -1146,6 +1153,7 @@ not automatically rewrite, qualitative maturity claims.
 
 ## 20. Primary reading index
 
+- Notation and acronyms: [`docs/glossary.md`](glossary.md)
 - Project intent: [`docs/Project_AISLE_Experiment_Design.md`](Project_AISLE_Experiment_Design.md)
 - Normative constitution: [`specs/000-constitution.md`](../specs/000-constitution.md)
 - Runtime topic contract: [`specs/010-topic-contract.md`](../specs/010-topic-contract.md)
