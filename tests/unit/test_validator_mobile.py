@@ -127,6 +127,16 @@ def test_mobile_guard_must_wire_pose_and_tick(tmp_path, extra):
     [
         "dora/timer/millis/60000",  # slower than the wall-net latency story
         "some-node/heartbeat",  # not a timer at all: never guaranteed to fire
+        # issue #160 item 3: the old ad-hoc regex ACCEPTED millis/0 (0 <= max),
+        # disagreeing with _parse_timer_hz, which rejects a zero period as
+        # malformed everywhere else — the shared parser now governs here too
+        "dora/timer/millis/0",
+        # PR #177 review: the `dora` prefix is part of the contract. The
+        # dedup briefly dropped it, so a node-sourced pseudo-timer parsed
+        # as a real 100 Hz timer and passed this safety check — the ADR-29
+        # wall-net sweep wired to something that may never fire.
+        "some-node/timer/millis/10",
+        "evil/timer/millis/1000",
     ],
 )
 def test_mobile_guard_tick_must_be_a_bounded_timer(tmp_path, tick_source):

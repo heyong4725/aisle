@@ -2,9 +2,18 @@
 
 Env-configured (the T09 rollout runner sets these):
   AISLE_SEEDS       comma-separated episode seeds       (default "0")
-  AISLE_TARGET_MEDS comma-separated per-episode targets (default cycles meds)
   AISLE_TIMEOUT_S   per-episode timeout                 (default 30)
   AISLE_RESULTS     JSONL output path                   (optional)
+  AISLE_EPISODE_BASE run-global numbering offset on ADR-23 relaunches
+                    (default 0; issue #160 item 5)
+
+NOT runner-set: AISLE_TARGET_MEDS (comma-separated per-episode targets)
+is SCRUBBED by the rollout runner, because nothing sets it there and no
+graph declares it — an ambient shell value was the only way it could
+reach a measured run, silently re-targeting every episode (PR #178
+review). Absent it, targets are the deterministic seed-derived default
+below. Graph tests that launch this node directly via `dora run` still
+set it; they do not go through the runner.
 
 Per episode: reset(seed) -> await reset_done -> episode_goal -> await
 episode_result -> record, next seed. After the final episode the CLIENT
@@ -24,6 +33,29 @@ import sys
 import numpy as np
 
 
+def parse_episode_base(environ) -> int:
+    """The ADR-23 run-global numbering offset, validated like every other
+    env read in this module (PR #178 review).
+
+    The runner always sets it, but a direct `dora run` from a developer
+    shell does not, so a junk value must refuse LOUDLY at startup rather
+    than die on an uncaught ValueError deep in the node. A NEGATIVE offset
+    is refused too: it would mint ids like `ep--005` and alias earlier
+    episodes, which is the exact aliasing the offset exists to prevent."""
+    # isascii() guards the isdigit()/int() mismatch: str.isdigit() accepts
+    # superscripts and other Unicode digit forms, so a bare isdigit() check
+    # would let "²" through to an uncaught ValueError (the exact failure
+    # this validation exists to prevent) and would silently read the
+    # Arabic-Indic "٧" as 7 (PR #177 review).
+    raw = environ.get("AISLE_EPISODE_BASE", "0").strip()
+    if not (raw.isascii() and raw.isdigit()):
+        raise SystemExit(
+            f"rollout-client config refused: AISLE_EPISODE_BASE must be a "
+            f"non-negative int, got {raw!r}"
+        )
+    return int(raw)
+
+
 def main() -> None:
     import pyarrow as pa
     from dora import Node
@@ -32,6 +64,9 @@ def main() -> None:
     from aisle.topics import env_accepts, env_pin_from_env, make_sender
 
     seeds = [int(s) for s in os.environ.get("AISLE_SEEDS", "0").split(",")]
+    # parsed BEFORE the targets: the default target list is keyed to the
+    # RUN-GLOBAL episode index, not this launch's local one (PR #177 review)
+    episode_base = parse_episode_base(os.environ)
     tier = os.environ.get("AISLE_TIER", "T0")
     retail = tier in ("S1", "S2", "S3")  # RS-6: rollout gains --tier
     meds_env = os.environ.get("AISLE_TARGET_MEDS", "")
@@ -43,7 +78,13 @@ def main() -> None:
         targets = (
             meds_env.split(",")
             if meds_env
-            else [MED_NAMES[i % len(MED_NAMES)] for i in range(len(seeds))]
+            # keyed to the RUN-GLOBAL episode index (PR #177 review): a
+            # local index made a relaunch hand `ep-0002` a DIFFERENT med
+            # than the clean run gave the same goal_id and seed — a CON-5
+            # break that the run-global numbering made look contiguous and
+            # correct. base is 0 on a first launch, so clean runs are
+            # byte-identical.
+            else [MED_NAMES[(episode_base + i) % len(MED_NAMES)] for i in range(len(seeds))]
         )
     # refuse bad config LOUDLY at startup: an unknown med deadlocks the run
     # (the verifier refuses the goal without emitting a result), and a
@@ -66,7 +107,14 @@ def main() -> None:
     env_pin = env_pin_from_env(os.environ)
     node = Node()
     send = make_sender(node, env_pin)
-    episode = 0
+    episode = 0  # index into THIS launch's seeds/targets
+    # global numbering offset (issue #160 item 5): after a wall-clamp
+    # relaunch (ADR-23) this client is the run's SECOND writer, and a
+    # restart at ep-0000 would duplicate goal_ids — the VER-14 sidecar is
+    # append-only and fidelity REFUSES duplicate goal_ids, so a relaunched
+    # A7/both run would lose its whole VER-6 comparison. The runner passes
+    # the count of episodes already recorded; goal_ids/request_ids/records
+    # continue the run-global sequence
     phase = "reset_pending"  # -> awaiting_reset -> running -> (next)
     retries_seen: dict[str, int] = {}  # goal_id -> latest feedback retries (HAR-3)
     # the sim stamp of the episode_result that ended the last episode: rides
@@ -92,12 +140,15 @@ def main() -> None:
                     "reset",
                     pa.array(np.array([seeds[episode], reset_mode], dtype=np.uint32)),
                     {
-                        "request_id": f"reset-{episode:04d}-{seeds[episode]}",
+                        "request_id": f"reset-{episode_base + episode:04d}-{seeds[episode]}",
                         "sim_time_ns": last_result_sim_ns,
                     },
                 )
                 phase = "awaiting_reset"
-                print(f"reset sent: episode {episode} seed {seeds[episode]}", file=sys.stderr)
+                print(
+                    f"reset sent: episode {episode_base + episode} seed {seeds[episode]}",
+                    file=sys.stderr,
+                )
         elif event["id"] == "reset_done" and phase == "awaiting_reset":
             reset_meta = event.get("metadata") or {}
             if retail:
@@ -121,10 +172,13 @@ def main() -> None:
             send(
                 "episode_goal",
                 pa.array([json.dumps(goal)]),
-                {"goal_id": f"ep-{episode:04d}"},
+                {"goal_id": f"ep-{episode_base + episode:04d}"},
             )
             phase = "running"
-            print(f"goal sent: ep-{episode:04d} {goal.get('target_med', '')}", file=sys.stderr)
+            print(
+                f"goal sent: ep-{episode_base + episode:04d} {goal.get('target_med', '')}",
+                file=sys.stderr,
+            )
         elif event["id"] == "episode_feedback":
             # HAR-3: the retry count rides in the state machine's
             # feedback; the LATEST value per goal is what the episode
@@ -142,9 +196,9 @@ def main() -> None:
                 # a malformed stamp degrades the reset bound, it must not
                 # kill the client mid-campaign (PR #168 review)
                 last_result_sim_ns = 0
-            record = {"episode": episode, "seed": seeds[episode], **result}
+            record = {"episode": episode_base + episode, "seed": seeds[episode], **result}
             record["retries"] = retries_seen.pop(record.get("goal_id", ""), 0)
-            print(f"episode {episode} result: {record}", file=sys.stderr)
+            print(f"episode {episode_base + episode} result: {record}", file=sys.stderr)
             if out:
                 out.write(json.dumps(record) + "\n")
             episode += 1
