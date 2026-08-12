@@ -11,8 +11,8 @@ architecture, and contribution guidance remain in the
 
 | Surface | Count |
 |---|---:|
-| Graphs | 10 |
-| Capability manifests | 30 |
+| Graphs | 11 |
+| Capability manifests | 31 |
 | CLI command entries | 12 |
 | ADR files | 39 |
 
@@ -30,6 +30,7 @@ architecture, and contribution guidance remain in the
 | [graphs/expert_t1_l2.yaml](../../graphs/expert_t1_l2.yaml) | pharmacy (default) / — | franka (default) | L2 | 9 |
 | [graphs/expert_t2.yaml](../../graphs/expert_t2.yaml) | pharmacy (default) / — | franka (default) | L2 | 10 |
 | [graphs/expert_t3.yaml](../../graphs/expert_t3.yaml) | pharmacy (default) / — | franka (default) | L1 | 9 |
+| [graphs/expert_t4.yaml](../../graphs/expert_t4.yaml) | pharmacy (default) / — | franka (default) | L1 | 10 |
 
 ### Graph node membership
 
@@ -43,6 +44,7 @@ architecture, and contribution guidance remain in the
 - **graphs/expert_t1_l2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `detected-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
 - **graphs/expert_t2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `detected-pose`, `ocr-label`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
 - **graphs/expert_t3.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`
+- **graphs/expert_t4.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `human-sim`, `task-state-machine`, `rollout-client`
 
 ## Capability manifests
 
@@ -57,6 +59,7 @@ architecture, and contribution guidance remain in the
 | [registry/manifests/dora-genesis.yaml](../../registry/manifests/dora-genesis.yaml) | sim_bridge, rgb_stream, depth_stream, arm_actuation, gripper_actuation | franka, so101 | motion | hub | `src/aisle/nodes/dora_genesis.py` |
 | [registry/manifests/grasp-planner-topdown.yaml](../../registry/manifests/grasp-planner-topdown.yaml) | grasp_planning | franka, so101 | decision | hub | `src/aisle/nodes/grasp_topdown.py` |
 | [registry/manifests/gripper-driver-sim.yaml](../../registry/manifests/gripper-driver-sim.yaml) | gripper_actuation | franka, so101 | motion | hub | `src/aisle/nodes/dora_genesis.py` |
+| [registry/manifests/human-sim.yaml](../../registry/manifests/human-sim.yaml) | dialogue_human | franka, so101 | decision | hub | `src/aisle/nodes/human_sim.py` |
 | [registry/manifests/ik-trajectory.yaml](../../registry/manifests/ik-trajectory.yaml) | trajectory_generation | franka, so101 | motion | hub | `src/aisle/nodes/ik_trajectory.py` |
 | [registry/manifests/misplacement-detector.yaml](../../registry/manifests/misplacement-detector.yaml) | misplacement_detection | franka | perception | hub | `src/aisle/nodes/misplacement_detector.py` |
 | [registry/manifests/nav-action.yaml](../../registry/manifests/nav-action.yaml) | navigation | franka | motion | hub | `src/aisle/nodes/nav_action.py` |
@@ -129,7 +132,7 @@ inference.
 | [docs/decisions/ADR-3.md](../decisions/ADR-3.md) | ADR-3: sim-driver evalcards are pending until M0 (CAP-6 interpretation) | SUPERSEDED by ADR-10 amendment (10); the temporary carve-out was retired. |
 | [docs/decisions/ADR-30.md](../decisions/ADR-30.md) | ADR-30 — Run-to-quiescence simulation turns close issue #71's wall-latency channel | PROPOSED (agent-drafted 2026-08-11 at the owner's direction; amended |
 | [docs/decisions/ADR-31.md](../decisions/ADR-31.md) | ADR-31 — T2 frozen-scene change authorization (sign-off record) | RECORD of a human decision (CON-7 review trail). |
-| [docs/decisions/ADR-32.md](../decisions/ADR-32.md) | ADR-32 — T4 dialogue contract (spec-change sketch, awaiting human review) | PROPOSED (Class-C change to SPEC 010, CON-10/CON-14 — this PR is the |
+| [docs/decisions/ADR-32.md](../decisions/ADR-32.md) | ADR-32 — T4 dialogue contract (spec-change sketch, awaiting human review) | ACCEPTED (owner approved and merged the spec-change PR #170 on |
 | [docs/decisions/ADR-4.md](../decisions/ADR-4.md) | ADR-4: validator interpretations for T03 (SPEC 060) | ACCEPTED; amended by ADR-5's ratified safety-class boundary. |
 | [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | ACCEPTED (owner-ratified 2026-08-03) |
 | [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |

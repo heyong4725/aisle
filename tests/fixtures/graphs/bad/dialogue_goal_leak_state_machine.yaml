@@ -1,0 +1,23 @@
+# ADR-32 §1: a T4 graph routing episode_goal to the policy un-blinds the
+# final corrected target — the tier's whole point is that the robot must
+# LISTEN. The state machine here wires human_msg correctly and still
+# leaks via episode_goal.
+nodes:
+- id: rollout-client
+  outputs:
+  - episode_goal
+  - episode_meta
+- id: human-sim
+  inputs:
+    episode_meta: rollout-client/episode_meta
+    robot_msg: task-state-machine/robot_msg
+  outputs:
+  - human_msg
+- id: task-state-machine
+  env:
+    AISLE_TASK_TIER: T4
+  inputs:
+    human_msg: human-sim/human_msg
+    episode_goal: rollout-client/episode_goal
+  outputs:
+  - robot_msg

@@ -26,7 +26,8 @@ docstring. `tools/trace_check.py` (SPEC 070) enforces this in CI.
 - CON-3: Runtime is dora-rs (installed via `uv tool install dora-rs-cli` or
   cargo). Dataflows are YAML; Python nodes run with `dora run <yaml> --uv`.
 - CON-4: All inter-node data is Apache Arrow. No pickle, no JSON blobs on
-  hot topics (JSON allowed only in `*_result` / report topics).
+  hot topics (JSON allowed only in `*_result` / report topics and the
+  per-event `*_msg` dialogue topics of ADR-32).
 - CON-5: Determinism: any run is reproducible from
   `(git_sha, env_hash, env_fingerprint, platform, seed)` (ADR-24: the
   fingerprint is `sha256(uv.lock bytes ‖ resolved selection)` — python

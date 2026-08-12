@@ -1,0 +1,178 @@
+# The hand-written T4 expert baseline (design doc §3 tier table;
+# ADR-32 increment one): the full request loop — confirm the name back,
+# handle a pre-delivery "no, the other one", deliver. Perception is the
+# T1 rung (L1 segmented pose); what changes is WHERE the task comes
+# from: the task-state-machine consumes NO episode_goal — its task
+# arrives as the human-sim's scripted `request`, and the confirm
+# exchange must complete before any target_request. The TC-7 goal
+# (whose target_med is the FINAL corrected target) reaches only
+# verifier-oracle; the validator's DIALOGUE_GOAL_LEAK rule rejects any
+# T4 graph that routes it further. The human-sim script is a pure
+# function of the per-goal seed (CON-5): corrected seeds (seed%4==0)
+# answer the confirm with a correction naming the next med in SCN-2's
+# list, and the robot re-confirms once.
+nodes:
+- id: dora-genesis
+  path: ../src/aisle/nodes/dora_genesis.py
+  env:
+    AISLE_PERCEPTION: L1
+  inputs:
+    tick: dora/timer/millis/10
+    joint_cmd:
+      source: budget-guard/joint_cmd_safe
+      queue_size: 100
+    gripper_cmd:
+      source: budget-guard/gripper_cmd_safe
+      queue_size: 100
+    reset:
+      source: reset/bridge_reset
+      queue_size: 100
+  outputs:
+  - bridge_info
+  - joint_state
+  - gripper_state
+  - oracle_state
+  - rgb_overhead
+  - rgb_wrist
+  - depth_overhead
+  - seg_overhead
+  - reset_done
+- id: reset
+  path: ../src/aisle/reset/service.py
+  inputs:
+    reset:
+      source: rollout-client/reset
+      queue_size: 100
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - bridge_reset
+  - reset_done
+- id: budget-guard
+  path: ../src/aisle/nodes/budget_guard.py
+  inputs:
+    tick: dora/timer/millis/5000
+    joint_cmd:
+      source: ik-trajectory/joint_cmd
+      queue_size: 100
+    gripper_cmd:
+      source: ik-trajectory/gripper_cmd
+      queue_size: 100
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - joint_cmd_safe
+  - gripper_cmd_safe
+  - violation
+  - guard_stats
+- id: segmented-pose
+  path: ../src/aisle/nodes/segmented_pose.py
+  inputs:
+    bridge_info:
+      source: dora-genesis/bridge_info
+      queue_size: 100
+    seg_overhead:
+      source: dora-genesis/seg_overhead
+      queue_size: 100
+    depth_overhead:
+      source: dora-genesis/depth_overhead
+      queue_size: 100
+    target_request:
+      source: task-state-machine/target_request
+      queue_size: 100
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - target_pose
+- id: grasp-planner-topdown
+  path: ../src/aisle/nodes/grasp_topdown.py
+  inputs:
+    target_pose:
+      source: segmented-pose/target_pose
+      queue_size: 100
+  outputs:
+  - grasp_pose
+- id: ik-trajectory
+  path: ../src/aisle/nodes/ik_trajectory.py
+  inputs:
+    grasp_pose:
+      source: grasp-planner-topdown/grasp_pose
+      queue_size: 100
+    joint_state:
+      source: dora-genesis/joint_state
+      queue_size: 1
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - joint_cmd
+  - gripper_cmd
+  - plan_done
+- id: verifier-oracle
+  path: ../src/aisle/verifier/oracle.py
+  inputs:
+    oracle_state:
+      source: dora-genesis/oracle_state
+      queue_size: 100
+    joint_state:
+      source: dora-genesis/joint_state
+      queue_size: 100
+    episode_goal:
+      source: rollout-client/episode_goal
+      queue_size: 100
+  outputs:
+  - episode_result
+- id: human-sim
+  path: ../src/aisle/nodes/human_sim.py
+  inputs:
+    episode_meta:
+      source: rollout-client/episode_meta
+      queue_size: 100
+    robot_msg:
+      source: task-state-machine/robot_msg
+      queue_size: 100
+  outputs:
+  - human_msg
+- id: task-state-machine
+  path: ../src/aisle/nodes/task_state_machine.py
+  env:
+    AISLE_TASK_TIER: T4
+    AISLE_MAX_RETRIES: '8'
+  inputs:
+    tick: dora/timer/millis/1000
+    human_msg:
+      source: human-sim/human_msg
+      queue_size: 100
+    episode_result:
+      source: verifier-oracle/episode_result
+      queue_size: 100
+    violation:
+      source: budget-guard/violation
+      queue_size: 100
+    plan_done:
+      source: ik-trajectory/plan_done
+      queue_size: 100
+  outputs:
+  - target_request
+  - episode_feedback
+  - robot_msg
+- id: rollout-client
+  path: ../src/aisle/harness/rollout_client.py
+  inputs:
+    tick: dora/timer/millis/1000
+    reset_done:
+      source: reset/reset_done
+      queue_size: 100
+    episode_result:
+      source: verifier-oracle/episode_result
+      queue_size: 100
+    episode_feedback:
+      source: task-state-machine/episode_feedback
+      queue_size: 100
+  outputs:
+  - reset
+  - episode_goal
+  - episode_meta

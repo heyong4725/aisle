@@ -13,6 +13,9 @@ inputs:
 outputs:
   reset: {schema: reset_request_u32, latency_class: best_effort}
   episode_goal: {schema: json_utf8, latency_class: best_effort}
+  # T4 (ADR-32): {goal_id, seed} for the human-sim's script — a FORWARD
+  # edge carrying no target information beyond what the script derives
+  episode_meta: {schema: json_utf8, latency_class: best_effort}
 embodiment:
   arm: [franka, so101]
   gripper: any

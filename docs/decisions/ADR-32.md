@@ -1,7 +1,10 @@
 # ADR-32 — T4 dialogue contract (spec-change sketch, awaiting human review)
 
-Status: PROPOSED (Class-C change to SPEC 010, CON-10/CON-14 — this PR is the
-review vehicle and is NOT merged by the dev loop). Originally drafted as a
+Status: ACCEPTED (owner approved and merged the spec-change PR #170 on
+2026-08-12 — "Approved — merge and build T4"; increment one implemented in
+the same-day follow-up PR, which upgraded the SPEC 010 rows to MUST and
+amended CON-4's parenthetical as the Consequences section declares).
+Originally drafted as a
 second "ADR-30" before #171 ratified that number for the lockstep-turn
 protocol; renumbered to ADR-32 (ADR-31 is the T2 frozen-scene sign-off) and
 amended 2026-08-11 after the PR #170 review found four blocking holes.
