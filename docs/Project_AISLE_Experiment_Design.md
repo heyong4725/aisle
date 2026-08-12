@@ -1,6 +1,6 @@
 # Project AISLE: Agentic Auto-Research on an Open Dataflow Stack
 
-**AISLE** — *Agentic In-Store Learning Environment* (formerly "Project Apothecary"; renamed v0.4 when the retail suite §11 outgrew the pharmacy-desk namesake).
+**AISLE** — *Agentic Inference, Safety, and Learning Environment* (formerly "Project Apothecary", renamed v0.4 when the retail suite §11 outgrew the pharmacy-desk namesake; the expansion was widened again in August 2026 when the powder/force bench suite (SPEC 300/310) and the inference-and-operation agenda outgrew "In-Store". The word AISLE is unchanged — it still nods to the pharmacy aisle of the first task family.)
 
 **Experiment design — coding agents (Claude Code / Codex) as the brain, dora-rs as the execution layer, Genesis World as the physics loop**
 *Draft v0.4, July 2026 — renamed Apothecary→AISLE; retail suite added (§11); §8 expanded into a full implementation guide for the student team; §9 resolved to decisions; model-orchestration tier (§7.5); ENPIRE/ASPIRE comparison (§10)*
@@ -177,6 +177,19 @@ Two verifiers, run together:
 ## 6. Hypotheses, metrics, ablations
 
 **Hypotheses**
+- **H6 (Operation):** Given a *running* dataflow and its live evidence
+  (traces, guard violations, verifier verdicts), a coding agent detects an
+  induced degradation, localizes it to a node, proposes a validated hot-swap,
+  and restores performance — **without** a human in the loop, **without** any
+  guard bypass, and **without** a `wrong_object` outcome during the
+  intervention. Registered August 2026, not yet run. This is the inference /
+  operation half of the project: H1-H4 ask whether an agent can *build* a
+  robot system, H6 asks whether it can *keep one running*, which is the
+  deployment condition and the reason the expansion now reads "Inference".
+  Falsified if the agent cannot localize induced faults from evidence alone,
+  or if restoring performance requires reaching outside its sanctioned action
+  space.
+
 - **H1 (Composition):** Given the goal + registry, a frontier coding agent composes a *valid, launching* dataflow for T1 zero-shot ≥80% of attempts, and reaches a working (>0% success) graph within 3 validate-fix cycles.
 - **H2 (Iteration):** With the EN loop, agents raise T1/T2 success from baseline to ≥90% pass@1 (≥99% pass@8 in-context retries, ENPIRE semantics) within a fixed budget.
 - **H3 (Accumulation):** A persistent skill library cuts time-to-success on T3/T4 by ≥2x vs. a memory-wiped agent (the ASPIRE effect, measured).

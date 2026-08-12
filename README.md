@@ -1,9 +1,13 @@
-# AISLE — Agentic In-Store Learning Environment
+# AISLE — Agentic Inference, Safety, and Learning Environment
 
 New contributor? Start with the
 **[AISLE contributor wiki](docs/contributor-wiki.md)** for a source-linked
 project overview, architecture, use cases, extension guide, code map, research
 status, and known limitations.
+
+*The name also nods to the pharmacy aisle where the first task family lives —
+but the scope is the substrate, not the store: the bench suite (SPEC 300/310)
+is laboratory powder handling, and hardware deployment is the intended path.*
 
 Agentic auto-research for robot manipulation on open infrastructure:
 coding agents (Claude Code / Codex) compose and evolve **typed dora-rs
@@ -72,6 +76,7 @@ Orientation for contributors: [`docs/contributor-wiki.md`](docs/contributor-wiki
 | H3 — skill accumulation (S1→S3 transfer) | **verdict PENDING** (`met: null`, `complete: false`) — S2 and S3 both UNDECIDED. No admissible library-arm cell survived the integrity audit (repo, treatment or runtime drift); the wiped arm's clean cells never succeeded at S2/S3. A formal verdict needs an owner-accepted incomplete closure or a budget-corrected new campaign (`analysis/h3/`) |
 | H4 — hot-swap vs relaunch iteration | **measured at T0**, phase-randomized (ADR-h4 rev 2): hot-swap median iteration latency 32.4 s vs relaunch 41.8 s (ratio 1.29), n=6 per path, zero infra failures. Extremes overlap; no significance or equivalence claim at n=6. UNATTESTED dev measurement — makes no reproducibility claim (`analysis/h4/`) |
 | H5 — zero wrong-object under free iteration | holding on committed evidence: 0 wrong-object in 224/224 episodes across the three H2 campaign runs (`analysis/h2/`) |
+| H6 — agent operates a running system | **registered, not yet run** (August 2026): detect an induced degradation in a live dataflow, localize it, propose a validated hot-swap, recover — no human in the loop, no guard bypass, no wrong-object during the intervention. The inference/operation half of the programme; needs a fault-injection protocol and an ADR before it runs |
 | Retail suite S1–S3 (mobile, long-horizon) | implemented: store scene, planogram verifier, mobility contract, S1 expert graph |
 | Perception ladder L0/L1/L2 (TC-9) | implemented: L0 oracle poses, L1 segmentation + depth (`segmented-pose`), L2 RGB identity + same-stamp sensor-depth geometry (`l2-pose`); the rung rides the graph and is asserted per run (`--perception`) |
 | Realistic verifier (VER-5) | implemented (`src/aisle/verifier/realistic.py`, OWLv2 + rules, CPU-pinned); ADR at `docs/decisions/ADR-realistic-verifier.md` |

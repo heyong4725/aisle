@@ -1,6 +1,6 @@
 # AISLE — A Substrate for Autonomous Robot Engineering
 
-**Agentic In-Store Learning Environment · Technical report · August 2026**
+**Agentic Inference, Safety, and Learning Environment · Technical report · August 2026**
 
 *Status snapshot: 2026-08-12. Measured results cite the
 [README status table](../README.md#status), which is canonical. Forward-looking
@@ -136,6 +136,7 @@ hypothesis with a stated threshold *before* the campaign that tests it.
 | **H3** | A persistent evaluated skill library makes later tasks ≥2× faster | Accumulated skills do not transfer; each task pays full cost |
 | **H4** | Hot-swap iteration beats an equal-budget monolithic-script control | The substrate's structure costs more than it saves |
 | **H5** | Wrong-object outcomes stay at zero under free agent iteration | Free iteration produces unsafe behavior the guard does not catch |
+| **H6** | An agent can *operate* a running system: detect an induced degradation, localize it, hot-swap a fix, and recover | The agent cannot localize faults from live evidence alone, or recovery requires reaching outside its sanctioned action space |
 
 **H5 is the safety hypothesis and is stated as a quantity that must remain
 zero.** It is reported with an explicit denominator rather than a percentage,
@@ -143,6 +144,15 @@ because "99.5% safe" is not a meaningful claim about a system that hands
 medication to a person. `wrong_object` — delivering the wrong medicine — is
 the failure class the entire perception and verification stack exists to
 prevent, and the one the task's design makes ten times worse than a timeout.
+
+**H6 is registered but not yet run**, and it is the newest of the six. H1–H4
+ask whether an agent can *build* a robot system; H6 asks whether it can *keep
+one running* — monitoring a live dataflow, diagnosing a degradation from traces
+and guard evidence, proposing a validated hot-swap, and recovering, with no
+human in the loop and no bypass of the safety structure. That is the deployment
+condition, and it is why the project's name now reads *Inference*. It needs a
+fault-injection protocol and a decision record before a campaign, but it runs
+almost entirely on machinery that already exists (§5.8, §5.9, §7).
 
 The claims are deliberately separable. A negative result on H4 — the typed
 substrate losing to free-form scripting — is publishable and interesting. The
@@ -1508,6 +1518,12 @@ self-improving robot, and there is little literature on it.
 separates orchestration nondeterminism from physics nondeterminism. Adding
 model sampling, batching, and non-deterministic kernels introduces a third
 source that the current layers do not name. What should layer (e) say?
+
+**Operation as a research question (now H6).** Monitoring, diagnosing, and
+repairing a *running* system is registered as a claim rather than left as an
+aspiration. The open part is methodological: what is a fair fault-injection
+protocol, and how do you score a recovery that is correct but slower than a
+human's?
 
 **Credit assignment across the outer loop.** When an agent makes twelve changes
 and performance improves, which change mattered? Traces localize *failures* to
