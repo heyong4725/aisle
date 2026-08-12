@@ -21,7 +21,11 @@ same runner is the per-scenario core the H3 orchestrator
    `AISLE_ENV_BASELINE` (the ADR-21 trusted gate; issue #91): frozen-set
    integrity, idea gating (HAR-8), and the
    campaign ledger's episode/wall ceilings are enforced by the harness
-   the agent itself invokes; the runner does not re-implement them.
+   the agent itself invokes. A `--commit` checkout older than the native
+   OID-aware CLI receives a recorded, session-only Python startup adapter from
+   the CURRENT runner: it server-validates the pin and patches the old gate
+   without changing the historical tree. Unsupported older gate shapes refuse
+   before budget spend; they never fall back to moving `origin/main`.
 3. **The runner enforces what the harness cannot**: the TOKEN ceiling
    (HAR-5 — cumulative usage parsed from the agent CLI's own stream
    telemetry; at the ceiling the session process group is killed and the
@@ -46,7 +50,10 @@ same runner is the per-scenario core the H3 orchestrator
    workspace (files, idea tree, registered skills, ledger) is the
    campaign's persistent memory; conversation state is not. Treatment
    mismatch on resume refuses, as in H1. Token/wall spend accumulates
-   across resumed sessions.
+   across resumed sessions. Baseline compatibility is treatment policy v2:
+   its template hash is recorded and a campaign record created before this
+   policy refuses resume rather than mixing moving- and immutable-baseline
+   sessions.
 7. **Metrics** (from artifacts the harness already writes — run
    manifests, episodes.jsonl, ledger, idea tree): time- and
    tokens-to-first-verified-success, per-rollout pass1 trajectory,

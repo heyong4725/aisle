@@ -295,7 +295,7 @@ def main() -> None:
     from dora import Node
 
     from aisle.scenes.pharmacy import MED_NAMES, load_meds, load_physics, resolve_layout
-    from aisle.topics import make_sender
+    from aisle.topics import env_accepts, env_pin_from_env, make_sender
 
     embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
     physics = load_physics()
@@ -312,12 +312,15 @@ def main() -> None:
     finger_open = float(profile["gripper_open_m"])
     finger_clear = float(profile["gripper_finger_clear_m"])
     topdown_approach = float(profile.get("pregrasp_height_m", physics["ik"]["pregrasp_height_m"]))
+    env_pin = env_pin_from_env(os.environ)
     node = Node()
-    send = make_sender(node)
+    send = make_sender(node, env_pin)
     for event in node:
         if event["type"] != "INPUT":
             continue
         metadata = event.get("metadata") or {}
+        if not env_accepts(metadata, env_pin):
+            continue  # fleet mode (BRG-5): another env's stream
         if event["id"] == "target_pose":
             med = metadata.get("target_med")
             if med not in meds:

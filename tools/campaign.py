@@ -18,6 +18,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -36,6 +37,7 @@ POLL_S = 5.0
 DEV_SEEDS = "0..49"
 HOLDOUT_SEEDS = "100..107"
 TEE_JOIN_S = 10.0  # stream-drain grace after the session exits
+BASELINE_COMPAT_TEMPLATE = REPO_ROOT / "tools" / "campaign_baseline_sitecustomize.py"
 
 
 # ---------------------------------------------------------------- telemetry
@@ -199,6 +201,7 @@ def campaign_treatment(
         "holdout_episodes": HOLDOUT_EPISODES,
         "claude_max_turns": None,  # campaigns are long-form (ADR-h2 point 1)
         "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "baseline_compat_sha256": hashlib.sha256(BASELINE_COMPAT_TEMPLATE.read_bytes()).hexdigest(),
         "session_spawn": {
             "stdin": "devnull",
             "confinement": "none (ADR-h2 point 5)",
@@ -207,7 +210,7 @@ def campaign_treatment(
         # treatment — resuming an unisolated (pre-#98) campaign with an
         # isolated runner would mix two treatments in one record. Old
         # records carry no key (None) and fail the resume identity check.
-        "session_isolation_policy": "isolated-home-v1",
+        "session_isolation_policy": "isolated-home-baseline-compat-v2",
     }
 
 
@@ -284,6 +287,60 @@ def resolve_commit(repo: Path, rev: str | None) -> str:
     if proc.returncode != 0:
         raise SystemExit(json.dumps({"ok": False, "error": f"unknown --commit rev {rev!r}"}))
     return proc.stdout.strip()
+
+
+def attach_historical_baseline_compat(wt: Path, session_dir: Path, pin: str, env: dict) -> dict:
+    """Make the immutable campaign selector work in pre-PR-166 checkouts.
+
+    The research agent runs ``uv run harness`` FROM the pinned worktree, so
+    changing only the current runner/CLI cannot affect a historical pin.  A
+    session-local ``sitecustomize`` patches the old rollout gate at Python
+    startup, validates the OID against protected server main, and records the
+    OID.  The historical tree remains byte-exact.  Unknown old interfaces fail
+    before budget spend instead of silently following moving main.
+    """
+    if not re.fullmatch(r"[0-9a-f]{40}", pin):
+        raise InfraError(f"campaign compatibility requires a full commit OID, got {pin!r}")
+    cli_path = wt / "src" / "aisle" / "harness" / "cli.py"
+    rollout_path = wt / "src" / "aisle" / "harness" / "rollout.py"
+    try:
+        cli_text = cli_path.read_text()
+        rollout_text = rollout_path.read_text()
+    except OSError as error:
+        raise InfraError(
+            f"cannot inspect historical harness for baseline support: {error}"
+        ) from error
+    native = "AISLE_ENV_BASELINE" in cli_text and "_COMMIT_OID" in rollout_text
+    if native:
+        return {"mode": "native", "pin": pin}
+    required = {
+        str(cli_path): "--env-baseline" in cli_text,
+        str(rollout_path): all(
+            anchor in rollout_text for anchor in ("def resolve_trusted_baseline(", "def run_gates(")
+        ),
+    }
+    missing = [path for path, supported in required.items() if not supported]
+    if missing:
+        raise InfraError(
+            "historical campaign checkout predates the supported baseline gate: "
+            + ", ".join(missing)
+        )
+    try:
+        template = BASELINE_COMPAT_TEMPLATE.read_bytes()
+        compat_dir = session_dir / "baseline_compat"
+        compat_dir.mkdir(parents=True, exist_ok=True)
+        (compat_dir / "sitecustomize.py").write_bytes(template)
+    except OSError as error:
+        raise InfraError(f"cannot install historical baseline compatibility: {error}") from error
+    # Replace, do not append, an ambient operator PYTHONPATH: it is not part of
+    # the treatment and could shadow the historical worktree's package.
+    env["PYTHONPATH"] = str(compat_dir)
+    return {
+        "mode": "injected",
+        "pin": pin,
+        "pythonpath": str(compat_dir),
+        "sha256": hashlib.sha256(template).hexdigest(),
+    }
 
 
 def sweep_worktree(wt: Path) -> list[int]:
@@ -775,6 +832,9 @@ def main() -> int:
     print(f"[h2] session {session_index} starting ({args.agent}/{model})", file=sys.stderr)
     t0_epoch = time.time()
     session_env, session_isolation = isolated_session_env(session_dir, env_baseline_oid=oid)
+    session_isolation["baseline_compat"] = attach_historical_baseline_compat(
+        wt, session_dir, oid, session_env
+    )
     seed_rec, seed_error = seed_session_credentials(args.agent, session_env)
     if seed_error:
         print(json.dumps({"ok": False, "error": seed_error}))
@@ -808,7 +868,7 @@ def main() -> int:
     drift = audit_frozen(wt, oid)
     holdout = score_holdout(wt, args.holdout_seeds, f"{session_index:02d}", args.tier)
     sweep_worktree(wt)  # ...and so may the holdout rollout
-    metrics = campaign_metrics(wt, session_t0=sessions[0]["t0_epoch"])
+    metrics = campaign_metrics(wt, session_t0=sessions[0]["t0_epoch"], pin=oid)
     record = {
         "ok": not drift,
         "treatment": treatment,

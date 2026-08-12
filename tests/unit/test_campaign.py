@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 from campaign import (  # noqa: E402
+    attach_historical_baseline_compat,
     audit_frozen,
     budget_stop,
     campaign_metrics,
@@ -23,6 +24,57 @@ from campaign import (  # noqa: E402
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_historical_worktree_gets_recorded_baseline_compat(tmp_path):
+    """HAR-2 / CON-5 (PR #166 review): `--commit` may predate native
+    AISLE_ENV_BASELINE/OID support.  The CURRENT runner must put its
+    compatibility hook on that session's Python path; setting only the
+    variable leaves an old in-worktree `uv run harness` unchanged."""
+    wt = tmp_path / "worktree"
+    cli = wt / "src" / "aisle" / "harness" / "cli.py"
+    rollout = wt / "src" / "aisle" / "harness" / "rollout.py"
+    cli.parent.mkdir(parents=True)
+    cli.write_text('roll.add_argument("--env-baseline", default="origin/main")\n')
+    rollout.write_text("def resolve_trusted_baseline(root): pass\ndef run_gates(root): pass\n")
+    session = tmp_path / "session_00"
+    session.mkdir()
+    env = {"PYTHONPATH": "/ambient/operator/path"}
+    pin = "a" * 40
+
+    record = attach_historical_baseline_compat(wt, session, pin, env)
+
+    compat_dir = session / "baseline_compat"
+    assert env["PYTHONPATH"] == str(compat_dir)  # ambient path is not a treatment input
+    assert (compat_dir / "sitecustomize.py").is_file()
+    assert record == {
+        "mode": "injected",
+        "pin": pin,
+        "pythonpath": str(compat_dir),
+        "sha256": record["sha256"],
+    }
+    assert len(record["sha256"]) == 64
+    assert attach_historical_baseline_compat(wt, session, pin, env) == record
+
+
+def test_native_worktree_needs_no_baseline_compat(tmp_path):
+    """HAR-2: pins at/after PR #166 use their native immutable selector;
+    the runner must not unnecessarily inject a second implementation."""
+    wt = tmp_path / "worktree"
+    cli = wt / "src" / "aisle" / "harness" / "cli.py"
+    rollout = wt / "src" / "aisle" / "harness" / "rollout.py"
+    cli.parent.mkdir(parents=True)
+    cli.write_text('default=os.environ.get("AISLE_ENV_BASELINE", "origin/main")\n')
+    rollout.write_text(
+        "_COMMIT_OID = object()\ndef resolve_trusted_baseline(root, baseline): pass\n"
+    )
+    env = {}
+
+    assert attach_historical_baseline_compat(wt, tmp_path / "session", "b" * 40, env) == {
+        "mode": "native",
+        "pin": "b" * 40,
+    }
+    assert "PYTHONPATH" not in env
 
 
 def test_claude_usage_counts_new_tokens_only():
@@ -134,6 +186,7 @@ def test_campaign_treatment_pins_seed_ranges_and_unsandboxed_spawn():
     assert t["session_spawn"]["confinement"] == "none (ADR-h2 point 5)"
     assert t.get("claude_max_turns") is None
     assert t["runner_sha256"]
+    assert len(t["baseline_compat_sha256"]) == 64
 
 
 def _write_run(wt: Path, run_id: str, mtime: float, episodes: list[dict]) -> None:
@@ -665,23 +718,25 @@ def test_run_session_spawns_with_the_isolated_env(tmp_path):
     assert log[1] == str(out / "agent_home" / ".claude")
 
 
-def test_resume_refuses_pre_isolation_records(tmp_path):
-    """PR #98 review P1: existing (pre-#96) campaign records hold
-    UNISOLATED sessions; resuming them with the isolated runner would
-    mix two treatments in one aggregate. The isolation policy is resume
-    identity — old records (no session_isolation_policy key) fail
-    closed."""
+def test_resume_refuses_prior_session_policies(tmp_path):
+    """HAR-2 / CON-5: the session policy is resume identity. Both an
+    unisolated record and PR #166's env-only v1 can contain moving-baseline
+    rollouts, so neither may mix with compatibility-enforced v2 sessions."""
     import campaign as c
 
     current = c.campaign_treatment("claude", "m", "abc", "0..4", "100..103")
-    assert current["session_isolation_policy"] == "isolated-home-v1"
-    prior = {k: current[k] for k in c.TREATMENT_IDENTITY}
-    del prior["session_isolation_policy"]  # a pre-#98 record
-    (tmp_path / "campaign.json").write_text(json.dumps({"treatment": prior, "sessions": []}))
-    with pytest.raises(SystemExit) as exc:
-        c.load_existing(tmp_path, current)
-    refusal = json.loads(str(exc.value))
-    assert refusal["ok"] is False and "session_isolation_policy" in refusal["error"]
+    assert current["session_isolation_policy"] == "isolated-home-baseline-compat-v2"
+    for policy in (None, "isolated-home-v1"):
+        prior = {k: current[k] for k in c.TREATMENT_IDENTITY}
+        if policy is None:
+            del prior["session_isolation_policy"]
+        else:
+            prior["session_isolation_policy"] = policy
+        (tmp_path / "campaign.json").write_text(json.dumps({"treatment": prior, "sessions": []}))
+        with pytest.raises(SystemExit) as exc:
+            c.load_existing(tmp_path, current)
+        refusal = json.loads(str(exc.value))
+        assert refusal["ok"] is False and "session_isolation_policy" in refusal["error"]
 
 
 def test_isolated_home_is_fresh_on_reuse(tmp_path):

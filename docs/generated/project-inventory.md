@@ -13,8 +13,8 @@ architecture, and contribution guidance remain in the
 |---|---:|
 | Graphs | 10 |
 | Capability manifests | 30 |
-| CLI command entries | 11 |
-| ADR files | 37 |
+| CLI command entries | 12 |
+| ADR files | 39 |
 
 ## Graphs
 
@@ -84,6 +84,7 @@ architecture, and contribution guidance remain in the
 | Command | Arguments/options |
 |---|---|
 | `harness` | — |
+| `harness fleet` | `--graph`, `--agents`, `--episodes`, `--seeds`, `--out`, `--timeout-s`, `--root` |
 | `harness probe` | `--dataflow`, `--topic`, `--for`, `--root` |
 | `harness report close` | `--id`, `--observed`, `--verdict`, `--root` |
 | `harness report log` | `--idea`, `--parent`, `--expect`, `--root` |
@@ -124,9 +125,11 @@ inference.
 | [docs/decisions/ADR-26.md](../decisions/ADR-26.md) | ADR-26 — CON-5 layered reproducibility: outcomes are statistical (issue #71) | RATIFIED (owner decision 2026-08-05, in-session; enacted by the |
 | [docs/decisions/ADR-27.md](../decisions/ADR-27.md) | ADR-27 — Official SO-101 model and 5+1 topic contract (issue #13) | ACCEPTED 2026-08-08. Owner: @heyong4725. |
 | [docs/decisions/ADR-28.md](../decisions/ADR-28.md) | ADR-28 — The perception rung governs TOPICS a policy consumes, not information in the scene | ACCEPTED (owner decision 2026-08-08, CON-15) |
-| [docs/decisions/ADR-29.md](../decisions/ADR-29.md) | ADR-29 — Sim-anchored S1 control loops: retime waypoint-nav and the base watchdog onto base_pose (issue #71) | PROPOSED (agent-drafted 2026-08-11 at the owner's direction — the |
+| [docs/decisions/ADR-29.md](../decisions/ADR-29.md) | ADR-29 — Sim-anchored S1 control loops: retime waypoint-nav and the base watchdog onto base_pose (issue #71) | RATIFIED (owner merged the `env-change` PR #156 as `5f4ba7a` on |
 | [docs/decisions/ADR-3.md](../decisions/ADR-3.md) | ADR-3: sim-driver evalcards are pending until M0 (CAP-6 interpretation) | SUPERSEDED by ADR-10 amendment (10); the temporary carve-out was retired. |
-| [docs/decisions/ADR-30.md](../decisions/ADR-30.md) | ADR-30 — T4 dialogue contract (spec-change sketch, awaiting human review) | PROPOSED (Class-C change to SPEC 010, CON-10/CON-14 — this PR is |
+| [docs/decisions/ADR-30.md](../decisions/ADR-30.md) | ADR-30 — Run-to-quiescence simulation turns close issue #71's wall-latency channel | PROPOSED (agent-drafted 2026-08-11 at the owner's direction; amended |
+| [docs/decisions/ADR-31.md](../decisions/ADR-31.md) | ADR-31 — T2 frozen-scene change authorization (sign-off record) | RECORD of a human decision (CON-7 review trail). |
+| [docs/decisions/ADR-32.md](../decisions/ADR-32.md) | ADR-32 — T4 dialogue contract (spec-change sketch, awaiting human review) | PROPOSED (Class-C change to SPEC 010, CON-10/CON-14 — this PR is the |
 | [docs/decisions/ADR-4.md](../decisions/ADR-4.md) | ADR-4: validator interpretations for T03 (SPEC 060) | ACCEPTED; amended by ADR-5's ratified safety-class boundary. |
 | [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | ACCEPTED (owner-ratified 2026-08-03) |
 | [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |

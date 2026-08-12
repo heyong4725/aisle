@@ -255,7 +255,7 @@ def main() -> None:
     import pyarrow as pa
     from dora import Node
 
-    from aisle.topics import make_sender
+    from aisle.topics import env_accepts, env_pin_from_env, make_sender
 
     tier = os.environ.get("AISLE_TASK_TIER", "T1")
     if tier not in ("T1", READ_TIER):
@@ -282,8 +282,9 @@ def main() -> None:
             "z": (z_lo, z_hi),
         }
 
+    env_pin = env_pin_from_env(os.environ)
     node = Node()
-    send = make_sender(node)
+    send = make_sender(node, env_pin)
     # HAR-3: graph-declared (attested) retry budget; 0 = one attempt
     max_retries_raw = os.environ.get("AISLE_MAX_RETRIES", "0").strip()
     if not max_retries_raw.isdigit() or not 0 <= int(max_retries_raw) <= 8:
@@ -307,6 +308,8 @@ def main() -> None:
         if event["type"] != "INPUT":
             continue
         metadata = event.get("metadata") or {}
+        if not env_accepts(metadata, env_pin):
+            continue  # fleet mode (BRG-5): another env's stream
         if event["id"] == "episode_goal":
             goal = json.loads(event["value"][0].as_py())
             if target_sx is not None and goal.get("target_med") in target_sx:
