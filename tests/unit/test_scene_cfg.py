@@ -395,6 +395,19 @@ class TestLabelTextures:
         assert "AISLE_LABELS" in SCRUBBED_ENV
         assert "AISLE_LABELS" not in scrub_bringup_env({"AISLE_LABELS": "1", "K": "v"})
 
+    def test_target_meds_cannot_leak_from_the_ambient_shell(self):
+        """PR #178 review: the rollout runner never sets AISLE_TARGET_MEDS
+        and no graph declares it, so an ambient developer-shell value was
+        the only way it could reach a measured run — silently re-targeting
+        every episode while the attestation stayed clean. Scrubbed, the
+        client falls back to its deterministic seed-derived default."""
+        from aisle.harness.rollout import SCRUBBED_ENV, scrub_bringup_env
+
+        assert "AISLE_TARGET_MEDS" in SCRUBBED_ENV
+        kept = scrub_bringup_env({"AISLE_TARGET_MEDS": "ibuprofen", "AISLE_SEEDS": "0"})
+        assert "AISLE_TARGET_MEDS" not in kept
+        assert kept["AISLE_SEEDS"] == "0"  # unrelated config survives
+
     def test_junk_label_toggle_is_refused_not_guessed(self):
         import pytest
 

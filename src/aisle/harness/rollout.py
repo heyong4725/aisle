@@ -654,9 +654,18 @@ def instrumented_graph(
     return out_path
 
 
-# settings that MUST come from the graph, where the graph hash attests them,
-# and never from the ambient process environment
+# settings that MUST come from the graph (where the graph hash attests them)
+# or from the runner itself, and never from the ambient process environment
 SCRUBBED_ENV = (
+    # HAR-1: which med each episode targets. The rollout runner never sets
+    # this, and no graph declares it, so an ambient developer-shell value
+    # was the ONLY way it could arrive — silently re-targeting every
+    # episode of a measured run while git_sha/env_hash/graph_hash all
+    # attest clean (PR #178 review). Scrubbed, the client falls back to
+    # its deterministic seed-derived default. Graph tests that launch the
+    # client directly via `dora run` still set it; they do not go through
+    # this runner.
+    "AISLE_TARGET_MEDS",
     # ADR-25 (issue #71): the bridge's bring-up opt-out
     "AISLE_STEP_WITHOUT_RESET",
     # T2: the label toggle changes the SCENE'S PIXELS -- graph-declared for
