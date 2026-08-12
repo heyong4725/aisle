@@ -463,6 +463,68 @@ class TestNavLifecycle:
             out = m.on_tick()
             assert not (out and out[0][0] == "nav_result"), out
 
+    def test_unstamped_pose_holds_budgets_instead_of_jumping(self):
+        """Issue #160 item 1 (PR #159 review; MOB-2 + the BG-3 trust
+        boundary extended to nav): a pose with NO usable sim stamp (None
+        from parse_sim_stamp — absent, zero, or malformed on the wire)
+        updates geometry but HOLDS the machine's clock: stall/timeout
+        budgets freeze, they neither anchor at garbage nor accrue."""
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-1")
+        m.on_base_pose([1.0, 0.0, 0.0], self.STEP_NS)  # stamped, stuck
+        m.on_tick()
+        held = m._sim_ns
+        for _ in range(50):  # a long unstamped stretch, still stuck
+            m.on_base_pose([1.0, 0.0, 0.0], None)
+            out = m.on_tick()
+            assert not (out and out[0][0] == "nav_result"), out
+            # HELD, not re-anchored: an `int(stamp or 0)` implementation
+            # would drop the clock to 0 here and still pass the assertions
+            # above (PR #177 review)
+            assert m._sim_ns == held
+        # stamps return: the stall budget resumes from the HELD clock and
+        # fails blocked once the stuck pose has stall_s of sim evidence
+        m.on_base_pose([1.0, 0.0, 0.0], self.STEP_NS + int(0.2e9))
+        out = m.on_tick()
+        assert out and out[0][0] == "nav_result" and out[0][1]["failure"] == "blocked"
+
+    def test_never_stamped_goal_still_controls_and_arrives(self):
+        """Issue #160 item 1: a fully-unstamped source never starts the
+        sim budgets (no sim clock exists to measure them), but control and
+        arrival are pure geometry — the goal still completes; the guard
+        wall net covers the stop path on such sources (item 2)."""
+        m = self._machine()
+        m.on_goal([1.0, 0.0, 0.0], "nav-1")
+        m.on_base_pose([0.0, 0.0, 0.0], None)
+        out = m.on_tick()
+        assert out and out[0][0] == "nav_feedback"  # feedback flows unstamped
+        m.on_base_pose([0.95, 0.0, 0.0], None)
+        out = m.on_tick()
+        assert out and out[0][0] == "nav_result"
+        # no clock ever existed: t_end honestly reports 0.0, not a guess
+        assert out[0][1] == {"status": "success", "failure": None, "t_end": 0.0}
+
+    def test_new_goal_does_not_inherit_prior_goal_clock(self):
+        """MOB-2/CON-5 (PR #177 review): an unstamped first pose on a
+        sequential goal must not anchor its budgets to the previous goal's
+        last sim stamp. When valid stamps resume, the new goal starts its own
+        clock instead of immediately failing from cross-goal elapsed time."""
+        m = self._machine()
+        m.on_goal([1.0, 0.0, 0.0], "nav-1")
+        m.on_base_pose([0.95, 0.0, 0.0], 1_000_000_000)
+        assert m.on_tick()[0][1]["status"] == "success"
+
+        m.on_goal([5.0, 0.0, 0.0], "nav-2")
+        m.on_base_pose([1.0, 0.0, 0.0], None)
+        out = m.on_tick()
+        assert out[0][0] == "nav_feedback"
+        assert m._t0_ns is None
+
+        m.on_base_pose([1.0, 0.0, 0.0], 2_000_000_000)
+        out = m.on_tick()
+        assert out[0][0] == "nav_feedback"
+        assert m._t0_ns == 2_000_000_000
+
     def test_yaw_must_converge_before_success(self):
         """MOB-2 (PR #14 re-review): a pose goal is NOT complete on x/y alone
         — orientation must converge too. At the target position with the

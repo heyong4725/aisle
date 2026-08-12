@@ -56,12 +56,21 @@ def _closest(name: str, candidates: list[str]) -> str:
     return matches[0] if matches else ""
 
 
+def _input_source(raw) -> str | None:
+    """Unwrap a graph input to its source string: dora's extended form
+    ({source: ..., queue_size: N}) or the plain string. None for a
+    missing/empty/non-string source. Issue #160 item 3: this idiom had
+    FIVE hand-rolled copies that were starting to disagree."""
+    source = raw.get("source") if isinstance(raw, dict) else raw
+    return source if isinstance(source, str) and source else None
+
+
 def _backward_sources(node: dict) -> list[str | None]:
     """Backward-edge sources of a node; None for timers/dora/malformed."""
     sources: list[str | None] = []
     for raw in (node.get("inputs") or {}).values():
-        source = raw.get("source") if isinstance(raw, dict) else raw
-        if isinstance(source, str) and source and not source.startswith("dora/"):
+        source = _input_source(raw)
+        if source is not None and not source.startswith("dora/"):
             sources.append(source)
         else:
             sources.append(None)
@@ -332,10 +341,9 @@ def validate_nodes(
             # VAL-6 is manifest-based: a node WITHOUT a manifest is never an
             # authorized verifier, so oracle consumption must still surface
             # and not hide behind MANIFEST_MISSING.
-            for port, source in (node.get("inputs") or {}).items():
-                if isinstance(source, dict):
-                    source = source.get("source")
-                if not isinstance(source, str):
+            for port, raw in (node.get("inputs") or {}).items():
+                source = _input_source(raw)
+                if source is None:
                     continue
                 if source.endswith("/oracle_state"):
                     errors.append(
@@ -552,10 +560,13 @@ def validate_nodes(
                     )
                 )
             if "tick" in guard_inputs:
-                raw = guard_inputs["tick"]
-                tick_src = raw.get("source") if isinstance(raw, dict) else raw
-                period = re.fullmatch(r"dora/timer/millis/(\d+)", str(tick_src or ""))
-                if period is None or int(period.group(1)) > GUARD_TICK_MAX_MS:
+                tick_src = _input_source(guard_inputs["tick"])
+                # the shared timer parser, not an ad-hoc regex (issue #160
+                # item 3): the regex accepted millis/0, which _parse_timer_hz
+                # rejects everywhere else — a zero-period timer is not a
+                # bounded sweep cadence, it is malformed
+                tick_hz = _parse_timer_hz(str(tick_src or ""))
+                if tick_hz is None or tick_hz < 1000.0 / GUARD_TICK_MAX_MS:
                     errors.append(
                         _entry(
                             "MOBILE_GUARD_INCOMPLETE",
@@ -568,8 +579,7 @@ def validate_nodes(
                         )
                     )
             if "base_pose" in guard_inputs:
-                raw = guard_inputs["base_pose"]
-                pose_src = raw.get("source") if isinstance(raw, dict) else raw
+                pose_src = _input_source(guard_inputs["base_pose"])
                 producer = str(pose_src or "").partition("/")[0]
                 if producer not in bridge_ids:
                     errors.append(
@@ -769,9 +779,17 @@ def _rung_entry(edge: dict, out_port: str, node_id: str, rung: str) -> dict:
 
 
 def _parse_timer_hz(source: str) -> float | None:
-    """Rate of a well-formed dora/timer/millis/<N> source, else None."""
+    """Rate of a well-formed dora/timer/millis/<N> source, else None.
+
+    The `dora` prefix is part of the contract, not decoration: only dora's
+    own timer is guaranteed to fire. Without this check a source shaped
+    like `some-node/timer/millis/10` parsed as a 100 Hz timer, which let a
+    mobile graph wire the guard's wall-net sweep tick (ADR-29) to a node
+    that may never emit and still pass MOBILE_GUARD_INCOMPLETE — the
+    fail-closed net silently disabled (PR #177 review; the ad-hoc regex
+    this helper replaced did anchor the prefix)."""
     parts = source.split("/")
-    if len(parts) == 4 and parts[1] == "timer" and parts[2] == "millis":
+    if len(parts) == 4 and parts[0] == "dora" and parts[1] == "timer" and parts[2] == "millis":
         if parts[3].isdigit() and int(parts[3]) > 0:
             return 1000.0 / int(parts[3])
     return None
@@ -791,14 +809,18 @@ def _validate_edge(
     bridge_ids,
 ) -> None:
     node_id = node["id"]
-    if isinstance(source, dict):  # dora extended input form {source: ..., queue_size: N}
-        source = source.get("source")
-    if not isinstance(source, str) or not source:
+    # keep the RAW value for the message: VAL-3 makes these hints the
+    # research agent's learning signal, and reporting the unwrapped None
+    # instead of the offending value ("got 42") tells the author nothing
+    # about what they wrote (PR #177 review)
+    raw_source = source
+    source = _input_source(source)  # dora extended input form {source: ..., queue_size: N}
+    if source is None:
         errors.append(
             _entry(
                 "GRAPH_INVALID",
                 {"edge": f"{node_id}/{port}"},
-                f"input source must be a string or {{source: ...}} mapping, got {source!r}",
+                f"input source must be a string or {{source: ...}} mapping, got {raw_source!r}",
                 "write the source as producer-id/output or dora/timer/millis/<N>",
             )
         )

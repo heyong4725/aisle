@@ -27,7 +27,7 @@ def main() -> None:
     import pyarrow as pa
     from dora import Node
 
-    from aisle.mobility.guard import load_base_limits
+    from aisle.mobility.guard import load_base_limits, parse_sim_stamp
     from aisle.mobility.nav import (
         NavStateMachine,
         base_cmd_toward,
@@ -73,10 +73,15 @@ def main() -> None:
                 machine.on_goal(target, metadata.get("goal_id", ""))
         elif event["id"] == "base_pose":
             # the TC-2 sim stamp drives the machine's stall/timeout budgets
-            # (SIM seconds, CON-5) — outcomes must not depend on host rtf
+            # (SIM seconds, CON-5) — outcomes must not depend on host rtf.
+            # parse_sim_stamp is the same TOTAL read the guard uses (BG-3,
+            # issue #160 item 1): a malformed/absent/zero stamp must not
+            # kill nav's event loop — base_pose is its only clock, and a
+            # dead loop latches the last command until the wall net — so it
+            # degrades to None and the machine HOLDS its budgets instead
             machine.on_base_pose(
                 event["value"].to_numpy(zero_copy_only=False).tolist(),
-                int(metadata.get("sim_time_ns", 0)),
+                parse_sim_stamp(metadata),
             )
             # one control iteration per pose (ADR-29): drive toward the
             # target (if navigating), then advance the lifecycle; on a

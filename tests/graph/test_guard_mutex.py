@@ -152,13 +152,19 @@ def _write_watchdog_graph(
     pose_count: int = 0,
     sweep_ms: int | None = None,
     recorder_s: float | None = None,
+    await_spec: str | None = None,
+    await_tail_s: float | None = None,
 ) -> Path:
     """One-command-then-silent driver + guard. stamp_poses=False exercises
     the ADR-29 wall net (unstamped poses blind the sim clock); pose_count=N
     stops the pose stream after N ticks (a hung sim — only the stats-tick
     sweep can act). Both need a `tick` (sweep_ms) wired; guard_stats then
     also feeds the recorder so the capture window can settle after the
-    command stream dies."""
+    command stream dies. await_spec ("topic:count") holds the recorder
+    window open until the awaited row lands (issue #160: the wall-net
+    assertions await a discrete LATE event inside a wall-only window —
+    the issue #94 truncation class — so under suite load the window must
+    not close before the backstop stop)."""
     guard_inputs = {
         "base_cmd": {"source": "driver/base_cmd", "queue_size": 100},
         # the watchdog clock (ADR-29)
@@ -197,7 +203,9 @@ def _write_watchdog_graph(
                 "path": str(FIXTURES / "base_recorder.py"),
                 "inputs": rec_inputs,
                 "env": {"REC_OUT": str(rec_out)}
-                | ({"RECORDER_DURATION_S": str(recorder_s)} if recorder_s else {}),
+                | ({"RECORDER_DURATION_S": str(recorder_s)} if recorder_s else {})
+                | ({"RECORDER_AWAIT": await_spec} if await_spec else {})
+                | ({"RECORDER_AWAIT_TAIL_S": str(await_tail_s)} if await_tail_s else {}),
             },
         ]
     }
@@ -247,10 +255,19 @@ def test_wall_net_stops_latched_command_without_sim_stamps(tmp_path, dataflow):
 
     rec_out = tmp_path / "wall_net.jsonl"
     # recorder window: backstop + sweep + margin; guard_stats (1 Hz) keeps
-    # events flowing after the stop so the settle sentinel can land
+    # events flowing after the stop so the settle sentinel can land. The
+    # window additionally AWAITS the violation row (issue #160): the stop
+    # is a discrete late event, and under suite load a wall-only window
+    # of backstop+5 could close before it — the issue #94 truncation class
     backstop = load_base_limits("mobile").base_wall_backstop_s
     graph = _write_watchdog_graph(
-        tmp_path, rec_out, stamp_poses=False, sweep_ms=1000, recorder_s=backstop + 5
+        tmp_path,
+        rec_out,
+        stamp_poses=False,
+        sweep_ms=1000,
+        recorder_s=backstop + 5,
+        await_spec="violation:1",
+        await_tail_s=2.0,
     )
     dataflow.run_until_settled(graph, rec_out, deadline_s=int(backstop * 3 + 30))
     _assert_latched_command_stopped(dataflow.read(rec_out), "base_stale_wall")
@@ -268,6 +285,8 @@ def test_tick_sweep_stops_latched_command_when_poses_cease(tmp_path, dataflow):
 
     rec_out = tmp_path / "hung_sim.jsonl"
     backstop = load_base_limits("mobile").base_wall_backstop_s
+    # await the late stop's violation row (issue #160, same rationale as
+    # the wall-net test above)
     graph = _write_watchdog_graph(
         tmp_path,
         rec_out,
@@ -275,6 +294,8 @@ def test_tick_sweep_stops_latched_command_when_poses_cease(tmp_path, dataflow):
         pose_count=25,
         sweep_ms=1000,
         recorder_s=backstop + 5,
+        await_spec="violation:1",
+        await_tail_s=2.0,
     )
     dataflow.run_until_settled(graph, rec_out, deadline_s=int(backstop * 3 + 30))
     _assert_latched_command_stopped(dataflow.read(rec_out), "base_stale_wall")

@@ -242,6 +242,10 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
     remaining seeds so they still get scored (HAR-1; ADR-23)."""
     from aisle.harness import rollout as ro
 
+    # CON-5: this runner-internal relaunch offset must not leak in from a
+    # developer shell and renumber the initial launch.
+    monkeypatch.setenv("AISLE_EPISODE_BASE", "999")
+
     root = tmp_path / "proj"
     (root / "graphs").mkdir(parents=True)
     (root / "graphs" / "g.yaml").write_text("nodes:\n- id: n\n  path: n.py\n  outputs: [t]\n")
@@ -285,6 +289,7 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
             return ("", "")
 
     spawns = []
+    episode_bases = []
 
     def fake_popen(cmd, cwd=None, env=None, **kwargs):
         # subprocess.run (the git calls) rides the same Popen; only the
@@ -294,14 +299,20 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
             proc.args = cmd
             return proc
         spawns.append(env["AISLE_SEEDS"])
+        episode_bases.append(env.get("AISLE_EPISODE_BASE"))
         results = Path(env["AISLE_RESULTS"])
         with open(results, "a") as f:
             if len(spawns) == 1:  # first launch: seed 0 lands, then wedges
                 f.write('{"episode": 0, "seed": 0, "status": "success", "success": true}\n')
             else:  # relaunch: every remaining seed lands
+                # the real client offsets by AISLE_EPISODE_BASE — the fixture
+                # must too, or the test's own data contains the duplicate
+                # indices this PR exists to prevent (PR #177 review)
+                base = int(env["AISLE_EPISODE_BASE"])
                 for i, s in enumerate(env["AISLE_SEEDS"].split(",")):
                     f.write(
-                        f'{{"episode": {i}, "seed": {s}, "status": "success", "success": true}}\n'
+                        f'{{"episode": {base + i}, "seed": {s}, '
+                        f'"status": "success", "success": true}}\n'
                     )
         proc = FakeProc(alive=len(spawns) == 1)
         proc.args = cmd
@@ -335,6 +346,22 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
         env_baseline="local",
     )
     assert spawns == ["0,1,2", "2"]  # relaunched with only the remaining seed
+    # issue #160 item 5: the relaunched client continues the RUN-GLOBAL
+    # numbering (episode 0 succeeded + episode 1 clamped -> next is 2), so
+    # goal_ids never repeat and fidelity.load_sidecar's duplicate refusal
+    # cannot void a relaunched A7/both run.
+    #
+    # The FIRST launch carries no offset at all: AISLE_EPISODE_BASE is in
+    # SCRUBBED_ENV, so the ambient 999 set above is stripped and the client
+    # falls back to its documented default of 0. `None` here is therefore
+    # the assertion that the ambient value did NOT survive (PR #177
+    # review: scrubbing also covers the fleet and h4 paths, which an
+    # explicit set inside rollout() did not).
+    assert episode_bases == [None, "2"]
+    # the PROPERTY, not just the env var: no two attempts in the run share
+    # an episode index, which is what keeps goal_ids unambiguous
+    indices = [e["episode"] for e in report["episodes"]]
+    assert len(indices) == len(set(indices)), indices
     assert report["failures"] == {"wall_clamp": 1}
     clamped = [e for e in report["episodes"] if e.get("failure") == "wall_clamp"]
     assert [e["seed"] for e in clamped] == [1]  # the wedged seed, recorded
@@ -476,3 +503,139 @@ def test_relaunch_reaps_orphans_and_isolates_trace_dirs(tmp_path, monkeypatch):
     assert report["ok"] is True
     assert report["failures"] == {"wall_clamp": 2}
     assert sorted(e["seed"] for e in report["episodes"]) == [0, 1, 2]
+
+
+def test_await_realistic_sidecar_counts_distinct_goal_ids(tmp_path):
+    """Issue #160 item 5 (PR #168 review): the sidecar wait counted LINES,
+    so duplicate goal_ids (the relaunch-numbering bug, or any re-judge)
+    could mask a missing episode — three lines with two distinct goals
+    must NOT satisfy expected=3. Malformed lines count for nothing."""
+    from aisle.harness.rollout import await_realistic_sidecar
+
+    sidecar = tmp_path / "verifier_stages.jsonl"
+    sidecar.write_text(
+        '{"goal_id": "ep-0000", "verdict": true}\n'
+        '{"goal_id": "ep-0000", "verdict": false}\n'  # duplicate
+        '{"goal_id": "ep-0001", "verdict": true}\n'
+        "not json at all\n"
+    )
+    assert await_realistic_sidecar(tmp_path, expected=3, timeout_s=0.0) == 2
+    assert await_realistic_sidecar(tmp_path, expected=2, timeout_s=0.0) == 2
+    # ...and with a real timeout, so the IN-LOOP check runs (PR #177
+    # review: timeout_s=0.0 never enters the wait loop, so the two asserts
+    # above pass even against the line-counting bug this fix removes)
+    assert await_realistic_sidecar(tmp_path, expected=2, timeout_s=5.0) == 2
+    assert await_realistic_sidecar(tmp_path, expected=3, timeout_s=1.0) == 2
+
+
+def test_await_realistic_sidecar_missing_file_is_zero(tmp_path):
+    from aisle.harness.rollout import await_realistic_sidecar
+
+    assert await_realistic_sidecar(tmp_path, expected=1, timeout_s=0.0) == 0
+
+
+def test_a7_wall_budget_covers_full_sim_episode_plus_judge():
+    """Issue #160 item 6 (PR #168 review): in A7 nothing ends an episode
+    early — the reset/goal are downstream of the verifier's own verdict —
+    so EVERY episode runs the full sim budget and is judged at expiry. The
+    ADR-23 per-episode wall clamp must exceed full-sim-budget wall time at
+    a pessimistic rtf plus the judge, or healthy A7 runs trip the clamp
+    and then lose their VER-6 comparison to item 5's refusal."""
+    from aisle.harness.rollout import (
+        A7_JUDGE_BUDGET_S,
+        A7_WALL_PER_SIM,
+        EPISODE_TIMEOUT_S,
+        PER_EPISODE_BUDGET_S,
+        a7_per_episode_budget_s,
+        tier_budgets,
+    )
+
+    # desk tier: the tier budget (150 s) is BELOW a full 60-sim-s episode
+    # at pessimistic rtf + judge — A7 must raise it
+    raised = a7_per_episode_budget_s(EPISODE_TIMEOUT_S, PER_EPISODE_BUDGET_S)
+    assert raised == EPISODE_TIMEOUT_S * A7_WALL_PER_SIM + A7_JUDGE_BUDGET_S
+    assert raised > PER_EPISODE_BUDGET_S
+    # NOTE: the pure helper no-ops on retail (600*3+30 = 1830 < 2100), which
+    # is exactly why resolve_budgets REFUSES that combination rather than
+    # returning this number — see the test below.
+    retail_timeout, retail_budget = tier_budgets("S1")
+    assert a7_per_episode_budget_s(retail_timeout, retail_budget) == retail_budget
+
+
+@pytest.mark.parametrize("tier", ["S1", "S2", "S3"])
+def test_retail_a7_is_refused_not_silently_clamped(tier):
+    """PR #177 review: A7_WALL_PER_SIM encodes a DESK rtf. At the retail rtf
+    documented in this module (~101.5 sim s in ~25 wall min) a full 600 sim-s
+    A7 episode costs ~8900 wall s against a 2100 s clamp, so every episode
+    would clamp at ~24%, relaunch, and clamp again — a scored 0.0 dressed up
+    as a budget. Refuse instead."""
+    from aisle.harness.rollout import resolve_budgets, tier_budgets
+
+    with pytest.raises(ValueError, match="no measured wall budget"):
+        resolve_budgets(tier, "realistic")
+    # the sidecar mode never changes control flow, so it stays available
+    assert resolve_budgets(tier, "both") == tier_budgets(tier)
+    assert resolve_budgets(tier, "oracle") == tier_budgets(tier)
+
+
+def test_the_verifier_selects_the_budget_not_just_the_tier():
+    """PR #177 review: the arithmetic above was tested, the WIRING was not
+    — deleting the A7 branch at the rollout() call site left the whole unit
+    suite green, because every rollout() test runs --verifier oracle."""
+    from aisle.harness.rollout import PER_EPISODE_BUDGET_S, resolve_budgets, tier_budgets
+
+    assert resolve_budgets("T0", "oracle") == tier_budgets("T0")
+    assert resolve_budgets("T0", "both") == tier_budgets("T0")
+    a7_timeout, a7_budget = resolve_budgets("T0", "realistic")
+    assert (a7_timeout, a7_budget) != tier_budgets("T0")
+    assert a7_budget > PER_EPISODE_BUDGET_S  # A7 episodes always run to expiry
+
+
+def test_a7_budget_covers_the_judge_not_just_the_sim():
+    """The judge term is the half a pure `wall_per_sim * timeout` formula
+    would silently drop (PR #177 review: setting A7_JUDGE_BUDGET_S = 0 left
+    the earlier test green)."""
+    from aisle.harness.rollout import (
+        A7_JUDGE_BUDGET_S,
+        A7_WALL_PER_SIM,
+        EPISODE_TIMEOUT_S,
+        resolve_budgets,
+    )
+
+    assert A7_JUDGE_BUDGET_S > 0, "the judge must have real headroom, not zero"
+    _, a7_budget = resolve_budgets("T0", "realistic")
+    # strictly MORE than the sim time alone: the 3-5 s judge plus drain
+    assert a7_budget >= EPISODE_TIMEOUT_S * A7_WALL_PER_SIM + 10
+
+
+class TestEpisodeBaseConfig:
+    """ADR-23 run-global numbering offset (PR #178 review): the runner
+    always sets AISLE_EPISODE_BASE, but the documented dev path
+    `dora run graphs/expert_t0.yaml --uv` does not, so the client must
+    refuse junk loudly instead of dying on an uncaught ValueError."""
+
+    def test_absent_defaults_to_zero(self):
+        from aisle.harness.rollout_client import parse_episode_base
+
+        assert parse_episode_base({}) == 0
+
+    def test_runner_supplied_offset_is_read(self):
+        from aisle.harness.rollout_client import parse_episode_base
+
+        assert parse_episode_base({"AISLE_EPISODE_BASE": "2"}) == 2
+        assert parse_episode_base({"AISLE_EPISODE_BASE": " 7 "}) == 7
+
+    @pytest.mark.parametrize("raw", ["x", "1.5", "", "0x10", "1e3"])
+    def test_malformed_refuses_loudly(self, raw):
+        from aisle.harness.rollout_client import parse_episode_base
+
+        with pytest.raises(SystemExit, match="AISLE_EPISODE_BASE"):
+            parse_episode_base({"AISLE_EPISODE_BASE": raw})
+
+    def test_negative_offset_refuses_rather_than_aliasing(self):
+        """A negative base mints `ep--005` and aliases earlier episodes —
+        the exact collision the offset exists to prevent."""
+        from aisle.harness.rollout_client import parse_episode_base
+
+        with pytest.raises(SystemExit, match="AISLE_EPISODE_BASE"):
+            parse_episode_base({"AISLE_EPISODE_BASE": "-5"})
