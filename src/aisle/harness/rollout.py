@@ -68,6 +68,23 @@ def tier_budgets(tier: str) -> tuple[int, int]:
     return EPISODE_TIMEOUT_S, PER_EPISODE_BUDGET_S
 
 
+# A7 wall-budget sizing (issue #160 item 6): in `--verifier realistic`
+# nothing ends an episode early — the reset/goal are downstream of the
+# verifier's own verdict, which it renders at sim-budget expiry — so EVERY
+# episode, successes included, runs the full sim budget and is then judged.
+# The ADR-23 per-episode wall clamp must therefore cover full-sim-budget
+# wall time at a pessimistic rtf PLUS the judge, or healthy A7 runs trip
+# the clamp and the relaunch machinery kicks in for nothing.
+A7_WALL_PER_SIM = 3  # wall seconds per sim second: covers rtf >= 0.33 (observed ~0.5)
+A7_JUDGE_BUDGET_S = 30  # judge_frames is 3-5 s; margin for queue drain
+
+
+def a7_per_episode_budget_s(episode_timeout_s: int, per_episode_budget_s: int) -> int:
+    """The A7 per-episode wall budget: never below the tier's, never below
+    the full-sim-budget episode A7 structurally produces."""
+    return max(per_episode_budget_s, episode_timeout_s * A7_WALL_PER_SIM + A7_JUDGE_BUDGET_S)
+
+
 def parse_seed_range(spec: str) -> list[int]:
     """'0..49' -> [0..49]; '3' -> [3]; '1,4,7' -> [1, 4, 7]."""
     if ".." in spec:
@@ -705,16 +722,37 @@ def await_realistic_sidecar(run_dir: Path, expected: int, timeout_s: float = 45.
     which it loses to teardown. Observed: 2 records for 3 episodes, twice.
     Waiting here is the fix that does not require the node to win a race,
     and a bounded wait cannot hang a run: on timeout the count is simply
-    short and the caller reports it."""
+    short and the caller reports it.
+
+    Counts DISTINCT goal_ids, not lines (issue #160 item 5): a duplicate
+    goal_id — the relaunch-numbering bug this issue fixes, or any future
+    re-judge — must not mask a missing episode."""
     sidecar = run_dir / "verifier_stages.jsonl"
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        lines = sidecar.read_text().splitlines() if sidecar.exists() else []
-        if len([ln for ln in lines if ln.strip()]) >= expected:
+        if sidecar.exists() and len(_sidecar_goal_ids(sidecar)) >= expected:
             return expected
         time.sleep(1.0)
-    lines = sidecar.read_text().splitlines() if sidecar.exists() else []
-    return len([ln for ln in lines if ln.strip()])
+    return len(_sidecar_goal_ids(sidecar)) if sidecar.exists() else 0
+
+
+def _sidecar_goal_ids(sidecar: Path) -> set[str]:
+    """DISTINCT goal_ids among the sidecar's parseable records; malformed
+    lines count for nothing here — fidelity.load_sidecar refuses them
+    later with a real error, and an unparseable line must not satisfy the
+    per-episode wait."""
+    ids: set[str] = set()
+    for line in sidecar.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        goal_id = record.get("goal_id") if isinstance(record, dict) else None
+        if isinstance(goal_id, str) and goal_id:
+            ids.add(goal_id)
+    return ids
 
 
 def _terminate(proc: subprocess.Popen) -> None:
@@ -872,6 +910,8 @@ def rollout(
     # SIM timeout declared in the graph, since it ends episodes on its own
     # budget rather than waiting for the oracle (VER-5, increment 1b)
     episode_timeout_s, per_episode_budget_s = tier_budgets(tier)
+    if verifier == "realistic":
+        per_episode_budget_s = a7_per_episode_budget_s(episode_timeout_s, per_episode_budget_s)
     try:
         exec_graph = instrumented_graph(
             graph,
@@ -1000,7 +1040,17 @@ def rollout(
                 if not remaining:
                     break
                 relaunches += 1
-                env = {**env, "AISLE_SEEDS": ",".join(str(s) for s in remaining)}
+                # the relaunched client continues the RUN-GLOBAL episode
+                # numbering (issue #160 item 5): `lines` rows exist before
+                # the synthetic clamp record, so the next episode is
+                # lines + 1 — a restart at ep-0000 would duplicate goal_ids
+                # and fidelity.load_sidecar refuses duplicates, losing the
+                # whole VER-6 comparison of a relaunched A7/both run
+                env = {
+                    **env,
+                    "AISLE_SEEDS": ",".join(str(s) for s in remaining),
+                    "AISLE_EPISODE_BASE": str(lines + 1),
+                }
                 # fresh trace dir + graph per launch: the recorder truncates
                 # on open, and prior evidence must survive (HAR-4)
                 relaunch_traces = traces_dir / f"relaunch-{relaunches}"

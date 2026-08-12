@@ -56,12 +56,21 @@ def _closest(name: str, candidates: list[str]) -> str:
     return matches[0] if matches else ""
 
 
+def _input_source(raw) -> str | None:
+    """Unwrap a graph input to its source string: dora's extended form
+    ({source: ..., queue_size: N}) or the plain string. None for a
+    missing/empty/non-string source. Issue #160 item 3: this idiom had
+    four hand-rolled copies that were starting to disagree."""
+    source = raw.get("source") if isinstance(raw, dict) else raw
+    return source if isinstance(source, str) and source else None
+
+
 def _backward_sources(node: dict) -> list[str | None]:
     """Backward-edge sources of a node; None for timers/dora/malformed."""
     sources: list[str | None] = []
     for raw in (node.get("inputs") or {}).values():
-        source = raw.get("source") if isinstance(raw, dict) else raw
-        if isinstance(source, str) and source and not source.startswith("dora/"):
+        source = _input_source(raw)
+        if source is not None and not source.startswith("dora/"):
             sources.append(source)
         else:
             sources.append(None)
@@ -552,10 +561,13 @@ def validate_nodes(
                     )
                 )
             if "tick" in guard_inputs:
-                raw = guard_inputs["tick"]
-                tick_src = raw.get("source") if isinstance(raw, dict) else raw
-                period = re.fullmatch(r"dora/timer/millis/(\d+)", str(tick_src or ""))
-                if period is None or int(period.group(1)) > GUARD_TICK_MAX_MS:
+                tick_src = _input_source(guard_inputs["tick"])
+                # the shared timer parser, not an ad-hoc regex (issue #160
+                # item 3): the regex accepted millis/0, which _parse_timer_hz
+                # rejects everywhere else — a zero-period timer is not a
+                # bounded sweep cadence, it is malformed
+                tick_hz = _parse_timer_hz(str(tick_src or ""))
+                if tick_hz is None or tick_hz < 1000.0 / GUARD_TICK_MAX_MS:
                     errors.append(
                         _entry(
                             "MOBILE_GUARD_INCOMPLETE",
@@ -568,8 +580,7 @@ def validate_nodes(
                         )
                     )
             if "base_pose" in guard_inputs:
-                raw = guard_inputs["base_pose"]
-                pose_src = raw.get("source") if isinstance(raw, dict) else raw
+                pose_src = _input_source(guard_inputs["base_pose"])
                 producer = str(pose_src or "").partition("/")[0]
                 if producer not in bridge_ids:
                     errors.append(
@@ -791,9 +802,8 @@ def _validate_edge(
     bridge_ids,
 ) -> None:
     node_id = node["id"]
-    if isinstance(source, dict):  # dora extended input form {source: ..., queue_size: N}
-        source = source.get("source")
-    if not isinstance(source, str) or not source:
+    source = _input_source(source)  # dora extended input form {source: ..., queue_size: N}
+    if source is None:
         errors.append(
             _entry(
                 "GRAPH_INVALID",

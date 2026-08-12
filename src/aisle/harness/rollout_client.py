@@ -5,6 +5,8 @@ Env-configured (the T09 rollout runner sets these):
   AISLE_TARGET_MEDS comma-separated per-episode targets (default cycles meds)
   AISLE_TIMEOUT_S   per-episode timeout                 (default 30)
   AISLE_RESULTS     JSONL output path                   (optional)
+  AISLE_EPISODE_BASE run-global numbering offset on ADR-23 relaunches
+                    (default 0; issue #160 item 5)
 
 Per episode: reset(seed) -> await reset_done -> episode_goal -> await
 episode_result -> record, next seed. After the final episode the CLIENT
@@ -66,7 +68,15 @@ def main() -> None:
     env_pin = env_pin_from_env(os.environ)
     node = Node()
     send = make_sender(node, env_pin)
-    episode = 0
+    episode = 0  # index into THIS launch's seeds/targets
+    # global numbering offset (issue #160 item 5): after a wall-clamp
+    # relaunch (ADR-23) this client is the run's SECOND writer, and a
+    # restart at ep-0000 would duplicate goal_ids — the VER-14 sidecar is
+    # append-only and fidelity REFUSES duplicate goal_ids, so a relaunched
+    # A7/both run would lose its whole VER-6 comparison. The runner passes
+    # the count of episodes already recorded; goal_ids/request_ids/records
+    # continue the run-global sequence
+    episode_base = int(os.environ.get("AISLE_EPISODE_BASE", "0"))
     phase = "reset_pending"  # -> awaiting_reset -> running -> (next)
     retries_seen: dict[str, int] = {}  # goal_id -> latest feedback retries (HAR-3)
     # the sim stamp of the episode_result that ended the last episode: rides
@@ -92,12 +102,15 @@ def main() -> None:
                     "reset",
                     pa.array(np.array([seeds[episode], reset_mode], dtype=np.uint32)),
                     {
-                        "request_id": f"reset-{episode:04d}-{seeds[episode]}",
+                        "request_id": f"reset-{episode_base + episode:04d}-{seeds[episode]}",
                         "sim_time_ns": last_result_sim_ns,
                     },
                 )
                 phase = "awaiting_reset"
-                print(f"reset sent: episode {episode} seed {seeds[episode]}", file=sys.stderr)
+                print(
+                    f"reset sent: episode {episode_base + episode} seed {seeds[episode]}",
+                    file=sys.stderr,
+                )
         elif event["id"] == "reset_done" and phase == "awaiting_reset":
             reset_meta = event.get("metadata") or {}
             if retail:
@@ -121,10 +134,13 @@ def main() -> None:
             send(
                 "episode_goal",
                 pa.array([json.dumps(goal)]),
-                {"goal_id": f"ep-{episode:04d}"},
+                {"goal_id": f"ep-{episode_base + episode:04d}"},
             )
             phase = "running"
-            print(f"goal sent: ep-{episode:04d} {goal.get('target_med', '')}", file=sys.stderr)
+            print(
+                f"goal sent: ep-{episode_base + episode:04d} {goal.get('target_med', '')}",
+                file=sys.stderr,
+            )
         elif event["id"] == "episode_feedback":
             # HAR-3: the retry count rides in the state machine's
             # feedback; the LATEST value per goal is what the episode
@@ -142,9 +158,9 @@ def main() -> None:
                 # a malformed stamp degrades the reset bound, it must not
                 # kill the client mid-campaign (PR #168 review)
                 last_result_sim_ns = 0
-            record = {"episode": episode, "seed": seeds[episode], **result}
+            record = {"episode": episode_base + episode, "seed": seeds[episode], **result}
             record["retries"] = retries_seen.pop(record.get("goal_id", ""), 0)
-            print(f"episode {episode} result: {record}", file=sys.stderr)
+            print(f"episode {episode_base + episode} result: {record}", file=sys.stderr)
             if out:
                 out.write(json.dumps(record) + "\n")
             episode += 1

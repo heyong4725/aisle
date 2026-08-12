@@ -285,6 +285,7 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
             return ("", "")
 
     spawns = []
+    episode_bases = []
 
     def fake_popen(cmd, cwd=None, env=None, **kwargs):
         # subprocess.run (the git calls) rides the same Popen; only the
@@ -294,6 +295,7 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
             proc.args = cmd
             return proc
         spawns.append(env["AISLE_SEEDS"])
+        episode_bases.append(env.get("AISLE_EPISODE_BASE"))
         results = Path(env["AISLE_RESULTS"])
         with open(results, "a") as f:
             if len(spawns) == 1:  # first launch: seed 0 lands, then wedges
@@ -335,6 +337,11 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
         env_baseline="local",
     )
     assert spawns == ["0,1,2", "2"]  # relaunched with only the remaining seed
+    # issue #160 item 5: the relaunched client continues the RUN-GLOBAL
+    # numbering (episode 0 succeeded + episode 1 clamped -> next is 2), so
+    # goal_ids never repeat and fidelity.load_sidecar's duplicate refusal
+    # cannot void a relaunched A7/both run
+    assert episode_bases == [None, "2"]
     assert report["failures"] == {"wall_clamp": 1}
     clamped = [e for e in report["episodes"] if e.get("failure") == "wall_clamp"]
     assert [e["seed"] for e in clamped] == [1]  # the wedged seed, recorded
@@ -476,3 +483,53 @@ def test_relaunch_reaps_orphans_and_isolates_trace_dirs(tmp_path, monkeypatch):
     assert report["ok"] is True
     assert report["failures"] == {"wall_clamp": 2}
     assert sorted(e["seed"] for e in report["episodes"]) == [0, 1, 2]
+
+
+def test_await_realistic_sidecar_counts_distinct_goal_ids(tmp_path):
+    """Issue #160 item 5 (PR #168 review): the sidecar wait counted LINES,
+    so duplicate goal_ids (the relaunch-numbering bug, or any re-judge)
+    could mask a missing episode — three lines with two distinct goals
+    must NOT satisfy expected=3. Malformed lines count for nothing."""
+    from aisle.harness.rollout import await_realistic_sidecar
+
+    sidecar = tmp_path / "verifier_stages.jsonl"
+    sidecar.write_text(
+        '{"goal_id": "ep-0000", "verdict": true}\n'
+        '{"goal_id": "ep-0000", "verdict": false}\n'  # duplicate
+        '{"goal_id": "ep-0001", "verdict": true}\n'
+        "not json at all\n"
+    )
+    assert await_realistic_sidecar(tmp_path, expected=3, timeout_s=0.0) == 2
+    assert await_realistic_sidecar(tmp_path, expected=2, timeout_s=0.0) == 2
+
+
+def test_await_realistic_sidecar_missing_file_is_zero(tmp_path):
+    from aisle.harness.rollout import await_realistic_sidecar
+
+    assert await_realistic_sidecar(tmp_path, expected=1, timeout_s=0.0) == 0
+
+
+def test_a7_wall_budget_covers_full_sim_episode_plus_judge():
+    """Issue #160 item 6 (PR #168 review): in A7 nothing ends an episode
+    early — the reset/goal are downstream of the verifier's own verdict —
+    so EVERY episode runs the full sim budget and is judged at expiry. The
+    ADR-23 per-episode wall clamp must exceed full-sim-budget wall time at
+    a pessimistic rtf plus the judge, or healthy A7 runs trip the clamp
+    and then lose their VER-6 comparison to item 5's refusal."""
+    from aisle.harness.rollout import (
+        A7_JUDGE_BUDGET_S,
+        A7_WALL_PER_SIM,
+        EPISODE_TIMEOUT_S,
+        PER_EPISODE_BUDGET_S,
+        a7_per_episode_budget_s,
+        tier_budgets,
+    )
+
+    # desk tier: the tier budget (150 s) is BELOW a full 60-sim-s episode
+    # at pessimistic rtf + judge — A7 must raise it
+    raised = a7_per_episode_budget_s(EPISODE_TIMEOUT_S, PER_EPISODE_BUDGET_S)
+    assert raised == EPISODE_TIMEOUT_S * A7_WALL_PER_SIM + A7_JUDGE_BUDGET_S
+    assert raised > PER_EPISODE_BUDGET_S
+    # a tier whose wall budget already covers the worst case is unchanged
+    retail_timeout, retail_budget = tier_budgets("S1")
+    assert a7_per_episode_budget_s(retail_timeout, retail_budget) == retail_budget

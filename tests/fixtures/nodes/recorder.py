@@ -27,39 +27,30 @@ import time
 import pyarrow as pa
 from dora import Node
 
+# dora launches this file as a script, so its directory leads sys.path;
+# the window state machine is pure and unit-tested (issue #160)
+from recorder_window import CaptureWindow, parse_await_spec
+
 
 def main() -> None:
     out_path = os.environ["RECORDER_OUT"]
     duration = float(os.environ.get("RECORDER_DURATION_S", "10"))
-    await_spec = os.environ.get("RECORDER_AWAIT", "")
-    await_topic, await_count = "", 0
-    if await_spec:
-        await_topic, _, raw = await_spec.partition(":")
-        # fail LOUDLY on a malformed spec: a silent recorder death would
-        # burn the settle helper's whole outer deadline with an opaque
-        # empty-capture error (PR review)
-        if not await_topic or not raw.isdigit() or int(raw) < 1:
-            raise ValueError(f"RECORDER_AWAIT must be 'topic:count', got {await_spec!r}")
-        await_count = int(raw)
-    await_tail = float(os.environ.get("RECORDER_AWAIT_TAIL_S", str(duration)))
-    await_sim_ns = int(os.environ.get("RECORDER_AWAIT_SIM_NS", "0"))
-    awaited_seen = 0
-    sim_target = None  # set at the Nth awaited row when RECORDER_AWAIT_SIM_NS
-    max_sim_ns = 0  # newest sim stamp seen across ALL recorded rows
-    # the window starts at the FIRST event: the bridge's genesis build time
-    # (taichi kernel compilation etc.) must not eat the capture window
-    deadline = None
+    await_topic, await_count = parse_await_spec(os.environ.get("RECORDER_AWAIT", ""))
+    window = CaptureWindow(
+        duration,
+        await_topic,
+        await_count,
+        float(os.environ.get("RECORDER_AWAIT_TAIL_S", str(duration))),
+        int(os.environ.get("RECORDER_AWAIT_SIM_NS", "0")),
+    )
     node = Node()
     with open(out_path, "w", buffering=1) as out:
         for event in node:
             now = time.monotonic()
-            if deadline is None:
-                deadline = now + duration
-            elif (
-                now > deadline
-                and awaited_seen >= await_count
-                and (sim_target is None or max_sim_ns >= sim_target)
-            ):
+            # the window starts at the FIRST event (the bridge's genesis
+            # build must not eat the capture); it cannot close before the
+            # awaited rows and any sim horizon (issue #94)
+            if window.observe(now):
                 # explicit completion sentinel: run_dataflow_until_settled
                 # stops on it instead of burning its whole outer deadline
                 # (written only when an event ARRIVES after the window, i.e.
@@ -87,20 +78,7 @@ def main() -> None:
                     record["values"] = [float(v) for v in arr]
                 record["sha256"] = hashlib.sha256(arr.tobytes()).hexdigest()
             out.write(json.dumps(record, default=str) + "\n")
-            stamp = record["metadata"].get("sim_time_ns")
-            if isinstance(stamp, int) and stamp > max_sim_ns:
-                max_sim_ns = stamp
-            if await_topic and event["id"] == await_topic:
-                awaited_seen += 1
-                if awaited_seen == await_count:
-                    # the awaited protocol completed, however late load made
-                    # it: guarantee the post-event tail from HERE — wall tail
-                    # always, and a sim-stamp horizon when configured (an
-                    # unstamped awaited row cannot anchor a sim horizon; the
-                    # wall tail then governs alone)
-                    deadline = max(deadline, now + await_tail)
-                    if await_sim_ns and isinstance(stamp, int) and stamp > 0:
-                        sim_target = stamp + await_sim_ns
+            window.on_recorded(event["id"], record["metadata"].get("sim_time_ns"), now)
 
 
 if __name__ == "__main__":

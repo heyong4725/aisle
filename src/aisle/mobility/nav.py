@@ -126,12 +126,21 @@ class NavStateMachine:
         self.rotating = False
         return []
 
-    def on_base_pose(self, pose: list[float], sim_time_ns: int) -> list:
+    def on_base_pose(self, pose: list[float], sim_time_ns: int | None) -> list:
         """Latest base pose (MOB-1 base_pose) with its sim stamp (TC-2);
-        consumed by the next tick."""
+        consumed by the next tick.
+
+        None = no usable sim clock on this pose (issue #160 item 1, the
+        BG-3 trust boundary extended to nav): geometry still updates —
+        control keeps steering — but the machine's clock HOLDS, so the
+        stall/timeout budgets freeze rather than anchor at 0 or jump on
+        garbage. On a fully-unstamped source nav therefore never
+        sim-times-out; the guard wall net is the stop on that path (the
+        ADR-29 residual recorded as issue #160 item 2)."""
         if self.target is not None:
             self.pose = [float(v) for v in pose]
-            self._sim_ns = int(sim_time_ns)
+            if sim_time_ns is not None:
+                self._sim_ns = int(sim_time_ns)
         return []
 
     def _finish(self, status: str, failure: str | None) -> list:
@@ -149,7 +158,10 @@ class NavStateMachine:
         if self.target is None or self.pose is None:
             return []
         self.ticks += 1
-        if self._t0_ns is None:
+        # budgets anchor at the first USABLE stamp (issue #160 item 1): a
+        # goal whose poses are all unstamped keeps _t0_ns None and skips
+        # the budget checks below entirely
+        if self._t0_ns is None and self._sim_ns is not None:
             self._t0_ns = self._sim_ns
             self._progress_ns = self._sim_ns
         dist = math.hypot(self.target[0] - self.pose[0], self.target[1] - self.pose[1])
@@ -194,7 +206,11 @@ class NavStateMachine:
                 progressed = True
         if progressed:
             self._progress_ns = self._sim_ns
-        elif (self._sim_ns - self._progress_ns) / 1e9 >= self.stall_s:
+        elif (
+            self._sim_ns is not None
+            and self._progress_ns is not None
+            and (self._sim_ns - self._progress_ns) / 1e9 >= self.stall_s
+        ):
             if not self.rotating and dist <= self.capture_tol_m:
                 # captured: the drive stalled ON the target (within the
                 # band) — hand off to the final rotate instead of blocked
@@ -204,7 +220,7 @@ class NavStateMachine:
                 self._progress_ns = self._sim_ns
             else:
                 return self._finish("fail", "blocked")
-        if (self._sim_ns - self._t0_ns) / 1e9 >= self.timeout_s:
+        if self._t0_ns is not None and (self._sim_ns - self._t0_ns) / 1e9 >= self.timeout_s:
             return self._finish("fail", "timeout")
         # MOB-2 contract feedback is {t, dist_remaining}; orientation progress
         # is tracked internally (above) and verified via base_pose, not
