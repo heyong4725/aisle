@@ -854,3 +854,77 @@ def test_launch_refusal_prints_the_probe_error(tmp_path, monkeypatch, capsys):
     assert h3.main() == 1
     out = _json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert out["ok"] is False and "auth probe" in out["error"]
+
+
+def test_desk_suite_plan_matches_the_tier_ladder_within_frozen_ceilings():
+    """ADR-h3 desk amendment (design doc §8.4.2): the desk suite is the
+    T1→T2→T3→T4 ASPIRE ladder; per-arm sub-budgets mirror the retail D2
+    split (2.5M / 200 / 16 h) so BOTH arms fit the frozen
+    harness/budget.toml ceilings (5M / 500 / 40 h) with re-run headroom."""
+    from h3_campaign import DESK_SCENARIOS, SUITES
+
+    assert SUITES["desk"] is DESK_SCENARIOS
+    assert [s["tier"] for s in DESK_SCENARIOS] == ["T1", "T2", "T3", "T4"]
+    assert sum(s["tokens"] for s in DESK_SCENARIOS) == 2_500_000
+    assert sum(s["episodes"] for s in DESK_SCENARIOS) == 200
+    assert sum(s["wall_h"] for s in DESK_SCENARIOS) == 16.0
+    # T2 is the measured-hard tier (expert baseline 0.08): largest share
+    assert max(DESK_SCENARIOS, key=lambda s: s["tokens"])["tier"] == "T2"
+
+
+def test_desk_tiers_are_franka_scored():
+    """Desk holdout scoring passes --embodiment franka for every tier of
+    the ladder (the desk graphs run franka/so101; scoring pins franka)."""
+    from campaign import TIER_EMBODIMENT
+
+    assert all(TIER_EMBODIMENT[t] == "franka" for t in ("T1", "T2", "T3", "T4"))
+
+
+def test_holdout_timeout_covers_the_t2_scan_tour(tmp_path, monkeypatch):
+    """T2-class desk tiers carry 400 s per-episode wall budgets (rollout
+    tier_budgets — the scan tour): the 3600 s T1 cap would kill a healthy
+    8-episode T2 scoring run mid-tour, the same failure class the S-tier
+    formula fixed."""
+    import campaign as c
+
+    seen = {}
+
+    def fake_run(cmd, timeout=None, **kw):
+        seen[cmd[cmd.index("--tier") + 1]] = timeout
+        raise c.subprocess.TimeoutExpired(cmd, timeout)
+
+    monkeypatch.setattr(c.subprocess, "run", fake_run)
+    (tmp_path / "graphs").mkdir()
+    (tmp_path / "graphs" / "agent_campaign.yaml").write_text("nodes: []\n")
+    for tier in ("T2", "T3"):
+        out = c.score_holdout(tmp_path, "100..107", f"W-{tier}", tier)
+        assert out["ok"] is False
+    assert seen["T2"] == seen["T3"] == 420 + 8 * 400 + 600
+    c.score_holdout(tmp_path, "100..107", "W-T4", "T4")
+    assert seen["T4"] == 3600
+
+
+def test_desk_scenario_selection_validates_against_the_suite():
+    """A retail tier passed to --suite desk is a typo, not an empty
+    no-op campaign (the PR #48 rule extended to suites)."""
+    import subprocess as sp
+
+    proc = sp.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "tools" / "h3_campaign.py"),
+            "--suite",
+            "desk",
+            "--scenarios",
+            "S1",
+            "--expect-dora-sha256",
+            "0" * 64,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode != 0
+    # the refusal must be the SELECTION one — a later gate (e.g. the dora
+    # identity check) also exits nonzero, which would let a suite-wiring
+    # mutation pass this test unnoticed
+    assert "bad selection" in proc.stdout.lower()

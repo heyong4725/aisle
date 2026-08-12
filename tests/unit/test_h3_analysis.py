@@ -779,3 +779,58 @@ def test_runtime_recheck_captures_are_compared_too():
     assert "runtime_drift" in cell(rec, "abc123", baseline)["flags"]
     rec["host_dora_cli_rechecks"]["post_session"]["sha256"] = baseline
     assert "runtime_drift" not in cell(rec, "abc123", baseline)["flags"]
+
+
+def test_desk_suite_records_load_and_use_the_tier_ladder(tmp_path):
+    """ADR-h3 desk amendment: a campaign whose treatment carries
+    suite=desk loads T* scenario dirs (the S* glob missed them), reports
+    the suite, and judges the verdict over T2/T3/T4 — transfer cannot
+    show up on T1, where both arms start from the empty library."""
+    treatment = {**TREATMENT, "suite": "desk"}
+    (tmp_path / "h3_results.json").write_text(
+        json.dumps({"ok": True, "treatment": treatment, "records": []})
+    )
+    # arm W slower everywhere; arm L 4x faster on every post-T1 tier
+    firsts = {"W": 1000.0, "L": 250.0}
+    for arm in ("W", "L"):
+        for tier in ("T1", "T2", "T3", "T4"):
+            d = tmp_path / f"arm_{arm}" / tier
+            d.mkdir(parents=True)
+            (d / "scenario.json").write_text(
+                json.dumps(record(arm, tier, first_success=firsts[arm]))
+            )
+            (d / "token_samples.jsonl").write_text('{"wall_s": 5.0, "tokens": 1000}\n')
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "tools" / "h3_analysis.py"),
+            "--dir",
+            str(tmp_path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stdout[-2000:]
+    out = json.loads(proc.stdout)
+    assert out["suite"] == "desk"
+    assert len(out["cells"]) == 8
+    assert set(out["verdict"]["per_tier"]) == {"T2", "T3", "T4"}
+    assert out["verdict"]["met"] is True
+    assert "T2+T3+T4" in out["verdict"]["criterion"]
+
+
+def test_suite_mismatch_refuses_but_absent_suite_normalizes_to_retail(tmp_path):
+    """A resume that adds the suite key to an old retail campaign must
+    still combine (absence normalizes); records from DIFFERENT suites
+    must refuse like any other treatment identity mismatch."""
+    _write_campaign(tmp_path)  # h3_results.json with no suite key
+    (tmp_path / "h3_results-2.json").write_text(
+        json.dumps({"ok": True, "treatment": {**TREATMENT, "suite": "retail"}, "records": []})
+    )
+    campaign = load_campaign(tmp_path)
+    assert campaign["suite"] == "retail"
+    (tmp_path / "h3_results-3.json").write_text(
+        json.dumps({"ok": True, "treatment": {**TREATMENT, "suite": "desk"}, "records": []})
+    )
+    with pytest.raises(ValueError, match="suite"):
+        load_campaign(tmp_path)

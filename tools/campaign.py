@@ -146,7 +146,15 @@ def validate_seed_ranges(dev: str, holdout: str) -> str | None:
     return None
 
 
-TIER_EMBODIMENT = {"T1": "franka", "S1": "mobile", "S2": "mobile", "S3": "mobile"}
+TIER_EMBODIMENT = {
+    "T1": "franka",
+    "T2": "franka",
+    "T3": "franka",
+    "T4": "franka",
+    "S1": "mobile",
+    "S2": "mobile",
+    "S3": "mobile",
+}
 
 
 def campaign_prompt(
@@ -730,9 +738,15 @@ def score_holdout(wt: Path, holdout_seeds: str, run_tag: str, tier: str = "T1") 
         "--no-idea-gate",
     ]
     # S-tier episodes carry 2100 s wall budgets EACH (the dry run's 3600 s
-    # cap killed S1 scoring mid-run); a scoring timeout is a recorded
-    # outcome, never a campaign abort
-    timeout = 3600 if tier == "T1" else 420 + HOLDOUT_EPISODES * 2100 + 600
+    # cap killed S1 scoring mid-run); T2-class desk tiers carry 400 s each
+    # (rollout tier_budgets — the scan tour); a scoring timeout is a
+    # recorded outcome, never a campaign abort
+    if tier in ("T1", "T4"):
+        timeout = 3600
+    elif tier in ("T2", "T3"):
+        timeout = 420 + HOLDOUT_EPISODES * 400 + 600
+    else:
+        timeout = 420 + HOLDOUT_EPISODES * 2100 + 600
     try:
         proc = subprocess.run(cmd, cwd=wt, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
