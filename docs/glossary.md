@@ -5,6 +5,9 @@ it normatively. If a definition here ever disagrees with the spec it cites,
 **the spec is right and this page is stale** — same rule the README's status
 table has (issue #142).
 
+The standalone [technical report](AISLE-technical-report.md) uses this
+notation throughout and is the best single place to see it in context.
+
 New to the project? Read [`getting-started.md`](getting-started.md) for the
 environment, [`../README.md`](../README.md) for what AISLE is and why, and
 [`physical-ai-primer.md`](physical-ai-primer.md) for the field concepts

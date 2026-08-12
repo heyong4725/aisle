@@ -1153,6 +1153,7 @@ ablations, tiers, perception rungs, and campaign-arm notation — see
 
 ## 20. Primary reading index
 
+- Standalone technical report: [`docs/AISLE-technical-report.md`](AISLE-technical-report.md)
 - Notation and acronyms: [`docs/glossary.md`](glossary.md)
 - Project intent: [`docs/Project_AISLE_Experiment_Design.md`](Project_AISLE_Experiment_Design.md)
 - Normative constitution: [`specs/000-constitution.md`](../specs/000-constitution.md)

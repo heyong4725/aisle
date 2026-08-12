@@ -35,7 +35,10 @@ action adapters, guard, verifier, and evidence contract. That makes “classical
 pipeline vs. learned policy vs. predictive/hybrid system” a matched systems
 experiment that the coding agent can itself propose and run.
 
-Read the **[AISLE research program](docs/research-program.md)** for the
+Read the **[AISLE technical report](docs/AISLE-technical-report.md)** for the
+full standalone treatment: architecture, determinism, evidence design, the
+experimental program, results to date, threats to validity, and the staged
+VLA/world-model/WAM agenda. The **[AISLE research program](docs/research-program.md)** gives the
 technical-report framing: research object, falsifiable questions, why
 experiments and evidence collection matter, claim discipline, and the staged
 VLA/world-model/WAM agenda. The full original experiment design is
