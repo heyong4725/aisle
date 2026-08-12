@@ -14,7 +14,7 @@ architecture, and contribution guidance remain in the
 | Graphs | 10 |
 | Capability manifests | 30 |
 | CLI command entries | 11 |
-| ADR files | 36 |
+| ADR files | 37 |
 
 ## Graphs
 
@@ -126,6 +126,7 @@ inference.
 | [docs/decisions/ADR-28.md](../decisions/ADR-28.md) | ADR-28 — The perception rung governs TOPICS a policy consumes, not information in the scene | ACCEPTED (owner decision 2026-08-08, CON-15) |
 | [docs/decisions/ADR-29.md](../decisions/ADR-29.md) | ADR-29 — Sim-anchored S1 control loops: retime waypoint-nav and the base watchdog onto base_pose (issue #71) | PROPOSED (agent-drafted 2026-08-11 at the owner's direction — the |
 | [docs/decisions/ADR-3.md](../decisions/ADR-3.md) | ADR-3: sim-driver evalcards are pending until M0 (CAP-6 interpretation) | SUPERSEDED by ADR-10 amendment (10); the temporary carve-out was retired. |
+| [docs/decisions/ADR-30.md](../decisions/ADR-30.md) | ADR-30 — T4 dialogue contract (spec-change sketch, awaiting human review) | PROPOSED (Class-C change to SPEC 010, CON-10/CON-14 — this PR is |
 | [docs/decisions/ADR-4.md](../decisions/ADR-4.md) | ADR-4: validator interpretations for T03 (SPEC 060) | ACCEPTED; amended by ADR-5's ratified safety-class boundary. |
 | [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | ACCEPTED (owner-ratified 2026-08-03) |
 | [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |
