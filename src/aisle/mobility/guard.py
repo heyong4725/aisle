@@ -10,6 +10,12 @@ from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
+# The TC-2 stamp trust boundary now has three consumers (this guard, the nav
+# action, the T2 label reader), so it lives in aisle.topics beside stamp()
+# itself. Re-exported here because BG-3's callers and tests name it on the
+# guard, and the rule it encodes is the guard's original one (PR #156).
+from aisle.topics import parse_sim_stamp  # noqa: F401
+
 _LIMITS = Path(__file__).resolve().parents[3] / "env" / "limits.toml"
 
 
@@ -93,20 +99,6 @@ def parse_env_id(metadata: dict) -> int:
         return int(metadata.get("env_id", 0))
     except (TypeError, ValueError, OverflowError):
         return 0
-
-
-def parse_sim_stamp(metadata: dict) -> int | None:
-    """TOTAL sim_time_ns read (BG-3, PR #156 review): None when the stamp is
-    absent, zero, or malformed — all three mean 'no usable sim clock on this
-    message'. Zero maps to None because topics.stamp() defaults missing
-    stamps to 0, so a genuine 0 is indistinguishable from an unstamped
-    source, and anchoring staleness at 0 against a monotonic run-long sim
-    clock would falsely stale-stop the next healthy command."""
-    try:
-        stamp = int(metadata.get("sim_time_ns", 0))
-    except (TypeError, ValueError, OverflowError):
-        return None
-    return stamp if stamp > 0 else None
 
 
 def _dist_to_aabb(px: float, py: float, cx: float, cy: float, hx: float, hy: float) -> float:

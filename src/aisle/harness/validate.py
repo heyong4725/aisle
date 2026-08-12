@@ -56,16 +56,78 @@ def _closest(name: str, candidates: list[str]) -> str:
     return matches[0] if matches else ""
 
 
+def _input_source(raw) -> str | None:
+    """Unwrap a graph input to its source string: dora's extended form
+    ({source: ..., queue_size: N}) or the plain string. None for a
+    missing/empty/non-string source. Issue #160 item 3: this idiom had
+    FIVE hand-rolled copies that were starting to disagree."""
+    source = raw.get("source") if isinstance(raw, dict) else raw
+    return source if isinstance(source, str) and source else None
+
+
 def _backward_sources(node: dict) -> list[str | None]:
     """Backward-edge sources of a node; None for timers/dora/malformed."""
     sources: list[str | None] = []
     for raw in (node.get("inputs") or {}).values():
-        source = raw.get("source") if isinstance(raw, dict) else raw
-        if isinstance(source, str) and source and not source.startswith("dora/"):
+        source = _input_source(raw)
+        if source is not None and not source.startswith("dora/"):
             sources.append(source)
         else:
             sources.append(None)
     return sources
+
+
+def _dialogue_blinding_errors(nodes: list[dict]) -> list[dict]:
+    """DIALOGUE_GOAL_LEAK (ADR-32 §1): in a T4 graph the policy learns its
+    task from dialogue, and the TC-7 goal — which carries the FINAL
+    corrected target — may reach only `verifier-*` nodes. A graph is T4
+    when any node declares `AISLE_TASK_TIER: T4` (the same graph-attested
+    declaration pattern as VAL-8's rung); every such node must consume
+    `human_msg`, else the blinding is advisory — the exact failure VAL-6
+    exists to prevent for oracle_state."""
+
+    def declared_tier(node: dict) -> str:
+        env = node.get("env")
+        raw = env.get("AISLE_TASK_TIER", "") if isinstance(env, dict) else ""
+        return str(raw).strip().upper()
+
+    t4_nodes = [n for n in nodes if declared_tier(n) == "T4"]
+    if not t4_nodes:
+        return []
+    errors: list[dict] = []
+    for node in nodes:
+        node_id = str(node.get("id", ""))
+        for port, raw in sorted((node.get("inputs") or {}).items()):
+            source = _input_source(raw)
+            if source is None or "/" not in source:
+                continue
+            if source.split("/", 1)[1] == "episode_goal" and not node_id.startswith("verifier-"):
+                errors.append(
+                    _entry(
+                        "DIALOGUE_GOAL_LEAK",
+                        {"node": node_id, "input": port, "source": source},
+                        f"episode_goal consumed by {node_id!r} in a T4 graph — the goal "
+                        "carries the final corrected target; the policy must learn its "
+                        "task from dialogue (ADR-32 §1)",
+                        "route episode_goal to verifier-* nodes only; feed the task "
+                        "state machine from human-sim/human_msg instead",
+                    )
+                )
+    for node in t4_nodes:
+        sources = [_input_source(raw) for raw in (node.get("inputs") or {}).values()]
+        if not any(s is not None and s.endswith("/human_msg") for s in sources):
+            node_id = str(node.get("id", ""))
+            errors.append(
+                _entry(
+                    "DIALOGUE_GOAL_LEAK",
+                    {"node": node_id},
+                    f"{node_id!r} declares AISLE_TASK_TIER T4 but consumes no "
+                    "human_msg — a T4 policy with no dialogue input cannot learn "
+                    "its task (ADR-32 §1)",
+                    "wire human-sim/human_msg into the T4 node's inputs",
+                )
+            )
+    return errors
 
 
 def _guard_resolved(out_port: str, graph_nodes: dict, manifests: dict) -> bool:
@@ -284,6 +346,8 @@ def validate_nodes(
     # TC-9/VAL-8: the perception rung is a property of the GRAPH, read once
     rung, bridge_ids, rung_errors = graph_perception_rung(nodes, manifests)
     errors.extend(rung_errors)
+    # ADR-32 §1: T4 goal blinding is likewise a property of the graph
+    errors.extend(_dialogue_blinding_errors(nodes))
     for node in nodes:
         node_id = node["id"]
         # ADR-25 (issue #71, PR #80 review): the bridge's reset-less
@@ -332,10 +396,9 @@ def validate_nodes(
             # VAL-6 is manifest-based: a node WITHOUT a manifest is never an
             # authorized verifier, so oracle consumption must still surface
             # and not hide behind MANIFEST_MISSING.
-            for port, source in (node.get("inputs") or {}).items():
-                if isinstance(source, dict):
-                    source = source.get("source")
-                if not isinstance(source, str):
+            for port, raw in (node.get("inputs") or {}).items():
+                source = _input_source(raw)
+                if source is None:
                     continue
                 if source.endswith("/oracle_state"):
                     errors.append(
@@ -552,10 +615,13 @@ def validate_nodes(
                     )
                 )
             if "tick" in guard_inputs:
-                raw = guard_inputs["tick"]
-                tick_src = raw.get("source") if isinstance(raw, dict) else raw
-                period = re.fullmatch(r"dora/timer/millis/(\d+)", str(tick_src or ""))
-                if period is None or int(period.group(1)) > GUARD_TICK_MAX_MS:
+                tick_src = _input_source(guard_inputs["tick"])
+                # the shared timer parser, not an ad-hoc regex (issue #160
+                # item 3): the regex accepted millis/0, which _parse_timer_hz
+                # rejects everywhere else — a zero-period timer is not a
+                # bounded sweep cadence, it is malformed
+                tick_hz = _parse_timer_hz(str(tick_src or ""))
+                if tick_hz is None or tick_hz < 1000.0 / GUARD_TICK_MAX_MS:
                     errors.append(
                         _entry(
                             "MOBILE_GUARD_INCOMPLETE",
@@ -568,8 +634,7 @@ def validate_nodes(
                         )
                     )
             if "base_pose" in guard_inputs:
-                raw = guard_inputs["base_pose"]
-                pose_src = raw.get("source") if isinstance(raw, dict) else raw
+                pose_src = _input_source(guard_inputs["base_pose"])
                 producer = str(pose_src or "").partition("/")[0]
                 if producer not in bridge_ids:
                     errors.append(
@@ -769,9 +834,17 @@ def _rung_entry(edge: dict, out_port: str, node_id: str, rung: str) -> dict:
 
 
 def _parse_timer_hz(source: str) -> float | None:
-    """Rate of a well-formed dora/timer/millis/<N> source, else None."""
+    """Rate of a well-formed dora/timer/millis/<N> source, else None.
+
+    The `dora` prefix is part of the contract, not decoration: only dora's
+    own timer is guaranteed to fire. Without this check a source shaped
+    like `some-node/timer/millis/10` parsed as a 100 Hz timer, which let a
+    mobile graph wire the guard's wall-net sweep tick (ADR-29) to a node
+    that may never emit and still pass MOBILE_GUARD_INCOMPLETE — the
+    fail-closed net silently disabled (PR #177 review; the ad-hoc regex
+    this helper replaced did anchor the prefix)."""
     parts = source.split("/")
-    if len(parts) == 4 and parts[1] == "timer" and parts[2] == "millis":
+    if len(parts) == 4 and parts[0] == "dora" and parts[1] == "timer" and parts[2] == "millis":
         if parts[3].isdigit() and int(parts[3]) > 0:
             return 1000.0 / int(parts[3])
     return None
@@ -791,14 +864,18 @@ def _validate_edge(
     bridge_ids,
 ) -> None:
     node_id = node["id"]
-    if isinstance(source, dict):  # dora extended input form {source: ..., queue_size: N}
-        source = source.get("source")
-    if not isinstance(source, str) or not source:
+    # keep the RAW value for the message: VAL-3 makes these hints the
+    # research agent's learning signal, and reporting the unwrapped None
+    # instead of the offending value ("got 42") tells the author nothing
+    # about what they wrote (PR #177 review)
+    raw_source = source
+    source = _input_source(source)  # dora extended input form {source: ..., queue_size: N}
+    if source is None:
         errors.append(
             _entry(
                 "GRAPH_INVALID",
                 {"edge": f"{node_id}/{port}"},
-                f"input source must be a string or {{source: ...}} mapping, got {source!r}",
+                f"input source must be a string or {{source: ...}} mapping, got {raw_source!r}",
                 "write the source as producer-id/output or dora/timer/millis/<N>",
             )
         )

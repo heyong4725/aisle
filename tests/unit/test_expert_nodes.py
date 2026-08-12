@@ -14,7 +14,7 @@ from aisle.nodes.grasp_topdown import (
     topdown_quat,
     yaw_of,
 )
-from aisle.nodes.ik_trajectory import quat_to_rotation
+from aisle.nodes.ik_trajectory import park_read_reply, quat_to_rotation
 from aisle.nodes.oracle_pose import select_pose
 from aisle.nodes.task_state_machine import TaskStateMachine
 from aisle.scenes.pharmacy import MED_NAMES
@@ -178,6 +178,26 @@ class TestGraspTopdown:
         assert approach == pytest.approx(0.55 - (0.40 - 0.06), abs=1e-6)
 
 
+class TestReadParkReply:
+    def test_usable_stamp_arms_strictly_newer_frame_barrier(self):
+        """CON-5/TC-2: a completed park with a usable contract stamp
+        carries that stamp into the reader request."""
+        payload = park_read_reply({"ok": True, "range_m": 0.13}, {"sim_time_ns": 42})
+        assert payload == {"ok": True, "range_m": 0.13, "frame_after_sim_time_ns": 42}
+
+    @pytest.mark.parametrize(
+        "metadata", [{}, {"sim_time_ns": 0}, {"sim_time_ns": None}, {"sim_time_ns": "bad"}]
+    )
+    def test_unusable_stamp_refuses_instead_of_falling_back_unbarriered(self, metadata):
+        """CON-5/TC-2 (PR #176 review): without a usable park stamp the
+        executor must reply fail-closed. Omitting the barrier from an
+        otherwise-successful reply reopens the stale-frame wall race."""
+        assert park_read_reply({"ok": True, "range_m": 0.13}, metadata) == {
+            "ok": False,
+            "reason": "missing_park_stamp",
+        }
+
+
 class TestTaskStateMachine:
     def test_goal_emits_target_request_and_feedback_until_result(self):
         """CAP-5 task-state-machine + TC-7: a goal emits a target_request
@@ -249,8 +269,16 @@ class TestT2ScanTour:
         assert len(machine.candidates) == 2  # target + one real row
 
     def test_move_done_asks_the_reader_relaying_the_camera_pose(self):
+        """CON-5/TC-2: the read request carries the completed park's
+        sim-time barrier so downstream frame selection cannot depend on
+        which queued wrist frame wins a wall-clock delivery race."""
         machine, _ = self._touring_machine()
-        pose = {"face": [1, 2, 3], "cam_pos": [4, 5, 6], "cam_rot_cv": list(range(9))}
+        pose = {
+            "face": [1, 2, 3],
+            "cam_pos": [4, 5, 6],
+            "cam_rot_cv": list(range(9)),
+            "frame_after_sim_time_ns": 42,
+        }
         out = machine.on_move_done(
             {"ok": True, "range_m": 0.16, "attempt_used": 0, **pose}, "ep-1/read0.0"
         )
@@ -529,3 +557,128 @@ class TestNeighbourConstraints:
         misattribute the remaining centres to the wrong meds."""
         with pytest.raises(ValueError):
             neighbour_constraints(self.full_rows()[:-1], MED_NAMES[0], MED_NAMES, self.MEDS)
+
+
+class TestT4Dialogue:
+    """ADR-32 increment one: in T4 the task arrives as dialogue — the
+    confirm exchange must complete before any target_request, a
+    pre-delivery correction switches the active target and re-confirms
+    once, and corrections are counted in dialogue_corrections, never as
+    HAR-3 retries."""
+
+    def _machine(self, max_retries=8):
+        return TaskStateMachine(tier="T4", max_retries=max_retries)
+
+    def _open(self, machine, med="ibuprofen", goal_id="ep-1"):
+        return machine.on_human_msg({"kind": "request", "med": med}, goal_id)
+
+    def test_request_opens_episode_and_confirms_without_target_request(self):
+        """ADR-32 §2: on `request` the machine emits robot_msg confirm
+        naming the requested med and WAITS — no target_request yet."""
+        machine = self._machine()
+        out = self._open(machine)
+        assert [(topic, payload["kind"], payload["med"]) for topic, payload, _ in out] == [
+            ("robot_msg", "confirm", "ibuprofen")
+        ]
+        assert out[0][2] == {"goal_id": "ep-1"}
+        assert machine.goal == {"target_med": "ibuprofen"}
+
+    def test_confirm_reply_releases_target_request(self):
+        machine = self._machine()
+        self._open(machine)
+        out = machine.on_human_msg({"kind": "confirm_reply", "med": "ibuprofen"}, "ep-1")
+        assert out == [("target_request", {"target_med": "ibuprofen"}, {"goal_id": "ep-1"})]
+
+    def test_correction_switches_target_and_reconfirms_once(self):
+        """ADR-32 §2: a pre-delivery correction switches the active
+        target to B and re-confirms; the release then requests B."""
+        machine = self._machine()
+        self._open(machine)
+        out = machine.on_human_msg({"kind": "correction", "med": "cetirizine"}, "ep-1")
+        assert [(topic, payload["med"]) for topic, payload, _ in out] == [
+            ("robot_msg", "cetirizine")
+        ]
+        assert machine.goal["target_med"] == "cetirizine"
+        out = machine.on_human_msg({"kind": "confirm_reply", "med": "cetirizine"}, "ep-1")
+        assert out == [("target_request", {"target_med": "cetirizine"}, {"goal_id": "ep-1"})]
+
+    def test_second_correction_is_ignored(self):
+        """ADR-32 §2: the machine re-confirms ONCE — a second correction
+        gets no reply and does not move the target."""
+        machine = self._machine()
+        self._open(machine)
+        machine.on_human_msg({"kind": "correction", "med": "cetirizine"}, "ep-1")
+        out = machine.on_human_msg({"kind": "correction", "med": "omeprazole"}, "ep-1")
+        assert out == []
+        assert machine.goal["target_med"] == "cetirizine"
+
+    def test_corrections_count_in_feedback_not_retries(self):
+        """ADR-32 §2: dialogue_corrections is its own counter in
+        episode_feedback; retries keeps its HAR-3 meaning (pass@1/pass@8
+        stay comparable across tiers)."""
+        machine = self._machine()
+        self._open(machine)
+        machine.on_human_msg({"kind": "correction", "med": "cetirizine"}, "ep-1")
+        feedback = machine.on_tick()[-1]
+        assert feedback[0] == "episode_feedback"
+        assert feedback[1]["dialogue_corrections"] == 1
+        assert feedback[1]["retries"] == 0
+        assert feedback[1]["phase"] == "confirming"
+
+    def test_wrong_goal_and_overlapping_request_are_refused(self):
+        """TC-7: episodes do not overlap; messages for another goal_id
+        are not this episode's dialogue."""
+        machine = self._machine()
+        self._open(machine)
+        assert machine.on_human_msg({"kind": "request", "med": "metformin"}, "ep-2") == []
+        assert machine.on_human_msg({"kind": "confirm_reply", "med": "ibuprofen"}, "ep-2") == []
+        assert machine.goal == {"target_med": "ibuprofen"}
+
+    def test_plan_done_before_confirm_counts_protocol_violation(self):
+        """ADR-32 §2: a delivery (finished grasp plan) without a completed
+        confirm exchange is a dialogue protocol violation, counted in
+        feedback — and arms no HAR-3 retry (no legitimate target_request
+        existed to re-issue)."""
+        machine = self._machine()
+        self._open(machine)
+        machine.on_plan_done()
+        assert machine.retry_due_tick is None
+        feedback = machine.on_tick()[-1]
+        assert feedback[1]["violations"] == {"dialogue_protocol": 1}
+
+    def test_retries_after_confirm_use_the_corrected_target(self):
+        """HAR-3 in T4: an in-flight failure after the exchange re-issues
+        target_request for the ACTIVE (corrected) target."""
+        from aisle.nodes.task_state_machine import RETRY_GRACE_TICKS
+
+        machine = self._machine()
+        self._open(machine)
+        machine.on_human_msg({"kind": "correction", "med": "cetirizine"}, "ep-1")
+        machine.on_human_msg({"kind": "confirm_reply", "med": "cetirizine"}, "ep-1")
+        machine.on_plan_done()
+        out = []
+        for _ in range(RETRY_GRACE_TICKS + 1):
+            out = machine.on_tick()
+            if out and out[0][0] == "target_request":
+                break
+        assert out[0] == ("target_request", {"target_med": "cetirizine"}, {"goal_id": "ep-1"})
+
+    def test_result_resets_dialogue_state(self):
+        """The next episode's request starts a clean exchange."""
+        machine = self._machine()
+        self._open(machine)
+        machine.on_human_msg({"kind": "confirm_reply", "med": "ibuprofen"}, "ep-1")
+        machine.on_result()
+        out = self._open(machine, med="metformin", goal_id="ep-2")
+        assert out[0][1] == {
+            "kind": "confirm",
+            "med": "metformin",
+            "text": "you want the metformin, correct?",
+        }
+        assert machine.confirmed is False
+        assert machine.dialogue_corrections == 0
+
+    def test_non_t4_tiers_ignore_human_msg(self):
+        """The dialogue path is tier-gated exactly like the T2 tour."""
+        machine = TaskStateMachine(tier="T1")
+        assert machine.on_human_msg({"kind": "request", "med": "ibuprofen"}, "ep-1") == []

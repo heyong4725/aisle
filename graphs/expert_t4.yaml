@@ -1,26 +1,21 @@
-# The hand-written T2 expert baseline (design doc §3 tier table; idea
-# I13, closed `up`): medicine identified by its PRINTED LABEL only.
-# Rung L2 as T2 requires; the bridge additionally renders label textures
-# (AISLE_LABELS) and permutes box colors across meds (AISLE_SHUFFLE_COLORS)
-# so color no longer predicts identity — all three declared HERE, where
-# the graph hash attests them.
-#
-# Flow: detected-pose's target_pose (identity claims are color-derived
-# noise at T2 — only the POSITIONS are trusted) feeds the task-state-
-# machine, which runs a scan tour: per candidate box, `read_move` parks
-# the wrist camera at the face (ik-trajectory replies `move_done` with
-# the ladder range used), label-reader scores the face against the
-# deterministic label templates and refuses below the measured margin
-# floor. A matching read promotes the candidate to `grasp_target`,
-# wired into the grasp planner's target_pose input — everything
-# downstream of the planner is the T0/T1 pipeline unchanged.
+# The hand-written T4 expert baseline (design doc §3 tier table;
+# ADR-32 increment one): the full request loop — confirm the name back,
+# handle a pre-delivery "no, the other one", deliver. Perception is the
+# T1 rung (L1 segmented pose); what changes is WHERE the task comes
+# from: the task-state-machine consumes NO episode_goal — its task
+# arrives as the human-sim's scripted `request`, and the confirm
+# exchange must complete before any target_request. The TC-7 goal
+# (whose target_med is the FINAL corrected target) reaches only
+# verifier-oracle; the validator's DIALOGUE_GOAL_LEAK rule rejects any
+# T4 graph that routes it further. The human-sim script is a pure
+# function of the per-goal seed (CON-5): corrected seeds (seed%4==0)
+# answer the confirm with a correction naming the next med in SCN-2's
+# list, and the robot re-confirms once.
 nodes:
 - id: dora-genesis
   path: ../src/aisle/nodes/dora_genesis.py
   env:
-    AISLE_PERCEPTION: L2
-    AISLE_LABELS: '1'
-    AISLE_SHUFFLE_COLORS: '1'
+    AISLE_PERCEPTION: L1
   inputs:
     tick: dora/timer/millis/10
     joint_cmd:
@@ -40,6 +35,7 @@ nodes:
   - rgb_overhead
   - rgb_wrist
   - depth_overhead
+  - seg_overhead
   - reset_done
 - id: reset
   path: ../src/aisle/reset/service.py
@@ -71,14 +67,14 @@ nodes:
   - gripper_cmd_safe
   - violation
   - guard_stats
-- id: detected-pose
-  path: ../src/aisle/nodes/l2_pose.py
+- id: segmented-pose
+  path: ../src/aisle/nodes/segmented_pose.py
   inputs:
     bridge_info:
       source: dora-genesis/bridge_info
       queue_size: 100
-    rgb_overhead:
-      source: dora-genesis/rgb_overhead
+    seg_overhead:
+      source: dora-genesis/seg_overhead
       queue_size: 100
     depth_overhead:
       source: dora-genesis/depth_overhead
@@ -91,31 +87,11 @@ nodes:
       queue_size: 100
   outputs:
   - target_pose
-- id: ocr-label
-  path: ../src/aisle/nodes/label_reader.py
-  inputs:
-    bridge_info:
-      source: dora-genesis/bridge_info
-      queue_size: 100
-    rgb_wrist:
-      source: dora-genesis/rgb_wrist
-      queue_size: 1
-    clock:
-      source: dora-genesis/joint_state
-      queue_size: 1
-    read_request:
-      source: task-state-machine/read_request
-      queue_size: 100
-    reset_done:
-      source: dora-genesis/reset_done
-      queue_size: 100
-  outputs:
-  - read_result
 - id: grasp-planner-topdown
   path: ../src/aisle/nodes/grasp_topdown.py
   inputs:
     target_pose:
-      source: task-state-machine/grasp_target
+      source: segmented-pose/target_pose
       queue_size: 100
   outputs:
   - grasp_pose
@@ -124,9 +100,6 @@ nodes:
   inputs:
     grasp_pose:
       source: grasp-planner-topdown/grasp_pose
-      queue_size: 100
-    read_move:
-      source: task-state-machine/read_move
       queue_size: 100
     joint_state:
       source: dora-genesis/joint_state
@@ -137,7 +110,6 @@ nodes:
   outputs:
   - joint_cmd
   - gripper_cmd
-  - move_done
   - plan_done
 - id: verifier-oracle
   path: ../src/aisle/verifier/oracle.py
@@ -153,15 +125,26 @@ nodes:
       queue_size: 100
   outputs:
   - episode_result
+- id: human-sim
+  path: ../src/aisle/nodes/human_sim.py
+  inputs:
+    episode_meta:
+      source: rollout-client/episode_meta
+      queue_size: 100
+    robot_msg:
+      source: task-state-machine/robot_msg
+      queue_size: 100
+  outputs:
+  - human_msg
 - id: task-state-machine
   path: ../src/aisle/nodes/task_state_machine.py
   env:
-    AISLE_TASK_TIER: T2
+    AISLE_TASK_TIER: T4
     AISLE_MAX_RETRIES: '8'
   inputs:
     tick: dora/timer/millis/1000
-    episode_goal:
-      source: rollout-client/episode_goal
+    human_msg:
+      source: human-sim/human_msg
       queue_size: 100
     episode_result:
       source: verifier-oracle/episode_result
@@ -169,24 +152,13 @@ nodes:
     violation:
       source: budget-guard/violation
       queue_size: 100
-    target_pose:
-      source: detected-pose/target_pose
-      queue_size: 100
-    move_done:
-      source: ik-trajectory/move_done
-      queue_size: 100
-    read_result:
-      source: ocr-label/read_result
-      queue_size: 100
     plan_done:
       source: ik-trajectory/plan_done
       queue_size: 100
   outputs:
   - target_request
   - episode_feedback
-  - read_move
-  - read_request
-  - grasp_target
+  - robot_msg
 - id: rollout-client
   path: ../src/aisle/harness/rollout_client.py
   inputs:
@@ -203,3 +175,4 @@ nodes:
   outputs:
   - reset
   - episode_goal
+  - episode_meta

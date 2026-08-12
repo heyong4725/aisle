@@ -65,6 +65,12 @@ root = "tests/fixtures/roots/reserved_dists"
 codes = ["SCHEMA_MISMATCH", "INSTALL_MISSING"]
 root = "tests/fixtures/roots/reserved_dists"
 
+[dialogue_goal_leak_state_machine]
+codes = ["DIALOGUE_GOAL_LEAK"]
+
+[dialogue_goal_leak_no_human_msg]
+codes = ["DIALOGUE_GOAL_LEAK"]
+
 [oracle_leak_oracle_pose]
 codes = ["ORACLE_LEAK"]
 

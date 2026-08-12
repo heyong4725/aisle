@@ -47,6 +47,8 @@ floors, not hope.
 ## Provenance
 
 PRs #149 (labeled scene), #152 (reader stack), #155 (tier budgets +
-candidate bounds), #158 (staged reads). Known limitation: the
-single-episode T2 graph gate is wall-coupled (issue #153, ~1/3 flake,
-honest failure modes only).
+candidate bounds), #158 (staged reads), and the issue #153 fix (the
+reader selects the earliest wrist frame strictly after the completed
+park by simulation timestamp). The live graph test is a safety/integration
+smoke, not a single-seed success gate: CON-5 layer (d) assigns success
+acceptance to this multi-episode curve.

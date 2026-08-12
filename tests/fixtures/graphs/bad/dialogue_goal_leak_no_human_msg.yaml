@@ -1,0 +1,21 @@
+# ADR-32 §1: a node declaring AISLE_TASK_TIER T4 with no human_msg input
+# cannot learn its task — without this check the blinding is advisory
+# (route episode_goal nowhere and the policy simply idles as a fake-honest
+# 0.0, or worse, takes its task from an ambient channel).
+nodes:
+- id: rollout-client
+  outputs:
+  - episode_goal
+  - episode_meta
+- id: verifier-oracle
+  inputs:
+    episode_goal: rollout-client/episode_goal
+  outputs:
+  - episode_result
+- id: task-state-machine
+  env:
+    AISLE_TASK_TIER: T4
+  inputs:
+    episode_result: verifier-oracle/episode_result
+  outputs:
+  - robot_msg
