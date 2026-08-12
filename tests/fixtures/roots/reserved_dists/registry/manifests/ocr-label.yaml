@@ -15,6 +15,8 @@ requires: [rgb_stream]
 inputs:
   bridge_info: {schema: json_utf8, rate_hz: 1}
   rgb_wrist: {schema: rgb8_image, rate_hz: 30}
+  # independent sim-stamped heartbeat for the no-camera-frame read deadline
+  clock: {schema: jointvec_f32, rate_hz: 100}
   # TC-6 service pattern: request_id metadata pairs request and reply
   read_request: {schema: json_utf8, rate_hz: 1}
   # episode boundary: clears any pending read

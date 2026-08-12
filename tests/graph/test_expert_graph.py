@@ -25,15 +25,40 @@ pytestmark = [
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _run_expert_graph(tmp_path, graph_name: str, env_overrides: dict) -> tuple:
+def _run_expert_graph(
+    tmp_path, graph_name: str, env_overrides: dict, record_topics: dict | None = None
+) -> tuple:
     """One seeded episode through a graphs/ file verbatim, from a TEMP COPY
     with absolutized node paths: dora spawns nodes with cwd = the yaml's
     directory, and the orphan reaper is scoped by that cwd — running from
     the shared graphs/ dir would let cleanup SIGKILL unrelated developer
-    runs (PR #10 review)."""
+    runs (PR #10 review).
+
+    `record_topics` ({input_name: "producer/output"}) taps those topics with
+    the trace-recorder fixture into tmp_path/'trace.jsonl'. dora run does
+    NOT forward node stderr to this process, so an assertion about what a
+    node did inside the run has to travel on a topic (PR #176 review)."""
     import yaml as yaml_module
 
     graph_doc = yaml_module.safe_load((REPO_ROOT / "graphs" / graph_name).read_text())
+    if record_topics:
+        graph_doc["nodes"].append(
+            {
+                "id": "trace-recorder",
+                "path": str((REPO_ROOT / "tests" / "fixtures" / "nodes" / "recorder.py").resolve()),
+                "inputs": {
+                    name: {"source": source, "queue_size": 400}
+                    for name, source in record_topics.items()
+                },
+                "env": {
+                    "RECORDER_OUT": str(tmp_path / "trace.jsonl"),
+                    # outlive the episode: the recorder is torn down with the
+                    # dataflow, and its output is line-buffered, so every row
+                    # written before teardown survives
+                    "RECORDER_DURATION_S": "3600",
+                },
+            }
+        )
     for node in graph_doc["nodes"]:
         node["path"] = str((REPO_ROOT / "graphs" / node["path"]).resolve())
     graph_path = tmp_path / graph_name
@@ -133,28 +158,87 @@ def test_expert_t1_l2_episode_succeeds(tmp_path):
     assert records[0]["status"] == "success", (records[0], (stderr or "")[-2000:])
 
 
-def test_expert_t2_episode_succeeds(tmp_path):
-    """T2 end-to-end (design doc §3 tier table; idea I13, closed `up`):
+def test_expert_t2_episode_closes_without_wrong_object(tmp_path):
+    """CON-5 layer (d), T2 end-to-end safety smoke (design doc §3 tier
+    table; idea I13, closed `up`):
     the seeded episode runs through graphs/expert_t2.yaml verbatim — the
     scene renders label textures with COLORS PERMUTED across meds
     (no-color-prior), so detected-pose's color-worded identity is noise
     and only positions survive; the state machine tours candidates with
     read_move/move_done, ocr-label reads each parked face under the
-    pre-registered margin floor, the matching candidate is promoted to
-    grasp_target, and the episode closes with status=success — the
-    oracle verifier (sim identity, color-blind) is the judge, so a
-    color-prior shortcut CANNOT pass this test by luck at a shuffled
-    seed.
+    pre-registered margin floor, and promotes a candidate only after a
+    matching read. The oracle verifier (sim identity, color-blind) is the
+    judge, so a color-prior shortcut CANNOT pass this safety test by luck
+    at a shuffled seed.
 
     The generous timeout covers the tour: up to five read poses plus
-    one OWLv2 query (~2 s) each, before the ordinary grasp."""
+    one OWLv2 query (~2 s) each, before the ordinary grasp. Full-episode
+    success is deliberately NOT asserted here: CON-5 classifies outcomes
+    as statistical, and the measured T2 baseline is 2/25 (analysis/t2),
+    so one seed is not a valid success-rate gate. This live test pins the
+    asymmetric safety invariant; deterministic scan mechanics and frame
+    freshness are covered by unit tests, while the committed curve is the
+    multi-episode performance evidence."""
     results, stderr = _run_expert_graph(
         tmp_path,
         "expert_t2.yaml",
         {"AISLE_SEEDS": "3", "AISLE_TARGET_MEDS": "cetirizine", "AISLE_TIMEOUT_S": "150"},
+        record_topics={
+            "move_done": "ik-trajectory/move_done",
+            "read_result": "ocr-label/read_result",
+        },
     )
 
     assert results.exists(), f"no results written; stderr tail: {(stderr or '')[-3000:]}"
     records = [json.loads(line) for line in results.read_text().splitlines() if line.strip()]
     assert len(records) == 1, (records, (stderr or "")[-2000:])
-    assert records[0]["status"] == "success", (records[0], (stderr or "")[-2000:])
+    record = records[0]
+    assert record["status"] in {"success", "fail"}, record
+    assert record.get("failure") in {None, "never_grasped", "collision", "timeout", "dropped"}, (
+        record
+    )
+    assert (record["status"] == "success") == (record["failure"] is None), record
+
+    # The MECHANISM assertion (PR #176 review). Dropping the success gate
+    # is defensible under CON-5 layer (d), but on its own it would leave
+    # the determinism fix unproven: this test then passes on almost any
+    # outcome, including the never_grasped signature issue #153 reports as
+    # the FAILURE mode. So assert the barrier itself, live: every read must
+    # have answered from a wrist frame STRICTLY newer than its own park,
+    # and at least one park must have armed a barrier (a silently
+    # unbarriered tour is the regression this pins).
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "trace.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    # Pair each read with the park that armed it in per-producer order. The
+    # tour reuses request_ids across passes, so retain a list per id and zip
+    # the sequences rather than collapsing each id to one record.
+    parks, replies = {}, {}
+    for row in rows:
+        rid = row["metadata"].get("request_id")
+        if row["id"] == "move_done":
+            payload = json.loads(row["text"])
+            if payload.get("ok"):
+                parks.setdefault(rid, []).append(payload.get("frame_after_sim_time_ns"))
+        elif row["id"] == "read_result":
+            replies.setdefault(rid, []).append(
+                (json.loads(row["text"]), row["metadata"].get("sim_time_ns"))
+            )
+    assert parks, f"no successful read park completed; records={records}"
+    missing_barriers = [
+        rid for rid, values in parks.items() for barrier in values if barrier is None
+    ]
+    assert not missing_barriers, f"successful parks without a sim barrier: {missing_barriers}"
+    assert {rid: len(v) for rid, v in replies.items()} == {
+        rid: len(v) for rid, v in parks.items()
+    }, f"every successful park must have exactly one reply: parks={parks}, replies={replies}"
+    stale = []
+    for rid, barriers in parks.items():
+        for barrier, (payload, frame) in zip(barriers, replies[rid], strict=True):
+            if frame is None:
+                assert payload.get("reason") == "no_frame_after_park", (rid, payload)
+            elif int(frame) <= int(barrier):
+                stale.append((rid, int(barrier), int(frame)))
+    assert not stale, f"read(s) answered from a frame at or before their park: {stale}"

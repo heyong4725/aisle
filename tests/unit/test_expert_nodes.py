@@ -14,7 +14,7 @@ from aisle.nodes.grasp_topdown import (
     topdown_quat,
     yaw_of,
 )
-from aisle.nodes.ik_trajectory import quat_to_rotation
+from aisle.nodes.ik_trajectory import park_read_reply, quat_to_rotation
 from aisle.nodes.oracle_pose import select_pose
 from aisle.nodes.task_state_machine import TaskStateMachine
 from aisle.scenes.pharmacy import MED_NAMES
@@ -178,6 +178,26 @@ class TestGraspTopdown:
         assert approach == pytest.approx(0.55 - (0.40 - 0.06), abs=1e-6)
 
 
+class TestReadParkReply:
+    def test_usable_stamp_arms_strictly_newer_frame_barrier(self):
+        """CON-5/TC-2: a completed park with a usable contract stamp
+        carries that stamp into the reader request."""
+        payload = park_read_reply({"ok": True, "range_m": 0.13}, {"sim_time_ns": 42})
+        assert payload == {"ok": True, "range_m": 0.13, "frame_after_sim_time_ns": 42}
+
+    @pytest.mark.parametrize(
+        "metadata", [{}, {"sim_time_ns": 0}, {"sim_time_ns": None}, {"sim_time_ns": "bad"}]
+    )
+    def test_unusable_stamp_refuses_instead_of_falling_back_unbarriered(self, metadata):
+        """CON-5/TC-2 (PR #176 review): without a usable park stamp the
+        executor must reply fail-closed. Omitting the barrier from an
+        otherwise-successful reply reopens the stale-frame wall race."""
+        assert park_read_reply({"ok": True, "range_m": 0.13}, metadata) == {
+            "ok": False,
+            "reason": "missing_park_stamp",
+        }
+
+
 class TestTaskStateMachine:
     def test_goal_emits_target_request_and_feedback_until_result(self):
         """CAP-5 task-state-machine + TC-7: a goal emits a target_request
@@ -249,8 +269,16 @@ class TestT2ScanTour:
         assert len(machine.candidates) == 2  # target + one real row
 
     def test_move_done_asks_the_reader_relaying_the_camera_pose(self):
+        """CON-5/TC-2: the read request carries the completed park's
+        sim-time barrier so downstream frame selection cannot depend on
+        which queued wrist frame wins a wall-clock delivery race."""
         machine, _ = self._touring_machine()
-        pose = {"face": [1, 2, 3], "cam_pos": [4, 5, 6], "cam_rot_cv": list(range(9))}
+        pose = {
+            "face": [1, 2, 3],
+            "cam_pos": [4, 5, 6],
+            "cam_rot_cv": list(range(9)),
+            "frame_after_sim_time_ns": 42,
+        }
         out = machine.on_move_done(
             {"ok": True, "range_m": 0.16, "attempt_used": 0, **pose}, "ep-1/read0.0"
         )

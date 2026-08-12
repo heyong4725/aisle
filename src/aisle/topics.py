@@ -11,6 +11,24 @@ def stamp(metadata: dict, seq: int) -> dict:
     return {"sim_time_ns": 0, "env_id": 0, **metadata, "seq": seq}
 
 
+def parse_sim_stamp(metadata: dict) -> int | None:
+    """TOTAL sim_time_ns read (TC-2 trust boundary): None when the stamp is
+    absent, zero, or malformed — all three mean 'no usable sim clock on
+    this message'. Zero maps to None because `stamp()` above defaults a
+    missing stamp to 0, so a genuine 0 is indistinguishable from an
+    unstamped source; a consumer that treated 0 as a real time would
+    anchor a comparison at the start of the run.
+
+    Total by construction: a malformed stamp from any upstream node must
+    degrade the consumer's decision, never raise out of its event loop
+    (BG-3; issue #160 item 1, generalized here once three nodes needed it)."""
+    try:
+        stamp_ns = int(metadata.get("sim_time_ns", 0))
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return stamp_ns if stamp_ns > 0 else None
+
+
 def make_sender(node, env_pin: int | None = None):
     """TC-2 sender: per-topic monotonic seq + stamp around node.send_output.
     Every AISLE node's send path in one place (six copies before this).

@@ -11,10 +11,25 @@ templates. Margin floor pre-registered at 0.04; measured min margin was
 +0.227 at the exact read pose and +0.226 under 5 mm read-pose noise.
 
 Service pattern (TC-6 style): a `read_request` arms the session; the
-FIRST wrist frame that arrives after it is read once, and `read_result`
-replies with the request's `request_id`. Reading below the margin floor
-refuses (label null) rather than guessing — a wrong-med grasp is the
-one outcome T2 exists to prevent (TC-9 refusal discipline).
+first wrist frame whose SIM timestamp is strictly after the completed
+read park is read once, and `read_result` replies with the request's
+`request_id`. This freshness barrier makes frame selection independent
+of wall-clock delivery order (CON-5/TC-2).
+
+The wrist input stays LATEST-WINS (expert_t2.yaml queue_size 1) and
+should not be "fixed" to a deep queue: measured on a live T2 episode,
+the park barrier is cleared by the very next delivered frame (20-30 ms
+of sim time later, eight for eight reads), because depth-1 delivery
+always hands this slow consumer the newest rendered frame. A deep queue
+instead makes it drain a backlog — at queue_size 120 the same episode
+read frames stamped ~60 SIM SECONDS before their own park (PR #176
+review measured both).
+
+Reading below the margin floor refuses (label null) rather than
+guessing — a wrong-med grasp is the one outcome T2 exists to prevent
+(TC-9 refusal discipline) — and so does a barrier no frame clears before
+its simulation-time deadline, so every armed request replies exactly once
+even when the wrist stream emits no frames.
 """
 
 from __future__ import annotations
@@ -22,6 +37,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+
+from aisle.topics import parse_sim_stamp
 
 MARGIN_FLOOR = 0.04  # pre-registered with I13, before any live read ran
 # pitched (look-down) views can slide enough neighbour texture into the
@@ -36,6 +53,14 @@ MIN_CROP_PX = 12
 # ROLLED wrist view; a frame-axis-aligned crop must be unrolled by 270°
 # (measured: the other three rotations score 1/5 on the same crops)
 LABEL_ROTATION_K = 3  # np.rot90 quarter-turns
+# The park-complete event crosses ik -> state machine -> reader while wrist
+# RGB continues at 30 Hz. Retain enough already-consumed frames to recover
+# the first post-park sample even when that dialogue is delayed by ~1 sim-s.
+FRAME_BUFFER_SIZE = 32
+# Independent sim-time deadline for an armed read. A bridge joint-state
+# heartbeat drives it even if the wrist camera emits zero events; unlike a
+# delivered-frame count, latest-wins queue drops cannot move the deadline.
+READ_TIMEOUT_SIM_NS = 3_000_000_000
 
 
 def ink_prob(image: np.ndarray, blur_px: float = 1.0) -> np.ndarray:
@@ -285,11 +310,14 @@ def detect_box_centre(
 
 @dataclass(kw_only=True)
 class ReaderSession:
-    """Once-per-request read of the first frame AFTER the request —
-    the arm parks before the state machine asks, so any frame from then
-    on shows the settled read pose (same one-shot discipline as
-    FramePairSession: a refused read still REPLIES, the tour must not
-    hang)."""
+    """Once-per-request read of the first frame strictly newer than the
+    completed park's sim-time barrier. Queued RGB and request events can
+    arrive in either wall order; only sim order decides eligibility.
+
+    Every armed request REPLIES exactly once: an eligible frame answers it,
+    or the independent sim-stamped heartbeat expires it even if the camera
+    emits no events. The deadline is a function of simulation time, not host
+    scheduling or queue drops (CON-5)."""
 
     meds: dict
     templates: dict[str, np.ndarray]
@@ -299,11 +327,22 @@ class ReaderSession:
     find_centre: object = None
     intrinsics: dict | None = None
     pending: dict | None = field(default=None)
+    recent_frames: list[tuple[int, np.ndarray]] = field(default_factory=list, repr=False)
+    last_read_sim_time_ns: int = field(default=-1, init=False)
+    # sim stamp of the newest reset consumed; a request barriered at or
+    # before it belongs to the previous episode (see on_reset_done)
+    last_reset_sim_time_ns: int = field(default=-1, init=False)
 
     def on_bridge_info(self, info: dict) -> None:
         self.intrinsics = info["calibration"]["wrist"]["intrinsics"]
 
-    def on_read_request(self, request: dict, request_id: str) -> None:
+    def on_read_request(self, request: dict, request_id: str) -> dict | None:
+        barrier = parse_sim_stamp({"sim_time_ns": request.get("frame_after_sim_time_ns", 0)})
+        if barrier is not None and barrier <= self.last_reset_sim_time_ns:
+            # reset_done and read_request are independent queues. Reply to a
+            # delayed request from the ended episode without replacing a live
+            # request already armed for the new episode.
+            return self._refusal(request_id, "stale_read_request")
         pose = None
         if request.get("cam_pos") is not None and request.get("cam_rot_cv") is not None:
             pose = {
@@ -312,21 +351,97 @@ class ReaderSession:
                 "cam_rot_cv": np.asarray(request["cam_rot_cv"], dtype=np.float64).reshape(3, 3),
             }
         centre = request.get("centre_px")
+        # An ABSENT key is the unbarriered path (manual requests, and a park
+        # whose own stamp was unusable): the next delivered frame answers it,
+        # which is this reader's pre-barrier behavior. A present key is
+        # always a real sim time — the executor never sends a zero barrier,
+        # because a zero would be cleared by every stamped frame including
+        # mid-park ones (PR #176 review).
         self.pending = {
             "request_id": request_id,
             "range_m": float(request["range_m"]),
+            "frame_after_sim_time_ns": barrier,
             "centre_px": (float(centre[0]), float(centre[1])) if centre else None,
             "pose": pose,
             "floor": PITCHED_MARGIN_FLOOR if request.get("pitched") else MARGIN_FLOOR,
         }
+        if barrier is None or self.intrinsics is None:
+            return None
+        eligible = [(stamp, frame) for stamp, frame in self.recent_frames if stamp > barrier]
+        if not eligible:
+            return None
+        stamp, frame = min(eligible, key=lambda item: item[0])
+        self.recent_frames = [item for item in self.recent_frames if item[0] > stamp]
+        return self._read(frame, stamp)
 
-    def on_reset_done(self) -> None:
-        self.pending = None
+    def on_reset_done(self, sim_time_ns: int | None = None) -> None:
+        """Drop everything belonging to the ended episode.
 
-    def on_rgb(self, rgb: np.ndarray) -> dict | None:
-        """-> read_result payload once per pending request, else None."""
+        Fenced by sim time (PR #176 review): reset_done and read_request
+        reach this node on independent queues, so a reset delayed past the
+        next episode's first request would otherwise clear a LIVE request
+        and hang that tour — the state machine ignores replies it is not
+        awaiting, so nothing downstream would ever notice. A request
+        barriered strictly after the reset is from the new episode and
+        survives; frames are kept on the same rule."""
+        reset_ns = sim_time_ns if sim_time_ns is not None else None
+        if reset_ns is not None and reset_ns > self.last_reset_sim_time_ns:
+            self.last_reset_sim_time_ns = reset_ns
+        if reset_ns is None:
+            self.pending = None
+            self.recent_frames.clear()
+        else:
+            barrier = (self.pending or {}).get("frame_after_sim_time_ns")
+            if barrier is None or barrier <= reset_ns:
+                self.pending = None
+            self.recent_frames = [item for item in self.recent_frames if item[0] > reset_ns]
+        self.last_read_sim_time_ns = -1
+
+    def on_rgb(self, rgb: np.ndarray, sim_time_ns: int | None = None) -> dict | None:
+        """Return one read_result for the first sim-eligible frame."""
+        stamp = sim_time_ns if sim_time_ns is not None and sim_time_ns > 0 else None
+        if stamp is not None:
+            self.recent_frames.append((stamp, rgb))
+            self.recent_frames.sort(key=lambda item: item[0])
+            self.recent_frames = self.recent_frames[-FRAME_BUFFER_SIZE:]
         if self.pending is None or self.intrinsics is None:
             return None
+        barrier = self.pending["frame_after_sim_time_ns"]
+        if barrier is not None and (stamp is None or stamp <= barrier):
+            return None  # the independent sim heartbeat owns the deadline
+        if stamp is not None:
+            self.recent_frames = [item for item in self.recent_frames if item[0] > stamp]
+        return self._read(rgb, stamp)
+
+    def on_clock(self, sim_time_ns: int | None) -> dict | None:
+        """Expire a barriered request from an independent SIM heartbeat."""
+        if self.pending is None or sim_time_ns is None:
+            return None
+        barrier = self.pending["frame_after_sim_time_ns"]
+        if barrier is None or sim_time_ns <= barrier + READ_TIMEOUT_SIM_NS:
+            return None
+        return self._refuse_pending("no_frame_after_park")
+
+    @staticmethod
+    def _refusal(request_id: str, reason: str) -> dict:
+        return {
+            "request_id": request_id,
+            "label": None,
+            "margin": 0.0,
+            "scores": {},
+            "reason": reason,
+        }
+
+    def _refuse_pending(self, reason: str) -> dict:
+        """Reply with a refusal and release the current request."""
+        pending, self.pending = self.pending, None
+        self.last_read_sim_time_ns = -1
+        return self._refusal(pending["request_id"], reason)
+
+    def _read(self, rgb: np.ndarray, sim_time_ns: int | None) -> dict:
+        """Consume the pending request against one sim-eligible frame."""
+        assert self.pending is not None
+        self.last_read_sim_time_ns = sim_time_ns if sim_time_ns is not None else -1
         pending, self.pending = self.pending, None
         h, w = rgb.shape[:2]
         if pending["pose"] is not None:
@@ -402,6 +517,39 @@ def main() -> None:  # pragma: no cover — dora runtime
         find_centre=lambda rgb, prior: detect_box_centre(rgb, med_names, model_pair, prior),
     )
 
+    def publish_result(result: dict | None, barrier: int | None = None) -> None:
+        if result is None:
+            return
+        # Protocol refusals have no supporting image. Do not accidentally
+        # stamp one with the previous successful read's session-level value.
+        read_stamp = -1 if result.get("reason") else session.last_read_sim_time_ns
+        if result.get("reason") == "no_frame_after_park":
+            print(
+                f"read refused: no wrist frame before the park deadline ({result['request_id']})",
+                file=sys.stderr,
+            )
+        elif result.get("reason") == "stale_read_request":
+            print(f"read refused: stale request {result['request_id']}", file=sys.stderr)
+        elif result["label"] is None:
+            print(
+                f"read refused: margin {result['margin']:.3f} < {MARGIN_FLOOR}",
+                file=sys.stderr,
+            )
+        # The barrier's own evidence line (PR #176 review): the live graph
+        # test asserts every anchored read chose a frame STRICTLY after its
+        # park, which is what proves the mechanism worked in a real run —
+        # an outcome assertion cannot, because CON-5 layer (d) makes the
+        # episode outcome statistical.
+        if barrier is not None and read_stamp >= 0:
+            print(
+                f"read anchored: barrier={barrier} frame={read_stamp} ({result['request_id']})",
+                file=sys.stderr,
+            )
+        output_metadata = {"request_id": result["request_id"]}
+        if read_stamp >= 0:
+            output_metadata["sim_time_ns"] = read_stamp
+        send("read_result", pa.array([json.dumps(result)]), output_metadata)
+
     for event in node:
         if event["type"] != "INPUT":
             continue
@@ -410,27 +558,31 @@ def main() -> None:  # pragma: no cover — dora runtime
             session.on_bridge_info(json.loads(event["value"][0].as_py()))
         elif event["id"] == "read_request":
             request = json.loads(event["value"][0].as_py())
-            session.on_read_request(request, metadata.get("request_id", ""))
+            # read the barrier BEFORE the call: an immediately-answered
+            # request has already cleared session.pending by the time it
+            # returns, and the anchored-read line needs the barrier it used
+            barrier = parse_sim_stamp({"sim_time_ns": request.get("frame_after_sim_time_ns", 0)})
+            publish_result(
+                session.on_read_request(request, metadata.get("request_id", "")), barrier
+            )
         elif event["id"] == "reset_done":
-            session.on_reset_done()
+            session.on_reset_done(parse_sim_stamp(metadata))
+        elif event["id"] == "clock":
+            barrier = (session.pending or {}).get("frame_after_sim_time_ns")
+            publish_result(session.on_clock(parse_sim_stamp(metadata)), barrier)
         elif event["id"] == "rgb_wrist":
             h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
             if h <= 0 or w <= 0:
                 print(f"rgb_wrist frame skipped: h={h} w={w}", file=sys.stderr)
                 continue
             frame = np.asarray(event["value"].to_numpy(zero_copy_only=False))
-            result = session.on_rgb(frame.astype(np.uint8).reshape(h, w, 3))
-            if result is None:
-                continue
-            if result["label"] is None:
-                print(
-                    f"read refused: margin {result['margin']:.3f} < {MARGIN_FLOOR}",
-                    file=sys.stderr,
-                )
-            send(
-                "read_result",
-                pa.array([json.dumps(result)]),
-                {"request_id": result["request_id"]},
+            barrier = (session.pending or {}).get("frame_after_sim_time_ns")
+            publish_result(
+                session.on_rgb(
+                    frame.astype(np.uint8).reshape(h, w, 3),
+                    sim_time_ns=parse_sim_stamp(metadata),
+                ),
+                barrier,
             )
 
 

@@ -23,6 +23,7 @@ from aisle.nodes.budget_guard import (
     gripper_to_fingers,
     load_limits,
 )
+from aisle.topics import parse_sim_stamp
 
 # Panda hand: flange plate -> TCP between the fingertips
 TCP_OFFSET = 0.1034
@@ -55,6 +56,19 @@ STAGE_BAIL_S = 4.0
 # tests/unit/test_ik_trajectory.py
 GRIP_STEP_PER_TICK = 0.010
 GRIP_SEND_EVERY = 4
+
+
+def park_read_reply(payload: dict, metadata: dict) -> dict:
+    """Attach the completed park's TC-2 clock barrier, or refuse.
+
+    A successful reply without a usable stamp would make the reader fall
+    back to arrival order and reopen issue #153's stale-frame wall race.
+    Returning an ordinary failed move keeps the service reply guarantee and
+    lets the scan tour advance fail-closed."""
+    park_stamp = parse_sim_stamp(metadata)
+    if park_stamp is None:
+        return {"ok": False, "reason": "missing_park_stamp"}
+    return {**payload, "frame_after_sim_time_ns": park_stamp}
 
 
 def grip_ramp_tick(current: float, target: float, tick: int) -> tuple[float, int, bool]:
@@ -1175,6 +1189,24 @@ def main() -> None:
                         "cam_pos": [float(v) for v in cam_pos],
                         "cam_rot_cv": [float(v) for v in cam_rot_cv.reshape(-1)],
                     }
+                    # The reader must choose a frame by SIM order, not
+                    # whichever queued RGB event wins a wall-clock race with
+                    # this six-hop read dialogue (CON-5/TC-2). Strictly-newer
+                    # eligibility also guarantees one rendered tick after the
+                    # terminal tracked pose.
+                    #
+                    # Defaulting a missing stamp to 0 would arm a barrier that
+                    # EVERY stamped frame clears, including frames captured
+                    # during the park motion. park_read_reply instead turns an
+                    # unusable stamp into an explicit failed move so the tour
+                    # advances without ever entering an unbarriered read.
+                    payload = park_read_reply(payload, metadata)
+                    if not payload["ok"]:
+                        print(
+                            "read park refused: no usable sim stamp for "
+                            f"{pending_read['request_id']}",
+                            file=sys.stderr,
+                        )
                     send(
                         "move_done",
                         pa.array([json.dumps(payload)]),

@@ -218,10 +218,12 @@ class TaskStateMachine:
         request: dict = {"range_m": float(payload["range_m"])}
         if payload.get("pitched"):
             request["pitched"] = True  # the reader raises its margin floor
-        for key in ("face", "cam_pos", "cam_rot_cv"):
+        for key in ("face", "cam_pos", "cam_rot_cv", "frame_after_sim_time_ns"):
             # the executor's ACHIEVED camera pose: the reader rectifies
             # the face quad through it (first live tour read a neighbour
-            # box confidently wrong without it)
+            # box confidently wrong without it). Its sim-time barrier
+            # selects a strictly later wrist frame independent of wall
+            # delivery order.
             if payload.get(key) is not None:
                 request[key] = payload[key]
         return [("read_request", request, {"request_id": request_id})]
