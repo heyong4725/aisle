@@ -212,24 +212,33 @@ def test_expert_t2_episode_closes_without_wrong_object(tmp_path):
         for line in (tmp_path / "trace.jsonl").read_text().splitlines()
         if line.strip()
     ]
-    # Pair each read with the park that armed it IN ORDER: the tour reuses
-    # request_ids across passes (a re-toured candidate is `read0.0` again),
-    # so keying a dict by request_id would compare one pass's read against
-    # another pass's barrier.
-    armed, checked, stale = {}, 0, []
+    # Pair each read with the park that armed it in per-producer order. The
+    # tour reuses request_ids across passes, so retain a list per id and zip
+    # the sequences rather than collapsing each id to one record.
+    parks, replies = {}, {}
     for row in rows:
         rid = row["metadata"].get("request_id")
         if row["id"] == "move_done":
-            barrier = json.loads(row["text"]).get("frame_after_sim_time_ns")
-            if barrier is not None:
-                armed[rid] = int(barrier)
-        elif row["id"] == "read_result" and rid in armed:
-            barrier = armed.pop(rid)
-            frame = row["metadata"].get("sim_time_ns")
-            if frame is None:  # a refusal carries no frame stamp
-                continue
-            checked += 1
-            if int(frame) <= barrier:
-                stale.append((rid, barrier, int(frame)))
-    assert checked, f"no barriered read completed in the episode; records={records}"
+            payload = json.loads(row["text"])
+            if payload.get("ok"):
+                parks.setdefault(rid, []).append(payload.get("frame_after_sim_time_ns"))
+        elif row["id"] == "read_result":
+            replies.setdefault(rid, []).append(
+                (json.loads(row["text"]), row["metadata"].get("sim_time_ns"))
+            )
+    assert parks, f"no successful read park completed; records={records}"
+    missing_barriers = [
+        rid for rid, values in parks.items() for barrier in values if barrier is None
+    ]
+    assert not missing_barriers, f"successful parks without a sim barrier: {missing_barriers}"
+    assert {rid: len(v) for rid, v in replies.items()} == {
+        rid: len(v) for rid, v in parks.items()
+    }, f"every successful park must have exactly one reply: parks={parks}, replies={replies}"
+    stale = []
+    for rid, barriers in parks.items():
+        for barrier, (payload, frame) in zip(barriers, replies[rid], strict=True):
+            if frame is None:
+                assert payload.get("reason") == "no_frame_after_park", (rid, payload)
+            elif int(frame) <= int(barrier):
+                stale.append((rid, int(barrier), int(frame)))
     assert not stale, f"read(s) answered from a frame at or before their park: {stale}"

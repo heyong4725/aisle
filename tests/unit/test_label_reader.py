@@ -289,38 +289,33 @@ class TestReaderSession:
         )
         assert session.on_rgb(frame, sim_time_ns=9)["label"] == "cetirizine"
 
-    def test_barriered_request_refuses_and_replies_when_no_frame_clears(self, meds, templates):
-        """PR #176 review: a barrier no frame ever clears must not hang the
-        tour. The state machine has no read timeout, so before this the only
-        bound was the episode deadline. After BARRIER_FRAME_BUDGET
-        ineligible frames the read refuses and REPLIES."""
-        from aisle.nodes.label_reader import BARRIER_FRAME_BUDGET
+    def test_sim_deadline_refuses_and_replies_with_no_rgb_events(self, meds, templates):
+        """CON-5/TC-2 (PR #176 review): a silent or dead wrist producer
+        emits zero frames, so the reply guarantee needs an independent
+        contract-clock deadline rather than a delivered-frame count."""
+        from aisle.nodes.label_reader import READ_TIMEOUT_SIM_NS
 
         session = self._session(meds, templates)
-        frame = camera_view_frame(meds, templates, "metformin")
         session.on_read_request(
             {"range_m": RANGE_M, "frame_after_sim_time_ns": 1_000}, "ep-1/read0"
         )
-        for _ in range(BARRIER_FRAME_BUDGET - 1):
-            assert session.on_rgb(frame, sim_time_ns=500) is None  # all pre-barrier
-        result = session.on_rgb(frame, sim_time_ns=500)
+        assert session.on_clock(1_000 + READ_TIMEOUT_SIM_NS) is None
+        result = session.on_clock(1_000 + READ_TIMEOUT_SIM_NS + 1)
         assert result["request_id"] == "ep-1/read0"
         assert result["label"] is None  # refused, not guessed
         assert result["reason"] == "no_frame_after_park"
         assert session.pending is None  # and the session is free for the next read
 
-    def test_unstamped_frame_stream_still_replies(self, meds, templates):
-        """The same bound covers a stamp chain that goes silent entirely:
-        unstamped frames can never clear a barrier, so without the budget
-        the request would wait forever."""
-        from aisle.nodes.label_reader import BARRIER_FRAME_BUDGET
+    def test_unstamped_frame_stream_still_replies_on_sim_deadline(self, meds, templates):
+        """Unstamped wrist frames cannot clear the barrier; the independent
+        sim heartbeat still bounds the request."""
+        from aisle.nodes.label_reader import READ_TIMEOUT_SIM_NS
 
         session = self._session(meds, templates)
         frame = camera_view_frame(meds, templates, "metformin")
         session.on_read_request({"range_m": RANGE_M, "frame_after_sim_time_ns": 10}, "r")
-        results = [session.on_rgb(frame) for _ in range(BARRIER_FRAME_BUDGET)]
-        assert all(r is None for r in results[:-1])
-        assert results[-1]["reason"] == "no_frame_after_park"
+        assert session.on_rgb(frame) is None
+        assert session.on_clock(10 + READ_TIMEOUT_SIM_NS + 1)["reason"] == "no_frame_after_park"
 
     def test_late_reset_does_not_clear_a_newer_episodes_request(self, meds, templates):
         """PR #176 review: reset_done and read_request arrive on independent
@@ -336,6 +331,24 @@ class TestReaderSession:
 
         assert session.pending is not None, "a live request was cleared by a stale reset"
         assert session.on_rgb(frame, sim_time_ns=901)["request_id"] == "ep-2/read0"
+
+    def test_delayed_pre_reset_request_does_not_replace_live_request(self, meds, templates):
+        """PR #176 review: the reverse independent-queue ordering is
+        fenced too. After reset 500 and a live request at 900, a delayed
+        old request at 100 is refused without overwriting the live one."""
+        session = self._session(meds, templates)
+        frame = camera_view_frame(meds, templates, "omeprazole")
+        session.on_reset_done(sim_time_ns=500)
+        session.on_read_request({"range_m": RANGE_M, "frame_after_sim_time_ns": 900}, "new")
+
+        stale = session.on_read_request(
+            {"range_m": RANGE_M, "frame_after_sim_time_ns": 100}, "old-delayed"
+        )
+
+        assert stale["request_id"] == "old-delayed"
+        assert stale["reason"] == "stale_read_request"
+        assert session.pending["request_id"] == "new"
+        assert session.on_rgb(frame, sim_time_ns=901)["request_id"] == "new"
 
     def test_reset_clears_a_request_from_the_ended_episode(self, meds, templates):
         """The fence cuts the other way too: a request barriered at or

@@ -23,6 +23,7 @@ from aisle.nodes.budget_guard import (
     gripper_to_fingers,
     load_limits,
 )
+from aisle.topics import parse_sim_stamp
 
 # Panda hand: flange plate -> TCP between the fingertips
 TCP_OFFSET = 0.1034
@@ -55,6 +56,19 @@ STAGE_BAIL_S = 4.0
 # tests/unit/test_ik_trajectory.py
 GRIP_STEP_PER_TICK = 0.010
 GRIP_SEND_EVERY = 4
+
+
+def park_read_reply(payload: dict, metadata: dict) -> dict:
+    """Attach the completed park's TC-2 clock barrier, or refuse.
+
+    A successful reply without a usable stamp would make the reader fall
+    back to arrival order and reopen issue #153's stale-frame wall race.
+    Returning an ordinary failed move keeps the service reply guarantee and
+    lets the scan tour advance fail-closed."""
+    park_stamp = parse_sim_stamp(metadata)
+    if park_stamp is None:
+        return {"ok": False, "reason": "missing_park_stamp"}
+    return {**payload, "frame_after_sim_time_ns": park_stamp}
 
 
 def grip_ramp_tick(current: float, target: float, tick: int) -> tuple[float, int, bool]:
@@ -993,7 +1007,7 @@ def main() -> None:
     from dora import Node
 
     from aisle.scenes.pharmacy import load_physics, resolve_layout, wrist_mount_transform
-    from aisle.topics import env_accepts, env_pin_from_env, make_sender, parse_sim_stamp
+    from aisle.topics import env_accepts, env_pin_from_env, make_sender
 
     embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
     physics = load_physics()
@@ -1181,23 +1195,18 @@ def main() -> None:
                     # eligibility also guarantees one rendered tick after the
                     # terminal tracked pose.
                     #
-                    # The key is set ONLY from a usable stamp. Defaulting a
-                    # missing stamp to 0 would arm a barrier that EVERY
-                    # stamped frame clears, including frames captured during
-                    # the park motion — fail-open to exactly the stale-frame
-                    # class this barrier exists to close (PR #176 review).
-                    # Omitted, the reader falls back to its unbarriered path
-                    # and this log is the detector.
-                    park_stamp = parse_sim_stamp(metadata)
-                    if park_stamp is None:
+                    # Defaulting a missing stamp to 0 would arm a barrier that
+                    # EVERY stamped frame clears, including frames captured
+                    # during the park motion. park_read_reply instead turns an
+                    # unusable stamp into an explicit failed move so the tour
+                    # advances without ever entering an unbarriered read.
+                    payload = park_read_reply(payload, metadata)
+                    if not payload["ok"]:
                         print(
-                            "read park has no usable sim stamp: "
-                            "read freshness is UNBARRIERED for "
+                            "read park refused: no usable sim stamp for "
                             f"{pending_read['request_id']}",
                             file=sys.stderr,
                         )
-                    else:
-                        payload["frame_after_sim_time_ns"] = park_stamp
                     send(
                         "move_done",
                         pa.array([json.dumps(payload)]),
