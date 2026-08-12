@@ -14,7 +14,7 @@ from aisle.nodes.grasp_topdown import (
     topdown_quat,
     yaw_of,
 )
-from aisle.nodes.ik_trajectory import quat_to_rotation
+from aisle.nodes.ik_trajectory import park_read_reply, quat_to_rotation
 from aisle.nodes.oracle_pose import select_pose
 from aisle.nodes.task_state_machine import TaskStateMachine
 from aisle.scenes.pharmacy import MED_NAMES
@@ -176,6 +176,26 @@ class TestGraspTopdown:
         axis = quat_to_rotation(grasp[3:])[:, 2]
         assert axis == pytest.approx([1.0, 0.0, 0.0], abs=1e-6)  # into the shelf
         assert approach == pytest.approx(0.55 - (0.40 - 0.06), abs=1e-6)
+
+
+class TestReadParkReply:
+    def test_usable_stamp_arms_strictly_newer_frame_barrier(self):
+        """CON-5/TC-2: a completed park with a usable contract stamp
+        carries that stamp into the reader request."""
+        payload = park_read_reply({"ok": True, "range_m": 0.13}, {"sim_time_ns": 42})
+        assert payload == {"ok": True, "range_m": 0.13, "frame_after_sim_time_ns": 42}
+
+    @pytest.mark.parametrize(
+        "metadata", [{}, {"sim_time_ns": 0}, {"sim_time_ns": None}, {"sim_time_ns": "bad"}]
+    )
+    def test_unusable_stamp_refuses_instead_of_falling_back_unbarriered(self, metadata):
+        """CON-5/TC-2 (PR #176 review): without a usable park stamp the
+        executor must reply fail-closed. Omitting the barrier from an
+        otherwise-successful reply reopens the stale-frame wall race."""
+        assert park_read_reply({"ok": True, "range_m": 0.13}, metadata) == {
+            "ok": False,
+            "reason": "missing_park_stamp",
+        }
 
 
 class TestTaskStateMachine:
