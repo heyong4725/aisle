@@ -40,7 +40,10 @@ L (D6 rationale).
    (`harness/CLAUDE.research.md`), per-scenario budgets, and argv.
    Mid-campaign human help ONLY via committed CLAUDE.research.md diffs,
    each reported with the results (contract rule §0) — any such diff
-   applies to BOTH arms' remaining scenarios or is void.
+   applies to BOTH arms' remaining scenarios or is void. Historical pins
+   preceding issue #91's native harness support receive the same recorded,
+   session-only baseline compatibility adapter as ADR-h2; arm wipes may remove
+   worktree state but cannot remove that external treatment-pin enforcement.
 2. **The research contract governs the sessions.** Each scenario session
    is a fresh agent run under `harness/CLAUDE.research.md`: frozen-set
    enforcement validates the campaign-pinned OID against protected
