@@ -762,10 +762,16 @@ def test_scenario_session_runs_under_the_isolated_home(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(h3, "registered_skill_ids", lambda wt: set())
     monkeypatch.setattr(h3, "skill_reuse", lambda *a: [])
+    monkeypatch.setattr(
+        h3,
+        "attach_historical_baseline_compat",
+        lambda wt, session, pin, env: {"mode": "native", "pin": pin},
+    )
     launch = h3.host_dora_runtime()
+    pin = "d" * 40
     rec = h3.run_scenario(
         tmp_path,
-        "deadbeef",
+        pin,
         "W",
         {"tier": "S1", "tokens": 1000, "episodes": 8, "wall_h": 1.0},
         tmp_path / "out",
@@ -775,9 +781,10 @@ def test_scenario_session_runs_under_the_isolated_home(tmp_path, monkeypatch):
     )
     session_dir = tmp_path / "out" / "arm_W" / "S1"
     assert seen["env"]["HOME"] == str(session_dir / "agent_home")
-    assert seen["env"]["AISLE_ENV_BASELINE"] == "deadbeef"
+    assert seen["env"]["AISLE_ENV_BASELINE"] == pin
     assert rec["session_isolation"]["home"] == str(session_dir / "agent_home")
-    assert rec["session_isolation"]["env_baseline_oid"] == "deadbeef"
+    assert rec["session_isolation"]["env_baseline_oid"] == pin
+    assert rec["session_isolation"]["baseline_compat"] == {"mode": "native", "pin": pin}
     assert "runtime_drift" not in rec
 
 
