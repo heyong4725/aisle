@@ -267,6 +267,58 @@ def test_reset_quarantine_zero_ticks_never_holds():
     assert q.hold() is False
 
 
+class TestPerEnvQuarantine:
+    """BRG-5 fleet mode: quarantine is PER ENV — a reset of env k must
+    not freeze the other envs' episodes."""
+
+    def test_single_env_arm_holds_only_that_env(self):
+        q = ResetQuarantine(2, n_envs=3)
+        q.arm(1)
+        assert q.held(1) and not q.held(0) and not q.held(2)
+        q.tick()
+        assert q.held(1)
+        q.tick()
+        assert not q.held(1) and not q.any_held()
+
+    def test_arm_all_covers_every_env(self):
+        q = ResetQuarantine(1, n_envs=2)
+        q.arm(None)
+        assert q.held(0) and q.held(1)
+        q.tick()
+        assert not q.any_held()
+
+    def test_legacy_hold_advances_and_reports(self):
+        """The single-env path's contract is unchanged: hold() True for
+        exactly `ticks` calls after arm()."""
+        q = ResetQuarantine(3)
+        q.arm()
+        assert [q.hold() for _ in range(5)] == [True, True, True, False, False]
+
+
+class TestPerEnvDrain:
+    """BRG-5 fleet mode: a per-env reset drains only its own env's
+    pending commands."""
+
+    def test_env_scoped_drain_leaves_other_envs(self):
+        from aisle.nodes.dora_genesis import CommandQueue as CommandCoalescer
+
+        c = CommandCoalescer(3)
+        c.push("joint_cmd", 0, "a")
+        c.push("joint_cmd", 1, "b")
+        c.push("gripper_cmd", 1, "c")
+        c.push("joint_cmd", 2, "d")
+        drained = c.drain(1)
+        assert [(k, e, p) for k, e, p, _ in drained] == [
+            ("joint_cmd", 1, "b"),
+            ("gripper_cmd", 1, "c"),
+        ]
+        rest = c.drain()
+        assert [(k, e, p) for k, e, p, _ in rest] == [
+            ("joint_cmd", 0, "a"),
+            ("joint_cmd", 2, "d"),
+        ]
+
+
 def test_perception_rung_from_env_defaults_l0():
     """TC-9: the rung comes from the graph node's env, defaults to L0, and is
     read case-insensitively. An UNRECOGNIZED rung refuses rather than falling
