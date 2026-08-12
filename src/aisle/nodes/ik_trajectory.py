@@ -993,7 +993,7 @@ def main() -> None:
     from dora import Node
 
     from aisle.scenes.pharmacy import load_physics, resolve_layout, wrist_mount_transform
-    from aisle.topics import env_accepts, env_pin_from_env, make_sender
+    from aisle.topics import env_accepts, env_pin_from_env, make_sender, parse_sim_stamp
 
     embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
     physics = load_physics()
@@ -1166,12 +1166,6 @@ def main() -> None:
                         "ok": True,
                         "range_m": range_m,
                         "attempt_used": pending_read["attempt_idx"],
-                        # The reader must choose a frame by SIM order, not
-                        # whichever queued RGB event wins a wall-clock race
-                        # with this six-hop read dialogue (CON-5/TC-2).
-                        # Strictly-newer eligibility also guarantees one
-                        # rendered tick after the terminal tracked pose.
-                        "frame_after_sim_time_ns": int(metadata.get("sim_time_ns", 0)),
                         # a pitched view carries a wrong-read hazard the
                         # reader must guard with a higher margin floor
                         # (measured: amoxicillin-at-pitch reads a
@@ -1181,6 +1175,29 @@ def main() -> None:
                         "cam_pos": [float(v) for v in cam_pos],
                         "cam_rot_cv": [float(v) for v in cam_rot_cv.reshape(-1)],
                     }
+                    # The reader must choose a frame by SIM order, not
+                    # whichever queued RGB event wins a wall-clock race with
+                    # this six-hop read dialogue (CON-5/TC-2). Strictly-newer
+                    # eligibility also guarantees one rendered tick after the
+                    # terminal tracked pose.
+                    #
+                    # The key is set ONLY from a usable stamp. Defaulting a
+                    # missing stamp to 0 would arm a barrier that EVERY
+                    # stamped frame clears, including frames captured during
+                    # the park motion — fail-open to exactly the stale-frame
+                    # class this barrier exists to close (PR #176 review).
+                    # Omitted, the reader falls back to its unbarriered path
+                    # and this log is the detector.
+                    park_stamp = parse_sim_stamp(metadata)
+                    if park_stamp is None:
+                        print(
+                            "read park has no usable sim stamp: "
+                            "read freshness is UNBARRIERED for "
+                            f"{pending_read['request_id']}",
+                            file=sys.stderr,
+                        )
+                    else:
+                        payload["frame_after_sim_time_ns"] = park_stamp
                     send(
                         "move_done",
                         pa.array([json.dumps(payload)]),

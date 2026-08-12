@@ -25,15 +25,40 @@ pytestmark = [
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _run_expert_graph(tmp_path, graph_name: str, env_overrides: dict) -> tuple:
+def _run_expert_graph(
+    tmp_path, graph_name: str, env_overrides: dict, record_topics: dict | None = None
+) -> tuple:
     """One seeded episode through a graphs/ file verbatim, from a TEMP COPY
     with absolutized node paths: dora spawns nodes with cwd = the yaml's
     directory, and the orphan reaper is scoped by that cwd — running from
     the shared graphs/ dir would let cleanup SIGKILL unrelated developer
-    runs (PR #10 review)."""
+    runs (PR #10 review).
+
+    `record_topics` ({input_name: "producer/output"}) taps those topics with
+    the trace-recorder fixture into tmp_path/'trace.jsonl'. dora run does
+    NOT forward node stderr to this process, so an assertion about what a
+    node did inside the run has to travel on a topic (PR #176 review)."""
     import yaml as yaml_module
 
     graph_doc = yaml_module.safe_load((REPO_ROOT / "graphs" / graph_name).read_text())
+    if record_topics:
+        graph_doc["nodes"].append(
+            {
+                "id": "trace-recorder",
+                "path": str((REPO_ROOT / "tests" / "fixtures" / "nodes" / "recorder.py").resolve()),
+                "inputs": {
+                    name: {"source": source, "queue_size": 400}
+                    for name, source in record_topics.items()
+                },
+                "env": {
+                    "RECORDER_OUT": str(tmp_path / "trace.jsonl"),
+                    # outlive the episode: the recorder is torn down with the
+                    # dataflow, and its output is line-buffered, so every row
+                    # written before teardown survives
+                    "RECORDER_DURATION_S": "3600",
+                },
+            }
+        )
     for node in graph_doc["nodes"]:
         node["path"] = str((REPO_ROOT / "graphs" / node["path"]).resolve())
     graph_path = tmp_path / graph_name
@@ -158,6 +183,10 @@ def test_expert_t2_episode_closes_without_wrong_object(tmp_path):
         tmp_path,
         "expert_t2.yaml",
         {"AISLE_SEEDS": "3", "AISLE_TARGET_MEDS": "cetirizine", "AISLE_TIMEOUT_S": "150"},
+        record_topics={
+            "move_done": "ik-trajectory/move_done",
+            "read_result": "ocr-label/read_result",
+        },
     )
 
     assert results.exists(), f"no results written; stderr tail: {(stderr or '')[-3000:]}"
@@ -169,3 +198,38 @@ def test_expert_t2_episode_closes_without_wrong_object(tmp_path):
         record
     )
     assert (record["status"] == "success") == (record["failure"] is None), record
+
+    # The MECHANISM assertion (PR #176 review). Dropping the success gate
+    # is defensible under CON-5 layer (d), but on its own it would leave
+    # the determinism fix unproven: this test then passes on almost any
+    # outcome, including the never_grasped signature issue #153 reports as
+    # the FAILURE mode. So assert the barrier itself, live: every read must
+    # have answered from a wrist frame STRICTLY newer than its own park,
+    # and at least one park must have armed a barrier (a silently
+    # unbarriered tour is the regression this pins).
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "trace.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    # Pair each read with the park that armed it IN ORDER: the tour reuses
+    # request_ids across passes (a re-toured candidate is `read0.0` again),
+    # so keying a dict by request_id would compare one pass's read against
+    # another pass's barrier.
+    armed, checked, stale = {}, 0, []
+    for row in rows:
+        rid = row["metadata"].get("request_id")
+        if row["id"] == "move_done":
+            barrier = json.loads(row["text"]).get("frame_after_sim_time_ns")
+            if barrier is not None:
+                armed[rid] = int(barrier)
+        elif row["id"] == "read_result" and rid in armed:
+            barrier = armed.pop(rid)
+            frame = row["metadata"].get("sim_time_ns")
+            if frame is None:  # a refusal carries no frame stamp
+                continue
+            checked += 1
+            if int(frame) <= barrier:
+                stale.append((rid, barrier, int(frame)))
+    assert checked, f"no barriered read completed in the episode; records={records}"
+    assert not stale, f"read(s) answered from a frame at or before their park: {stale}"

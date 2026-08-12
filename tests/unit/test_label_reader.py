@@ -255,6 +255,115 @@ class TestReaderSession:
             is None
         )
 
+    def test_zero_barrier_is_not_a_live_barrier(self, meds, templates):
+        """PR #176 review: the executor defaults a missing park stamp to no
+        key at all, never to 0 — because a 0 barrier is cleared by EVERY
+        stamped frame, so an old buffered frame from during the park motion
+        would answer the request. A 0 that reaches here anyway degrades to
+        the unbarriered path (wait for the next frame), not to 'any stamped
+        frame is eligible'."""
+        session = self._session(meds, templates)
+        stale = camera_view_frame(meds, templates, "metformin")
+        fresh = camera_view_frame(meds, templates, "omeprazole")
+        assert session.on_rgb(stale, sim_time_ns=5) is None  # buffered mid-park frame
+
+        assert (
+            session.on_read_request(
+                {"range_m": RANGE_M, "frame_after_sim_time_ns": 0}, "ep-1/read0"
+            )
+            is None  # the stale buffered frame must NOT answer it
+        )
+        assert session.on_rgb(fresh, sim_time_ns=6)["label"] == "omeprazole"
+
+    def test_malformed_barrier_degrades_instead_of_raising(self, meds, templates):
+        """TC-2 trust boundary: a malformed barrier from an upstream node
+        must not raise out of the reader's event loop (issue #160 item 1,
+        same class). It degrades to the unbarriered path."""
+        session = self._session(meds, templates)
+        frame = camera_view_frame(meds, templates, "cetirizine")
+        assert (
+            session.on_read_request(
+                {"range_m": RANGE_M, "frame_after_sim_time_ns": "not-a-stamp"}, "ep-1/read0"
+            )
+            is None
+        )
+        assert session.on_rgb(frame, sim_time_ns=9)["label"] == "cetirizine"
+
+    def test_barriered_request_refuses_and_replies_when_no_frame_clears(self, meds, templates):
+        """PR #176 review: a barrier no frame ever clears must not hang the
+        tour. The state machine has no read timeout, so before this the only
+        bound was the episode deadline. After BARRIER_FRAME_BUDGET
+        ineligible frames the read refuses and REPLIES."""
+        from aisle.nodes.label_reader import BARRIER_FRAME_BUDGET
+
+        session = self._session(meds, templates)
+        frame = camera_view_frame(meds, templates, "metformin")
+        session.on_read_request(
+            {"range_m": RANGE_M, "frame_after_sim_time_ns": 1_000}, "ep-1/read0"
+        )
+        for _ in range(BARRIER_FRAME_BUDGET - 1):
+            assert session.on_rgb(frame, sim_time_ns=500) is None  # all pre-barrier
+        result = session.on_rgb(frame, sim_time_ns=500)
+        assert result["request_id"] == "ep-1/read0"
+        assert result["label"] is None  # refused, not guessed
+        assert result["reason"] == "no_frame_after_park"
+        assert session.pending is None  # and the session is free for the next read
+
+    def test_unstamped_frame_stream_still_replies(self, meds, templates):
+        """The same bound covers a stamp chain that goes silent entirely:
+        unstamped frames can never clear a barrier, so without the budget
+        the request would wait forever."""
+        from aisle.nodes.label_reader import BARRIER_FRAME_BUDGET
+
+        session = self._session(meds, templates)
+        frame = camera_view_frame(meds, templates, "metformin")
+        session.on_read_request({"range_m": RANGE_M, "frame_after_sim_time_ns": 10}, "r")
+        results = [session.on_rgb(frame) for _ in range(BARRIER_FRAME_BUDGET)]
+        assert all(r is None for r in results[:-1])
+        assert results[-1]["reason"] == "no_frame_after_park"
+
+    def test_late_reset_does_not_clear_a_newer_episodes_request(self, meds, templates):
+        """PR #176 review: reset_done and read_request arrive on independent
+        queues. A reset delayed past the next episode's first request must
+        NOT clear that live request — the state machine ignores replies it
+        is not awaiting, so the dropped request would hang the tour with
+        nothing downstream noticing. Sim time fences it."""
+        session = self._session(meds, templates)
+        frame = camera_view_frame(meds, templates, "omeprazole")
+        session.on_read_request({"range_m": RANGE_M, "frame_after_sim_time_ns": 900}, "ep-2/read0")
+
+        session.on_reset_done(sim_time_ns=500)  # the PREVIOUS episode's reset, late
+
+        assert session.pending is not None, "a live request was cleared by a stale reset"
+        assert session.on_rgb(frame, sim_time_ns=901)["request_id"] == "ep-2/read0"
+
+    def test_reset_clears_a_request_from_the_ended_episode(self, meds, templates):
+        """The fence cuts the other way too: a request barriered at or
+        before the reset belongs to the episode that just ended."""
+        session = self._session(meds, templates)
+        frame = camera_view_frame(meds, templates, "omeprazole")
+        session.on_read_request({"range_m": RANGE_M, "frame_after_sim_time_ns": 100}, "ep-1/read0")
+
+        session.on_reset_done(sim_time_ns=500)
+
+        assert session.pending is None
+        assert session.on_rgb(frame, sim_time_ns=501) is None
+
+    def test_reset_drops_pre_reset_frames_only(self, meds, templates):
+        """Frames from before the reset show the previous episode's scene;
+        frames after it are the new episode's and must survive."""
+        session = self._session(meds, templates)
+        old = camera_view_frame(meds, templates, "metformin")
+        new = camera_view_frame(meds, templates, "cetirizine")
+        assert session.on_rgb(old, sim_time_ns=400) is None
+        session.on_reset_done(sim_time_ns=500)
+        assert session.on_rgb(new, sim_time_ns=600) is None
+
+        result = session.on_read_request(
+            {"range_m": RANGE_M, "frame_after_sim_time_ns": 550}, "ep-2/read0"
+        )
+        assert result["label"] == "cetirizine"  # the post-reset frame answered it
+
     def test_no_calibration_no_read(self, meds, templates):
         session = ReaderSession(meds=meds, templates=templates)
         session.on_read_request({"range_m": RANGE_M}, "ep-1/read0")
