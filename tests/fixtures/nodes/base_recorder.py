@@ -38,6 +38,13 @@ def main() -> None:
     out = open(os.environ["REC_OUT"], "w", buffering=1)
     node = Node()
     for event in node:
+        # INPUT filter FIRST: the window must open at the first DATA event,
+        # after the genesis build. Advancing it on non-INPUT events would
+        # start a 30 s capture behind a 420 s build and truncate it before
+        # any data arrived (PR #177 review — this ordering was the
+        # pre-refactor behavior and the deleted comment's whole point).
+        if event["type"] != "INPUT":
+            continue
         now = time.monotonic()
         if window.observe(now):
             # explicit completion sentinel: the runner waits for THIS, so
@@ -45,8 +52,6 @@ def main() -> None:
             # window (a stall leaves no sentinel and hits the outer cap)
             out.write(json.dumps({"id": "__recorder_done__", "wall_t": now}) + "\n")
             break
-        if event["type"] != "INPUT":
-            continue
         arrow = event["value"]
         value = arrow.to_numpy(zero_copy_only=False).tolist()
         meta = dict(event.get("metadata") or {})

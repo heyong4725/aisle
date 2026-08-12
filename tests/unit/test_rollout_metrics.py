@@ -305,9 +305,14 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
             if len(spawns) == 1:  # first launch: seed 0 lands, then wedges
                 f.write('{"episode": 0, "seed": 0, "status": "success", "success": true}\n')
             else:  # relaunch: every remaining seed lands
+                # the real client offsets by AISLE_EPISODE_BASE — the fixture
+                # must too, or the test's own data contains the duplicate
+                # indices this PR exists to prevent (PR #177 review)
+                base = int(env["AISLE_EPISODE_BASE"])
                 for i, s in enumerate(env["AISLE_SEEDS"].split(",")):
                     f.write(
-                        f'{{"episode": {i}, "seed": {s}, "status": "success", "success": true}}\n'
+                        f'{{"episode": {base + i}, "seed": {s}, '
+                        f'"status": "success", "success": true}}\n'
                     )
         proc = FakeProc(alive=len(spawns) == 1)
         proc.args = cmd
@@ -344,8 +349,19 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
     # issue #160 item 5: the relaunched client continues the RUN-GLOBAL
     # numbering (episode 0 succeeded + episode 1 clamped -> next is 2), so
     # goal_ids never repeat and fidelity.load_sidecar's duplicate refusal
-    # cannot void a relaunched A7/both run
-    assert episode_bases == ["0", "2"]
+    # cannot void a relaunched A7/both run.
+    #
+    # The FIRST launch carries no offset at all: AISLE_EPISODE_BASE is in
+    # SCRUBBED_ENV, so the ambient 999 set above is stripped and the client
+    # falls back to its documented default of 0. `None` here is therefore
+    # the assertion that the ambient value did NOT survive (PR #177
+    # review: scrubbing also covers the fleet and h4 paths, which an
+    # explicit set inside rollout() did not).
+    assert episode_bases == [None, "2"]
+    # the PROPERTY, not just the env var: no two attempts in the run share
+    # an episode index, which is what keeps goal_ids unambiguous
+    indices = [e["episode"] for e in report["episodes"]]
+    assert len(indices) == len(set(indices)), indices
     assert report["failures"] == {"wall_clamp": 1}
     clamped = [e for e in report["episodes"] if e.get("failure") == "wall_clamp"]
     assert [e["seed"] for e in clamped] == [1]  # the wedged seed, recorded
@@ -505,6 +521,11 @@ def test_await_realistic_sidecar_counts_distinct_goal_ids(tmp_path):
     )
     assert await_realistic_sidecar(tmp_path, expected=3, timeout_s=0.0) == 2
     assert await_realistic_sidecar(tmp_path, expected=2, timeout_s=0.0) == 2
+    # ...and with a real timeout, so the IN-LOOP check runs (PR #177
+    # review: timeout_s=0.0 never enters the wait loop, so the two asserts
+    # above pass even against the line-counting bug this fix removes)
+    assert await_realistic_sidecar(tmp_path, expected=2, timeout_s=5.0) == 2
+    assert await_realistic_sidecar(tmp_path, expected=3, timeout_s=1.0) == 2
 
 
 def test_await_realistic_sidecar_missing_file_is_zero(tmp_path):
@@ -534,9 +555,57 @@ def test_a7_wall_budget_covers_full_sim_episode_plus_judge():
     raised = a7_per_episode_budget_s(EPISODE_TIMEOUT_S, PER_EPISODE_BUDGET_S)
     assert raised == EPISODE_TIMEOUT_S * A7_WALL_PER_SIM + A7_JUDGE_BUDGET_S
     assert raised > PER_EPISODE_BUDGET_S
-    # a tier whose wall budget already covers the worst case is unchanged
+    # NOTE: the pure helper no-ops on retail (600*3+30 = 1830 < 2100), which
+    # is exactly why resolve_budgets REFUSES that combination rather than
+    # returning this number — see the test below.
     retail_timeout, retail_budget = tier_budgets("S1")
     assert a7_per_episode_budget_s(retail_timeout, retail_budget) == retail_budget
+
+
+@pytest.mark.parametrize("tier", ["S1", "S2", "S3"])
+def test_retail_a7_is_refused_not_silently_clamped(tier):
+    """PR #177 review: A7_WALL_PER_SIM encodes a DESK rtf. At the retail rtf
+    documented in this module (~101.5 sim s in ~25 wall min) a full 600 sim-s
+    A7 episode costs ~8900 wall s against a 2100 s clamp, so every episode
+    would clamp at ~24%, relaunch, and clamp again — a scored 0.0 dressed up
+    as a budget. Refuse instead."""
+    from aisle.harness.rollout import resolve_budgets, tier_budgets
+
+    with pytest.raises(ValueError, match="no measured wall budget"):
+        resolve_budgets(tier, "realistic")
+    # the sidecar mode never changes control flow, so it stays available
+    assert resolve_budgets(tier, "both") == tier_budgets(tier)
+    assert resolve_budgets(tier, "oracle") == tier_budgets(tier)
+
+
+def test_the_verifier_selects_the_budget_not_just_the_tier():
+    """PR #177 review: the arithmetic above was tested, the WIRING was not
+    — deleting the A7 branch at the rollout() call site left the whole unit
+    suite green, because every rollout() test runs --verifier oracle."""
+    from aisle.harness.rollout import PER_EPISODE_BUDGET_S, resolve_budgets, tier_budgets
+
+    assert resolve_budgets("T0", "oracle") == tier_budgets("T0")
+    assert resolve_budgets("T0", "both") == tier_budgets("T0")
+    a7_timeout, a7_budget = resolve_budgets("T0", "realistic")
+    assert (a7_timeout, a7_budget) != tier_budgets("T0")
+    assert a7_budget > PER_EPISODE_BUDGET_S  # A7 episodes always run to expiry
+
+
+def test_a7_budget_covers_the_judge_not_just_the_sim():
+    """The judge term is the half a pure `wall_per_sim * timeout` formula
+    would silently drop (PR #177 review: setting A7_JUDGE_BUDGET_S = 0 left
+    the earlier test green)."""
+    from aisle.harness.rollout import (
+        A7_JUDGE_BUDGET_S,
+        A7_WALL_PER_SIM,
+        EPISODE_TIMEOUT_S,
+        resolve_budgets,
+    )
+
+    assert A7_JUDGE_BUDGET_S > 0, "the judge must have real headroom, not zero"
+    _, a7_budget = resolve_budgets("T0", "realistic")
+    # strictly MORE than the sim time alone: the 3-5 s judge plus drain
+    assert a7_budget >= EPISODE_TIMEOUT_S * A7_WALL_PER_SIM + 10
 
 
 class TestEpisodeBaseConfig:

@@ -473,10 +473,15 @@ class TestNavLifecycle:
         m.on_goal([5.0, 0.0, 0.0], "nav-1")
         m.on_base_pose([1.0, 0.0, 0.0], self.STEP_NS)  # stamped, stuck
         m.on_tick()
+        held = m._sim_ns
         for _ in range(50):  # a long unstamped stretch, still stuck
             m.on_base_pose([1.0, 0.0, 0.0], None)
             out = m.on_tick()
             assert not (out and out[0][0] == "nav_result"), out
+            # HELD, not re-anchored: an `int(stamp or 0)` implementation
+            # would drop the clock to 0 here and still pass the assertions
+            # above (PR #177 review)
+            assert m._sim_ns == held
         # stamps return: the stall budget resumes from the HELD clock and
         # fails blocked once the stuck pose has stall_s of sim evidence
         m.on_base_pose([1.0, 0.0, 0.0], self.STEP_NS + int(0.2e9))

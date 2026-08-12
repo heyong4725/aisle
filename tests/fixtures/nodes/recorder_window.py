@@ -54,6 +54,12 @@ class CaptureWindow:
         await_tail_s: float | None = None,
         await_sim_ns: int = 0,
     ) -> None:
+        if await_count and duration_s is None:
+            # an await only ever DELAYS a deadline; with no duration there is
+            # no deadline, so the await would be silently ignored. Refuse
+            # rather than pretend (tests/conftest.py guards the analogous
+            # tail-without-await no-op the same way; PR #177 review).
+            raise ValueError("RECORDER_AWAIT requires RECORDER_DURATION_S; it would be ignored")
         self.duration_s = duration_s
         self.await_topic = await_topic
         self.await_count = await_count

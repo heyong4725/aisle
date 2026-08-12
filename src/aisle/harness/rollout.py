@@ -85,6 +85,38 @@ def a7_per_episode_budget_s(episode_timeout_s: int, per_episode_budget_s: int) -
     return max(per_episode_budget_s, episode_timeout_s * A7_WALL_PER_SIM + A7_JUDGE_BUDGET_S)
 
 
+def resolve_budgets(tier: str, verifier: str) -> tuple[int, int]:
+    """(episode timeout in SIM seconds, per-episode WALL budget) for a run.
+
+    The verifier is part of the budget, not just the tier: in A7
+    (`--verifier realistic`) nothing ends an episode early, so every one
+    runs its full sim budget and is judged at expiry. Kept as its own pure
+    function because the wiring — not the arithmetic — was the part with no
+    test: deleting the A7 branch at the call site left the whole unit suite
+    green (PR #177 review)."""
+    episode_timeout_s, per_episode_budget_s = tier_budgets(tier)
+    if verifier == "realistic":
+        if tier in ("S1", "S2", "S3"):
+            # A7_WALL_PER_SIM encodes a DESK rtf. Retail runs ~0.07 (the
+            # measured 101.5 sim s in ~25 wall min above), so a full
+            # 600 sim-s A7 episode costs ~8900 wall s against the tier's
+            # 2100 s clamp: the max() below silently no-ops and EVERY
+            # episode clamps at ~24%, relaunches, and clamps again — a
+            # scored 0.0 dressed up as a budget. Refuse until a retail A7
+            # budget is measured and re-budgeted under ADR-21 (PR #177
+            # review); `--verifier both` is unaffected, it never changes
+            # control flow.
+            raise ValueError(
+                f"tier {tier} with --verifier realistic (A7) has no measured wall budget: "
+                f"a full {episode_timeout_s} sim-s episode at the documented retail rtf "
+                f"needs roughly 4x the tier's {per_episode_budget_s} s per-episode clamp, "
+                "so every episode would wall_clamp. Use --verifier both, or land a "
+                "measured retail A7 budget with an ADR-21 re-budget."
+            )
+        per_episode_budget_s = a7_per_episode_budget_s(episode_timeout_s, per_episode_budget_s)
+    return episode_timeout_s, per_episode_budget_s
+
+
 def parse_seed_range(spec: str) -> list[int]:
     """'0..49' -> [0..49]; '3' -> [3]; '1,4,7' -> [1, 4, 7]."""
     if ".." in spec:
@@ -657,6 +689,13 @@ def instrumented_graph(
 # settings that MUST come from the graph (where the graph hash attests them)
 # or from the runner itself, and never from the ambient process environment
 SCRUBBED_ENV = (
+    # ADR-23: the runner's own relaunch offset. rollout() sets it AFTER
+    # this scrub on a relaunch, so the override still lands; what this
+    # closes is the fleet path (cli.py) and tools/h4_iteration.py, which
+    # inject only AISLE_SEEDS/AISLE_RESULTS and would otherwise inherit a
+    # stale developer-shell value and renumber every episode (PR #177
+    # review — the same class as AISLE_TARGET_MEDS below).
+    "AISLE_EPISODE_BASE",
     # HAR-1: which med each episode targets. The rollout runner never sets
     # this, and no graph declares it, so an ambient developer-shell value
     # was the ONLY way it could arrive — silently re-targeting every
@@ -918,9 +957,12 @@ def rollout(
     # budgets before the graph: the realistic verifier node needs the episode
     # SIM timeout declared in the graph, since it ends episodes on its own
     # budget rather than waiting for the oracle (VER-5, increment 1b)
-    episode_timeout_s, per_episode_budget_s = tier_budgets(tier)
-    if verifier == "realistic":
-        per_episode_budget_s = a7_per_episode_budget_s(episode_timeout_s, per_episode_budget_s)
+    try:
+        episode_timeout_s, per_episode_budget_s = resolve_budgets(tier, verifier)
+    except ValueError as exc:
+        # refuse the unbudgeted tier/verifier combination the same way the
+        # gates refuse: loudly, before anything launches (PR #177 review)
+        return {"ok": False, "error": str(exc)}
     try:
         exec_graph = instrumented_graph(
             graph,
@@ -959,10 +1001,6 @@ def rollout(
             "AISLE_SIM_BACKEND": gates["sim_backend"],
             "AISLE_TIMEOUT_S": str(episode_timeout_s),
             "AISLE_RESULTS": str(results_path),
-            # Runner-internal ADR-23 relaunch state: the first launch is
-            # always zero-based, regardless of ambient developer-shell state.
-            # Relaunches replace this below with the run-global row count.
-            "AISLE_EPISODE_BASE": "0",
             # RST-2: the client stamps every reset request with the mode
             "AISLE_RESET_MODE": reset_mode,
         }
@@ -1039,10 +1077,22 @@ def rollout(
                             {
                                 "episode": lines,
                                 "seed": seed,
+                                # the SAME goal_id the client would have
+                                # minted for this attempt: without it
+                                # fidelity.load_oracle_results refuses the
+                                # whole run ("episode has no goal_id"), so
+                                # a relaunched A7/both run still lost its
+                                # VER-6 comparison — the refusal had just
+                                # moved from load_sidecar (PR #177 review)
+                                "goal_id": f"ep-{lines:04d}",
                                 "status": "fail",
                                 "failure": "wall_clamp",
                                 "success": False,
                                 "synthetic": True,
+                                # TC-8: the oracle is the only ground truth
+                                # a metric may count; this row is the
+                                # harness's own synthesized outcome
+                                "verifier": "oracle",
                             }
                         )
                         + "\n"

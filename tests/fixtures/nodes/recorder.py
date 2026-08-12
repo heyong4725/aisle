@@ -46,10 +46,14 @@ def main() -> None:
     node = Node()
     with open(out_path, "w", buffering=1) as out:
         for event in node:
+            # INPUT filter FIRST: the window starts at the first DATA event
+            # (the bridge's genesis build must not eat the capture), and it
+            # cannot close before the awaited rows and any sim horizon
+            # (issue #94). Non-INPUT events must not advance it — see the
+            # same ordering in base_recorder.py (PR #177 review).
+            if event["type"] != "INPUT":
+                continue
             now = time.monotonic()
-            # the window starts at the FIRST event (the bridge's genesis
-            # build must not eat the capture); it cannot close before the
-            # awaited rows and any sim horizon (issue #94)
             if window.observe(now):
                 # explicit completion sentinel: run_dataflow_until_settled
                 # stops on it instead of burning its whole outer deadline
@@ -57,8 +61,6 @@ def main() -> None:
                 # the stream flowed through the whole capture)
                 out.write(json.dumps({"id": "__recorder_done__"}) + "\n")
                 break
-            if event["type"] != "INPUT":
-                continue
             value = event["value"]
             record = {
                 "id": event["id"],

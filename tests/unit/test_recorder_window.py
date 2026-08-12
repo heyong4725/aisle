@@ -88,6 +88,16 @@ def test_unstamped_awaited_row_falls_back_to_wall_tail():
     assert w.observe(7.5) is True
 
 
+def test_await_without_a_duration_refuses_instead_of_being_ignored():
+    """PR #177 review: an await only DELAYS a deadline, so with no duration
+    it silently does nothing. Callers that gate RECORDER_AWAIT and
+    RECORDER_DURATION_S on independent parameters would get no await and no
+    warning."""
+    with pytest.raises(ValueError, match="RECORDER_DURATION_S"):
+        CaptureWindow(None, await_topic="violation", await_count=1)
+    CaptureWindow(None)  # no await: unbounded recording stays legal
+
+
 @pytest.mark.parametrize("spec", ["x", "topic:", ":3", "topic:0", "topic:abc", "topic:-1"])
 def test_malformed_await_spec_raises_loudly(spec):
     """A silent recorder death burns the settle helper's whole outer
