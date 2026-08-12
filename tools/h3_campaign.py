@@ -55,6 +55,19 @@ SCENARIOS = (
     {"tier": "S2", "tokens": 750_000, "episodes": 60, "wall_h": 5.0},
     {"tier": "S3", "tokens": 750_000, "episodes": 60, "wall_h": 5.0},
 )
+# Desk-suite instantiation (design doc §8.4.2: the ASPIRE ablation is
+# T1→T2→T3→T4; ADR-h3 desk amendment). Same D2 logic: per-arm totals
+# (2.5M / 200 / 16 h) mirror the retail split so both arms fit the frozen
+# harness/budget.toml ceilings with the same re-run headroom. T2 carries
+# the largest share — its expert baseline is 0.08 (analysis/t2), so
+# time-to-success there is the curve's expected inflection.
+DESK_SCENARIOS = (
+    {"tier": "T1", "tokens": 400_000, "episodes": 40, "wall_h": 2.5},
+    {"tier": "T2", "tokens": 800_000, "episodes": 70, "wall_h": 6.0},
+    {"tier": "T3", "tokens": 700_000, "episodes": 50, "wall_h": 4.5},
+    {"tier": "T4", "tokens": 600_000, "episodes": 40, "wall_h": 3.0},
+)
+SUITES = {"retail": SCENARIOS, "desk": DESK_SCENARIOS}
 # D5: identical in both arms — a nudge, not a treatment
 NUDGE = "Distill what works into registered skills — they may pay off later."
 # agent-controlled manifest ids are used as PATH COMPONENTS by the
@@ -440,7 +453,18 @@ def main() -> int:
     parser.add_argument("--commit", default=None)
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "runs" / "h3")
     parser.add_argument("--arms", default="W,L", help="subset, e.g. W (dry runs)")
-    parser.add_argument("--scenarios", default="S1,S2,S3", help="subset, e.g. S1")
+    parser.add_argument(
+        "--suite",
+        default="retail",
+        choices=sorted(SUITES),
+        help="scenario suite: retail (S1→S3, the original ADR-h3 campaign) "
+        "or desk (T1→T4, design doc §8.4.2 — the ASPIRE tier ladder)",
+    )
+    parser.add_argument(
+        "--scenarios",
+        default=None,
+        help="subset, e.g. S1 or T1,T2; default = the whole selected suite",
+    )
     parser.add_argument("--budget-scale", type=float, default=1.0, help="dry-run scaling")
     parser.add_argument(
         "--attempt",
@@ -479,10 +503,12 @@ def main() -> int:
             )
         )
         return 1
+    suite = SUITES[args.suite]
+    selected = args.scenarios or ",".join(s["tier"] for s in suite)
     arms = [a for a in ARMS if a in args.arms.split(",")]
-    tiers = [s["tier"] for s in SCENARIOS if s["tier"] in args.scenarios.split(",")]
+    tiers = [s["tier"] for s in suite if s["tier"] in selected.split(",")]
     unknown = (set(args.arms.split(",")) - set(ARMS)) | (
-        set(args.scenarios.split(",")) - {s["tier"] for s in SCENARIOS}
+        set(selected.split(",")) - {s["tier"] for s in suite}
     )
     if unknown or not arms or not tiers:
         # a typo must refuse, not exit 0 with an empty "campaign" (PR #48)
@@ -494,6 +520,7 @@ def main() -> int:
     oid = resolve_commit(REPO_ROOT, args.commit)
     treatment = campaign_treatment(agent, model, oid, DEV_SEEDS, HOLDOUT_SEEDS)
     treatment["protocol"] = "ADR-h3-campaign-protocol"
+    treatment["suite"] = args.suite
     treatment["nudge_sha256"] = hashlib.sha256(NUDGE.encode()).hexdigest()
     treatment["budget_scale"] = args.budget_scale
     # PR #61 review: campaign.py's runner_sha256 does not cover THIS
@@ -554,7 +581,7 @@ def main() -> int:
         if not wt.exists():
             print(f"[h3] arm {arm}: worktree at {oid[:8]}", file=sys.stderr)
             make_worktree(oid, wt)
-        for index, scenario in enumerate(SCENARIOS):
+        for index, scenario in enumerate(suite):
             if scenario["tier"] not in tiers:
                 continue
             if index > 0 or args.attempt > 1:
