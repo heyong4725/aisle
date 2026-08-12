@@ -10,11 +10,14 @@ MUST honor it byte-for-byte.
   robot BASE frame unless a topic name says otherwise. Quaternions are (x,y,z,w).
 - TC-2: Every output message MUST carry metadata keys: `sim_time_ns` (int),
   `env_id` (int, 0 in single-env mode), `seq` (per-topic monotonic int). In a
-  BRG-1 lockstep simulation every message participating in an open control turn
-  MUST additionally carry its process-lifetime monotonic `turn_id` (UInt64),
-  preserved unchanged across derived outputs. The boot reset proposes
-  `turn_id=0`; after that, only the bridge opens a new id. Hardware and the
-  explicit non-attesting free-run mode do not carry `turn_id`.
+  BRG-1 lockstep simulation (ADR-30; declarative pre-implementation) every
+  message participating in an open control turn additionally carries
+  `turn_epoch` (int, incremented per bridge process start — an ADR-23
+  relaunch must not alias the prior incarnation's turns) and its monotonic
+  `turn_id` (UInt64), both preserved unchanged across derived outputs. Only
+  the bridge opens turns; it opens turn zero at startup and the boot reset is
+  consumed in it. Hardware and the explicit non-attesting free-run mode do
+  not carry turn metadata.
 - TC-3: Image topics carry metadata `h`, `w`, `enc` ("rgb8") and data as a flat
   `UInt8` Arrow array of length h*w*3. Consumers MUST NOT assume resolution.
 - TC-4: Rates are contracts, not hints: producers MUST publish within ±20% of

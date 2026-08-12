@@ -2,30 +2,44 @@
 
 Status: DRAFT until M0. Module: `src/aisle/nodes/dora_genesis.py`. Implements SPEC 010 against SPEC 020.
 
-- BRG-1: Exactly one bridge node owns the Genesis scene per dataflow. An
-  attested, acceptance, or campaign simulation MUST use run-to-quiescence
-  lockstep (ADR-30): the bridge publishes the observations due for simulated
-  state `S(k)` and then `sim_turn` (`sim_turn_u64`, UInt64[1]); its monotonic
-  process-lifetime value and every same-turn message's `turn_id` metadata
-  identify exactly one open control turn. Every watermark carries parallel
+- BRG-1: Exactly one bridge node owns the Genesis scene per dataflow.
+  CURRENT (operative until the ADR-30 env-change epoch lands): the bridge is
+  driven by `dora/timer/millis/10` ticks; each tick advances sim by cfg.dt
+  and services pending inputs in arrival order. TARGET (ADR-30; declarative
+  pre-implementation per the SPEC 040 preamble convention — the implementing
+  env-change PR upgrades this block to RFC-2119 MUST together with its citing
+  tests): an attested, acceptance, or campaign simulation uses
+  run-to-quiescence lockstep. The bridge publishes the observations due for
+  simulated state `S(k)` and then `sim_turn` (`sim_turn_u64`, UInt64[1]); its
+  epoch-scoped monotonic value and every same-turn message's
+  `turn_epoch`/`turn_id` metadata identify exactly one open control turn.
+  Every watermark enumerates EVERY output port in parallel
   `closed_outputs: list[str]` and `emitted_counts: list[int]` metadata in
-  lexical port order. A participant MUST receive the declared count for every
-  causal input before it closes the turn; transport arrival order MUST NOT be
-  treated as closure. The bridge MUST NOT apply
-  commands or advance physics until the graph closes every causal branch and
-  emits exactly one `turn_commit` (`sim_turn_u64`) for that turn. On a motion
-  commit the bridge applies inputs in canonical order (`joint_cmd`,
-  `gripper_cmd`, `base_cmd`), advances sim by `cfg.dt` exactly once, and opens
-  the next turn. On a reset commit, reset takes priority, discards same-turn
-  motion, injects the new state, advances no physics, and opens the next
-  globally numbered turn at episode-relative step zero; the initial reset
-  similarly opens turn zero before any physics step. Missing, duplicate, stale,
-  future, or unstamped commits/commands MUST fail loudly; arrival order and
-  WALL latency MUST NOT select a simulated step. A WALL watchdog MAY abort
-  a hung turn but MUST NOT advance or manufacture a commit. Free-running
-  `dora/timer/millis/10` stepping is permitted only for reset-less bring-up or
-  interactive visualization and MUST be recorded non-attesting; it is not
-  eligible for acceptance or campaign metrics.
+  lexical port order (count 0 is ordinary; an omitted port is a malformed
+  watermark). A participant (ADR-30 §1.1: any node with a FORWARD-edge path
+  to a bridge command/reset input) closes turn `k` after receiving every
+  count declared by every forward upstream for turn `k` plus the counts its
+  EPISODIC inputs' producers declared in turn `k-1` (ADR-30 §1.3 — reply/
+  verdict back-edges deliver into the next turn, which is what makes TC-6/
+  TC-7 loops terminate); transport arrival order is never treated as closure.
+  The bridge does not apply commands or advance physics until every forward
+  branch closes and exactly one `turn_commit` (`sim_turn_u64`) arrives for
+  the turn. On a motion commit the bridge applies inputs in canonical order
+  (`joint_cmd`, `gripper_cmd`, `base_cmd`), advances sim by `cfg.dt` exactly
+  once, and opens the next turn. On a reset commit, reset takes priority,
+  discards same-turn motion, injects the new state, advances no physics, and
+  opens the next globally numbered turn at episode-relative step zero; the
+  bridge opens turn zero at startup and the initial reset is consumed in it.
+  Participants emit turn-stamped messages only from turn-edge/episodic
+  handlers, never from wall-timer handlers (ADR-30 §1.4). Missing,
+  duplicate, stale, future, cross-epoch, or unstamped commits/commands fail
+  loudly; arrival order and WALL latency never select a simulated step. A
+  WALL watchdog (budgeted per turn type — verdict-bearing turns carry their
+  work's own budget, ADR-30 §1.5) may abort a hung turn but never advances
+  or manufactures a commit. Free-running `dora/timer/millis/10` stepping is
+  permitted only for reset-less bring-up or interactive visualization and
+  MUST be recorded non-attesting; it is not eligible for acceptance or
+  campaign metrics.
 - BRG-2: Rendering is rate-limited independently of physics (TC table rates); a tick MUST NOT render all cameras every step. Target: ≥5x realtime physics with rendering on, single env, M3.
 - BRG-3: `joint_cmd` applies PD position control. In lockstep, multiple
   same-turn commands are coalesced by the producer's monotonic `seq`, never by
