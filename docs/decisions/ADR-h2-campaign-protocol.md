@@ -17,8 +17,9 @@ same runner is the per-scenario core the H3 orchestrator
    and the budgets, and points at the contract. T1 only until the
    realistic verifier lands (T2 needs perception L2).
 2. **Rollouts happen INSIDE the session** — the whole point of H2 vs H1.
-   `harness rollout` runs with `--env-baseline origin/main` (the ADR-21
-   trusted gate): frozen-set integrity, idea gating (HAR-8), and the
+   `harness rollout` inherits the campaign OID through
+   `AISLE_ENV_BASELINE` (the ADR-21 trusted gate; issue #91): frozen-set
+   integrity, idea gating (HAR-8), and the
    campaign ledger's episode/wall ceilings are enforced by the harness
    the agent itself invokes; the runner does not re-implement them.
 3. **The runner enforces what the harness cannot**: the TOKEN ceiling

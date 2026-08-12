@@ -359,7 +359,7 @@ def run_scenario(
     prompt = campaign_prompt(tier, scenario["tokens"], scenario["wall_h"], DEV_SEEDS, note=NUDGE)
     # issue #96: the session runs under an isolated home — operator
     # memory/config is not a treatment channel; recorded per scenario
-    session_env, session_isolation = isolated_session_env(session_dir)
+    session_env, session_isolation = isolated_session_env(session_dir, env_baseline_oid=oid)
     seed_rec, seed_error = seed_session_credentials(agent, session_env)
     if seed_error:
         # infra abort (protocol point 8), like the runtime preflight: a

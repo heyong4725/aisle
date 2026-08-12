@@ -280,13 +280,18 @@ def settle_budget(root: Path, run_id: str, episodes: int, wall_s: float) -> str:
         )
 
 
-def resolve_trusted_baseline(root: Path) -> tuple[str | None, str | None]:
+_COMMIT_OID = re.compile(r"^[0-9a-f]{40}$")
+
+
+def resolve_trusted_baseline(
+    root: Path, baseline: str = "origin/main"
+) -> tuple[str | None, str | None]:
     """(commit OID, error): fetch refs/heads/main FROM THE REMOTE SERVER
-    and resolve the fetched head (ADR-21 round 3). The baseline identity
-    comes from the branch-protected server at gate time — never from a
-    locally movable ref like refs/remotes/origin/main or HEAD — and the
-    returned OID is content-addressed: the blobs it names cannot be
-    altered without changing it. Fail-closed: no remote, no trusted gate."""
+    and resolve either its head or a campaign-pinned ancestor (ADR-21
+    round 3, issue #91). Trust still comes from the protected server:
+    arbitrary local OIDs and movable refs are refused. The returned OID
+    is content-addressed, so its blobs cannot change beneath a campaign.
+    Fail-closed: no remote, no trusted gate."""
     fetch = subprocess.run(
         ["git", "fetch", "--quiet", "origin", "refs/heads/main"],
         capture_output=True,
@@ -300,7 +305,30 @@ def resolve_trusted_baseline(root: Path) -> tuple[str | None, str | None]:
     )
     if head.returncode != 0:
         return None, "cannot resolve FETCH_HEAD after fetch"
-    return head.stdout.strip(), None
+    server_head = head.stdout.strip()
+    if baseline == "origin/main":
+        return server_head, None
+
+    commit = subprocess.run(
+        ["git", "rev-parse", "--verify", f"{baseline}^{{commit}}"],
+        capture_output=True,
+        text=True,
+        cwd=root,
+    )
+    if commit.returncode != 0:
+        return None, f"cannot resolve campaign baseline OID {baseline}"
+    oid = commit.stdout.strip()
+    ancestry = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", oid, server_head],
+        capture_output=True,
+        text=True,
+        cwd=root,
+    )
+    if ancestry.returncode == 1:
+        return None, f"campaign baseline {baseline} is not in protected origin/main history"
+    if ancestry.returncode != 0:
+        return None, "cannot verify campaign baseline against protected origin/main history"
+    return oid, None
 
 
 def run_gates(
@@ -317,20 +345,21 @@ def run_gates(
     """HAR-2: refuse on env-hash mismatch (TRUSTED baseline by default,
     ADR-21: the baseline commit is fetched from the remote SERVER and
     pinned by OID — a research agent cannot satisfy it by moving local
-    refs or passing its own; --env-baseline local is the dev override —
+    refs; a campaign may retain a full OID only while it remains in the
+    protected main history; --env-baseline local is the dev override —
     humans only; logged), on validation failure, on a missing OPEN idea
     (unless --no-idea-gate — humans only; logged), and — for trusted runs
     only — on an exhausted campaign budget (episodes/wall reserved
     atomically by rollout(); tokens are audited externally per HAR-5).
     Local-override runs are exempt from budget refusal and never charge
     the ledger: the budget meters the campaign, not development."""
-    if env_baseline not in ("origin/main", "local"):
+    if env_baseline not in ("origin/main", "local") and not _COMMIT_OID.fullmatch(env_baseline):
         return {
             "ok": False,
             "gate": "env_hash",
-            "detail": f"unknown baseline {env_baseline!r}: only the protected "
-            "'origin/main' (server-resolved) or the logged dev override 'local' "
-            "are accepted (ADR-21)",
+            "detail": f"unknown baseline {env_baseline!r}: only protected "
+            "'origin/main', a full campaign-pinned main-history OID, or the "
+            "logged dev override 'local' are accepted (ADR-21, issue #91)",
         }
     sim_identity = resolve_sim_identity(sim_extra)
     if not sim_identity["ok"]:
@@ -341,7 +370,7 @@ def run_gates(
     # trusted checker attests THIS environment shape (HAR-2)
     hash_cmd += ["--extras", sim_extra]
     if env_baseline != "local":
-        baseline_oid, err = resolve_trusted_baseline(root)
+        baseline_oid, err = resolve_trusted_baseline(root, env_baseline)
         if err:
             return {"ok": False, "gate": "env_hash", "detail": err}
         hash_cmd += ["--baseline", baseline_oid]

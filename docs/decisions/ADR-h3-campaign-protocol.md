@@ -43,9 +43,10 @@ L (D6 rationale).
    applies to BOTH arms' remaining scenarios or is void.
 2. **The research contract governs the sessions.** Each scenario session
    is a fresh agent run under `harness/CLAUDE.research.md`: frozen-set
-   enforcement fetches origin/main at gate time (ADR-21,
-   `--env-baseline origin/main` — the trusted path, NOT the local
-   override), every rollout requires an open idea (HAR-8), and the
+   enforcement validates the campaign-pinned OID against protected
+   origin/main history at gate time (ADR-21, `AISLE_ENV_BASELINE` — the
+   trusted path, NOT the local override), every rollout requires an open
+   idea (HAR-8), and the
    campaign ledger meters episodes/wall against `harness/budget.toml`.
 3. **What persists between scenarios (arm L).** Installed manifests +
    evalcards + `skills/` sources — and the CLOSED idea-tree entries of
