@@ -325,3 +325,33 @@ invisible to the wipe machinery, and asymmetric in principle. Rules:
    token is SCRUBBED after every probe and session (and from rotated
    homes), so no live auth material persists in runs/ artifacts; the
    scrub is recorded in `session_isolation.credentials_scrubbed`.
+
+## Amendment (desk suite, 2026-08-12): the T1→T4 instantiation
+
+Design doc §8.4.2 defines H3's primary form as the DESK tier ladder —
+"same agent, T1→T2→T3→T4 sequentially, twice: library persisted vs.
+wiped between tiers" — which became runnable when T2 (#152 lineage), T3
+(#169), and T4 (#184, ADR-32) landed. `tools/h3_campaign.py` gains
+`--suite desk|retail` (default retail, the original campaign): the desk
+suite runs the identical two-arm protocol — same wipe/guard machinery,
+same session isolation, same admissibility rules (§§1–6 above) — over
+scenarios T1→T2→T3→T4 at `--embodiment franka`.
+
+Sub-budgets per arm (the D2 pattern, mirroring the retail totals of
+2.5M tokens / 200 episodes / 16 h so both arms fit the frozen
+`harness/budget.toml` ceilings with the same re-run headroom):
+T1 0.4M/40/2.5h, T2 0.8M/70/6h, T3 0.7M/50/4.5h, T4 0.6M/40/3h. T2
+carries the largest share deliberately: its expert baseline is 0.08
+(analysis/t2/t2_curve_findings.md), so time-to-first-success there is
+the transfer curve's expected inflection; T3's rearrangement skill and
+T4's dialogue machine are the deliberate capability gaps the tiers pose
+(analysis/t3, ADR-32 §1).
+
+Holdout scoring: `TIER_EMBODIMENT` maps T2/T3/T4 to franka; the scoring
+timeout for T2-class tiers covers the 400 s per-episode scan-tour wall
+budget (`420 + 8*400 + 600` s), the same healthy-run-killed-mid-scoring
+class the retail formula fixed. Dev seeds 0..49 and held-out 100..107
+apply unchanged; at T4 the correction predicate (seed%4==0, ADR-32 §2)
+puts two corrected seeds (100, 104) in the held-out range — an
+agent-authored machine that ignores corrections scores wrong_object on
+exactly those, per the tier's discriminating signature.
