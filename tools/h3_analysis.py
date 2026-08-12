@@ -324,12 +324,21 @@ def cell(rec: dict, commit: str | None = None, runtime_baseline: str | None = No
         flags.append("holdout_partial")
     first = rec.get("first_success_wall_s")
     if commit:
+        session_pin = (rec.get("session_isolation") or {}).get("env_baseline_oid")
+        pin_aware = session_pin is not None
+        if pin_aware and session_pin != commit:
+            flags.append("treatment_drift")
         # treatment_drift (PR #76 review): a rollout recorded on a
         # different commit, or trusted against a baseline other than the
         # pin, broke the pinned-treatment invariant (ADR-h3: one pinned
         # OID, no mid-campaign repo updates)
         half_annotated = False
         for r in rollouts:
+            is_holdout = str(r.get("run_id") or "").startswith(HOLDOUT_RUN_PREFIX)
+            if pin_aware and not is_holdout and r.get("env_baseline") != commit:
+                if "treatment_drift" not in flags:
+                    flags.append("treatment_drift")
+                break
             if "_lineage_ok" in r or "_anchor_ok" in r:
                 # ratified ancestry+content semantics (2026-08-05): agent-
                 # only pin descendants are the treatment; drift is post-pin
@@ -367,6 +376,7 @@ def cell(rec: dict, commit: str | None = None, runtime_baseline: str | None = No
         # first-success must be a trusted-baseline run at the pin — a
         # local/unattested skill-eval success is not an admissible
         # verdict metric (protocol point 2)
+        trusted_selectors = (commit,) if pin_aware else ("origin/main", commit)
         trusted_dev_successes = [
             r
             for r in rollouts
@@ -374,7 +384,7 @@ def cell(rec: dict, commit: str | None = None, runtime_baseline: str | None = No
             and not str(r.get("run_id") or "").startswith(HOLDOUT_RUN_PREFIX)
             and r.get("_lineage_ok") is True
             and r.get("_anchor_ok") is True
-            and r.get("env_baseline") == "origin/main"
+            and r.get("env_baseline") in trusted_selectors
         ]
         if first is None and trusted_dev_successes:
             # PR #90 review 1 (owner-ratified semantics): the runner's
@@ -407,12 +417,12 @@ def cell(rec: dict, commit: str | None = None, runtime_baseline: str | None = No
                     trusted = (
                         src.get("_lineage_ok") is True
                         and src.get("_anchor_ok") is True
-                        and src.get("env_baseline") == "origin/main"
+                        and src.get("env_baseline") in trusted_selectors
                     )
                 else:
                     trusted = (
                         src.get("git_sha") == commit
-                        and src.get("env_baseline") == "origin/main"
+                        and src.get("env_baseline") in trusted_selectors
                         and src.get("env_baseline_oid") == commit
                     )
                 if "git_sha" in src and not trusted:

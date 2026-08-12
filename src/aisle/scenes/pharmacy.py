@@ -166,6 +166,13 @@ class SceneCfg:
     # does. OFF by default; the gated draw touches no existing RNG
     # stream, so pre-T2 scenes stay byte-identical.
     shuffle_colors: bool = False
+    # T3 (design doc section 3): the tier's occlusion layout — the
+    # designated target (med index seed % n, the same rule the T3
+    # rollout client uses to pick the episode target) gets a BLOCKER
+    # box relocated directly in front of it on the same board. OFF by
+    # default; scenes stay byte-identical when off, and the transform is
+    # a pure post-pass over the sampled placements (scene = f(seed)).
+    occlusion: bool = False
 
 
 @dataclass(frozen=True)
@@ -208,6 +215,104 @@ def open_band(shelf: dict, level: int) -> tuple[float, float]:
     for higher in range(level + 1, len(shelf["level_depths"])):
         x_max = min(x_max, level_x_span(shelf, higher)[0] - shelf["hand_clearance_m"])
     return x_min, x_max
+
+
+def occluded_target(seed: int, med_names: list[str]) -> str:
+    """T3's designated target for a seed — the SAME rule the rollout
+    client uses to pick the episode target, so the occluded box and the
+    requested med always coincide (scene stays a pure f(seed))."""
+    return med_names[seed % len(med_names)]
+
+
+def apply_occlusion(
+    placements: list[Placement], seed: int, med_names: list[str], layout: dict
+) -> list[Placement]:
+    """T3 layout post-pass (CON-5 pure): move a BLOCKER directly in
+    front of the designated target on the same board, 1.5 cm of face
+    gap — inside min_separation on purpose, occlusion IS the tier. The
+    target is first shifted to the rear of its level's open band so both
+    boxes fit the board; every coordinate is a deterministic function of
+    the sampled layout."""
+    meds = load_meds()
+    shelf = layout["shelf"]
+    target_name = occluded_target(seed, med_names)
+    blocker_name = med_names[(seed + 1) % len(med_names)]
+    by_name = {p.name: p for p in placements}
+    target = by_name[target_name]
+    # the pair ALWAYS lives on level 0: its deep board fits both boxes
+    # (the level-1 board is too shallow — the first layout draft parked
+    # the target hanging past its rear edge and the box fell on its own
+    # at t=0.36 s, a `dropped` verdict with no robot contact), and level
+    # 0's covered rear band (under the upper board) is the under-board
+    # front-only zone the tier's rearrangement premise needs
+    level = 0
+    band_min, band_max = level_x_span(shelf, level)
+    open_min, open_max = open_band(shelf, level)
+    target_half = meds[target_name]["size"][0] / 2
+    blocker_half = meds[blocker_name]["size"][0] / 2
+    gap = 0.015
+    # rear-align the target within the board, the COVERED band (past the
+    # open-sky front — occlusion under the board is the tier), and the
+    # reach envelope (the sampler's pregrasp filter restated: this
+    # post-pass must not park the target where SCN-3's reachability
+    # assert aborts the build)
+    ik = layout["ik"]
+    max_target = layout["reach_m"] * ik["reach_margin_frac"]
+    z_target = (
+        shelf["pos"][2]
+        + shelf["level_heights"][level]
+        + shelf["board_thickness"] / 2
+        + meds[target_name]["size"][2] / 2
+    )
+    target_x = band_max - shelf["edge_margin"] - target_half
+    while (
+        math.hypot(target_x, target.y, z_target + ik["pregrasp_height_m"]) > max_target
+        and target_x > open_max
+    ):
+        target_x -= 0.01
+    blocker_x = target_x - target_half - gap - blocker_half
+    if blocker_x - blocker_half < band_min + shelf["edge_margin"]:
+        blocker_x = band_min + shelf["edge_margin"] + blocker_half
+        target_x = blocker_x + blocker_half + gap + target_half
+    z_blocker = (
+        shelf["pos"][2]
+        + shelf["level_heights"][level]
+        + shelf["board_thickness"] / 2
+        + meds[blocker_name]["size"][2] / 2
+    )
+    moved = {
+        target_name: Placement(name=target_name, level=level, x=target_x, y=target.y, z=z_target),
+        blocker_name: Placement(
+            name=blocker_name, level=level, x=blocker_x, y=target.y, z=z_blocker
+        ),
+    }
+    # any OTHER box overlapping the relocated pair swaps to a vacated
+    # original slot (deterministic, at most two vacancies — enough: the
+    # sampler placed at most that many boxes in the pair's footprint)
+    vacated = [p for name, p in by_name.items() if name in moved]
+    out: list[Placement] = []
+    for p in placements:
+        if p.name in moved:
+            out.append(moved[p.name])
+            continue
+        half_x, half_y = meds[p.name]["size"][0] / 2, meds[p.name]["size"][1] / 2
+        clash = p.level == level and any(
+            abs(p.x - m.x) < half_x + meds[m.name]["size"][0] / 2 + shelf["min_separation"]
+            and abs(p.y - m.y) < half_y + meds[m.name]["size"][1] / 2 + shelf["min_separation"]
+            for m in moved.values()
+        )
+        if clash and vacated:
+            slot = vacated.pop(0)
+            slot_z = (
+                shelf["pos"][2]
+                + shelf["level_heights"][slot.level]
+                + shelf["board_thickness"] / 2
+                + meds[p.name]["size"][2] / 2
+            )
+            out.append(Placement(name=p.name, level=slot.level, x=slot.x, y=slot.y, z=slot_z))
+        else:
+            out.append(p)
+    return out
 
 
 def sample_placements(seed: int, med_names: list[str], layout: dict) -> list[Placement]:
@@ -661,7 +766,10 @@ def build_scene(
         color_by_med = {
             name: meds[donor]["color"] for name, donor in zip(names, shuffled, strict=True)
         }
-    for placement in sample_placements(seed, list(meds), layout):
+    placements = sample_placements(seed, list(meds), layout)
+    if cfg.occlusion:
+        placements = apply_occlusion(placements, seed, list(meds), layout)
+    for placement in placements:
         friction = box_physics["friction"]
         if cfg.friction_jitter.enabled:
             friction *= 1.0 + (friction_rng.random() - 0.5) * dr_cfg["friction_jitter_frac"]

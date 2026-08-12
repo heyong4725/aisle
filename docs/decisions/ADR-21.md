@@ -46,12 +46,13 @@ Status: accepted (CON-15). Task: T17 (PR #24 review). Relates to
 
 1. **Server-resolved, OID-pinned baseline.** `origin/main` as a local
    remote-tracking ref is movable, and `--env-baseline HEAD` was
-   accepted. Now: the gate accepts ONLY `origin/main` or `local`; for
-   the trusted path it `git fetch`es `refs/heads/main` from the remote
-   SERVER at gate time, resolves FETCH_HEAD to a commit OID (immutable:
-   content-addressed blobs), verifies against that OID, and records the
-   OID in the gate result and run manifest. Moving local refs changes
-   nothing; no remote ⇒ fail closed.
+   accepted. Now: the gate accepts `origin/main`, a full campaign-pinned
+   commit OID, or `local`; for either trusted path it `git fetch`es
+   `refs/heads/main` from the remote SERVER at gate time. `origin/main`
+   resolves to FETCH_HEAD, while a campaign OID is accepted only when it
+   remains an ancestor of that protected server head (issue #91). It
+   verifies and records the immutable OID. Moving local refs changes
+   nothing; arbitrary local OIDs and missing remotes fail closed.
 2. **Reserve → settle accounting.** Spend was check-then-append. Now:
    `reserve_budget` atomically checks-and-reserves under an O_EXCL
    ledger lock BEFORE launch (concurrent rollouts contend); the run's

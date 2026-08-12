@@ -35,11 +35,16 @@ def main() -> None:
     tier = os.environ.get("AISLE_TIER", "T0")
     retail = tier in ("S1", "S2", "S3")  # RS-6: rollout gains --tier
     meds_env = os.environ.get("AISLE_TARGET_MEDS", "")
-    targets = (
-        meds_env.split(",")
-        if meds_env
-        else [MED_NAMES[i % len(MED_NAMES)] for i in range(len(seeds))]
-    )
+    if tier == "T3" and not meds_env:
+        # T3: the scene occludes med (seed % n) — the episode targets
+        # exactly that med (aisle.scenes.pharmacy.occluded_target rule)
+        targets = [MED_NAMES[s % len(MED_NAMES)] for s in seeds]
+    else:
+        targets = (
+            meds_env.split(",")
+            if meds_env
+            else [MED_NAMES[i % len(MED_NAMES)] for i in range(len(seeds))]
+        )
     # refuse bad config LOUDLY at startup: an unknown med deadlocks the run
     # (the verifier refuses the goal without emitting a result), and a
     # short target list would IndexError mid-run. Retail tiers carry no
@@ -52,6 +57,10 @@ def main() -> None:
                 f"{len(targets)} targets for {len(seeds)} seeds"
             )
     timeout_s = float(os.environ.get("AISLE_TIMEOUT_S", "30"))
+    reset_mode_name = os.environ.get("AISLE_RESET_MODE", "teleport")
+    if reset_mode_name not in ("teleport", "behavioral"):
+        raise SystemExit(f"rollout-client config refused: unknown reset mode {reset_mode_name!r}")
+    reset_mode = 1 if reset_mode_name == "behavioral" else 0
     results_path = os.environ.get("AISLE_RESULTS", "")
 
     node = Node()
@@ -78,7 +87,7 @@ def main() -> None:
             if phase == "reset_pending" and episode < len(seeds):
                 send(
                     "reset",
-                    pa.array(np.array([seeds[episode], 0], dtype=np.uint32)),
+                    pa.array(np.array([seeds[episode], reset_mode], dtype=np.uint32)),
                     {
                         "request_id": f"reset-{episode:04d}-{seeds[episode]}",
                         "sim_time_ns": last_result_sim_ns,
@@ -141,7 +150,7 @@ def main() -> None:
                 # targets, guard timers) so the idle graph stops moving
                 send(
                     "reset",
-                    pa.array(np.array([seeds[0], 0], dtype=np.uint32)),
+                    pa.array(np.array([seeds[0], 0], dtype=np.uint32)),  # cleanup teleports
                     {"request_id": "reset-cleanup", "sim_time_ns": last_result_sim_ns},
                 )
                 phase = "done"

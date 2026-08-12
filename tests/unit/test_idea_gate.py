@@ -17,7 +17,7 @@ pytestmark = pytest.mark.unit
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_rollout_cli_exposes_the_attested_simulation_extra():
+def test_rollout_cli_exposes_the_attested_simulation_extra(monkeypatch):
     """HAR-1, CON-5: the public rollout path exposes the exact dependency
     selection; CUDA cannot be activated by an ambient hardware probe."""
     from aisle.harness.cli import build_parser
@@ -33,6 +33,14 @@ def test_rollout_cli_exposes_the_attested_simulation_extra():
     ]
     assert build_parser().parse_args(base).sim_extra == "sim"
     assert build_parser().parse_args([*base, "--sim-extra", "cuda"]).sim_extra == "cuda"
+
+    # Issue #91: a campaign runner pins the trusted baseline once for
+    # the whole cell.  The ordinary default remains server main, while
+    # the isolated campaign environment supplies the immutable OID.
+    pin = "a" * 40
+    monkeypatch.setenv("AISLE_ENV_BASELINE", pin)
+    assert build_parser().parse_args(base).env_baseline == pin
+    assert build_parser().parse_args([*base, "--env-baseline", "local"]).env_baseline == "local"
 
 
 def test_log_appends_jsonl_with_monotonic_ids(tmp_path):
@@ -318,9 +326,9 @@ def test_local_override_is_exempt_from_budget_refusal(tmp_path):
 
 
 def test_unknown_baseline_is_refused(tmp_path):
-    """ADR-21 round 3 (PR #24): only the server-resolved 'origin/main' or
-    the logged 'local' override are accepted — an agent cannot point the
-    gate at HEAD or any ref it controls."""
+    """ADR-21 round 3 + issue #91: symbolic refs remain forbidden — a
+    campaign may supply an immutable OID, but an agent cannot point the
+    gate at HEAD or another ref it controls."""
     root = _fake_root(tmp_path, hash_ok=True)
     graph = root / "graphs" / "expert_t0.yaml"
     for ref in ("HEAD", "main", "refs/heads/feature", "origin/other"):
@@ -337,6 +345,37 @@ def test_gates_record_the_env_baseline(tmp_path):
     result = run_gates(root, graph, "b", no_idea_gate=True, env_baseline="local")
     assert result["ok"] is True and result["env_baseline"] == "local"
     assert result["env_baseline_oid"] is None  # no immutable identity claimed
+
+
+def test_gate_passes_a_campaign_pin_to_the_server_trust_check(tmp_path, monkeypatch):
+    """HAR-2, issue #91: a full campaign OID is a trusted selector only
+    through the server-backed resolver, and the resolved OID is recorded."""
+    from aisle.harness import rollout as ro
+
+    root = _fake_root(tmp_path, hash_ok=True)
+    (root / "tools" / "env_hash.py").write_text(
+        "import json\n"
+        "print(json.dumps({'ok': True, 'env_hash': 'h', "
+        "'dist': {'attested': True, 'env_fingerprint': 'fp'}}))\n"
+    )
+    pin = "a" * 40
+    seen = {}
+
+    def resolve(r, baseline):
+        seen["args"] = (r, baseline)
+        return pin, None
+
+    monkeypatch.setattr(ro, "resolve_trusted_baseline", resolve)
+    result = run_gates(
+        root,
+        root / "graphs" / "expert_t0.yaml",
+        "b",
+        no_idea_gate=True,
+        env_baseline=pin,
+    )
+    assert result["ok"] is True
+    assert seen["args"] == (root, pin)
+    assert result["env_baseline"] == result["env_baseline_oid"] == pin
 
 
 def test_trusted_baseline_resolves_from_the_server_not_local_refs(tmp_path):
@@ -386,6 +425,22 @@ def test_trusted_baseline_resolves_from_the_server_not_local_refs(tmp_path):
     oid, err = resolve_trusted_baseline(work)
     assert err is None and oid == server_oid  # still the SERVER's head
 
+    # Issue #91: a campaign pin stays the trusted baseline even after
+    # protected main advances.  The server still establishes trust: an
+    # arbitrary local sibling OID must be refused.
+    publisher = tmp_path / "publisher"
+    git(tmp_path, "clone", "-q", str(server), str(publisher))
+    (publisher / "server.txt").write_text("main advanced\n")
+    git(publisher, "add", "-A")
+    git(publisher, "commit", "-qm", "advance server main")
+    git(publisher, "push", "-q", "origin", "main")
+    advanced_oid = git(publisher, "rev-parse", "HEAD")
+    oid, err = resolve_trusted_baseline(work, server_oid)
+    assert err is None and oid == server_oid and oid != advanced_oid
+    local_oid = git(work, "rev-parse", "HEAD")
+    oid, err = resolve_trusted_baseline(work, local_oid)
+    assert oid is None and "protected origin/main history" in err
+
     # fail closed without a remote
     lonely = tmp_path / "lonely"
     lonely.mkdir()
@@ -403,7 +458,7 @@ def test_trusted_gate_refuses_on_dist_drift_and_missing_evidence(tmp_path, monke
 
     root = _fake_root(tmp_path, hash_ok=True)
     graph = root / "graphs" / "expert_t0.yaml"
-    monkeypatch.setattr(ro, "resolve_trusted_baseline", lambda r: ("deadbeef", None))
+    monkeypatch.setattr(ro, "resolve_trusted_baseline", lambda r, baseline: ("deadbeef", None))
 
     def stub_env_hash(payload):
         (root / "tools" / "env_hash.py").write_text(
@@ -463,7 +518,7 @@ def test_trusted_run_attestation_is_final_only_after_post_run_audit(tmp_path, mo
 
     root = _fake_root(tmp_path, hash_ok=True)
     graph = root / "graphs" / "expert_t0.yaml"
-    monkeypatch.setattr(ro, "resolve_trusted_baseline", lambda r: ("deadbeef", None))
+    monkeypatch.setattr(ro, "resolve_trusted_baseline", lambda r, baseline: ("deadbeef", None))
     monkeypatch.setattr(ro, "reap_orphans", lambda *a, **k: None)
 
     # fake trusted checker: gate PASSES with an inventory; the post-run

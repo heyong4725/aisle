@@ -341,7 +341,7 @@ def campaign_metrics(
         manifest = json.loads(manifest_path.read_text())
         admissible = pin is None or (
             manifest.get("git_sha") == pin
-            and manifest.get("env_baseline") == "origin/main"
+            and manifest.get("env_baseline") == pin
             and manifest.get("env_baseline_oid") == pin
         )
         if successes and admissible and (first_success is None or mtime < first_success):
@@ -378,7 +378,7 @@ def _default_budgets(root: Path) -> tuple[int, float]:
     return int(campaign["tokens"]), float(campaign["wall_h"])
 
 
-def isolated_session_env(out: Path) -> tuple[dict, dict]:
+def isolated_session_env(out: Path, env_baseline_oid: str | None = None) -> tuple[dict, dict]:
     """Issue #96: campaign sessions must not inherit the operator's
     config/home — the S3-r3 agent's third action was reading ~/.claude
     memory (annotated transcript, event [21]): ambient operator state
@@ -422,12 +422,22 @@ def isolated_session_env(out: Path) -> tuple[dict, dict]:
     env["XDG_DATA_HOME"] = str(home / ".local" / "share")
     env["XDG_CACHE_HOME"] = str(home / ".cache")
     env["XDG_STATE_HOME"] = str(home / ".local" / "state")
+    # Issue #91: the runner, not each rollout, selects the campaign's
+    # immutable trust anchor.  The harness CLI consumes this as its
+    # default while an explicit flag remains available for human dev
+    # runs.  Never inherit an unrelated operator pin into a probe.
+    if env_baseline_oid is None:
+        env.pop("AISLE_ENV_BASELINE", None)
+    else:
+        env["AISLE_ENV_BASELINE"] = env_baseline_oid
     record = {
         "home": str(home),
         "claude_config_dir": str(config),
         "codex_home": str(codex_home),
         "xdg_rebound": True,
     }
+    if env_baseline_oid is not None:
+        record["env_baseline_oid"] = env_baseline_oid
     if rotated:
         record["rotated_prior_home"] = rotated
     return env, record
@@ -764,7 +774,7 @@ def main() -> int:
     session_dir.mkdir(exist_ok=True)
     print(f"[h2] session {session_index} starting ({args.agent}/{model})", file=sys.stderr)
     t0_epoch = time.time()
-    session_env, session_isolation = isolated_session_env(session_dir)
+    session_env, session_isolation = isolated_session_env(session_dir, env_baseline_oid=oid)
     seed_rec, seed_error = seed_session_credentials(args.agent, session_env)
     if seed_error:
         print(json.dumps({"ok": False, "error": seed_error}))

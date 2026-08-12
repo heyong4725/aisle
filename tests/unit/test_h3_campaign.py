@@ -775,7 +775,9 @@ def test_scenario_session_runs_under_the_isolated_home(tmp_path, monkeypatch):
     )
     session_dir = tmp_path / "out" / "arm_W" / "S1"
     assert seen["env"]["HOME"] == str(session_dir / "agent_home")
+    assert seen["env"]["AISLE_ENV_BASELINE"] == "deadbeef"
     assert rec["session_isolation"]["home"] == str(session_dir / "agent_home")
+    assert rec["session_isolation"]["env_baseline_oid"] == "deadbeef"
     assert "runtime_drift" not in rec
 
 

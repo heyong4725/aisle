@@ -244,6 +244,9 @@ class BridgeConfig:
     # T2 no-color-prior (AISLE_SHUFFLE_COLORS): seeded permutation of box
     # colors across meds; graph-declared and hash-attested like labels
     shuffle_colors: bool = False
+    # T3 occlusion layout (AISLE_OCCLUSION): blocker parked in front of
+    # the seed-designated target; graph-declared and hash-attested
+    occlusion: bool = False
 
 
 PERCEPTION_RUNGS = ("L0", "L1", "L2")
@@ -283,6 +286,11 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
     )
     if shuffle_raw not in ("0", "1", "true", "false", "yes", "no"):
         raise ValueError(f"unknown AISLE_SHUFFLE_COLORS value {shuffle_raw!r}; use 0/1")
+    occlusion_raw = (
+        str(env.get("AISLE_OCCLUSION") or "").strip().lower() if "AISLE_OCCLUSION" in env else "0"
+    )
+    if occlusion_raw not in ("0", "1", "true", "false", "yes", "no"):
+        raise ValueError(f"unknown AISLE_OCCLUSION value {occlusion_raw!r}; use 0/1")
     sim_backend = env.get("AISLE_SIM_BACKEND")
     if sim_backend is not None:
         sim_backend = str(sim_backend).strip().lower()
@@ -303,6 +311,7 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
         sim_backend=sim_backend,
         labels=labels_raw in ("1", "true", "yes"),
         shuffle_colors=shuffle_raw in ("1", "true", "yes"),
+        occlusion=occlusion_raw in ("1", "true", "yes"),
     )
 
 
@@ -675,7 +684,9 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             embodiment=cfg.embodiment,
             n_envs=cfg.n_envs,
             headless=cfg.headless,
-            cfg=SceneCfg(labels=cfg.labels, shuffle_colors=cfg.shuffle_colors),
+            cfg=SceneCfg(
+                labels=cfg.labels, shuffle_colors=cfg.shuffle_colors, occlusion=cfg.occlusion
+            ),
             sim_backend=cfg.sim_backend,
         )
     robot = handle.robot
@@ -954,7 +965,17 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             teleport_store_reset(handle, generate_episode(seed, cfg.scenario))
         else:
             layout = resolve_layout(physics, cfg.embodiment)
-            for placement in sample_placements(seed, list(handle.boxes), layout):
+            placements = sample_placements(seed, list(handle.boxes), layout)
+            if cfg.occlusion:
+                # T3: the reset path is where EPISODE scenes come from —
+                # the build-time layout is overwritten on the first
+                # teleport, so occlusion applied only at build measured
+                # a plain-T1 run while attesting a T3 graph (first
+                # baseline: pass@1 1.0, the giveaway)
+                from aisle.scenes.pharmacy import apply_occlusion
+
+                placements = apply_occlusion(placements, seed, list(handle.boxes), layout)
+            for placement in placements:
                 entity = handle.boxes[placement.name]
                 pos = np.array([placement.x, placement.y, placement.z], dtype=np.float32)
                 quat = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)  # genesis wxyz

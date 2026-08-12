@@ -305,7 +305,7 @@ def test_treatment_drift_and_unattested_metric_from_provenance():
             "episodes": 4,
             "pass1": 1.0,
             "git_sha": "MERGEDHEAD",
-            "env_baseline": "origin/main",
+            "env_baseline": "abc123",
             "env_baseline_oid": "POSTPIN",
             "env_attested": True,
         },
@@ -325,7 +325,7 @@ def test_treatment_drift_and_unattested_metric_from_provenance():
             "episodes": 4,
             "pass1": 0.5,
             "git_sha": "abc123",
-            "env_baseline": "origin/main",
+            "env_baseline": "abc123",
             "env_baseline_oid": "abc123",
             "env_attested": True,
         },
@@ -608,6 +608,34 @@ def test_annotated_lineage_and_anchor_override_legacy_drift():
     ]
     c = cell(bad, "abc123")
     assert "treatment_drift" in c["flags"]
+
+
+def test_pinned_session_rejects_legacy_moving_baseline_selector():
+    """Issue #91, CON-5: records emitted by the pin-aware runner must
+    use the campaign OID as their selector.  The analyzer may grandfather
+    origin/main only for legacy records without the session pin marker;
+    it must not re-derive a rejected success for a new pinned session."""
+    rec = record("L", "S3", first_success=None)
+    rec["session_isolation"] = {"env_baseline_oid": "abc123"}
+    rec["_session_start"] = 1_000.0
+    rec["rollouts"] = [
+        {
+            "run_id": "dev-moving-baseline",
+            "mtime": 1_100.0,
+            "episodes": 4,
+            "pass1": 1.0,
+            "git_sha": "AGENTHEAD",
+            "env_baseline": "origin/main",
+            "env_baseline_oid": "MOVEDMAIN",
+            "_lineage_ok": True,
+            "_anchor_ok": True,
+        }
+    ]
+
+    c = cell(rec, "abc123")
+    assert "treatment_drift" in c["flags"]
+    assert c["first_success_wall_s"] is None
+    assert c["first_success_rederived"] is False
 
 
 def test_partial_annotations_fail_closed():
