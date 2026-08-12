@@ -1392,3 +1392,40 @@ def test_perception_rung_yaml_null_declaration_is_refused(tmp_path):
     code, report = run_validate(graph, "--root", str(root))
     assert code != 0, report
     assert any("unknown perception rung" in e["detail"] for e in report["errors"]), report
+
+
+def test_expert_t4_is_good():
+    """VAL-7 for graphs/expert_t4.yaml, validated in place: the T4
+    dialogue baseline (ADR-32 increment one) passes NORMAL validation —
+    episode_goal reaches only verifier-oracle, the state machine takes
+    its task from human-sim/human_msg, and the episode_meta/robot_msg
+    edges pass the schema checks."""
+    code, report = run_validate(REPO_ROOT / "graphs" / "expert_t4.yaml")
+    assert code == 0, report
+    assert report["ok"] is True and report["errors"] == []
+    assert report["warnings"] == []
+
+
+def test_expert_t4_with_goal_routed_to_policy_is_rejected(tmp_path):
+    """DIALOGUE_GOAL_LEAK mutation-proofing on the REAL graph (ADR-32 §1):
+    take expert_t4.yaml verbatim and re-add the episode_goal edge every
+    other tier wires into the task-state-machine — the exact un-blinding
+    the rule exists to prevent (the goal's target_med is the final
+    CORRECTED answer) — and the validator must reject it."""
+    doc = yaml.safe_load((REPO_ROOT / "graphs" / "expert_t4.yaml").read_text())
+    for node in doc["nodes"]:
+        # keep node paths resolvable from the copy's location
+        node["path"] = str((REPO_ROOT / "graphs" / node["path"]).resolve())
+        if node["id"] == "task-state-machine":
+            node["inputs"]["episode_goal"] = {
+                "source": "rollout-client/episode_goal",
+                "queue_size": 100,
+            }
+    mutated = tmp_path / "expert_t4_goal_leak.yaml"
+    mutated.write_text(yaml.safe_dump(doc, sort_keys=False))
+
+    code, report = run_validate(mutated, "--root", str(REPO_ROOT))
+    assert code != 0 and report["ok"] is False
+    leaks = [e for e in report["errors"] if e["code"] == "DIALOGUE_GOAL_LEAK"]
+    assert leaks, report["errors"]
+    assert any(e.get("node") == "task-state-machine" for e in leaks), leaks

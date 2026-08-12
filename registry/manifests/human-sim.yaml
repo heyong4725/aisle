@@ -1,0 +1,23 @@
+# T4 scripted human-request generator (ADR-32, design doc §8.4.2): a
+# pure function of the per-goal seed and the observed robot_msg sequence
+# (CON-5) — request, confirm_reply, and the seed%4 correction script.
+id: human-sim
+kind: node
+provides: [dialogue_human]
+requires: [task_sequencing]
+inputs:
+  # {goal_id, seed} from the rollout client at episode start — a FORWARD
+  # edge carrying no target information beyond what the script derives
+  episode_meta: {schema: json_utf8, rate_hz: 1}
+  # the dialogue back-edge: episodic under ADR-30 lockstep, so the
+  # human_msg/robot_msg cycle stays legal (VAL-2 CLOCK_CYCLE)
+  robot_msg: {schema: json_utf8, rate_hz: 1, turn_edge: episodic}
+outputs:
+  human_msg: {schema: json_utf8, latency_class: best_effort}
+embodiment:
+  arm: [franka, so101]
+  gripper: any
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/nodes/human_sim.py

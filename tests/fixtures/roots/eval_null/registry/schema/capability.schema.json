@@ -57,6 +57,11 @@
           "rate_hz": {
             "type": "number",
             "exclusiveMinimum": 0
+          },
+          "turn_edge": {
+            "enum": [
+              "episodic"
+            ]
           }
         }
       }

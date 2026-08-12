@@ -27,11 +27,23 @@ reader, and a matching `read_result` promotes the candidate to
 target_pose, so the grasp pipeline is untouched. A refused read or a
 non-matching label advances the tour; an exhausted tour idles and the
 episode closes honestly on the verifier's timeout.
+
+T4 tier (design doc §3, ADR-32): the task arrives as DIALOGUE, not as
+the TC-7 goal — in T4 graphs `episode_goal` is not wired here at all
+(validator rule DIALOGUE_GOAL_LEAK), so the policy never sees the
+final corrected answer. On the human's `request`, the machine opens
+the episode and emits `robot_msg` confirm naming the requested med,
+then WAITS: `confirm_reply` releases the target_request; a pre-delivery
+`correction` switches the active target and re-confirms once. Scripted
+corrections count in `dialogue_corrections` — they are NOT HAR-3
+retries (a correction is not a failure), so pass@1/pass@8 stay
+comparable across tiers.
 """
 
 from __future__ import annotations
 
 READ_TIER = "T2"
+DIALOGUE_TIER = "T4"
 # per candidate: the first read plus this-many-minus-one refusal retries
 # from later ladder entries. ONE by measurement: every correct read in
 # the offline tour landed on the candidate's FIRST tracked entry, while
@@ -80,6 +92,10 @@ class TaskStateMachine:
         # of the executor ("one plan at a time") and the first live T2
         # episode closed never_grasped
         self.toured = False
+        # T4 dialogue (ADR-32): no target_request until the confirm
+        # exchange completes; corrections are counted, never retries
+        self.confirmed = False
+        self.dialogue_corrections = 0
 
     def _reset_tour(self) -> None:
         self.candidates = None
@@ -122,8 +138,15 @@ class TaskStateMachine:
                     {"goal_id": self.goal_id},
                 )
             )
-        phase = "scanning" if self.candidates is not None else "executing"
+        if self.tier == DIALOGUE_TIER and not self.confirmed:
+            phase = "confirming"
+        elif self.candidates is not None:
+            phase = "scanning"
+        else:
+            phase = "executing"
         feedback: dict = {"t": self.ticks, "phase": phase, "retries": self.retries}
+        if self.tier == DIALOGUE_TIER:
+            feedback["dialogue_corrections"] = self.dialogue_corrections
         if self.violations:
             feedback["violations"] = dict(self.violations)
         emissions.append(("episode_feedback", feedback, {"goal_id": self.goal_id}))
@@ -132,8 +155,17 @@ class TaskStateMachine:
     def on_plan_done(self) -> None:
         """The executor finished a grasp plan. If the verdict does not
         arrive within the grace window, the attempt failed in-flight —
-        arm a retry (HAR-3), bounded by max_retries."""
-        if self.goal is None or self.retries >= self.max_retries:
+        arm a retry (HAR-3), bounded by max_retries. In T4 a plan that
+        finishes BEFORE the confirm exchange completed means motion ran
+        without a confirmed task — a dialogue protocol violation (ADR-32
+        §2), counted in feedback, and no retry (there was no legitimate
+        target_request to re-issue)."""
+        if self.goal is None:
+            return
+        if self.tier == DIALOGUE_TIER and not self.confirmed:
+            self.violations["dialogue_protocol"] = self.violations.get("dialogue_protocol", 0) + 1
+            return
+        if self.retries >= self.max_retries:
             return
         self.retry_due_tick = self.ticks + RETRY_GRACE_TICKS
 
@@ -142,6 +174,61 @@ class TaskStateMachine:
         self.retry_due_tick = None
         self._reset_tour()
         self.toured = False
+        self.confirmed = False
+        self.dialogue_corrections = 0
+        return []
+
+    # -- T4 dialogue (ADR-32) -------------------------------------------
+
+    def on_human_msg(self, payload: dict, goal_id: str) -> list:
+        """The human spoke. `request` opens the episode (the task arrives
+        as dialogue — episode_goal is not wired here in T4 graphs);
+        `confirm_reply` releases the grasp pipeline; a pre-delivery
+        `correction` switches the active target and re-confirms once."""
+        if self.tier != DIALOGUE_TIER:
+            return []
+        kind = payload.get("kind")
+        if kind == "request":
+            if self.goal is not None:  # TC-7: episodes do not overlap
+                return []
+            med = payload["med"]
+            self.goal, self.goal_id, self.violations = {"target_med": med}, goal_id, {}
+            self.ticks = 0
+            self.retries = 0
+            self.retry_due_tick = None
+            self._reset_tour()
+            self.toured = False
+            self.confirmed = False
+            self.dialogue_corrections = 0
+            return [
+                (
+                    "robot_msg",
+                    {"kind": "confirm", "med": med, "text": f"you want the {med}, correct?"},
+                    {"goal_id": goal_id},
+                )
+            ]
+        if self.goal is None or goal_id != self.goal_id:
+            return []
+        if kind == "correction" and not self.confirmed and self.dialogue_corrections == 0:
+            med = payload["med"]
+            self.goal["target_med"] = med
+            self.dialogue_corrections += 1
+            return [
+                (
+                    "robot_msg",
+                    {"kind": "confirm", "med": med, "text": f"you want the {med}, correct?"},
+                    {"goal_id": goal_id},
+                )
+            ]
+        if kind == "confirm_reply" and not self.confirmed:
+            self.confirmed = True
+            return [
+                (
+                    "target_request",
+                    {"target_med": self.goal["target_med"]},
+                    {"goal_id": goal_id},
+                )
+            ]
         return []
 
     def on_violation(self, violation: dict) -> None:
@@ -260,8 +347,10 @@ def main() -> None:
     from aisle.topics import env_accepts, env_pin_from_env, make_sender
 
     tier = os.environ.get("AISLE_TASK_TIER", "T1")
-    if tier not in ("T1", READ_TIER):
-        raise ValueError(f"AISLE_TASK_TIER must be T1 or {READ_TIER}, got {tier!r}")
+    if tier not in ("T1", READ_TIER, DIALOGUE_TIER):
+        raise ValueError(
+            f"AISLE_TASK_TIER must be T1, {READ_TIER} or {DIALOGUE_TIER}, got {tier!r}"
+        )
     target_sx = None
     candidate_bounds = None
     if tier == READ_TIER:
@@ -346,6 +435,12 @@ def main() -> None:
             emit(
                 machine.on_read_result(
                     json.loads(event["value"][0].as_py()), metadata.get("request_id", "")
+                )
+            )
+        elif event["id"] == "human_msg":
+            emit(
+                machine.on_human_msg(
+                    json.loads(event["value"][0].as_py()), metadata.get("goal_id", "")
                 )
             )
 

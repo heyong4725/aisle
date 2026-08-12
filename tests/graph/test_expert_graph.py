@@ -242,3 +242,28 @@ def test_expert_t2_episode_closes_without_wrong_object(tmp_path):
             elif int(frame) <= int(barrier):
                 stale.append((rid, int(barrier), int(frame)))
     assert not stale, f"read(s) answered from a frame at or before their park: {stale}"
+
+
+def test_expert_t4_episode_succeeds(tmp_path):
+    """T4 end-to-end (design doc §3 tier table; ADR-32 increment one):
+    a CORRECTED seed (4 % 4 == 0) runs through graphs/expert_t4.yaml
+    verbatim — the client hands the state machine NO episode_goal (the
+    graph wires none; DIALOGUE_GOAL_LEAK enforces it), the human-sim
+    requests med A (metformin at seed 4), answers the robot's confirm
+    with a correction naming B (amoxicillin), the robot re-confirms and
+    only then grasps — and the episode closes success against the TC-7
+    goal whose target_med is B. The record carries dialogue_corrections
+    = 1 and retries stays HAR-3's own counter, so a machine that
+    delivered A (ignoring the correction) or skipped the confirm
+    exchange cannot pass."""
+    results, stderr = _run_expert_graph(
+        tmp_path,
+        "expert_t4.yaml",
+        {"AISLE_SEEDS": "4", "AISLE_TIER": "T4", "AISLE_TIMEOUT_S": "60"},
+    )
+
+    assert results.exists(), f"no results written; stderr tail: {(stderr or '')[-3000:]}"
+    records = [json.loads(line) for line in results.read_text().splitlines() if line.strip()]
+    assert len(records) == 1, (records, (stderr or "")[-2000:])
+    assert records[0]["status"] == "success", (records[0], (stderr or "")[-2000:])
+    assert records[0]["dialogue_corrections"] == 1, records[0]

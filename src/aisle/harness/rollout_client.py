@@ -70,7 +70,21 @@ def main() -> None:
     tier = os.environ.get("AISLE_TIER", "T0")
     retail = tier in ("S1", "S2", "S3")  # RS-6: rollout gains --tier
     meds_env = os.environ.get("AISLE_TARGET_MEDS", "")
-    if tier == "T3" and not meds_env:
+    if tier == "T4":
+        # T4 (ADR-32 §1): the goal's target_med is the FINAL corrected
+        # target — B on corrected seeds, else A — derived from the same
+        # script the human-sim runs, so human and verifier can never
+        # disagree. An AISLE_TARGET_MEDS override would desync the goal
+        # from the script: refused, not ignored.
+        from aisle.nodes.human_sim import final_target
+
+        if meds_env:
+            raise SystemExit(
+                "rollout-client config refused: AISLE_TARGET_MEDS is incompatible "
+                "with tier T4 — targets are script-derived (ADR-32)"
+            )
+        targets = [final_target(s) for s in seeds]
+    elif tier == "T3" and not meds_env:
         # T3: the scene occludes med (seed % n) — the episode targets
         # exactly that med (aisle.scenes.pharmacy.occluded_target rule)
         targets = [MED_NAMES[s % len(MED_NAMES)] for s in seeds]
@@ -117,6 +131,7 @@ def main() -> None:
     # continue the run-global sequence
     phase = "reset_pending"  # -> awaiting_reset -> running -> (next)
     retries_seen: dict[str, int] = {}  # goal_id -> latest feedback retries (HAR-3)
+    corrections_seen: dict[str, int] = {}  # goal_id -> dialogue_corrections (ADR-32)
     # the sim stamp of the episode_result that ended the last episode: rides
     # every reset request (TC-2), so the realistic verifier can bound the
     # ended episode's frame window BEFORE any reset motion enters the scene
@@ -169,11 +184,17 @@ def main() -> None:
                 # baseline (else the teleport reads as a mass collision)
                 "reset_sim_ns": int(reset_meta.get("sim_time_ns", 0)),
             }
-            send(
-                "episode_goal",
-                pa.array([json.dumps(goal)]),
-                {"goal_id": f"ep-{episode_base + episode:04d}"},
-            )
+            goal_id = f"ep-{episode_base + episode:04d}"
+            send("episode_goal", pa.array([json.dumps(goal)]), {"goal_id": goal_id})
+            if tier == "T4":
+                # ADR-32 §2: the human-sim's script context — goal_id and
+                # seed only, a FORWARD edge carrying no target information
+                # beyond what the script derives
+                send(
+                    "episode_meta",
+                    pa.array([json.dumps({"goal_id": goal_id, "seed": seeds[episode]})]),
+                    {"goal_id": goal_id},
+                )
             phase = "running"
             print(
                 f"goal sent: ep-{episode_base + episode:04d} {goal.get('target_med', '')}",
@@ -188,6 +209,10 @@ def main() -> None:
             goal_id = (event.get("metadata") or {}).get("goal_id", "")
             if "retries" in feedback:
                 retries_seen[goal_id] = int(feedback["retries"])
+            if "dialogue_corrections" in feedback:
+                # ADR-32 §2: corrections are their own counter, never
+                # HAR-3 retries — the record carries both
+                corrections_seen[goal_id] = int(feedback["dialogue_corrections"])
         elif event["id"] == "episode_result" and phase == "running":
             result = json.loads(event["value"][0].as_py())
             try:
@@ -198,6 +223,8 @@ def main() -> None:
                 last_result_sim_ns = 0
             record = {"episode": episode_base + episode, "seed": seeds[episode], **result}
             record["retries"] = retries_seen.pop(record.get("goal_id", ""), 0)
+            if tier == "T4":
+                record["dialogue_corrections"] = corrections_seen.pop(record.get("goal_id", ""), 0)
             print(f"episode {episode_base + episode} result: {record}", file=sys.stderr)
             if out:
                 out.write(json.dumps(record) + "\n")

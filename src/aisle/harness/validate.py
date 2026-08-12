@@ -77,6 +77,59 @@ def _backward_sources(node: dict) -> list[str | None]:
     return sources
 
 
+def _dialogue_blinding_errors(nodes: list[dict]) -> list[dict]:
+    """DIALOGUE_GOAL_LEAK (ADR-32 §1): in a T4 graph the policy learns its
+    task from dialogue, and the TC-7 goal — which carries the FINAL
+    corrected target — may reach only `verifier-*` nodes. A graph is T4
+    when any node declares `AISLE_TASK_TIER: T4` (the same graph-attested
+    declaration pattern as VAL-8's rung); every such node must consume
+    `human_msg`, else the blinding is advisory — the exact failure VAL-6
+    exists to prevent for oracle_state."""
+
+    def declared_tier(node: dict) -> str:
+        env = node.get("env")
+        raw = env.get("AISLE_TASK_TIER", "") if isinstance(env, dict) else ""
+        return str(raw).strip().upper()
+
+    t4_nodes = [n for n in nodes if declared_tier(n) == "T4"]
+    if not t4_nodes:
+        return []
+    errors: list[dict] = []
+    for node in nodes:
+        node_id = str(node.get("id", ""))
+        for port, raw in sorted((node.get("inputs") or {}).items()):
+            source = _input_source(raw)
+            if source is None or "/" not in source:
+                continue
+            if source.split("/", 1)[1] == "episode_goal" and not node_id.startswith("verifier-"):
+                errors.append(
+                    _entry(
+                        "DIALOGUE_GOAL_LEAK",
+                        {"node": node_id, "input": port, "source": source},
+                        f"episode_goal consumed by {node_id!r} in a T4 graph — the goal "
+                        "carries the final corrected target; the policy must learn its "
+                        "task from dialogue (ADR-32 §1)",
+                        "route episode_goal to verifier-* nodes only; feed the task "
+                        "state machine from human-sim/human_msg instead",
+                    )
+                )
+    for node in t4_nodes:
+        sources = [_input_source(raw) for raw in (node.get("inputs") or {}).values()]
+        if not any(s is not None and s.endswith("/human_msg") for s in sources):
+            node_id = str(node.get("id", ""))
+            errors.append(
+                _entry(
+                    "DIALOGUE_GOAL_LEAK",
+                    {"node": node_id},
+                    f"{node_id!r} declares AISLE_TASK_TIER T4 but consumes no "
+                    "human_msg — a T4 policy with no dialogue input cannot learn "
+                    "its task (ADR-32 §1)",
+                    "wire human-sim/human_msg into the T4 node's inputs",
+                )
+            )
+    return errors
+
+
 def _guard_resolved(out_port: str, graph_nodes: dict, manifests: dict) -> bool:
     """The guard hop counts only when fully resolved: a budget-guard graph
     node AND manifest exist, and the referenced output is declared by both
@@ -293,6 +346,8 @@ def validate_nodes(
     # TC-9/VAL-8: the perception rung is a property of the GRAPH, read once
     rung, bridge_ids, rung_errors = graph_perception_rung(nodes, manifests)
     errors.extend(rung_errors)
+    # ADR-32 §1: T4 goal blinding is likewise a property of the graph
+    errors.extend(_dialogue_blinding_errors(nodes))
     for node in nodes:
         node_id = node["id"]
         # ADR-25 (issue #71, PR #80 review): the bridge's reset-less

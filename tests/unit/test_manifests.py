@@ -22,6 +22,7 @@ EXPECTED_IDS = {
     "ocr-label",
     "pose-estimator",
     "grasp-planner-topdown",
+    "human-sim",
     "ik-trajectory",
     "arm-driver-sim",
     "gripper-driver-sim",

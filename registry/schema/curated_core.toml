@@ -13,6 +13,7 @@ core = [
   "dora-genesis",
   "grasp-planner-topdown",
   "gripper-driver-sim",
+  "human-sim",
   "ik-trajectory",
   "misplacement-detector",
   "nav-action",

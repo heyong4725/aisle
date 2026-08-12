@@ -14,6 +14,9 @@ inputs:
   read_result: {schema: json_utf8, rate_hz: 1}
   # HAR-3: a finished grasp plan with no verdict arms a retry
   plan_done: {schema: json_utf8, rate_hz: 1}
+  # T4 dialogue (ADR-32): the task arrives as the human's request —
+  # in T4 graphs episode_goal is NOT wired here (DIALOGUE_GOAL_LEAK)
+  human_msg: {schema: json_utf8, rate_hz: 1}
 outputs:
   target_request: {schema: json_utf8, latency_class: best_effort}
   episode_feedback: {schema: json_utf8, latency_class: best_effort}
@@ -22,6 +25,8 @@ outputs:
   # the identified candidate, in target_pose's schema -- the grasp
   # planner consumes it unchanged
   grasp_target: {schema: pose7d_f32, latency_class: best_effort}
+  # T4 dialogue (ADR-32): confirm/ack back to the human-sim
+  robot_msg: {schema: json_utf8, latency_class: best_effort}
 params:
   max_retries: {type: int, default: 8, range: [0, 8]}
 embodiment:
