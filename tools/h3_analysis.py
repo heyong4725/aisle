@@ -34,9 +34,11 @@ import re
 import subprocess
 from pathlib import Path
 
-TIERS = ("S1", "S2", "S3")
-VERDICT_TIERS = ("S2", "S3")  # ADR §7: transfer shows up AFTER S1
-CRITERION = "arm L S2+S3 time-to-first-success <= 0.5x arm W's (ADR-h3 §7)"
+# suite tier ladders (ADR-h3 desk amendment): the verdict tiers are
+# everything AFTER the first scenario — transfer cannot show up on the
+# tier where both arms start from the same empty library (ADR §7)
+SUITE_TIERS = {"retail": ("S1", "S2", "S3"), "desk": ("T1", "T2", "T3", "T4")}
+TIERS = SUITE_TIERS["retail"]  # pre-suite records carry no suite key
 # the campaign identity that must be single-valued across every combined
 # record (PR #59 review: no cross-commit/model/seed aggregation)
 IDENTITY_KEYS = ("commit", "agent", "model", "dev_seeds", "holdout_seeds")
@@ -76,7 +78,19 @@ def load_campaign(campaign_dir: Path) -> dict:
                     f"treatment mismatch on {key!r}: {name} vs {base_name} — records "
                     "from different campaigns must not be combined"
                 )
-    scenario_files = sorted(campaign_dir.glob("arm_*/S*/scenario.json"))
+    # the suite selects the tier ladder (ADR-h3 desk amendment); records
+    # from before the suite key are the retail campaign, so absence
+    # normalizes rather than mismatching a legitimate resume
+    suite = base.get("suite") or "retail"
+    for name, t in treatments[1:]:
+        if (t.get("suite") or "retail") != suite:
+            raise ValueError(
+                f"treatment mismatch on 'suite': {name} vs {base_name} — records "
+                "from different campaigns must not be combined"
+            )
+    if suite not in SUITE_TIERS:
+        raise ValueError(f"unknown suite {suite!r} in campaign record")
+    scenario_files = sorted(campaign_dir.glob("arm_*/*/scenario.json"))
     if not scenario_files:
         raise ValueError(f"no scenario records under {campaign_dir}")
     # residue-leak derivation (PR #67 review): within each invocation
@@ -144,6 +158,7 @@ def load_campaign(campaign_dir: Path) -> dict:
     )
     return {
         "treatment": {k: base.get(k) for k in IDENTITY_KEYS},
+        "suite": suite,
         "records": records,
         "runtime_baseline": runtime_baseline,
     }
@@ -474,8 +489,8 @@ def _metric(cells: list[dict], arm: str, tier: str, key: str) -> tuple[bool, flo
     return True, best[key]
 
 
-def h3_verdict(cells: list[dict]) -> dict:
-    """ADR §7 per tier (S2, S3): L <= 0.5x W on time-to-first-success
+def h3_verdict(cells: list[dict], tiers: tuple[str, ...] = TIERS) -> dict:
+    """ADR §7 per post-first tier: L <= 0.5x W on time-to-first-success
     (token ratios reported alongside, §8.4). A tier where L never
     succeeded is not-met; where only W never succeeded, met. met is None
     until every needed CLEAN cell exists; flags become caveats."""
@@ -483,7 +498,7 @@ def h3_verdict(cells: list[dict]) -> dict:
     token_ratios: dict[str, float | None] = {}
     per_tier: dict[str, bool] = {}
     complete = True
-    for tier in VERDICT_TIERS:
+    for tier in tiers[1:]:
         have_w, w_first = _metric(cells, "W", tier, "first_success_wall_s")
         have_l, l_first = _metric(cells, "L", tier, "first_success_wall_s")
         if not (have_w and have_l):
@@ -511,7 +526,9 @@ def h3_verdict(cells: list[dict]) -> dict:
     else:
         met = True
     return {
-        "criterion": CRITERION,
+        "criterion": (
+            f"arm L {'+'.join(tiers[1:])} time-to-first-success <= 0.5x arm W's (ADR-h3 §7)"
+        ),
         "ratios": ratios,
         "token_ratios": token_ratios,
         "per_tier": per_tier,
@@ -580,7 +597,8 @@ def main() -> int:
         cell(r, campaign["treatment"].get("commit"), campaign.get("runtime_baseline"))
         for r in campaign["records"]
     ]
-    verdict = h3_verdict(cells)
+    tiers = SUITE_TIERS[campaign["suite"]]
+    verdict = h3_verdict(cells, tiers)
     if args.markdown:
         args.markdown.write_text(results_markdown(cells, verdict))
     total_wrong = sum(c["wrong_object_total"] or 0 for c in cells)
@@ -589,11 +607,12 @@ def main() -> int:
             {
                 "ok": True,
                 "treatment": campaign["treatment"],
+                "suite": campaign["suite"],
                 "cells": cells,
                 "verdict": verdict,
                 "wrong_object_total": total_wrong,
                 "h5": {
-                    "selected": h5_totals(select_cells(cells)),
+                    "selected": h5_totals(select_cells(cells, tiers)),
                     "all_records": h5_totals(cells),
                 },
             },
@@ -603,13 +622,13 @@ def main() -> int:
     return 0
 
 
-def select_cells(cells: list[dict]) -> list[dict]:
+def select_cells(cells: list[dict], tiers: tuple[str, ...] = TIERS) -> list[dict]:
     """The verdict's aggregation set: per (arm, tier), the
     highest-attempt CLEAN cell — flagged and superseded cells stay in
     the all_records inventory only (PR #76 review)."""
     selected = []
     for arm in ("W", "L"):
-        for tier in TIERS:
+        for tier in tiers:
             eligible = [
                 c for c in cells if c["arm"] == arm and c["tier"] == tier and not c["flags"]
             ]
