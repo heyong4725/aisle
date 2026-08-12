@@ -24,21 +24,25 @@ def select_pose(poses: np.ndarray, target_med: str) -> np.ndarray:
 
 def main() -> None:
     import json
+    import os
     import sys
 
     import pyarrow as pa
     from dora import Node
 
-    from aisle.topics import make_sender
+    from aisle.topics import env_accepts, env_pin_from_env, make_sender
 
+    env_pin = env_pin_from_env(os.environ)
     node = Node()
-    send = make_sender(node)
+    send = make_sender(node, env_pin)
     target: str | None = None
     pending = False
     for event in node:
         if event["type"] != "INPUT":
             continue
         metadata = event.get("metadata") or {}
+        if not env_accepts(metadata, env_pin):
+            continue  # fleet mode (BRG-5): another env's stream
         if event["id"] == "target_request":
             request = json.loads(event["value"][0].as_py())
             if request.get("target_med") not in MED_NAMES:

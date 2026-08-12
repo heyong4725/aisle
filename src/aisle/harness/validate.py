@@ -306,6 +306,13 @@ def validate_nodes(
             )
         manifest = manifests.get(node_id)
         if manifest is None:
+            # fleet stamping (design doc 8.4.3): `<id>-a<int>` is agent
+            # <int>'s instance of manifest `<id>` — same schema, same
+            # capabilities, one env pin apart
+            stamped = re.fullmatch(r"(?P<base>.+)-a\d+", node_id)
+            if stamped:
+                manifest = manifests.get(stamped.group("base"))
+        if manifest is None:
             close = _closest(node_id, list(manifests))
             suggestion = (
                 f"rename the node to {close!r}"
@@ -824,7 +831,17 @@ def _validate_edge(
                 )
             )
 
-    port_declared = port in declared_inputs
+    # fleet fan-in convention (BRG-5, design doc 8.4.3): `name_<int>` is
+    # an INSTANCE of declared port `name` — a shared node (guard, reset
+    # service) takes one suffixed input per agent, schema unchanged.
+    # Dora needs distinct input ids per source; duplicating every
+    # instance in the manifest would make the agent count a manifest
+    # property, which it is not.
+    base_port, _, suffix = port.rpartition("_")
+    effective_port = port
+    if port not in declared_inputs and suffix.isdigit() and base_port in declared_inputs:
+        effective_port = base_port
+    port_declared = effective_port in declared_inputs
     if not port_declared:
         errors.append(
             _entry(
@@ -932,7 +949,7 @@ def _validate_edge(
     if not port_declared:
         return
 
-    consumer_schema = declared_inputs[port].get("schema")
+    consumer_schema = declared_inputs[effective_port].get("schema")
     producer_schema = (
         manifest_outputs.get(out_port, {}).get("schema") if producer_manifest else None
     )

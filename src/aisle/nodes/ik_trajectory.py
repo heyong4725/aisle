@@ -993,7 +993,7 @@ def main() -> None:
     from dora import Node
 
     from aisle.scenes.pharmacy import load_physics, resolve_layout, wrist_mount_transform
-    from aisle.topics import make_sender
+    from aisle.topics import env_accepts, env_pin_from_env, make_sender
 
     embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
     physics = load_physics()
@@ -1007,8 +1007,9 @@ def main() -> None:
         np.float64
     )
 
+    env_pin = env_pin_from_env(os.environ)
     node = Node()
-    send = make_sender(node)
+    send = make_sender(node, env_pin)
     streamer: StageStreamer | None = None
     # while a read move runs: {request_id, face, attempts: [(q, range_m)],
     # attempt_idx} — the executor walks the ladder until one attempt TRACKS
@@ -1043,6 +1044,8 @@ def main() -> None:
         if event["type"] != "INPUT":
             continue
         metadata = event.get("metadata") or {}
+        if not env_accepts(metadata, env_pin):
+            continue  # fleet mode (BRG-5): another env's stream
         if event["id"] == "reset_done":
             # episode boundary: NEVER keep executing a stale plan — in the
             # first live run a stale stream fought the post-reset guard

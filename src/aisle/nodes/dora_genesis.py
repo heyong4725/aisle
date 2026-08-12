@@ -405,20 +405,42 @@ class ResetQuarantine:
     stale joint_cmds would drive the just-teleported-home arm back off home,
     so the bridge holds the arm at home and DROPS commands while quarantined
     — `arm()` on reset, `hold()` once per tick returns True while active and
-    consumes one tick (M0 run t10-clearcheck ep9 cascade)."""
+    consumes one tick (M0 run t10-clearcheck ep9 cascade).
 
-    def __init__(self, ticks: int):
+    Fleet mode (BRG-5): quarantine is PER ENV — a reset of env k must not
+    freeze the other envs' episodes. `arm(env_id)`/`held(env_id)` key a
+    per-env countdown; `tick()` advances every active countdown once.
+    env_id None = every env (the single-env and legacy whole-scene path)."""
+
+    def __init__(self, ticks: int, n_envs: int = 1):
         self.ticks = int(ticks)
-        self._remaining = 0
+        self.n_envs = int(n_envs)
+        self._remaining: dict[int, int] = {}
 
-    def arm(self) -> None:
-        self._remaining = self.ticks
+    def arm(self, env_id: int | None = None) -> None:
+        if self.ticks <= 0:
+            return  # settle disabled: never quarantine
+        targets = range(self.n_envs) if env_id is None else (env_id,)
+        for env in targets:
+            self._remaining[env] = self.ticks
+
+    def tick(self) -> None:
+        for env in [e for e, r in self._remaining.items() if r > 0]:
+            self._remaining[env] -= 1
+            if self._remaining[env] <= 0:
+                del self._remaining[env]
+
+    def held(self, env_id: int) -> bool:
+        return self._remaining.get(env_id, 0) > 0
+
+    def any_held(self) -> bool:
+        return bool(self._remaining)
 
     def hold(self) -> bool:
-        if self._remaining > 0:
-            self._remaining -= 1
-            return True
-        return False
+        """Legacy single-env form: advance and report (arm() with no env)."""
+        active = self.any_held()
+        self.tick()
+        return active
 
 
 class RateScheduler:
@@ -472,11 +494,17 @@ class CommandQueue:
         dropped = self._pending[key][1] + 1 if key in self._pending else 0
         self._pending[key] = (payload, dropped, self._arrival)
 
-    def drain(self) -> list[tuple[str, int, object, int]]:
+    def drain(self, env_id: int | None = None) -> list[tuple[str, int, object, int]]:
         """(kind, env_id, payload, dropped) in arrival order of each
-        surviving command."""
-        items = sorted(self._pending.items(), key=lambda kv: kv[1][2])
-        self._pending = {}
+        surviving command. With `env_id`, drains ONLY that env's pending
+        commands (fleet mode: a per-env reset must not flush the other
+        envs' in-flight commands)."""
+        if env_id is None:
+            items = sorted(self._pending.items(), key=lambda kv: kv[1][2])
+            self._pending = {}
+        else:
+            keys = [key for key in self._pending if key[1] == env_id]
+            items = sorted(((k, self._pending.pop(k)) for k in keys), key=lambda kv: kv[1][2])
         return [(kind, env, payload, dropped) for (kind, env), (payload, dropped, _) in items]
 
 
@@ -955,12 +983,17 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     robot.control_dofs_position(finger_target, dofs_idx_local=finger_idx)
             dropped_counts[kind][env_id] = dropped_counts[kind].get(env_id, 0) + dropped
 
-    def teleport_reset(seed: int) -> None:
+    def teleport_reset(seed: int, env_id: int | None = None) -> None:
         """BRG-4: state injection — no process restart, no scene rebuild.
         Desk: a fresh placement sample per seed. Store: the SEED's episode
         layout for the configured scenario (T16, ADR-19) — the same
         generator that produces the goal drives the physical state, so the
-        two can never disagree (RS-3, CON-5)."""
+        two can never disagree (RS-3, CON-5).
+
+        Fleet mode (BRG-5): `env_id` teleports ONLY that env's slice —
+        boxes, arm home, command drain and quarantine are all per-env, so
+        one agent's reset never perturbs its neighbours' episodes.
+        env_id None keeps the legacy whole-scene semantics bit for bit."""
         if is_store:
             teleport_store_reset(handle, generate_episode(seed, cfg.scenario))
         else:
@@ -979,32 +1012,51 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                 entity = handle.boxes[placement.name]
                 pos = np.array([placement.x, placement.y, placement.z], dtype=np.float32)
                 quat = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)  # genesis wxyz
-                if cfg.n_envs > 1:
+                if cfg.n_envs > 1 and env_id is not None:
+                    entity.set_pos(pos[None, :], envs_idx=[env_id])
+                    entity.set_quat(quat[None, :], envs_idx=[env_id])
+                elif cfg.n_envs > 1:
                     entity.set_pos(np.tile(pos, (cfg.n_envs, 1)))
                     entity.set_quat(np.tile(quat, (cfg.n_envs, 1)))
                 else:
                     entity.set_pos(pos)
                     entity.set_quat(quat)
-                entity.zero_all_dofs_velocity()
+                # velocity zeroing is env-sliced too: the global zero
+                # froze the OTHER agent's carried box mid-swing (fleet
+                # probe: phantom 'dropped')
+                entity.zero_all_dofs_velocity(
+                    envs_idx=[env_id] if cfg.n_envs > 1 and env_id is not None else None
+                )
         if "home_qpos" in profile:
             home = from_wire_joint_order(
                 np.asarray(profile["home_qpos"], dtype=np.float32), wire_dof_indices
             )
-            batched_home = home if cfg.n_envs == 1 else np.tile(home, (cfg.n_envs, 1))
-            robot.set_qpos(batched_home)
-            # re-latch the PD controller: a stale pre-reset target would
-            # drive the arm away from home on the first post-reset tick
-            robot.control_dofs_position(batched_home)
-        robot.zero_all_dofs_velocity()
-        # pre-reset commands must not leak into the new episode (CON-5)
-        commands.drain()
-        for counts in dropped_counts.values():
-            counts.clear()
+            if cfg.n_envs > 1 and env_id is not None:
+                robot.set_qpos(home[None, :], envs_idx=[env_id])
+                robot.control_dofs_position(home[None, :], envs_idx=[env_id])
+            else:
+                batched_home = home if cfg.n_envs == 1 else np.tile(home, (cfg.n_envs, 1))
+                robot.set_qpos(batched_home)
+                # re-latch the PD controller: a stale pre-reset target would
+                # drive the arm away from home on the first post-reset tick
+                robot.control_dofs_position(batched_home)
+        robot.zero_all_dofs_velocity(
+            envs_idx=[env_id] if cfg.n_envs > 1 and env_id is not None else None
+        )
+        # pre-reset commands must not leak into the new episode (CON-5);
+        # per-env resets drain only their own env's pending commands
+        commands.drain(env_id)
+        if env_id is None:
+            for counts in dropped_counts.values():
+                counts.clear()
+        else:
+            for counts in dropped_counts.values():
+                counts.pop(env_id, None)
         # hold the arm at home for the next few ticks: the executor keeps
         # streaming the ended episode's plan until it sees reset_done, and
         # those in-flight joint_cmds would otherwise drive the arm off home
         if home_hold is not None:
-            quarantine.arm()
+            quarantine.arm(env_id)
 
     for event in node:
         if event["type"] != "INPUT":
@@ -1014,14 +1066,28 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         if input_id == "tick":
             if awaiting_first_reset:
                 continue
-            settling = home_hold is not None and quarantine.hold()
+            held_envs = (
+                [env for env in range(cfg.n_envs) if quarantine.held(env)]
+                if home_hold is not None
+                else []
+            )
+            quarantine.tick()
+            # mobile keeps the whole-scene semantics (single-env by spec)
+            settling = bool(held_envs) and len(held_envs) == cfg.n_envs
             if settling:
-                # post-reset settle: hold the arm at home and DROP any stale
-                # joint_cmds still in flight from the ended episode's plan,
-                # so they cannot drive the just-homed arm off home
+                # every env settling (single-env case unchanged): hold the
+                # arm(s) at home and DROP stale in-flight joint_cmds so
+                # they cannot drive the just-homed arm off home
                 commands.drain()
                 batched = home_hold if cfg.n_envs == 1 else np.tile(home_hold, (cfg.n_envs, 1))
                 robot.control_dofs_position(batched)
+            elif held_envs:
+                # fleet mode: only the quarantined envs hold and drain —
+                # the others' episodes keep executing
+                for env in held_envs:
+                    commands.drain(env)
+                    robot.control_dofs_position(home_hold[None, :], envs_idx=[env])
+                apply_commands()
             else:
                 apply_commands()
             if is_mobile:
@@ -1181,13 +1247,25 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             # event loop guarantees ordering
             if mode == 1:
                 raise NotImplementedError("behavioral reset lands with SPEC 040 (T06)")
-            teleport_reset(reset_seed)
+            # fleet mode (BRG-5): a reset carrying env_id teleports only
+            # that env's slice; the shared publish grid is NOT re-anchored
+            # (it belongs to every env — fleet cadence is anchored to the
+            # first whole-scene reset, a documented fleet-mode difference
+            # from ADR-25's per-episode anchoring)
+            reset_env = metadata.get("env_id") if cfg.n_envs > 1 else None
+            if reset_env is not None:
+                if isinstance(reset_env, bool) or not isinstance(reset_env, int):
+                    raise ValueError(f"reset env_id must be an int, got {reset_env!r} (BRG-5)")
+                if not 0 <= reset_env < cfg.n_envs:
+                    raise ValueError(f"reset env_id {reset_env} outside [0, {cfg.n_envs}) (BRG-5)")
+            teleport_reset(reset_seed, reset_env)
             awaiting_first_reset = False
-            # CON-5/ADR-25: re-anchor the publish-cadence grid to the reset,
-            # so which ticks fire the sub-100 Hz topics (poses, oracle_state,
-            # base_pose...) is a function of the episode, not of the wall
-            # tick the request happened to land on
-            scheduler = RateScheduler(topic_rates, dt)
+            if reset_env is None:
+                # CON-5/ADR-25: re-anchor the publish-cadence grid to the
+                # reset, so which ticks fire the sub-100 Hz topics (poses,
+                # oracle_state, base_pose...) is a function of the episode,
+                # not of the wall tick the request happened to land on
+                scheduler = RateScheduler(topic_rates, dt)
             if so101_latch is not None:
                 if so101_latch.held_name is not None:
                     print(
@@ -1211,14 +1289,17 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     # latch would otherwise pin the respawned item to the hand
                     print(f"carry release: {held_item} (reset)", file=sys.stderr)
                     held_item = None
+            reply_env = reset_env if reset_env is not None else 0
             node.send_output(
                 "reset_done",
                 pa.array(np.array([1], dtype=np.uint32)),
                 metadata=_metadata(
                     sim_time_ns,
-                    0,
-                    seq.update({("reset_done", 0): seq.get(("reset_done", 0), 0) + 1})
-                    or seq[("reset_done", 0)],
+                    reply_env,
+                    seq.update(
+                        {("reset_done", reply_env): seq.get(("reset_done", reply_env), 0) + 1}
+                    )
+                    or seq[("reset_done", reply_env)],
                     request_id=metadata.get("request_id", ""),
                     seed=reset_seed,
                     mode=mode,

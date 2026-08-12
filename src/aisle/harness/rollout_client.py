@@ -29,7 +29,7 @@ def main() -> None:
     from dora import Node
 
     from aisle.scenes.pharmacy import MED_NAMES
-    from aisle.topics import make_sender
+    from aisle.topics import env_accepts, env_pin_from_env, make_sender
 
     seeds = [int(s) for s in os.environ.get("AISLE_SEEDS", "0").split(",")]
     tier = os.environ.get("AISLE_TIER", "T0")
@@ -63,11 +63,18 @@ def main() -> None:
     reset_mode = 1 if reset_mode_name == "behavioral" else 0
     results_path = os.environ.get("AISLE_RESULTS", "")
 
+    env_pin = env_pin_from_env(os.environ)
     node = Node()
-    send = make_sender(node)
+    send = make_sender(node, env_pin)
     episode = 0
     phase = "reset_pending"  # -> awaiting_reset -> running -> (next)
     retries_seen: dict[str, int] = {}  # goal_id -> latest feedback retries (HAR-3)
+    # the sim stamp of the episode_result that ended the last episode: rides
+    # every reset request (TC-2), so the realistic verifier can bound the
+    # ended episode's frame window BEFORE any reset motion enters the scene
+    # (issue #120) — under RST-2 behavioral resets the frames between the
+    # result and reset_done show the med being picked back OUT of the tray
+    last_result_sim_ns = 0
     # append, not truncate: after a wall-clamp relaunch (ADR-23) this
     # process is the SECOND writer to the same run's results file — a
     # truncate would erase the episodes and synthetic clamp records the
@@ -77,14 +84,20 @@ def main() -> None:
     for event in node:
         if event["type"] != "INPUT":
             continue
+        if not env_accepts(event.get("metadata") or {}, env_pin):
+            continue  # fleet mode (BRG-5): another env's stream
         if event["id"] == "tick":
             if phase == "reset_pending" and episode < len(seeds):
                 send(
                     "reset",
                     pa.array(np.array([seeds[episode], reset_mode], dtype=np.uint32)),
-                    {"request_id": f"reset-{episode:04d}-{seeds[episode]}"},
+                    {
+                        "request_id": f"reset-{episode:04d}-{seeds[episode]}",
+                        "sim_time_ns": last_result_sim_ns,
+                    },
                 )
                 phase = "awaiting_reset"
+                print(f"reset sent: episode {episode} seed {seeds[episode]}", file=sys.stderr)
         elif event["id"] == "reset_done" and phase == "awaiting_reset":
             reset_meta = event.get("metadata") or {}
             if retail:
@@ -111,6 +124,7 @@ def main() -> None:
                 {"goal_id": f"ep-{episode:04d}"},
             )
             phase = "running"
+            print(f"goal sent: ep-{episode:04d} {goal.get('target_med', '')}", file=sys.stderr)
         elif event["id"] == "episode_feedback":
             # HAR-3: the retry count rides in the state machine's
             # feedback; the LATEST value per goal is what the episode
@@ -122,6 +136,12 @@ def main() -> None:
                 retries_seen[goal_id] = int(feedback["retries"])
         elif event["id"] == "episode_result" and phase == "running":
             result = json.loads(event["value"][0].as_py())
+            try:
+                last_result_sim_ns = int((event.get("metadata") or {}).get("sim_time_ns", 0))
+            except (TypeError, ValueError):
+                # a malformed stamp degrades the reset bound, it must not
+                # kill the client mid-campaign (PR #168 review)
+                last_result_sim_ns = 0
             record = {"episode": episode, "seed": seeds[episode], **result}
             record["retries"] = retries_seen.pop(record.get("goal_id", ""), 0)
             print(f"episode {episode} result: {record}", file=sys.stderr)
@@ -136,7 +156,7 @@ def main() -> None:
                 send(
                     "reset",
                     pa.array(np.array([seeds[0], 0], dtype=np.uint32)),  # cleanup teleports
-                    {"request_id": "reset-cleanup"},
+                    {"request_id": "reset-cleanup", "sim_time_ns": last_result_sim_ns},
                 )
                 phase = "done"
                 break  # client exits; dataflow teardown is the runner's job

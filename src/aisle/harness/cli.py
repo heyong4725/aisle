@@ -124,6 +124,15 @@ def build_parser() -> argparse.ArgumentParser:
     sw.add_argument("--embodiment", default="franka")
     sw.add_argument("--root", type=Path, default=DEFAULT_ROOT)
 
+    fl = subparsers.add_parser("fleet", help="N agents on one batched sim (design doc 8.4.3)")
+    fl.add_argument("--graph", type=Path, required=True, help="single-env base graph to stamp")
+    fl.add_argument("--agents", type=int, required=True)
+    fl.add_argument("--episodes", type=int, required=True, help="episodes per agent")
+    fl.add_argument("--seeds", required=True, help="a..b or comma list (per-agent episode seeds)")
+    fl.add_argument("--out", type=Path, default=None, help="output dir (default runs/fleet-<ts>)")
+    fl.add_argument("--timeout-s", type=float, default=1200.0)
+    fl.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+
     pr = subparsers.add_parser("probe", help="attach a temporary topic inspector (HAR-11)")
     pr.add_argument("--dataflow", required=True)
     pr.add_argument("--topic", required=True)
@@ -185,6 +194,57 @@ def main() -> int:
             _branch(args.root),
         )
         return emit_report(report, lambda level, e: f"swap {level}: {e}")
+    if args.command == "fleet":
+        import json as json_module
+        import os
+        import subprocess
+        import time as time_module
+
+        from aisle.harness.fleet import run_fleet
+        from aisle.harness.rollout import parse_seed_range, scrub_bringup_env
+        from aisle.harness.validate import validate as validate_graph
+
+        out_dir = args.out or (args.root / "runs" / f"fleet-{int(time_module.time())}")
+
+        procs = []
+
+        def launch(graph_path):
+            env = {**scrub_bringup_env(dict(os.environ))}
+            proc = subprocess.Popen(
+                ["dora", "run", str(graph_path), "--uv"],
+                cwd=args.root,
+                env=env,
+                stdout=open(out_dir / "dora.log", "w"),
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            procs.append(proc)
+            return proc.poll
+
+        report = run_fleet(
+            args.graph if args.graph.is_absolute() else args.root / args.graph,
+            args.agents,
+            args.episodes,
+            parse_seed_range(args.seeds),
+            out_dir,
+            args.timeout_s,
+            launch,
+        )
+        # validate the STAMPED graph and attach the verdict (VAL gates)
+        stamped = validate_graph(Path(report["graph"]), args.root, "franka", False)
+        report["validate_ok"] = stamped["ok"]
+        import signal as signal_module
+
+        for proc in procs:
+            if proc.poll() is None:
+                os.killpg(proc.pid, signal_module.SIGTERM)
+                try:
+                    proc.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    os.killpg(proc.pid, signal_module.SIGKILL)
+        print(json_module.dumps(report))
+        return 0 if report["episodes_total"] >= args.agents * args.episodes else 1
+
     if args.command == "probe":
         from aisle.harness.swap import probe
 
