@@ -666,6 +666,40 @@ def validate_nodes(
     return errors, warnings
 
 
+#: What a reset node must be wired for to actually PERFORM a behavioral
+#: reset (RST-2): the perception it plans from, the joint feedback it
+#: closes the loop on, and the command topics it drives the arm with.
+#: A node without these still ACCEPTS mode 1 -- it just burns every attempt
+#: on `latest_rgb is None` and falls back to teleport (issue #196).
+BEHAVIORAL_RESET_INPUTS = ("bridge_info", "rgb_overhead", "depth_overhead", "joint_state")
+BEHAVIORAL_RESET_OUTPUTS = ("reset_joint_cmd", "reset_gripper_cmd")
+
+
+def behavioral_reset_gaps(nodes: list) -> list[str]:
+    """RST-2 (issue #196): what this graph is missing to serve a behavioral
+    reset, or [] if it can.
+
+    Ten of eleven graphs wire the reset node with `{reset, reset_done}`
+    only. `--reset behavioral` on one of them is accepted, pays a ~2 s
+    model load inside the first reset request (the `bridge_info` pre-warm
+    is unreachable without that input), exhausts all three attempts on a
+    missing frame, and falls back to teleport -- reporting
+    `fallback: true, behavioral_attempts: 3` every episode. An A6 ablation
+    run that way is a teleport run that measures nothing, with no error
+    anywhere.
+
+    Pure so the refusal is unit-testable without a rollout."""
+    reset = [n for n in nodes if isinstance(n, dict) and n.get("id") == "reset"]
+    if not reset:
+        return ["no `reset` node in the graph"]
+    node = reset[0]
+    have_in = set(node.get("inputs") or {})
+    have_out = set(node.get("outputs") or [])
+    gaps = [f"input {name!r}" for name in BEHAVIORAL_RESET_INPUTS if name not in have_in]
+    gaps += [f"output {name!r}" for name in BEHAVIORAL_RESET_OUTPUTS if name not in have_out]
+    return gaps
+
+
 def graph_perception_rung(nodes: list, manifests: dict) -> tuple[str, list[str], list[dict]]:
     """The graph's perception rung, sim-bridge ids, and VAL-8 errors (TC-9).
 

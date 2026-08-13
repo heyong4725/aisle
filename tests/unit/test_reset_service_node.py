@@ -129,7 +129,10 @@ def run_service(events, monkeypatch, **runtime_kwargs) -> FakeNode:
 
     from aisle.reset.service import main
 
-    main()
+    # CON-5: injected so t_reset_ms is reproducible. Each call advances 0.25 s,
+    # so an elapsed measurement is a deterministic multiple rather than a race.
+    ticks = iter(range(10_000))
+    main(clock=lambda: next(ticks) * 0.25)
     return node
 
 
@@ -308,3 +311,42 @@ def test_a_non_numeric_payload_is_refused_not_fatal(monkeypatch):
     assert len(replies(node)) == 1, "a malformed request killed the boundary authority"
     assert "error" in replies(node)[0]
     assert forwards(node) == []
+
+
+def test_the_behavioral_reply_is_tc6_complete(monkeypatch):
+    """TC-6 (issue #194): the reply carries `seed`, `mode`, `t_reset_ms`. The
+    behavioral-success route carried NONE of the three — and it is the route
+    that can take three real motion attempts, so it is exactly where RST-1's
+    <2 s budget most needs to be auditable. `t_reset_ms` measured from the
+    request, not from a teleport that never happened."""
+    node = run_service(
+        [reset_request(9, BEHAVIORAL), joint_state(sim_ns=7_000)],
+        monkeypatch,
+    )
+    assert len(replies(node)) == 1
+    reply = replies(node)[0]
+    assert reply["seed"] == 9
+    assert reply["mode"] == BEHAVIORAL
+    assert "t_reset_ms" in reply, reply
+    # measured, not stubbed: the injected clock advances 0.25 s per read, and
+    # at least one read separates the request from the reply
+    assert reply["t_reset_ms"] >= 250, reply["t_reset_ms"]
+
+
+def test_every_route_reports_the_tc6_timing_key(monkeypatch):
+    """The teleport relay gets `t_reset_ms` from the bridge and the refusal
+    reports 0 ("the sim was never touched"), so after the fix every route
+    answers the question TC-6 asks. Pinned together because a route that
+    silently omits it is unmeasurable rather than wrong-looking."""
+    relay = run_service(
+        [reset_request(1, TELEPORT), bridge_reply(sim_time_ns=1, t_reset_ms=1234, seed=1, mode=0)],
+        monkeypatch,
+    )
+    assert replies(relay)[0]["t_reset_ms"] == 1234
+
+    refused = run_service(
+        [_inp("reset", pa.array(np.array([1, 2, 3], dtype=np.uint32)), {"request_id": "r"})],
+        monkeypatch,
+    )
+    assert len(replies(refused)) == 1
+    assert replies(refused)[0]["t_reset_ms"] == 0

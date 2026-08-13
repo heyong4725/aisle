@@ -670,3 +670,48 @@ def test_dora_stderr_log_is_per_launch(tmp_path):
     # all at the run root, beside each other, and sortable
     assert all(dora_stderr_log(run, n).parent == run for n in range(4))
     assert names[1:] == [f"dora.stderr.relaunch-{n}.log" for n in (1, 2, 3)]
+
+
+def test_behavioral_reset_is_refused_on_a_graph_that_cannot_serve_it():
+    """RST-2 (issue #196): ten of the eleven graphs wire the reset node with
+    `{reset, reset_done}` only. `--reset behavioral` on one of those is
+    accepted today, burns all three attempts on a frame that never arrives,
+    and falls back to teleport EVERY episode — reporting `fallback: true,
+    behavioral_attempts: 3` with no error anywhere. An A6 ablation run that
+    way is a teleport run that measures nothing.
+
+    Checked against the real graphs, so a future graph that gains the RST-2
+    wiring is recognised without editing this test."""
+    import yaml
+
+    from aisle.harness.validate import behavioral_reset_gaps
+
+    def gaps_for(name):
+        doc = yaml.safe_load((REPO_ROOT / "graphs" / f"{name}.yaml").read_text())
+        return behavioral_reset_gaps(doc["nodes"])
+
+    # the graph named for behavioral resets can serve one
+    assert gaps_for("expert_t1_behavioral") == []
+    # its teleport twin cannot, and says exactly what is missing
+    gaps = gaps_for("expert_t1")
+    assert gaps, "expert_t1 has no RST-2 wiring but was reported capable"
+    assert any("rgb_overhead" in g for g in gaps), gaps
+    assert any("reset_joint_cmd" in g for g in gaps), gaps
+    # a graph with no reset node at all is refused, not crashed
+    assert behavioral_reset_gaps([{"id": "other"}]) == ["no `reset` node in the graph"]
+
+
+def test_exactly_one_graph_is_behavioral_capable_today():
+    """Pins the CLAIM in issue #196 rather than only the mechanism: if a
+    second graph gains RST-2 wiring, that is a deliberate act and this test
+    should be updated to say so."""
+    import yaml
+
+    from aisle.harness.validate import behavioral_reset_gaps
+
+    capable = [
+        p.stem
+        for p in sorted((REPO_ROOT / "graphs").glob("*.yaml"))
+        if not behavioral_reset_gaps(yaml.safe_load(p.read_text()).get("nodes") or [])
+    ]
+    assert capable == ["expert_t1_behavioral"], capable
