@@ -865,10 +865,16 @@ Three properties make this useful rather than merely voluminous. Traces are
 same topic name and conflating them destroys attribution. Every row is
 stamped in **simulated time**, so evidence from different nodes is aligned on
 the clock that determines behavior rather than the one that determines
-scheduling. And artifacts are written **per launch**, not per run: a run that
-hits the per-episode wall clamp relaunches, and every writer here opens in
-truncate mode, so a shared path would have the relaunch erase the evidence of
-the launch that wedged — which is precisely the launch under investigation.
+scheduling. And a run that hits the per-episode wall clamp relaunches, which
+splits these artifacts into two kinds. Writers that **truncate** — the traces, the
+instrumented graph, the video, the dora stderr log — are scoped **per launch**
+(`traces/relaunch-N/`, `graph-rN.yaml`, `dora.stderr.relaunch-N.log`), because
+a shared path would let the relaunch erase the evidence of the launch that
+wedged, which is precisely the launch under investigation. Writers that
+**append** — `episodes.jsonl` and `verifier_stages.jsonl` — stay **per run**
+on purpose: a relaunched client continues the run-global episode numbering, so
+one file per run is what keeps correlation ids unique and the two files
+joinable. `manifest.json` is written once, after the last launch.
 
 The `report` CLI turns this into metrics; `traces` slices it by episode and
 topic. Both emit JSON, so the agent consuming them is not parsing prose.
