@@ -84,8 +84,18 @@ def main() -> int:
         # previous episode_result (which is what this tool did first) is
         # exactly that bug: it cost a 0.20 fidelity number and an issue
         # blaming the detector for a correct detection.
+        # the reset SERVICE's endpoint, not the bridge's (issue #192): a
+        # successful BEHAVIORAL reset never reaches the bridge, so keying
+        # off dora-genesis segments such a run by its fallbacks alone. The
+        # bridge stays the fallback for runs with no service node. A
+        # payload of 0 is a REFUSED reset (ADR-8), not a boundary.
+        reset_rows: list[dict] = []
+        for producer in ("reset", "dora-genesis"):
+            reset_rows = _rows(traces, f"{producer}__reset_done")
+            if reset_rows:
+                break
         resets = sorted(
-            r["sim_time_ns"] for r in _rows(traces, "dora-genesis__reset_done") if r["data"]
+            r["sim_time_ns"] for r in reset_rows if r["data"] and float(r["data"][0]) != 0.0
         )
 
         meds, physics = load_meds(), load_physics()

@@ -56,7 +56,9 @@ def graphs_with_reset_done():
 def test_the_corpus_is_not_empty():
     """Guards the two tests below from silently passing on zero graphs."""
     found = list(graphs_with_reset_done())
-    assert len(found) >= 10, [p.name for p, _ in found]
+    # every graph, not "at least ten": a deleted graph must change this
+    # count rather than slip under a floor
+    assert len(found) == len(GRAPHS), sorted({p.name for p in GRAPHS} - {p.name for p, _ in found})
 
 
 @pytest.mark.parametrize("path", GRAPHS, ids=lambda p: p.name)
@@ -104,3 +106,39 @@ def test_the_relay_still_hears_the_bridge(path):
     )
     outputs = relay[0].get("outputs") or []
     assert "reset_done" in outputs, f"{path.name}: the reset service publishes no reset_done"
+
+
+def _node_sources(path: Path):
+    """{node_id: source .py path} for every python node in the graph."""
+    doc = yaml.safe_load(path.read_text()) or {}
+    out = {}
+    for node in doc.get("nodes", []):
+        rel = str(node.get("path", ""))
+        if rel.endswith(".py"):
+            out[node["id"]] = (path.parent / rel).resolve()
+    return out
+
+
+@pytest.mark.parametrize("path", GRAPHS, ids=lambda p: p.name)
+def test_every_node_that_handles_the_boundary_is_wired_to_it(path):
+    """RST-1 + issue #179: the bug that started all of this was a node whose
+    code handles `reset_done` while the graph never delivered it —
+    waypoint-nav ran for months that way.
+
+    The sibling tests here check the SOURCE of edges that exist; none of
+    them notices an edge that is simply absent, so deleting a consumer's
+    input entirely passed all of them. This is the one that catches it, and
+    it is derived from the node's own source rather than a hand-kept list,
+    so a new stateful node is covered the day it is written."""
+    consumers = _consumers(path)
+    missing = []
+    for node_id, src in _node_sources(path).items():
+        if not src.is_file() or node_id in consumers:
+            continue
+        text = src.read_text()
+        if '== "reset_done"' in text or "'reset_done'" in text:
+            missing.append((node_id, src.name))
+    assert not missing, (
+        f"{path.name}: {missing} handle reset_done in code but the graph never delivers it — "
+        "the node silently misses every episode boundary (issue #179)"
+    )

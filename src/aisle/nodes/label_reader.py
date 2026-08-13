@@ -383,7 +383,15 @@ class ReaderSession:
         and hang that tour — the state machine ignores replies it is not
         awaiting, so nothing downstream would ever notice. A request
         barriered strictly after the reset is from the new episode and
-        survives; frames are kept on the same rule."""
+        survives; frames are kept on the same rule.
+
+        A stamp-less call takes the UNFENCED branch below — the destructive
+        one — so the caller must only make it for a real boundary. Since
+        issue #192 the boundary arrives from the reset service, which also
+        replies to REFUSED resets (ADR-8) carrying no sim stamp; those are
+        filtered at the call site, because a refusal is not a boundary and
+        clearing a live request on one is exactly the hang this fence was
+        built to prevent."""
         reset_ns = sim_time_ns if sim_time_ns is not None else None
         if reset_ns is not None and reset_ns > self.last_reset_sim_time_ns:
             self.last_reset_sim_time_ns = reset_ns
@@ -566,6 +574,15 @@ def main() -> None:  # pragma: no cover — dora runtime
                 session.on_read_request(request, metadata.get("request_id", "")), barrier
             )
         elif event["id"] == "reset_done":
+            if metadata.get("error"):
+                # a REFUSED reset (ADR-8) is not an episode boundary, and it
+                # carries no sim stamp — passing it through would take
+                # on_reset_done's unfenced branch and clear a LIVE read
+                # request, hanging the tour silently (issue #192 review).
+                # These replies only reach this node because #192 moved the
+                # boundary onto the reset service's output.
+                print(f"ocr: reset refused ({metadata['error']}); not a boundary", file=sys.stderr)
+                continue
             session.on_reset_done(parse_sim_stamp(metadata))
         elif event["id"] == "clock":
             barrier = (session.pending or {}).get("frame_after_sim_time_ns")

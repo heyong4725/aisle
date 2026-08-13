@@ -293,3 +293,18 @@ def test_a_refusal_is_not_an_episode_boundary_for_the_guard(monkeypatch):
     assert safes[-1] != [0.0, 0.0], (
         f"the guard treated a REFUSED reset as an episode boundary: {safes}"
     )
+
+
+def test_a_non_numeric_payload_is_refused_not_fatal(monkeypatch):
+    """BG-3/TC-6 (issue #192 review): the service is now the single boundary
+    authority for every consumer in every graph, and dora does not restart
+    nodes — so an unparseable request must produce a refusal reply, never an
+    exception out of the event loop. `except ValueError` alone let a
+    non-numeric payload through, because that raises TypeError."""
+    node = run_service(
+        [_inp("reset", pa.array(["not-a-number"]), {"request_id": "req-3"})],
+        monkeypatch,
+    )
+    assert len(replies(node)) == 1, "a malformed request killed the boundary authority"
+    assert "error" in replies(node)[0]
+    assert forwards(node) == []
