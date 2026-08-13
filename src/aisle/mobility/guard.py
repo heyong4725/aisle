@@ -119,6 +119,86 @@ def base_creep_deadline(
     return now + hold_s if target_changed else prev_deadline
 
 
+def sim_clock_is_blind(
+    *,
+    base_pose_sim_ns: int | None,
+    last_pose_wall_t: float | None,
+    now_wall: float,
+    limits: BaseLimits,
+) -> bool:
+    """MOB-3/ADR-29: is the sim clock demonstrably unusable right now? True
+    when the latest pose carried no valid stamp, no pose ever arrived for
+    this env, or the pose stream itself went silent past the backstop.
+
+    Extracted so the COMMAND path and the pose-driven watchdog cannot drift
+    apart on the definition (issue #182 review): they must agree, or a
+    command can be forwarded under a rule the watchdog is simultaneously
+    stopping the base for. Pure/deterministic (CON-5)."""
+    return base_pose_sim_ns is None or (
+        last_pose_wall_t is not None and now_wall - last_pose_wall_t > limits.base_wall_backstop_s
+    )
+
+
+def blind_onset(prev: float | None, *, sim_clock_blind: bool, now_wall: float) -> float | None:
+    """The wall time the sim clock most recently WENT blind, or None while
+    it is healthy (issue #182).
+
+    Latch-on-entry, clear-on-return: a blind stretch keeps its ORIGINAL
+    onset so the window actually ages, and a returning stamp clears it so
+    transient gaps cannot accumulate across healthy stretches. Pure so the
+    latch itself is unit-testable — it lived inside the guard node's event
+    loop and was the one half of the #182 fix no test could reach."""
+    if not sim_clock_blind:
+        return None
+    return now_wall if prev is None else prev
+
+
+def base_blind_drive(
+    *, blind_since_wall: float | None, now_wall: float, limits: BaseLimits
+) -> bool:
+    """MOB-3 (issue #182): has the base been driving with a blind sim clock
+    for longer than ``base_wall_backstop_s`` WALL seconds?
+
+    Wall is correct here and only here: the quantity being bounded is "how
+    long have we had no sim clock", which by construction cannot be measured
+    in sim time. Pure/deterministic (CON-5)."""
+    return (
+        blind_since_wall is not None and now_wall - blind_since_wall > limits.base_wall_backstop_s
+    )
+
+
+#: The guard's per-env watchdog fields that are re-armed at every episode
+#: boundary, with their fresh values. NOT included, deliberately:
+#: ``base_pose_sim_ns`` — the sim clock is monotonic across episodes, so the
+#: newest pose stamp stays a valid reference (ADR-29).
+#:
+#: This lives here, next to the verdict, because it is a CONTRACT rather
+#: than bookkeeping: every field the verdict reads must be re-armed, or the
+#: next episode inherits the last one's window. Issue #182 added
+#: ``blind_since_wall`` to the node's state dict and missed the reset
+#: handler, which would have given ``base_blind_wall`` zero grace from
+#: episode 2 onward on an unstamped source — an outcome that depends on
+#: episode INDEX, which is the determinism CON-5 exists to protect.
+BASE_WATCHDOG_EPISODE_RESET = {
+    "last_base_cmd_sim_ns": None,
+    "last_base_cmd_wall_t": None,
+    "last_base_safe": [0.0, 0.0],
+    "blind_since_wall": None,
+    "blind_stop_reported": False,
+}
+
+
+def reset_base_watchdog(state: dict) -> None:
+    """Re-arm every episode-scoped watchdog field in-place (MOB-3, CON-5).
+
+    Pure apart from the mutation it exists to perform, so the boundary rule
+    is unit-testable: it was previously an inline list of assignments inside
+    the guard node's `reset_done` handler, where nothing could check that a
+    newly added field had been included."""
+    for key, fresh in BASE_WATCHDOG_EPISODE_RESET.items():
+        state[key] = list(fresh) if isinstance(fresh, list) else fresh
+
+
 def base_watchdog_reason(
     *,
     episode_timed_out: bool,
@@ -127,6 +207,7 @@ def base_watchdog_reason(
     last_cmd_wall_t: float | None,
     now_wall: float,
     sim_clock_blind: bool,
+    blind_since_wall: float | None,
     limits: BaseLimits,
 ) -> str | None:
     """MOB-3 watchdog verdict for a latched MOVING base (the caller gates on
@@ -150,6 +231,33 @@ def base_watchdog_reason(
       rtf (PR #156 review): while valid stamps flow, the sim-time check
       above owns the verdict. Distinct reason: this firing is an ops
       alarm, not the sim-time mechanism working as designed.
+    - ``base_blind_wall``: the base has been DRIVING with a blind sim
+      clock for ``base_wall_backstop_s`` WALL seconds, measured from when
+      the clock went blind rather than from the last command (issue
+      #182). Without this, a producer that keeps commanding on every pose
+      refreshes ``last_cmd_wall_t`` forever, so ``base_stale_wall`` never
+      arms while ``base_stale`` cannot advance for want of a clock — and
+      nothing stopped the base until the BG-2 episode budget, up to 30
+      wall minutes later. It regressed in when the nav node's stamp
+      parser was made total: before that a malformed stamp killed nav's
+      event loop, commands ceased, and the command-silence net fired in
+      ~10 s. A crash is not a safety mechanism, so the bound lives here.
+
+    Reasons are checked in the order listed and the FIRST match wins, so
+    the two wall reasons are not interchangeable: command-silence is
+    reported when the last command predates the clock going blind, and
+    blind-drive covers the case where commands never stop. That ordering
+    is a contract (``test_command_silence_is_reported_before_blind_drive``),
+    not an accident of layout.
+
+    NOTE (issue #182 review) this verdict alone cannot STOP an actively
+    commanding producer: the caller emits it from the pose handler, and the
+    producer's next command re-latches a nonzero base_cmd_safe behind it —
+    the bridge is a last-write-wins latch, so the stop is overwritten
+    before it is ever integrated. The guard node therefore ALSO gates its
+    command path on `base_blind_drive` (the same predicate), which is what
+    makes the stop stick. This verdict remains the net for a producer that
+    goes silent while blind.
 
     Pure/deterministic: the caller injects every stamp and clock reading."""
     if episode_timed_out:
@@ -166,6 +274,10 @@ def base_watchdog_reason(
         and now_wall - last_cmd_wall_t > limits.base_wall_backstop_s
     ):
         return "base_stale_wall"
+    if sim_clock_blind and base_blind_drive(
+        blind_since_wall=blind_since_wall, now_wall=now_wall, limits=limits
+    ):
+        return "base_blind_wall"
     return None
 
 
