@@ -928,3 +928,42 @@ def test_desk_scenario_selection_validates_against_the_suite():
     # identity check) also exits nonzero, which would let a suite-wiring
     # mutation pass this test unnoticed
     assert "bad selection" in proc.stdout.lower()
+
+
+def test_arm_l_guard_survives_skills_tracked_at_the_pin(tmp_path):
+    """Desk-campaign live failure (L/T1→T2, 2026-08-13): a skill
+    registered during an EARLIER campaign and human-merged to main is
+    TRACKED at a later campaign's pin — the wipe restores the pin's copy
+    of skills/<id>/, and the guard's stash restore crashed on the
+    existing directory (copytree, FileExistsError), aborting the arm
+    between scenarios. The restore must replace the pin's copy with the
+    arm's stashed library state."""
+    from h3_campaign import clear_nonlibrary_residue
+
+    repo = tmp_path / "wt"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    (repo / "registry" / "manifests").mkdir(parents=True)
+    # the skill is REGISTERED (evalcarded, agent-authored) and COMMITTED
+    # at the pin, exactly like s1-driver-v2 at dd4e3f1a
+    (repo / "registry" / "manifests" / "prior-skill.yaml").write_text(
+        "id: prior-skill\norigin: agent-authored\neval: {pass_rate: 0.9}\n"
+    )
+    (repo / "skills" / "prior-skill").mkdir(parents=True)
+    (repo / "skills" / "prior-skill" / "node.py").write_text("pin copy")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "pin"],
+        cwd=repo,
+        check=True,
+    )
+    oid = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True
+    ).stdout.strip()
+    subprocess.run(["git", "checkout", "-qb", "campaign/l-t1"], cwd=repo, check=True)
+
+    report = clear_nonlibrary_residue(repo, oid, keep_ref="h3/keep-L-pre-T2")
+
+    assert report["kept_skills"] == ["prior-skill"]
+    assert (repo / "skills" / "prior-skill" / "node.py").read_text() == "pin copy"
+    assert (repo / "registry" / "manifests" / "prior-skill.yaml").exists()

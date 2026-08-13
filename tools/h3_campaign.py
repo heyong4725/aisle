@@ -262,7 +262,17 @@ def clear_nonlibrary_residue(
             shutil.copy2(staged, wt / "registry" / "manifests" / f"{skill_id}.yaml")
         staged_dir = stash / "skills" / skill_id
         if staged_dir.exists():
-            shutil.copytree(staged_dir, wt / "skills" / skill_id)
+            # a skill can be TRACKED at the pin (registered during an
+            # earlier campaign and human-merged to main since — desk
+            # campaign, L/T1→T2): the wipe just restored the pin's copy,
+            # so the restore must replace it with the arm's stashed state
+            # rather than crash on the existing directory (the stash was
+            # taken from this worktree moments earlier, so both copies
+            # are byte-identical in the benign case)
+            dest = wt / "skills" / skill_id
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(staged_dir, dest)
     shutil.rmtree(stash)
     return {**report, "kept_skills": kept_skills, "skipped_ids": skipped_ids}
 
