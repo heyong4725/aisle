@@ -60,18 +60,27 @@ def refusal_reply_metadata(request_meta: dict, payload: np.ndarray, error: str) 
     return meta
 
 
-def main() -> None:
+def main(clock=None) -> None:
+    """The clock is injected (CON-5): `t_reset_ms` is a WALL measurement and
+    must be reproducible in tests without sleeping."""
     import json
+    import time
 
     import pyarrow as pa
     from dora import Node
 
+    clock = clock or time.monotonic
     node = Node()
     seq_reply = 0
     seq_forward = 0
     seq_cmd = 0
     runtime = None  # BehavioralRuntime, built lazily on first behavioral request
     latest_sim_ns = 0
+    # when the CURRENT behavioral request started, for its TC-6 t_reset_ms.
+    # RST-2 is the route where this matters most: it can take three real
+    # motion attempts, and it is the only route whose reply carried no
+    # timing at all (issue #194).
+    behavioral_started = None
 
     def get_runtime():
         nonlocal runtime
@@ -161,6 +170,12 @@ def main() -> None:
                 # exhaustion falls back to teleport — never hangs:
                 # every stage has a bounded bail and every attempt a
                 # bounded budget)
+                # the clock starts ABOVE get_runtime(): when `bridge_info`
+                # has not landed first, the FIRST behavioral request pays
+                # the ~2 s model load inside itself, and RST-1's budget is
+                # <2 s — a t_reset_ms that excludes the load cannot see the
+                # breach it exists to report (round-2 review)
+                behavioral_started = clock()
                 rt = get_runtime()
                 rt.start(int(payload[0]), metadata)
                 if rt.outcome == "exhausted":  # unplannable from the start
@@ -223,6 +238,15 @@ def main() -> None:
                     BehavioralOutcome(fallback=False, attempts=runtime.attempts),
                 )
                 reply["sim_time_ns"] = latest_sim_ns
+                # TC-6: every reply carries seed/mode/t_reset_ms. This route
+                # carried none of the three (issue #194) -- and it is the one
+                # that can take three real motion attempts, so it is exactly
+                # where RST-1's <2 s budget most needs to be auditable.
+                reply["seed"] = int(runtime.seed)
+                reply["mode"] = BEHAVIORAL
+                reply["t_reset_ms"] = (
+                    0 if behavioral_started is None else int((clock() - behavioral_started) * 1000)
+                )
                 print(
                     f"behavioral reset: success in {runtime.attempts} attempt(s)",
                     file=sys.stderr,
@@ -232,6 +256,13 @@ def main() -> None:
                     "reset_done", pa.array(np.array([1], dtype=np.uint32)), stamp(reply, seq_reply)
                 )
                 runtime.outcome = None
+                # cleared WITH the outcome: `0` already means "the sim was
+                # never touched" on the refusal path, so a stale anchor
+                # would report the PREVIOUS request's start as this one's
+                # duration rather than reading as missing. Unreachable
+                # today (success requires a start), but that is a property
+                # of runtime.py, not of this loop (round-2 review)
+                behavioral_started = None
             elif runtime.outcome == "exhausted":
                 print(
                     f"behavioral reset: exhausted after {runtime.attempts}, fallback",

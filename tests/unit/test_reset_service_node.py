@@ -110,7 +110,7 @@ def joint_state(sim_ns: int = 1_000_000) -> dict:
     )
 
 
-def run_service(events, monkeypatch, **runtime_kwargs) -> FakeNode:
+def run_service(events, monkeypatch, *, runtime_load_ticks: int = 0, **runtime_kwargs) -> FakeNode:
     node = FakeNode(events)
     fake_dora = types.ModuleType("dora")
     fake_dora.Node = lambda: node
@@ -120,16 +120,30 @@ def run_service(events, monkeypatch, **runtime_kwargs) -> FakeNode:
     import aisle.verifier.models as models_mod
     from aisle.scenes import pharmacy
 
-    monkeypatch.setattr(
-        runtime_mod, "BehavioralRuntime", lambda **kw: StubRuntime(**kw, **runtime_kwargs)
-    )
+    # CON-5: injected so t_reset_ms is reproducible. Each call advances 0.25 s,
+    # so an elapsed measurement is a deterministic multiple rather than a race.
+    ticks = iter(range(10_000))
+
+    def clock():
+        return next(ticks) * 0.25
+
+    def build_runtime(**kw):
+        # `runtime_load_ticks` stands in for the ~2 s Owlv2 load real
+        # construction pays. Without it the fake builds instantly and NO test
+        # can tell whether the reset clock starts above or below get_runtime()
+        # — which is exactly how that bug shipped (round-2 review).
+        for _ in range(runtime_load_ticks):
+            next(ticks)
+        return StubRuntime(**kw, **runtime_kwargs)
+
+    monkeypatch.setattr(runtime_mod, "BehavioralRuntime", build_runtime)
     monkeypatch.setattr(models_mod, "load_pinned", lambda *_a, **_k: object())
     monkeypatch.setattr(pharmacy, "load_meds", lambda *_a, **_k: {})
     monkeypatch.setattr(pharmacy, "resolve_layout", lambda *_a, **_k: {})
 
     from aisle.reset.service import main
 
-    main()
+    main(clock=clock)
     return node
 
 
@@ -308,3 +322,83 @@ def test_a_non_numeric_payload_is_refused_not_fatal(monkeypatch):
     assert len(replies(node)) == 1, "a malformed request killed the boundary authority"
     assert "error" in replies(node)[0]
     assert forwards(node) == []
+
+
+def test_the_behavioral_reply_is_tc6_complete(monkeypatch):
+    """TC-6 (issue #194): the reply carries `seed`, `mode`, `t_reset_ms`. The
+    behavioral-success route carried NONE of the three — and it is the route
+    that can take three real motion attempts, so it is exactly where RST-1's
+    <2 s budget most needs to be auditable. `t_reset_ms` measured from the
+    request, not from a teleport that never happened."""
+    node = run_service(
+        [reset_request(9, BEHAVIORAL), joint_state(sim_ns=7_000)],
+        monkeypatch,
+    )
+    assert len(replies(node)) == 1
+    reply = replies(node)[0]
+    assert reply["seed"] == 9
+    assert reply["mode"] == BEHAVIORAL
+    # EXACT, not >=: the injected clock advances 0.25 s per read, so one read
+    # separates this request from its reply. `>= 250` was satisfied by any two
+    # distinct reads and so pinned only "a clock was read twice" — it survived
+    # moving the anchor out of the request branch entirely (round-2 review).
+    assert reply["t_reset_ms"] == 250, reply["t_reset_ms"]
+
+
+def test_t_reset_ms_measures_THIS_request_not_the_node_lifetime(monkeypatch):
+    """CON-5/RST-1: the anchor is per-request. A node-lifetime anchor passes
+    a single-request test and then reports cumulative time since startup on
+    every later reset — an unbounded OVERCOUNT of exactly the <2 s budget the
+    key exists to audit. Two requests in one stream is the observable that
+    tells the two apart: both must read one tick, not 250 then 750."""
+    node = run_service(
+        [
+            reset_request(1, BEHAVIORAL, request_id="a"),
+            joint_state(sim_ns=1_000),
+            reset_request(2, BEHAVIORAL, request_id="b"),
+            joint_state(sim_ns=2_000),
+        ],
+        monkeypatch,
+    )
+    assert [r["request_id"] for r in replies(node)] == ["a", "b"]
+    assert [r["t_reset_ms"] for r in replies(node)] == [250, 250], replies(node)
+
+
+def test_t_reset_ms_includes_the_model_load_the_first_request_pays(monkeypatch):
+    """RST-1 (round-2 review): the first behavioral request builds the
+    runtime, and building it loads Owlv2 — ~2 s against a <2 s budget. The
+    `bridge_info` pre-warm moves that cost out of the request only when
+    bridge_info arrives first, which nothing enforces. Starting the clock
+    below `get_runtime()` would hide the single largest component of the
+    number, so the reset that breaches RST-1 would report as compliant.
+
+    Here the load costs one clock tick, so an honest measurement reads TWO:
+    the load plus the attempt."""
+    node = run_service(
+        [reset_request(3, BEHAVIORAL), joint_state()],
+        monkeypatch,
+        runtime_load_ticks=1,
+    )
+    assert replies(node)[0]["t_reset_ms"] == 500, replies(node)[0]
+
+
+def test_the_two_pre_existing_routes_still_report_the_timing_key(monkeypatch):
+    """A regression control for the sibling behavioral assertions, NOT
+    coverage of the fix: both routes here are untouched by issue #194 — the
+    teleport relay copies the bridge's metadata verbatim and the refusal's 0
+    comes from `refusal_reply_metadata`. Named for what it pins, because an
+    earlier revision claimed "every route" while omitting both behavioral
+    routes, and the exhaustion route still reports only the fallback
+    teleport's duration (open on #194)."""
+    relay = run_service(
+        [reset_request(1, TELEPORT), bridge_reply(sim_time_ns=1, t_reset_ms=1234, seed=1, mode=0)],
+        monkeypatch,
+    )
+    assert replies(relay)[0]["t_reset_ms"] == 1234
+
+    refused = run_service(
+        [_inp("reset", pa.array(np.array([1, 2, 3], dtype=np.uint32)), {"request_id": "r"})],
+        monkeypatch,
+    )
+    assert len(replies(refused)) == 1
+    assert replies(refused)[0]["t_reset_ms"] == 0
