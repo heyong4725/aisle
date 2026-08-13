@@ -35,6 +35,7 @@ def main() -> None:
         load_nav_params,
         load_near_field_m,
         load_rotate_omega_max,
+        nav_goal_is_current,
         resolve_nav_goal,
     )
     from aisle.topics import make_sender
@@ -66,11 +67,40 @@ def main() -> None:
                 print(f"nav_goal rejected: {exc}", file=sys.stderr)
                 continue
             # TC-7: check the active state to tell accept from refuse (on_goal
-            # returns [] for both), so a valid first goal is not mislogged
+            # returns [] for all three outcomes), so a valid first goal is
+            # not mislogged and a STALE one is not mistaken for either
+            goal_epoch = metadata.get("episode_epoch")
             if machine.target is not None:
                 print(f"nav goal {metadata.get('goal_id')} refused: nav active", file=sys.stderr)
+            elif not nav_goal_is_current(machine.episode_epoch, goal_epoch):
+                # issue #179 review: emitted before the boundary, delivered
+                # after it. Distinct message because the consequence is
+                # distinct — accepting it drives the PREVIOUS episode's
+                # target and refuses the real goal behind it.
+                print(
+                    f"nav goal {metadata.get('goal_id')} refused: stale episode "
+                    f"(goal epoch {goal_epoch!r}, nav is in {machine.episode_epoch!r})",
+                    file=sys.stderr,
+                )
             else:
-                machine.on_goal(target, metadata.get("goal_id", ""))
+                machine.on_goal(target, metadata.get("goal_id", ""), goal_epoch)
+        elif event["id"] == "reset_done":
+            # the episode boundary (issue #179). waypoint-nav was the only
+            # stateful node in these graphs without this input, so a leg
+            # still in flight at a timeout or verifier verdict survived into
+            # the next episode: its first nav_goal was refused as
+            # "nav active", and the carried leg's nav_result then completed
+            # the NEW episode's subtask.
+            # the epoch IS reset_done's TC-2 seq, read from the same message
+            # the goal's producer reads, so the two cannot drift (issue #179)
+            aborted = machine.on_episode_boundary(metadata.get("seq"))
+            if aborted is not None:
+                print(f"nav goal {aborted} abandoned: episode boundary", file=sys.stderr)
+                # stop commanding. The guard emits its own zero at
+                # reset_done (MOB-3), so this is belt-and-braces — but nav
+                # owns its own output and must not leave a live command as
+                # the last thing it said.
+                send_base_cmd(0.0, 0.0, "")
         elif event["id"] == "base_pose":
             # the TC-2 sim stamp drives the machine's stall/timeout budgets
             # (SIM seconds, CON-5) — outcomes must not depend on host rtf.
