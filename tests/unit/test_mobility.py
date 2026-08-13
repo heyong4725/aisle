@@ -687,9 +687,11 @@ class TestEpisodeBoundary:
         #178 made the clock goal-scoped, but that reset sits behind the
         non-overlap early return, so the episode path never reached it.
 
-        Derived from `_GOAL_SCOPED` rather than a hand-copied list, so a
-        field added to the machine and forgotten in one of the three reset
-        paths fails HERE."""
+        Enumerates `_GOAL_SCOPED`, so it proves every LISTED field is
+        re-armed. It cannot prove the list is complete — a field added to
+        the machine but never added to the list is invisible here, which is
+        the mistake the list exists to prevent. That completeness check is
+        test_the_machine_has_no_state_outside_the_known_sets."""
         from aisle.mobility.nav import NavStateMachine
 
         m = self._machine()
@@ -700,6 +702,44 @@ class TestEpisodeBoundary:
         m.on_episode_boundary()
         for name, fresh in NavStateMachine._GOAL_SCOPED:
             assert getattr(m, name) == fresh, f"{name} survived the episode boundary"
+
+    def test_the_machine_has_no_state_outside_the_known_sets(self):
+        """MOB-2, CON-5 (issue #179 review). The completeness half: every
+        instance attribute must be either goal-scoped (`_GOAL_SCOPED`, reset
+        on every goal and every boundary), episode-scoped, or config fixed
+        at construction. A field that is none of those is state nobody
+        re-arms — exactly the shape of #179 — and the sibling test above
+        cannot see it, because that one enumerates the very list you would
+        have forgotten to update.
+
+        Drive the machine through a full goal first, so any attribute
+        created lazily outside __init__ exists by the time we look."""
+        from aisle.mobility.nav import NavStateMachine
+
+        m = self._machine()
+        m.on_goal([1.0, 0.0, 0.0], "nav-001")
+        m.on_base_pose([0.0, 0.0, 0.0], self.STEP_NS)
+        m.on_tick()
+        m.on_base_pose([1.0, 0.0, 0.0], 2 * self.STEP_NS)
+        m.on_tick()  # arrives -> _finish
+        m.on_episode_boundary(epoch=1)
+
+        goal_scoped = {name for name, _ in NavStateMachine._GOAL_SCOPED}
+        identity = {"target", "goal_id"}  # set by each caller, not scoped
+        episode_scoped = {"episode_epoch"}
+        config = {
+            "arrival_tol_m",
+            "arrival_yaw_rad",
+            "capture_tol_m",
+            "timeout_s",
+            "stall_s",
+        }
+        unaccounted = set(vars(m)) - goal_scoped - identity - episode_scoped - config
+        assert not unaccounted, (
+            f"{sorted(unaccounted)} is machine state that no reset path re-arms; add it to "
+            "_GOAL_SCOPED (per-goal), to episode_scoped, or to config if it is fixed at "
+            "construction"
+        )
 
     def test_goal_scoped_defaults_are_immutable(self):
         """`_reset_goal_scoped` hands every instance the SAME object out of a
@@ -735,12 +775,33 @@ class TestEpisodeBoundary:
             nodes = yaml.safe_load(path.read_text())["nodes"]
             nav = [n for n in nodes if "nav_action.py" in str(n.get("path", ""))]
             assert nav, path.name
+            # nav must cut the episode at the same instant the GUARD does.
+            # The guard is the canonical episode-state consumer (its BG-2
+            # timer re-anchors on this edge), so matching it is what keeps
+            # nav, the guard and the driver in phase. The rollout client is
+            # deliberately excluded: it is the reset REQUESTER and takes the
+            # service's own reply, which is a different edge by design.
+            guard_src = next(
+                (
+                    (n.get("inputs") or {})["reset_done"]["source"]
+                    for n in nodes
+                    if "budget_guard.py" in str(n.get("path", ""))
+                    and isinstance((n.get("inputs") or {}).get("reset_done"), dict)
+                ),
+                None,
+            )
             for node in nav:
                 inputs = node.get("inputs") or {}
                 assert "reset_done" in inputs, (
                     f"{path.name}: {node['id']} has no reset_done input — an in-flight "
                     "nav leg will survive the episode boundary (issue #179)"
                 )
+                if guard_src is not None:
+                    assert inputs["reset_done"]["source"] == guard_src, (
+                        f"{path.name}: {node['id']} takes reset_done from "
+                        f"{inputs['reset_done']['source']!r} but the guard takes it from "
+                        f"{guard_src!r} — they would cut the episode at different instants"
+                    )
 
     def test_the_manifests_declare_the_boundary_input(self):
         """CAP-1/VAL: the graph edge only validates if the manifest declares
@@ -760,21 +821,12 @@ class TestEpisodeBoundary:
         ]
         assert len(carrying) >= 2, [p.name for p, _ in carrying]
         for path, manifest in carrying:
-            assert "reset_done" in (manifest.get("inputs") or {}), path.name
-
-    def test_a_new_goal_and_the_boundary_agree_on_what_is_goal_scoped(self):
-        """The two reset paths must not drift: whatever `on_goal` freshens,
-        the boundary must freshen too (they share `_reset_goal_scoped`)."""
-        from aisle.mobility.nav import NavStateMachine
-
-        after_goal, after_boundary = self._machine(), self._machine()
-        after_goal.on_goal([1.0, 0.0, 0.0], "nav-001")
-        after_boundary.on_goal([1.0, 0.0, 0.0], "nav-001")
-        after_boundary.on_base_pose([0.5, 0.0, 0.0], self.STEP_NS)
-        after_boundary.on_tick()
-        after_boundary.on_episode_boundary()
-        for name, _ in NavStateMachine._GOAL_SCOPED:
-            assert getattr(after_goal, name) == getattr(after_boundary, name), name
+            port = (manifest.get("inputs") or {}).get("reset_done")
+            assert port is not None, path.name
+            # the SCHEMA too, not just the key: the validator matches edges on
+            # schema, so a port declared with the wrong one validates against
+            # nothing and the graph edge fails at load, not here
+            assert port.get("schema") == "reset_done_u32", (path.name, port)
 
 
 class TestNavResultRouting:

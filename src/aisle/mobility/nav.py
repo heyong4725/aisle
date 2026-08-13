@@ -71,6 +71,31 @@ def nav_result_is_current(expected_goal_id, result_goal_id) -> bool:
     )
 
 
+def nav_goal_is_current(machine_epoch, goal_epoch) -> bool:
+    """TC-7, the INBOUND half of the episode correlation (issue #179
+    review). Does this `nav_goal` belong to the episode nav is now in?
+
+    Correlating only `nav_result` left a window the fix itself opened. The
+    boundary clears `target`, so a goal emitted just BEFORE the reset but
+    delivered just after is no longer refused as "nav active" — it is
+    accepted as fresh, and nav drives the PREVIOUS episode's target through
+    the whole new episode while the real goal is refused behind it. Proven
+    against the live node: `base_cmd` kept the stale goal_id and the new
+    episode's goal was refused. Half the correlation was implemented; this
+    is the other half.
+
+    The epoch is `reset_done`'s own `seq` (TC-2), read from the SAME message
+    by nav and by the goal's producer, so the two cannot drift the way two
+    independently maintained counters would.
+
+    A goal carrying NO epoch is accepted: producers that do not track
+    episodes (the MOB-2 acceptance harness, any future planner without a
+    `reset_done` input) must keep working, and this degrades exactly the way
+    `parse_sim_stamp` does. Refusal is reserved for a goal that states an
+    epoch and states the wrong one."""
+    return goal_epoch is None or goal_epoch == machine_epoch
+
+
 def resolve_nav_goal(goal: dict, locations: dict[str, list[float]]) -> list[float]:
     """Resolve a nav_goal to a store-frame [x, y, yaw] (MOB-2).
 
@@ -124,17 +149,23 @@ class NavStateMachine:
         self.stall_s = stall_s
         self.target: list[float] | None = None
         self.goal_id: str | None = None
+        # the episode nav believes it is in: `reset_done`'s TC-2 seq, or None
+        # before the first boundary. EPISODE-scoped, not goal-scoped, so it
+        # is deliberately not in _GOAL_SCOPED (issue #179 review).
+        self.episode_epoch: int | None = None
         self._reset_goal_scoped()
 
     #: Every field whose lifetime is ONE nav goal, with its fresh value.
     #: `target`/`goal_id` are not here: they identify the goal rather than
-    #: scope to it, and each caller sets them differently.
+    #: scope to it, and each caller sets them differently. Neither is
+    #: `episode_epoch`, whose lifetime is an EPISODE.
     #:
     #: One list, applied by `_reset_goal_scoped`, because this state is
-    #: entered from three directions — construction, a new goal, and an
-    #: episode boundary — and a field reset on only some of them is exactly
-    #: how issue #179 (and #182's guard twin) happened. Adding a field here
-    #: is the whole change; forgetting a path is no longer possible.
+    #: entered from four directions — construction, a new goal, a finished
+    #: goal, and an episode boundary — and a field reset on only some of
+    #: them is exactly how issue #179 (and #182's guard twin) happened.
+    #: Adding a field HERE is the whole change. Adding one that is not here
+    #: is caught by test_the_machine_has_no_state_outside_the_known_sets.
     _GOAL_SCOPED: tuple[tuple[str, object], ...] = (
         ("pose", None),
         ("ticks", 0),
@@ -158,15 +189,22 @@ class NavStateMachine:
         for name, fresh in self._GOAL_SCOPED:
             setattr(self, name, fresh)
 
-    def on_goal(self, target_pose: list[float], goal_id: str) -> list:
+    def on_goal(self, target_pose: list[float], goal_id: str, goal_epoch=None) -> list:
         if self.target is not None:  # TC-7: nav actions do not overlap
+            return []
+        if not nav_goal_is_current(self.episode_epoch, goal_epoch):
+            # a goal from a PREVIOUS episode, in flight across the boundary
+            # (issue #179 review). Before the boundary existed this was
+            # refused as "nav active"; clearing `target` made it look fresh,
+            # so nav would drive the old episode's target through the whole
+            # new one. The caller distinguishes this from a bare refusal.
             return []
         self.target = [float(v) for v in target_pose]
         self.goal_id = goal_id
         self._reset_goal_scoped()
         return []
 
-    def on_episode_boundary(self) -> str | None:
+    def on_episode_boundary(self, epoch=None) -> str | None:
         """Abandon any in-flight goal because the EPISODE ended (issue #179).
         Returns the abandoned goal_id (None if nav was already idle).
 
@@ -190,6 +228,7 @@ class NavStateMachine:
         aborted = self.goal_id
         self.target = None
         self.goal_id = None
+        self.episode_epoch = epoch
         self._reset_goal_scoped()
         return aborted
 
@@ -230,6 +269,13 @@ class NavStateMachine:
         goal_id = self.goal_id
         self.target = None
         self.goal_id = None
+        # a goal's NORMAL exit re-arms the same state its abnormal exit does
+        # (issue #179 review): every reader is gated on `target`, so leaving
+        # `pose`/`_sim_ns`/`_blind_poses` stale here was not a live bug — but
+        # it left the machine in observably different states after the two
+        # exits, which is how a reader eventually gets it wrong. Elapsed is
+        # computed above, before the clock is cleared.
+        self._reset_goal_scoped()
         return [("nav_result", result, goal_id)]
 
     def on_tick(self) -> list:

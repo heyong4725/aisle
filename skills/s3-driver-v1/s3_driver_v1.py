@@ -362,6 +362,12 @@ def main() -> None:
     carried: dict | None = None  # {item, size, retried}
     place_attempts = 0
     nav_seq = 0
+    # the episode this driver is in: reset_done's TC-2 seq, stamped onto
+    # every nav_goal so waypoint-nav can refuse a goal that crossed the
+    # boundary in flight (issue #179 review). NOT reset by clear() --
+    # like nav_seq it is process-scoped, and its value comes from the
+    # boundary message itself, so the two sides cannot drift.
+    episode_epoch: int | None = None
 
     def clear() -> None:
         nonlocal goal, roster, queue, pending, streamer, after_stream, place_attempts
@@ -391,7 +397,11 @@ def main() -> None:
         goal_id = f"nav-{nav_seq:03d}"
         if pending is not None:
             pending = {**pending, "goal_id": goal_id}
-        send("nav_goal", pa.array([json.dumps(nav_goal)]), {"goal_id": goal_id})
+        send(
+            "nav_goal",
+            pa.array([json.dumps(nav_goal)]),
+            {"goal_id": goal_id, "episode_epoch": episode_epoch},
+        )
 
     def item_pose(item_id: str) -> tuple[list[float], float] | None:
         """(world pos3, world yaw) of one item from the poses topic."""
@@ -648,6 +658,7 @@ def main() -> None:
         if event["type"] != "INPUT":
             continue
         if event["id"] == "reset_done":
+            episode_epoch = (event.get("metadata") or {}).get("seq")
             clear()
         elif event["id"] == "episode_goal":
             goal = json.loads(event["value"][0].as_py())

@@ -55,8 +55,19 @@ def base_pose(xy_yaw, sim_ns: int) -> dict:
     )
 
 
-def reset_done() -> dict:
-    return _input("reset_done", pa.array(np.zeros(1, dtype=np.uint32)))
+def reset_done(seq: int | None = None) -> dict:
+    """`seq` is the TC-2 per-topic counter dora-genesis stamps; nav uses it
+    as the episode epoch (issue #179 review)."""
+    return _input(
+        "reset_done", pa.array(np.zeros(1, dtype=np.uint32)), {} if seq is None else {"seq": seq}
+    )
+
+
+def nav_goal_at(pose, goal_id: str, epoch) -> dict:
+    """A nav_goal stamped with the episode its producer believed it was in."""
+    ev = nav_goal(pose, goal_id)
+    ev["metadata"]["episode_epoch"] = epoch
+    return ev
 
 
 def run_node(events, monkeypatch) -> FakeNode:
@@ -147,6 +158,47 @@ def test_an_idle_boundary_is_quiet(monkeypatch):
     watchdog's command clock."""
     node = run_node([reset_done(), reset_done()], monkeypatch)
     assert node.sent == [], node.sent
+
+
+def test_a_goal_that_crossed_the_boundary_in_flight_is_refused(monkeypatch):
+    """MOB-2, TC-7 (issue #179 review). The regression the boundary itself
+    opened: a goal emitted just BEFORE the reset but delivered just after.
+    Clearing `target` stopped it being refused as "nav active", so nav
+    accepted it as fresh and drove the PREVIOUS episode's target through
+    the whole new episode while refusing the real goal behind it —
+    reproduced against this node before the epoch check existed.
+
+    Both halves are asserted: the stale goal never steers, and the real one
+    still does. Correlating only nav_result left this direction open."""
+    node = run_node(
+        [
+            reset_done(seq=7),  # episode 7 begins
+            nav_goal_at([5.0, 0.0, 0.0], "nav-old", epoch=6),  # emitted in episode 6
+            base_pose([0.0, 0.0, 0.0], STEP),
+            nav_goal_at([1.0, 0.0, 0.0], "nav-new", epoch=7),  # episode 7's real goal
+            base_pose([0.0, 0.0, 0.0], 2 * STEP),
+        ],
+        monkeypatch,
+    )
+    steered = [m.get("goal_id") for topic, _, m in node.sent if topic == "base_cmd"]
+    assert "nav-old" not in steered, f"drove the previous episode's goal: {steered}"
+    assert "nav-new" in steered, f"the live goal never took effect: {steered}"
+
+
+def test_a_goal_without_an_epoch_is_still_accepted(monkeypatch):
+    """MOB-2: producers that do not track episodes (the acceptance harness,
+    any planner with no reset_done input) must keep working — the epoch
+    check degrades the way parse_sim_stamp does, refusing only a goal that
+    states an epoch and states the wrong one."""
+    node = run_node(
+        [
+            reset_done(seq=3),
+            nav_goal([1.0, 0.0, 0.0], "nav-unstamped"),  # no episode_epoch at all
+            base_pose([0.0, 0.0, 0.0], STEP),
+        ],
+        monkeypatch,
+    )
+    assert "nav-unstamped" in [m.get("goal_id") for t, _, m in node.sent if t == "base_cmd"]
 
 
 def test_a_completed_goal_still_reports_and_stops(monkeypatch):
