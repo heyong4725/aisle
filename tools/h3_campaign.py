@@ -528,6 +528,33 @@ def main() -> int:
     args.out = args.out.resolve()
     args.out.mkdir(parents=True, exist_ok=True)
     oid = resolve_commit(REPO_ROOT, args.commit)
+    # Resume-pin guardrail (desk campaign live failure, 2026-08-13 —
+    # the ADR-h3 §6 class): a resume/rerun invocation that omits
+    # --commit re-resolves origin/main HEAD, and if main moved
+    # mid-campaign the remaining cells silently run at a DIFFERENT pin
+    # than the recorded arms (L/T2–T4 ran at a79e3d33 against W's
+    # dd4e3f1a — cross-environment contrast, cells excluded and rerun).
+    # Any prior aggregate in --out fixes the campaign pin: a differing
+    # resolved OID refuses with the pinned launch command.
+    for prior_file in sorted(args.out.glob("h3_results*.json")) if args.out.exists() else []:
+        try:
+            prior_commit = (json.loads(prior_file.read_text()).get("treatment") or {}).get("commit")
+        except (OSError, json.JSONDecodeError):
+            continue
+        if prior_commit and prior_commit != oid:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": f"resume pin mismatch: {prior_file.name} records campaign "
+                        f"commit {prior_commit} but this invocation resolved {oid} — "
+                        f"relaunch with --commit {prior_commit} (ADR-h3 §1: one pinned "
+                        "OID for both arms and all scenarios; §6: never contrast "
+                        "across environments)",
+                    }
+                )
+            )
+            return 1
     treatment = campaign_treatment(agent, model, oid, DEV_SEEDS, HOLDOUT_SEEDS)
     treatment["protocol"] = "ADR-h3-campaign-protocol"
     treatment["suite"] = args.suite
@@ -605,7 +632,16 @@ def main() -> int:
                     # On a rerun, the library is further limited to the
                     # tier's ORIGINAL prior_skills (PR #61 review)
                     allow = None
-                    if args.attempt > 1:
+                    if args.attempt > 1 and scenario["tier"] == tiers[0]:
+                        # the rerun allowlist (PR #61) protects the FIRST
+                        # rerun scenario: a skill registered during the
+                        # failed attempt must not ride into its own rerun.
+                        # LATER scenarios in a chained rerun inherit the
+                        # rerun chain's own registrations naturally — the
+                        # attempt-1 prior list would instead import the
+                        # invalid attempt's cross-pin artifacts and drop
+                        # the valid rerun's skills whenever the agent
+                        # picked different names (desk campaign, 2026-08-13)
                         prev = args.out / f"arm_{arm}" / scenario["tier"] / "scenario.json"
                         if prev.exists():
                             allow = json.loads(prev.read_text()).get("prior_skills", [])

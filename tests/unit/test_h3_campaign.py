@@ -967,3 +967,43 @@ def test_arm_l_guard_survives_skills_tracked_at_the_pin(tmp_path):
     assert report["kept_skills"] == ["prior-skill"]
     assert (repo / "skills" / "prior-skill" / "node.py").read_text() == "pin copy"
     assert (repo / "registry" / "manifests" / "prior-skill.yaml").exists()
+
+
+def test_resume_refuses_a_pin_that_mismatches_the_recorded_campaign(tmp_path):
+    """Desk campaign live failure (2026-08-13, the ADR-h3 §6 class): a
+    resume invocation without --commit re-resolves origin/main HEAD, and
+    a mid-campaign merge silently ran L/T2–T4 at a different pin than
+    the recorded W arm (cross-environment contrast — cells excluded and
+    rerun). Any prior aggregate under --out fixes the campaign pin; a
+    differing resolved OID must refuse with the pinned relaunch hint."""
+    import json
+
+    out = tmp_path / "campaign"
+    out.mkdir()
+    (out / "h3_results.json").write_text(
+        json.dumps({"ok": True, "treatment": {"commit": "a" * 40, "suite": "desk"}})
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "tools" / "h3_campaign.py"),
+            "--suite",
+            "desk",
+            "--arms",
+            "L",
+            "--out",
+            str(out),
+            "--commit",
+            subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True
+            ).stdout.strip(),
+            "--expect-dora-sha256",
+            "0" * 64,
+        ],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    assert proc.returncode != 0
+    assert "resume pin mismatch" in proc.stdout
+    assert ("a" * 40) in proc.stdout  # names the pinned relaunch commit
