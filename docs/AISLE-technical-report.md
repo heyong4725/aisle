@@ -858,14 +858,17 @@ is what an agent — or a reviewer six months later — actually reads:
 | `traces/*.arrow` | Per-endpoint columnar logs: simulated time, env id, sequence, payload |
 | `verifier_stages.jsonl` | Per-stage realistic-verifier evidence, correlated by goal id |
 | `*.mp4` | Overhead video |
-| `dora.stderr.log` | Runtime diagnostics |
+| `dora.stderr.log`, `dora.stderr.relaunch-N.log` | Runtime diagnostics, one file per launch |
 
-Two properties make this useful rather than merely voluminous. Traces are
+Three properties make this useful rather than merely voluminous. Traces are
 **per-endpoint**, not per-topic, because two nodes may legitimately produce the
-same topic name and conflating them destroys attribution. And every row is
+same topic name and conflating them destroys attribution. Every row is
 stamped in **simulated time**, so evidence from different nodes is aligned on
 the clock that determines behavior rather than the one that determines
-scheduling.
+scheduling. And artifacts are written **per launch**, not per run: a run that
+hits the per-episode wall clamp relaunches, and every writer here opens in
+truncate mode, so a shared path would have the relaunch erase the evidence of
+the launch that wedged — which is precisely the launch under investigation.
 
 The `report` CLI turns this into metrics; `traces` slices it by episode and
 topic. Both emit JSON, so the agent consuming them is not parsing prose.

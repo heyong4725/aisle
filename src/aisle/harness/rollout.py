@@ -739,7 +739,24 @@ def scrub_bringup_env(env: dict) -> dict:
     return {k: v for k, v in env.items() if k not in SCRUBBED_ENV}
 
 
-def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict) -> subprocess.Popen:
+def dora_stderr_log(run_dir: Path, relaunch: int = 0) -> Path:
+    """Where a launch's dora stderr goes (issue #183).
+
+    Per LAUNCH, not per run. `Popen` opens this in write mode, so pointing
+    every wall-clamp relaunch (ADR-23) at one path meant each relaunch
+    truncated the stderr of the launch that had just wedged — deleting the
+    one file you would read to explain why the clamp fired. Traces already
+    get this isolation (`traces/relaunch-N/`) for exactly the same reason;
+    stderr did not.
+
+    Launch 1 keeps the bare name so existing habits and docs still find it;
+    relaunches sort next to it. Kept at the run root rather than inside
+    `traces/relaunch-N/` because this is the dora runtime's own log, not
+    recorded evidence, and `traces/` is the recorder's namespace."""
+    return run_dir / (f"dora.stderr.relaunch-{relaunch}.log" if relaunch else "dora.stderr.log")
+
+
+def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict, relaunch: int = 0) -> subprocess.Popen:
     return subprocess.Popen(
         ["dora", "run", str(exec_graph), "--uv"],
         # cwd = the run dir: dora spawns nodes with this cwd, which is what
@@ -753,7 +770,9 @@ def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict) -> subprocess.Popen:
         # bytes were being discarded anyway. Per-NODE stderr is separate and
         # already persisted by dora as out/<dataflow>/log_<node>.jsonl rows with
         # "stream":"stderr", which is where a bridge refusal actually lands.
-        stderr=(run_dir / "dora.stderr.log").open("w"),
+        # Per-LAUNCH path (issue #183): "w" mode plus one shared path meant a
+        # relaunch erased the wedged launch's own diagnostics.
+        stderr=dora_stderr_log(run_dir, relaunch).open("w"),
         text=True,
         start_new_session=True,
     )
@@ -1145,7 +1164,7 @@ def rollout(
                 deadline += GENESIS_BUILD_BUDGET_S
                 if hard_cap_s is not None:
                     deadline = min(deadline, started + hard_cap_s)
-                proc = _spawn_dora(exec_graph, run_dir, env)
+                proc = _spawn_dora(exec_graph, run_dir, env, relaunch=relaunches)
                 lines_at_launch = last_lines = lines + 1
                 last_line_t = time.monotonic()
                 last_size = -1
