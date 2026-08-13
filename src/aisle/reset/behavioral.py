@@ -58,9 +58,19 @@ def no_motion_available() -> bool:
 
 def behavioral_reply_metadata(request_meta: dict, outcome: BehavioralOutcome) -> dict:
     """Reply keys the teleport fallback's reset_done must carry (RST-2):
-    the original request correlation plus the behavioral audit trail."""
-    return {
+    the original request correlation plus the behavioral audit trail.
+
+    `env_id` rides through from the request (issue #192). Every
+    episode-state consumer now takes the boundary from this reply rather
+    than the bridge's, and the guard slices its per-env boundary on
+    `env_id` (BRG-5) — a reply without one would default to env 0 and clear
+    only that env's state, so the behavioral and teleport routes must carry
+    the same routing key or the two modes cut different envs."""
+    meta = {
         "request_id": request_meta.get("request_id", ""),
         "fallback": outcome.fallback,
         "behavioral_attempts": outcome.attempts,
     }
+    if "env_id" in request_meta:
+        meta["env_id"] = request_meta["env_id"]
+    return meta

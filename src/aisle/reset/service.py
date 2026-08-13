@@ -15,7 +15,7 @@ import sys
 
 import numpy as np
 
-from aisle.topics import stamp
+from aisle.topics import parse_sim_stamp, stamp
 
 TELEPORT, BEHAVIORAL = 0, 1
 
@@ -34,12 +34,27 @@ def route_reset(mode: int) -> str:
 def refusal_reply_metadata(request_meta: dict, payload: np.ndarray, error: str) -> dict:
     """TC-6 reply keys for a refused request: echo request_id, seed/mode
     when the payload was well-formed enough to carry them, t_reset_ms=0
-    (the sim was never touched), and the error (ADR-8)."""
+    (the sim was never touched), and the error (ADR-8).
+
+    `env_id` rides through (issue #192) for the same reason the behavioral
+    reply carries it: every episode-state consumer now takes the boundary
+    from this output, and the guard slices per env (BRG-5).
+
+    Deliberately NO `sim_time_ns` — a refused reset never touched the sim,
+    so there is none to report and inventing one would be a lie the
+    verifier's episode baseline depends on. That makes the `error` key the
+    discriminator every consumer must check: a stamp-less reply drives
+    `label_reader.on_reset_done` down its UNFENCED branch, and the guard
+    would re-reference hold state to a home the robot is not at. Both
+    filter on `error`; an earlier revision of this docstring claimed absent
+    stamps were benign, which was wrong."""
     meta = {
         "request_id": request_meta.get("request_id", ""),
         "t_reset_ms": 0,
         "error": error,
     }
+    if "env_id" in request_meta:
+        meta["env_id"] = request_meta["env_id"]
     if payload.shape[0] == 2:
         meta["seed"], meta["mode"] = int(payload[0]), int(payload[1])
     return meta
@@ -108,17 +123,29 @@ def main() -> None:
                 # would trip the bridge's own TC-6 validation
                 print("reset refused: missing request_id metadata (TC-6)", file=sys.stderr)
                 continue
-            payload = np.asarray(
-                event["value"].to_numpy(zero_copy_only=False), dtype=np.uint32
-            ).reshape(-1)
+            payload = np.zeros(0, dtype=np.uint32)
             try:
+                # inside the try (issue #192 review): a non-numeric payload
+                # raised straight out of the loop and killed the node, which
+                # since #192 strands every consumer in the graph rather than
+                # just the requester. The refusal path below already exists
+                # for exactly this class of input.
+                payload = np.asarray(
+                    event["value"].to_numpy(zero_copy_only=False), dtype=np.uint32
+                ).reshape(-1)
                 if payload.shape[0] != 2:
                     raise ValueError(f"reset payload must be UInt32[2], got {payload.shape}")
                 route = route_reset(int(payload[1]))
-            except ValueError as refusal:
+            except (ValueError, TypeError, OverflowError) as refusal:
                 # refuse THIS request loudly without killing the service: the
                 # requester gets a correlated error reply, later teleports
-                # still work (TC-6; ADR-8)
+                # still work (TC-6; ADR-8). The type list mirrors
+                # topics.parse_sim_stamp's. Measured: the payloads reachable
+                # over the wire (strings, nested lists) all raise ValueError,
+                # so TypeError/OverflowError are unexercised belt — kept
+                # because this node is the single boundary authority since
+                # issue #192 and dora does not restart nodes, but NOT claimed
+                # as tested.
                 print(f"reset refused: {refusal}", file=sys.stderr)
                 seq_reply += 1
                 node.send_output(
@@ -160,7 +187,14 @@ def main() -> None:
                 frame = np.asarray(event["value"].to_numpy(zero_copy_only=False))
                 runtime.on_depth(frame.astype(np.float32).reshape(h, w))
         elif event["id"] == "joint_state":
-            latest_sim_ns = int(metadata.get("sim_time_ns", latest_sim_ns))
+            # TOTAL read (BG-3, issue #160): a malformed stamp from any
+            # upstream node must degrade this decision, never raise out of
+            # the event loop. That rule binds hardest HERE: since issue
+            # #192 every consumer in every graph takes its episode
+            # boundary from this node, and dora does not restart nodes, so
+            # one bad stamp would strand the whole run.
+            stamped = parse_sim_stamp(metadata)
+            latest_sim_ns = stamped if stamped is not None else latest_sim_ns
             if runtime is None or not runtime.active:
                 continue
             qpos = np.asarray(

@@ -475,3 +475,48 @@ class TestDetectBoxCentre:
         monkeypatch.setattr(models, "detect_meds", lambda rgb, names, model_pair: self.DETS[1:])
         rgb = np.zeros((240, 320, 3), dtype=np.uint8)
         assert detect_box_centre(rgb, ["metformin"], None) is None
+
+
+class TestRefusedResetIsNotABoundary:
+    """Issue #192 review. Since the boundary moved onto the reset service's
+    output, this node also receives REFUSED resets (ADR-8), which carry no
+    sim stamp — and a stamp-less `on_reset_done` takes the UNFENCED branch."""
+
+    def _session(self, meds, templates):
+        session = ReaderSession(meds=meds, templates=templates, find_centre=None)
+        session.on_bridge_info({"calibration": {"wrist": {"intrinsics": {"fx": FX, "fy": FY}}}})
+        return session
+
+    def test_a_stampless_reset_clears_a_live_request(self, meds, templates):
+        """The hazard, stated as a test: with no stamp there is nothing to
+        fence against, so a live request is dropped — the exact hang
+        test_late_reset_does_not_clear_a_newer_episodes_request exists to
+        prevent. This is why the node must filter refusals before calling
+        here, and it is the behaviour that makes that filter load-bearing."""
+        session = self._session(meds, templates)
+        session.on_read_request({"range_m": RANGE_M, "frame_after_sim_time_ns": 900}, "ep-2/read0")
+
+        session.on_reset_done()  # no stamp: a refused reset would look like this
+
+        assert session.pending is None, (
+            "the unfenced branch no longer clears — the node's refusal filter "
+            "may now be guarding nothing; re-check issue #192's reasoning"
+        )
+
+    def test_the_node_filters_refusals_before_the_session_sees_them(self):
+        """`label_reader.main()` must not pass a refusal through. Driving
+        the node needs the OCR model pair, so this reads the dispatch
+        instead: the reset_done branch must test `error` before calling
+        on_reset_done. Weaker than an execution test and labelled as such —
+        the behavioural half is pinned above."""
+        import inspect
+
+        from aisle.nodes import label_reader
+
+        src = inspect.getsource(label_reader.main)
+        branch = src[src.index('event["id"] == "reset_done"') :]
+        branch = branch[: branch.index("elif")]
+        assert 'metadata.get("error")' in branch and "continue" in branch, (
+            "the reset_done branch no longer filters refused resets; a "
+            "stamp-less refusal will clear a live read request (issue #192)"
+        )

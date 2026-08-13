@@ -74,7 +74,15 @@ nodes:
         source: dora-genesis/base_pose
         queue_size: 1
       reset_done:
-        source: dora-genesis/reset_done
+        # the EPISODE boundary comes from the reset SERVICE, not the bridge
+        # (issue #192): a successful BEHAVIORAL reset (RST-2) never reaches
+        # the bridge, so dora-genesis/reset_done never fires and every
+        # episode-state consumer silently misses the boundary. The service
+        # replies on every route -- teleport (it relays the bridge),
+        # behavioral success, and behavioral exhaustion via fallback -- so it
+        # is the single authority, and it is the same edge rollout-client
+        # already waits on before starting the next episode.
+        source: reset/reset_done
         queue_size: 100
     outputs:
       - joint_cmd_safe
@@ -98,12 +106,15 @@ nodes:
         source: dora-genesis/base_pose
         queue_size: 10
       reset_done:
-        # the EPISODE boundary (issue #179): without it waypoint-nav was the
-        # only stateful node here that never learned an episode ended, so an
-        # in-flight leg survived into the next one and its nav_result
-        # completed a different episode's subtask. Same source the guard and
-        # s1-expert use, so all three cut the episode at the same instant.
-        source: dora-genesis/reset_done
+        # the EPISODE boundary comes from the reset SERVICE, not the bridge
+        # (issue #192): a successful BEHAVIORAL reset (RST-2) never reaches
+        # the bridge, so dora-genesis/reset_done never fires and every
+        # episode-state consumer silently misses the boundary. The service
+        # replies on every route -- teleport (it relays the bridge),
+        # behavioral success, and behavioral exhaustion via fallback -- so it
+        # is the single authority, and it is the same edge rollout-client
+        # already waits on before starting the next episode.
+        source: reset/reset_done
         queue_size: 100
     outputs:
       - nav_feedback
@@ -154,7 +165,15 @@ nodes:
         # latest-wins: joint_state is STATE (the desk expert lesson)
         queue_size: 1
       reset_done:
-        source: dora-genesis/reset_done
+        # the EPISODE boundary comes from the reset SERVICE, not the bridge
+        # (issue #192): a successful BEHAVIORAL reset (RST-2) never reaches
+        # the bridge, so dora-genesis/reset_done never fires and every
+        # episode-state consumer silently misses the boundary. The service
+        # replies on every route -- teleport (it relays the bridge),
+        # behavioral success, and behavioral exhaustion via fallback -- so it
+        # is the single authority, and it is the same edge rollout-client
+        # already waits on before starting the next episode.
+        source: reset/reset_done
         queue_size: 100
     outputs:
       - nav_goal

@@ -58,20 +58,46 @@ def _completed_episodes(run_dir: Path) -> int | None:
     return sum(1 for line in path.read_text().splitlines() if line.strip())
 
 
+def _reset_boundaries(run_dir: Path) -> list[int]:
+    """Sim times of the episode boundaries in a run, in order (issue #192).
+
+    Reads the reset SERVICE's endpoint, which answers on every route, and
+    falls back to the bridge's for runs whose graph has no service node.
+    REFUSED resets are excluded: the service replies to those too (ADR-8,
+    payload 0 rather than 1) and they are not boundaries — the sim was
+    never touched."""
+    for node in ("reset", "dora-genesis"):
+        try:
+            table = _load(run_dir, "reset_done", node=node)
+        except FileNotFoundError:
+            continue
+        stamps = table["sim_time_ns"].to_pylist()
+        payloads = table["data"].to_pylist()
+        return sorted(
+            ns
+            for ns, data in zip(stamps, payloads, strict=True)
+            if not data or float(data[0]) != 0.0
+        )
+    # a run recorded before endpoints were producer-keyed
+    return sorted(_load(run_dir, "reset_done")["sim_time_ns"].to_pylist())
+
+
 def episode_window(run_dir: Path, episode: int) -> tuple[int, int | None]:
     """Episode i spans reset_done i (inclusive) to reset_done i+1. The
     index is validated against COMPLETED episodes (episodes.jsonl): an
     N-episode run records N resets plus the cleanup reset, so the raw
     reset count would admit a phantom cleanup-only 'episode' (PR #11
-    review); negative indices are rejected outright. The bridge's own
-    reset_done endpoint is authoritative when several exist."""
+    review); negative indices are rejected outright.
+
+    The reset SERVICE's endpoint is authoritative, not the bridge's (issue
+    #192): a successful BEHAVIORAL reset (RST-2) never reaches the bridge,
+    so `dora-genesis__reset_done` fires only on teleports and fallbacks.
+    Segmenting a behavioral run by it yields too few boundaries — episodes
+    silently mapped to the WRONG window where the count still passes the
+    bound check, and IndexError past that. The bridge endpoint remains the
+    fallback for runs whose graph has no reset service."""
     completed = _completed_episodes(run_dir)
-    try:
-        resets = sorted(
-            _load(run_dir, "reset_done", node="dora-genesis")["sim_time_ns"].to_pylist()
-        )
-    except FileNotFoundError:
-        resets = sorted(_load(run_dir, "reset_done")["sim_time_ns"].to_pylist())
+    resets = _reset_boundaries(run_dir)
     limit = completed if completed is not None else max(0, len(resets) - 1)
     if not 0 <= episode < limit:
         raise FileNotFoundError(f"run has episodes 0..{limit - 1}, not {episode}")
