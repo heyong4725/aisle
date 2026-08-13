@@ -290,6 +290,7 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
 
     spawns = []
     episode_bases = []
+    stderr_logs = []
 
     def fake_popen(cmd, cwd=None, env=None, **kwargs):
         # subprocess.run (the git calls) rides the same Popen; only the
@@ -300,6 +301,8 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
             return proc
         spawns.append(env["AISLE_SEEDS"])
         episode_bases.append(env.get("AISLE_EPISODE_BASE"))
+        # issue #183: the stderr sink is opened per launch in "w" mode
+        stderr_logs.append(Path(kwargs["stderr"].name).name)
         results = Path(env["AISLE_RESULTS"])
         with open(results, "a") as f:
             if len(spawns) == 1:  # first launch: seed 0 lands, then wedges
@@ -358,6 +361,16 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
     # review: scrubbing also covers the fleet and h4 paths, which an
     # explicit set inside rollout() did not).
     assert episode_bases == [None, "2"]
+    # issue #183: each launch gets its OWN stderr sink. Popen opens these in
+    # "w" mode, so one shared path meant the relaunch truncated the stderr
+    # of the launch that had just wedged — deleting the only file that
+    # explains why the clamp fired. Same isolation traces/relaunch-N/ has.
+    assert stderr_logs == ["dora.stderr.log", "dora.stderr.relaunch-1.log"], stderr_logs
+    assert len(set(stderr_logs)) == len(stderr_logs), "two launches shared one stderr sink"
+    # and they really are on disk, not just named apart
+    run_dir = root / "runs" / "clamp"
+    for name in stderr_logs:
+        assert (run_dir / name).exists(), f"{name} was never opened"
     # the PROPERTY, not just the env var: no two attempts in the run share
     # an episode index, which is what keeps goal_ids unambiguous
     indices = [e["episode"] for e in report["episodes"]]
@@ -639,3 +652,21 @@ class TestEpisodeBaseConfig:
 
         with pytest.raises(SystemExit, match="AISLE_EPISODE_BASE"):
             parse_episode_base({"AISLE_EPISODE_BASE": "-5"})
+
+
+def test_dora_stderr_log_is_per_launch(tmp_path):
+    """HAR-4 (issue #183): evidence must survive. `Popen` opens this sink in
+    write mode, so every launch needs its own path — a shared one meant each
+    wall-clamp relaunch (ADR-23) truncated the wedged launch's diagnostics.
+
+    Launch 1 keeps the bare name so existing docs and habits still find it."""
+    from aisle.harness.rollout import dora_stderr_log
+
+    run = tmp_path / "run"
+    assert dora_stderr_log(run).name == "dora.stderr.log"
+    assert dora_stderr_log(run, 0).name == "dora.stderr.log"
+    names = [dora_stderr_log(run, n).name for n in range(4)]
+    assert len(set(names)) == 4, names
+    # all at the run root, beside each other, and sortable
+    assert all(dora_stderr_log(run, n).parent == run for n in range(4))
+    assert names[1:] == [f"dora.stderr.relaunch-{n}.log" for n in (1, 2, 3)]
