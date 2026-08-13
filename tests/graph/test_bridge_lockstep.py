@@ -1,102 +1,167 @@
-"""ADR-30 closed-turn protocol acceptance without importing Genesis.
-
-The state transition is deliberately tiny; the property under test is the
-orchestration boundary that decides which command reaches which physics step.
-Live expert graph tests exercise the same bridge loop with Genesis.
-"""
+"""BRG-1/CON-5 live dora+Genesis lockstep acceptance (issue #175)."""
 
 from __future__ import annotations
 
+import importlib.util
+import json
+import shutil
+from pathlib import Path
+
+import numpy as np
 import pytest
+import yaml
 
-from aisle.turns import BridgeTurn, ProtocolError, TurnBarrier, TurnStamp, watermark_metadata
+pytestmark = [
+    pytest.mark.graph,
+    pytest.mark.accept,
+    pytest.mark.skipif(
+        importlib.util.find_spec("genesis") is None or shutil.which("dora") is None,
+        reason="sim extra or dora CLI not installed",
+    ),
+]
 
-pytestmark = [pytest.mark.unit, pytest.mark.accept]
+ROOT = Path(__file__).resolve().parents[2]
+BRIDGE = ROOT / "src/aisle/nodes/dora_genesis.py"
+BARRIER = ROOT / "src/aisle/nodes/turn_barrier.py"
+POLICY = ROOT / "tests/fixtures/nodes/lockstep_policy.py"
+RECORDER = ROOT / "tests/fixtures/nodes/recorder.py"
+BRIDGE_OUTPUTS = [
+    "bridge_info",
+    "joint_state",
+    "gripper_state",
+    "oracle_state",
+    "poses",
+    "rgb_overhead",
+    "rgb_wrist",
+    "depth_overhead",
+    "reset_done",
+    "sim_turn",
+]
 
 
-def _wm(stamp: TurnStamp, outputs: dict[str, int]) -> dict:
-    return watermark_metadata(stamp, outputs)
+def _q(source: str, size: int = 100) -> dict:
+    return {"source": source, "queue_size": size, "queue_policy": "backpressure"}
 
 
-def _run(delay_schedule: str) -> tuple[list[tuple[int, int]], list[tuple[int, int, int]]]:
+def _write_graph(run_dir: Path, schedule: str) -> tuple[Path, Path]:
+    run_dir.mkdir()
+    records = run_dir / "records.jsonl"
     plan = {
         "bridge": "bridge",
-        "bridge_outputs": ["sim_turn", "state"],
+        "bridge_outputs": sorted(BRIDGE_OUTPUTS),
+        "bridge_inputs": {
+            "joint_cmd": {"source": "policy", "output": "joint_cmd"},
+            "reset": {"source": "policy", "output": "reset"},
+        },
+        "barrier": "turn-barrier",
         "participants": {
             "policy": {
-                "inputs": {"state": {"source": "bridge", "output": "state", "edge": "forward"}},
-                "outputs": ["command", "turn_done"],
+                "inputs": {},
+                "outputs": ["joint_cmd", "reset", "turn_done"],
+                "verdict_bearing": False,
             }
         },
+        "done_ports": {"done_0": "policy"},
     }
-    barrier = TurnBarrier(plan)
-    x = 0
-    assignments: list[tuple[int, int]] = []
-    states: list[tuple[int, int, int]] = []
-    epoch = 11
-
-    # Turn zero consumes the mandatory reset and takes no physics step.
-    stamp = TurnStamp(epoch, 0, 0)
-    assert barrier.open_bridge(_wm(stamp, {"sim_turn": 1, "state": 1})) == {"policy": {"state": 1}}
-    reset = BridgeTurn(stamp)
-    reset.accept("reset", "seed-100", {**stamp.metadata(), "seq": 1})
-    barrier.close("policy", _wm(stamp, {"command": 0, "turn_done": 1}))
-    assert barrier.complete
-    assert reset.commit(stamp.metadata()) == [("reset", "seed-100")]
-    assert reset.advances_physics is False
-
-    # One full CON-5 comparison window: 100 x 10 ms steps.
-    for turn_id in range(1, 101):
-        stamp = TurnStamp(epoch, turn_id, (turn_id - 1) * 10_000_000)
-        ready = barrier.open_bridge(_wm(stamp, {"sim_turn": 1, "state": 1}))
-        assert ready == {"policy": {"state": 1}}
-        bridge_turn = BridgeTurn(stamp)
-        command = turn_id % 3 - 1
-        metadata = {**stamp.metadata(), "seq": turn_id}
-
-        if delay_schedule == "command-first":
-            bridge_turn.accept("joint_cmd", command, metadata)
-        barrier.close("policy", _wm(stamp, {"command": 1, "turn_done": 1}))
-        if delay_schedule == "watermark-first":
-            bridge_turn.accept("joint_cmd", command, metadata)
-        assert barrier.complete
-
-        actions = bridge_turn.commit(stamp.metadata())
-        applied = actions[0][1]
-        assignments.append((turn_id, applied))
-        x += applied
-        states.append((turn_id, stamp.sim_time_ns + 10_000_000, x))
-
-    return assignments, states
-
-
-def test_two_wall_delay_schedules_assign_identical_commands_and_physics():
-    """BRG-1/CON-5: latency changes neither turn assignment nor 1 s physics."""
-    fast = _run("command-first")
-    delayed = _run("watermark-first")
-    assert fast == delayed
-    assert fast[1][-1][1] == 1_000_000_000
-
-
-def test_hung_or_invalid_turn_never_reaches_a_physics_transition():
-    """BRG-1: missing closure and invalid commits cannot manufacture a step."""
-    stamp = TurnStamp(4, 8, 80_000_000)
-    barrier = TurnBarrier(
-        {
-            "bridge": "bridge",
-            "bridge_outputs": ["sim_turn", "state"],
-            "participants": {
-                "policy": {
-                    "inputs": {"state": {"source": "bridge", "output": "state", "edge": "forward"}},
-                    "outputs": ["command", "turn_done"],
-                }
+    plan_path = run_dir / "turn-plan.json"
+    plan_path.write_text(json.dumps(plan, sort_keys=True) + "\n")
+    graph = {
+        "nodes": [
+            {
+                "id": "bridge",
+                "path": str(BRIDGE),
+                "env": {
+                    "AISLE_LOCKSTEP": "1",
+                    "AISLE_TURN_EPOCH": "19",
+                    "AISLE_TURN_OUTPUTS": ",".join(BRIDGE_OUTPUTS),
+                    "AISLE_SEED": "100",
+                },
+                "inputs": {
+                    "tick": "dora/timer/millis/10",
+                    "joint_cmd": _q("policy/joint_cmd"),
+                    "reset": _q("policy/reset"),
+                    "turn_commit": _q("turn-barrier/turn_commit", 4),
+                },
+                "outputs": BRIDGE_OUTPUTS,
             },
-        }
-    )
-    barrier.open_bridge(_wm(stamp, {"sim_turn": 1, "state": 1}))
-    assert not barrier.complete  # hung: there is no legal commit to send
+            {
+                "id": "policy",
+                "path": str(POLICY),
+                "env": {"LOCKSTEP_SCHEDULE": schedule},
+                "inputs": {"turn": _q("turn-barrier/turn", 4)},
+                "outputs": ["joint_cmd", "reset", "turn_done"],
+            },
+            {
+                "id": "turn-barrier",
+                "path": str(BARRIER),
+                "env": {
+                    "AISLE_TURN_PLAN": str(plan_path),
+                    "AISLE_TURN_WATCHDOG_S": "2",
+                    "AISLE_VERDICT_TURN_WATCHDOG_S": "15",
+                },
+                "inputs": {
+                    "tick": "dora/timer/millis/100",
+                    "sim_turn": _q("bridge/sim_turn", 4),
+                    "done_0": _q("policy/turn_done", 4),
+                },
+                "outputs": ["turn", "turn_commit"],
+            },
+            {
+                "id": "recorder",
+                "path": str(RECORDER),
+                "env": {
+                    "RECORDER_OUT": str(records),
+                    "RECORDER_DURATION_S": "0.1",
+                    "RECORDER_AWAIT": "joint_state:100",
+                    "RECORDER_AWAIT_TAIL_S": "0.1",
+                },
+                "inputs": {
+                    "tick": "dora/timer/millis/50",
+                    "joint_state": _q("bridge/joint_state"),
+                    "sim_turn": _q("bridge/sim_turn"),
+                    "reset_done": _q("bridge/reset_done"),
+                    "joint_cmd": _q("policy/joint_cmd"),
+                    "reset": _q("policy/reset"),
+                },
+            },
+        ]
+    }
+    graph_path = run_dir / "graph.yaml"
+    graph_path.write_text(yaml.safe_dump(graph, sort_keys=False))
+    return graph_path, records
 
-    turn = BridgeTurn(stamp)
-    with pytest.raises(ProtocolError):
-        turn.commit(TurnStamp(4, 9, 80_000_000).metadata())
-    assert turn.advances_physics is None
+
+def _run(tmp_path: Path, dataflow, schedule: str) -> dict[str, list[dict]]:
+    graph, output = _write_graph(tmp_path / schedule, schedule)
+    dataflow.run_until_settled(graph, output, deadline_s=600)
+    grouped: dict[str, list[dict]] = {}
+    for row in dataflow.read(output):
+        if row["id"] != "tick":
+            grouped.setdefault(row["id"], []).append(row)
+    return grouped
+
+
+def test_two_delay_schedules_have_identical_assignments_and_one_second_physics(tmp_path, dataflow):
+    """BRG-1/CON-5: cross-port order changes neither turns nor 1 s physics."""
+    data_first = _run(tmp_path, dataflow, "data-first")
+    watermark_first = _run(tmp_path, dataflow, "watermark-first")
+
+    for topic in ("reset", "joint_cmd", "reset_done", "sim_turn"):
+        left = [
+            (row["metadata"].get("turn_id"), row["metadata"].get("sim_time_ns"))
+            for row in data_first[topic]
+        ]
+        right = [
+            (row["metadata"].get("turn_id"), row["metadata"].get("sim_time_ns"))
+            for row in watermark_first[topic]
+        ]
+        assert left == right
+
+    left_state = data_first["joint_state"]
+    right_state = watermark_first["joint_state"]
+    assert len(left_state) == len(right_state) >= 100
+    assert int(left_state[-1]["metadata"]["sim_time_ns"]) >= 1_000_000_000
+    for left, right in zip(left_state, right_state, strict=True):
+        assert left["metadata"]["turn_id"] == right["metadata"]["turn_id"]
+        assert left["metadata"]["sim_time_ns"] == right["metadata"]["sim_time_ns"]
+        np.testing.assert_allclose(left["values"], right["values"], rtol=0.0, atol=1e-6)

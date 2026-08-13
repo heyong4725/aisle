@@ -111,6 +111,10 @@ class TurnBarrier:
         if not self.bridge or not isinstance(participants, dict) or not participants:
             raise ProtocolError("turn plan needs a bridge and at least one participant")
         self.participants: dict[str, dict] = participants
+        bridge_inputs = plan.get("bridge_inputs")
+        if bridge_inputs is not None and not isinstance(bridge_inputs, dict):
+            raise ProtocolError("turn plan bridge_inputs must be a mapping")
+        self.bridge_inputs: dict[str, dict] = bridge_inputs or {}
         bridge_outputs = plan.get("bridge_outputs")
         self.bridge_outputs = set(bridge_outputs) if isinstance(bridge_outputs, list) else None
         self.current: TurnStamp | None = None
@@ -224,6 +228,30 @@ class TurnBarrier:
 
     def is_verdict_bearing(self, node: str) -> bool:
         return self.participants.get(node, {}).get("verdict_bearing") is True
+
+    def bridge_expected_inputs(self) -> dict[str, int]:
+        """Exact direct-control counts the bridge must receive before commit.
+
+        Participant watermarks and their data outputs use independent dora
+        ports, so the terminal watermark may arrive first.  The commit carries
+        these counts to let the bridge wait for the actual data rather than
+        relying on cross-port arrival order.
+        """
+        if not self.complete:
+            raise ProtocolError("bridge input closure requested before all participants closed")
+        expected: dict[str, int] = {}
+        for input_name, edge in sorted(self.bridge_inputs.items()):
+            if not isinstance(edge, dict):
+                raise ProtocolError(f"bridge input {input_name!r} plan entry is malformed")
+            source = edge.get("source")
+            output = edge.get("output")
+            counts = self._closed.get(source)
+            if counts is None or not isinstance(output, str) or output not in counts:
+                raise ProtocolError(
+                    f"bridge input {input_name!r} cannot resolve {source!r}/{output!r} closure"
+                )
+            expected[input_name] = counts[output]
+        return expected
 
     def input_stamps(self, node: str) -> dict[str, TurnStamp]:
         """Expected producer stamp per ready input (forward k, episodic k-1)."""
@@ -386,16 +414,37 @@ class BridgeTurn:
 
     ORDER = ("joint_cmd", "gripper_cmd", "base_cmd")
 
-    def __init__(self, stamp: TurnStamp):
+    def __init__(self, stamp: TurnStamp, *, n_envs: int = 1):
+        if isinstance(n_envs, bool) or not isinstance(n_envs, int) or n_envs < 1:
+            raise ValueError("n_envs must be a positive integer")
         self.stamp = stamp
-        self._commands: dict[str, tuple[int, Any, int]] = {}
-        self._reset: tuple[int, Any] | None = None
-        self._committed = False
+        self.n_envs = n_envs
+        self._commands: dict[tuple[str, int], tuple[int, Any, int]] = {}
+        self._resets: dict[int, tuple[int, Any]] = {}
+        self._received: dict[str, int] = {}
+        self._expected: dict[str, int] | None = None
+        self._commit_declared = False
+        self._finished = False
         self.advances_physics: bool | None = None
 
     @property
     def commands(self) -> list[tuple[str, Any]]:
-        return [(kind, self._commands[kind][1]) for kind in self.ORDER if kind in self._commands]
+        return [
+            (kind, self._commands[(kind, env_id)][1])
+            for kind in self.ORDER
+            for env_id in range(self.n_envs)
+            if (kind, env_id) in self._commands
+        ]
+
+    @property
+    def ready_to_commit(self) -> bool:
+        return (
+            self._commit_declared
+            and not self._finished
+            and self._expected is not None
+            and not (set(self._received) - set(self._expected))
+            and all(self._received.get(name, 0) == count for name, count in self._expected.items())
+        )
 
     @staticmethod
     def _record_dropped(payload: Any, dropped: int) -> None:
@@ -413,39 +462,82 @@ class BridgeTurn:
             )
 
     def accept(self, kind: str, payload: Any, metadata: dict) -> None:
-        if self._committed:
-            raise ProtocolError("command arrived after turn commit")
+        if self._finished:
+            raise ProtocolError("command arrived after turn finished")
         self._check_stamp(metadata, context=kind)
         seq = _plain_int(metadata.get("seq"), minimum=1)
         if seq is None:
             raise ProtocolError(f"{kind} has no positive integer seq")
+        raw_env_id = metadata.get("env_id")
+        if self.n_envs > 1 and raw_env_id is None:
+            raise ProtocolError(f"{kind} has no env_id in multi-environment mode")
+        env_id = 0 if raw_env_id is None else _plain_int(raw_env_id, minimum=0)
+        if env_id is None or env_id >= self.n_envs:
+            raise ProtocolError(f"{kind} env_id {raw_env_id!r} outside [0, {self.n_envs})")
+        self._received[kind] = self._received.get(kind, 0) + 1
+        if self._expected is not None and self._received[kind] > self._expected.get(kind, 0):
+            raise ProtocolError(f"too many {kind} messages before turn closure")
         if kind == "reset":
-            if self._reset is not None:
-                raise ProtocolError("duplicate reset in one turn")
-            self._reset = (seq, payload)
+            if env_id in self._resets:
+                raise ProtocolError(f"duplicate reset for env {env_id} in one turn")
+            self._resets[env_id] = (seq, payload)
             return
         if kind not in self.ORDER:
             raise ProtocolError(f"unknown bridge command {kind!r}")
-        prior = self._commands.get(kind)
+        key = (kind, env_id)
+        prior = self._commands.get(key)
         if prior is None or seq > prior[0]:
             dropped = 0 if prior is None else prior[2] + 1
             self._record_dropped(payload, dropped)
-            self._commands[kind] = (seq, payload, dropped)
+            self._commands[key] = (seq, payload, dropped)
         elif seq == prior[0]:
-            raise ProtocolError(f"duplicate {kind} seq {seq} in one turn")
+            raise ProtocolError(f"duplicate {kind} seq {seq} for env {env_id} in one turn")
         else:
             dropped = prior[2] + 1
             self._record_dropped(prior[1], dropped)
-            self._commands[kind] = (prior[0], prior[1], dropped)
+            self._commands[key] = (prior[0], prior[1], dropped)
 
-    def commit(self, metadata: dict) -> list[tuple[str, Any]]:
+    def commit(self, metadata: dict) -> list[tuple[str, Any]] | None:
+        """Declare terminal counts, finishing now only when all data arrived."""
         self._check_stamp(metadata, context="turn_commit")
-        if self._committed:
+        if self._commit_declared:
             raise ProtocolError("duplicate turn_commit")
-        self._committed = True
-        if self._reset is not None:
+        names = metadata.get("expected_inputs")
+        counts = metadata.get("expected_counts")
+        if not isinstance(names, list) or not isinstance(counts, list) or len(names) != len(counts):
+            raise ProtocolError("turn_commit inputs/counts must be equal-length lists")
+        if (
+            any(name not in (*self.ORDER, "reset") for name in names)
+            or names != sorted(names)
+            or len(set(names)) != len(names)
+            or any(
+                isinstance(count, bool) or not isinstance(count, int) or count < 0
+                for count in counts
+            )
+        ):
+            raise ProtocolError("turn_commit input closure is malformed")
+        self._expected = dict(zip(names, counts, strict=True))
+        self._commit_declared = True
+        unexpected = set(self._received) - set(self._expected)
+        excess = {
+            name: count
+            for name, count in self._received.items()
+            if count > self._expected.get(name, 0)
+        }
+        if unexpected or excess:
+            raise ProtocolError(
+                f"turn_commit does not cover received inputs: unexpected={sorted(unexpected)}, "
+                f"excess={excess}"
+            )
+        return self.finish() if self.ready_to_commit else None
+
+    def finish(self) -> list[tuple[str, Any]]:
+        if not self.ready_to_commit:
+            raise ProtocolError("turn cannot finish before exact bridge input closure")
+        self._finished = True
+        if self._resets:
             self.advances_physics = False
-            return [("reset", self._reset[1])]
+            return [("reset", self._resets[env_id][1]) for env_id in sorted(self._resets)]
         self.advances_physics = True
         return self.commands
 

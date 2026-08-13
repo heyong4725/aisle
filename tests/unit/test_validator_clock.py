@@ -183,6 +183,20 @@ def test_good_graph_with_service_and_guard_cycles_passes_clock_validation():
     assert _clock_errors(nodes, manifests) == []
 
 
+def test_simulation_cannot_opt_out_of_clock_validation_by_omitting_lockstep_env():
+    """VAL-2/BRG-1: every validated simulator is lockstep; bring-up bypasses validate."""
+    nodes, manifests = _complete_graph()
+    nodes = [node for node in nodes if node["id"] != "turn-barrier"]
+    for node in nodes:
+        node["env"] = {}
+        for port in ("turn", "turn_commit"):
+            node.get("inputs", {}).pop(port, None)
+        if "outputs" in node:
+            node["outputs"] = [output for output in node["outputs"] if output != "turn_done"]
+    assert "CLOCK_PATH_INCOMPLETE" in _codes(nodes, manifests)
+    assert "CLOCK_COMMIT_COUNT" in _codes(nodes, manifests)
+
+
 def test_compiled_runtime_plan_matches_validated_topology():
     """VAL-2/BRG-1: runtime scheduling consumes the topology the validator proved."""
     nodes, manifests = _complete_graph()
@@ -196,6 +210,10 @@ def test_compiled_runtime_plan_matches_validated_topology():
     }
     assert set(plan["done_ports"].values()) == set(plan["participants"])
     assert plan["bridge_outputs"] == ["sim_turn", "state"]
+    assert plan["bridge_inputs"] == {
+        "joint_cmd": {"source": "guard", "output": "joint_safe"},
+        "reset": {"source": "client", "output": "reset"},
+    }
     assert plan["participants"]["client"]["outputs"] == ["goal", "reset", "turn_done"]
 
 

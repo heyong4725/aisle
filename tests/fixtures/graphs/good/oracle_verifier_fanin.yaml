@@ -1,23 +1,19 @@
-# multi-consumer fan-in on launchable nodes: genesis feeds both perception
-# and the verifier; oracle_state reaches ONLY verifier-* (VAL-6 legal use).
-# Replaces perception_ocr_pose.yaml, whose ocr/detector stack was never
-# launchable (VAL-2 INSTALL_MISSING, the H1-discovered class).
+# Multi-consumer fan-out on installed non-simulator registry nodes:
+# camera-source feeds both perception and the verifier; oracle_state reaches
+# ONLY verifier-* (VAL-6 legal use). Simulator graphs additionally require
+# ADR-30 lockstep topology.
 nodes:
-- id: dora-genesis
-  inputs:
-    tick: dora/timer/millis/10
+- id: camera-source
   outputs:
   - poses
   - oracle_state
-  - joint_state
 - id: oracle-pose
   inputs:
-    poses: dora-genesis/poses
+    poses: camera-source/poses
   outputs:
   - target_pose
 - id: verifier-oracle
   inputs:
-    oracle_state: dora-genesis/oracle_state
-    joint_state: dora-genesis/joint_state
+    oracle_state: camera-source/oracle_state
   outputs:
   - episode_result

@@ -1,8 +1,8 @@
-# warning-only fixture on a LAUNCHABLE node (see slow_timer note): genesis
-# tick declares 100 Hz, a 500 Hz timer is far above the TC-4 band
+# Warning-only fixture on a non-simulator node: task-state-machine declares
+# its feedback tick at 1 Hz, while this 500 Hz timer is above the TC-4 band.
 nodes:
-- id: dora-genesis
+- id: task-state-machine
   inputs:
     tick: dora/timer/millis/2
   outputs:
-  - poses
+  - episode_feedback

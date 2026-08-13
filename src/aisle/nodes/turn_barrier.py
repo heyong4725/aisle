@@ -50,27 +50,30 @@ def main() -> None:  # pragma: no cover - exercised by graph acceptance
     )
 
     def dispatch(ready: dict[str, dict[str, int]]) -> None:
-        if barrier.current is None:
+        if barrier.current is None or not ready:
             return
+        ready_plan = {}
         for target, expected in sorted(ready.items()):
             if barrier.is_verdict_bearing(target):
                 watchdog.mark_verdict_bearing()
             names = sorted(expected)
             input_stamps = barrier.input_stamps(target)
-            metadata = {
-                **barrier.current.metadata(),
-                "target_node": target,
+            ready_plan[target] = {
                 "expected_inputs": names,
                 "expected_counts": [expected[name] for name in names],
                 "expected_turn_epochs": [input_stamps[name].epoch for name in names],
                 "expected_turn_ids": [input_stamps[name].turn_id for name in names],
                 "expected_sim_time_ns": [input_stamps[name].sim_time_ns for name in names],
             }
-            send(
-                "turn",
-                pa.array([barrier.current.turn_id], type=pa.uint64()),
-                metadata,
-            )
+        # One dora output already fans out to every participant. Sending one
+        # targeted copy per ready node makes each causal layer O(N^2) at the
+        # transport. Broadcast the whole ready layer once; wrappers select
+        # their own exact declaration.
+        send(
+            "turn",
+            pa.array([barrier.current.turn_id], type=pa.uint64()),
+            {**barrier.current.metadata(), "ready_plan": json.dumps(ready_plan, sort_keys=True)},
+        )
 
     for event in node:
         if event["type"] != "INPUT":
@@ -96,14 +99,20 @@ def main() -> None:  # pragma: no cover - exercised by graph acceptance
                 dispatch(barrier.close(source_node, metadata))
                 if barrier.complete:
                     assert barrier.current is not None
+                    expected = barrier.bridge_expected_inputs()
+                    names = sorted(expected)
                     send(
                         "turn_commit",
                         pa.array([barrier.current.turn_id], type=pa.uint64()),
                         {
                             **barrier.current.metadata(),
+                            "expected_inputs": names,
+                            "expected_counts": [expected[name] for name in names],
                             **({"shutdown": True} if barrier.shutdown_requested else {}),
                         },
                     )
+                    if barrier.shutdown_requested:
+                        return
         except ProtocolError as exc:
             print(f"ADR-30 protocol error: {exc}", file=sys.stderr)
             raise

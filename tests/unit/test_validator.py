@@ -1132,8 +1132,12 @@ def test_store_allows_supported_l0_perception_at_validation(tmp_path):
     )
 
     code, report = run_validate(graph, "--root", str(root))
-    assert code == 0 and report["ok"] is True, report
+    # The minimal graph intentionally has no ADR-30 barrier, so VAL-2 now
+    # rejects it on clock topology. The perception-specific assertion is that
+    # supported store L0 contributes no rung error.
+    assert code != 0 and report["ok"] is False, report
     assert "PERCEPTION_RUNG_VIOLATION" not in codes(report, "errors")
+    assert codes(report, "errors") == {"CLOCK_COMMIT_COUNT", "CLOCK_PATH_INCOMPLETE"}
 
 
 def test_perception_rung_violation_not_hidden_by_schema_error(tmp_path):

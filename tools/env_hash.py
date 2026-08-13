@@ -44,6 +44,9 @@ def frozen_files(root: Path) -> list[Path]:
         if base.is_dir():
             files.extend(p for p in base.rglob("*") if p.is_file() and "__pycache__" not in p.parts)
     files.extend(p for p in (root / "graphs").glob("expert_*.yaml") if p.is_file())
+    # ADR-30: these generated plans are executable scheduler topology, not
+    # documentation. Hash them beside the measured graphs they compile from.
+    files.extend(p for p in (root / "graphs" / "turn_plans").glob("expert_*.json") if p.is_file())
     files.extend(root / f for f in FROZEN_FILES if (root / f).is_file())
     return sorted(files, key=lambda p: p.relative_to(root).as_posix())
 

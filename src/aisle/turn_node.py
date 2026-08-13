@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 
-from aisle.turns import ParticipantTurn, ProtocolError
+from aisle.turns import ParticipantTurn, ProtocolError, parse_turn_stamp
 
 
 class Node:
@@ -52,14 +53,20 @@ class Node:
             return self.raw.send_output(topic, value, metadata)
         if self._active is not None:
             # Legacy TopicSender always supplies sim_time_ns (default zero).
-            # Treat that field alone as an unstamped payload and replace it
-            # with the coordinator's stamp.  An explicit epoch/id claim is a
-            # protocol assertion and must match in full.
+            # Derived outputs may preserve an episodic input's previous-turn
+            # stamp; that identifies the data they consumed, not the turn in
+            # which they are emitted. The wrapper is the authoritative sender
+            # and overwrites it with the current turn. Reject only partial
+            # claims, which cannot identify either meaning safely.
             if "turn_epoch" in metadata or "turn_id" in metadata:
-                from aisle.turns import parse_turn_stamp
-
-                if parse_turn_stamp(metadata) != self._active.stamp:
-                    raise ProtocolError(f"{self.node_id}/{topic} changed the open turn stamp")
+                if not all(key in metadata for key in ("turn_epoch", "turn_id", "sim_time_ns")):
+                    raise ProtocolError(f"{self.node_id}/{topic} supplied a partial turn stamp")
+                claimed = parse_turn_stamp(metadata)
+                allowed = {self._active.stamp, *(self._active.expected_stamps or {}).values()}
+                if claimed not in allowed:
+                    raise ProtocolError(
+                        f"{self.node_id}/{topic} supplied an unrelated turn stamp {claimed}"
+                    )
             self._active.record_output(topic)
             metadata = {**metadata, **self._active.stamp.metadata()}
         elif topic not in self.wall_outputs:
@@ -114,7 +121,23 @@ class Node:
                 continue
             metadata = event.get("metadata") or {}
             if event.get("id") == "turn":
-                if metadata.get("target_node") == self.node_id:
+                ready_plan = metadata.get("ready_plan")
+                if isinstance(ready_plan, str):
+                    try:
+                        declaration = json.loads(ready_plan)
+                    except json.JSONDecodeError as exc:
+                        raise ProtocolError("turn ready_plan is malformed JSON") from exc
+                    if not isinstance(declaration, dict):
+                        raise ProtocolError("turn ready_plan must be an object")
+                    own = declaration.get(self.node_id)
+                    if own is not None:
+                        if not isinstance(own, dict):
+                            raise ProtocolError(
+                                f"turn ready_plan entry for {self.node_id} is malformed"
+                            )
+                        participant.open({**metadata, **own})
+                elif metadata.get("target_node") == self.node_id:
+                    # Compatibility for a directly-authored coordinator.
                     participant.open(metadata)
                 continue
             if all(key in metadata for key in ("turn_epoch", "turn_id", "sim_time_ns")):

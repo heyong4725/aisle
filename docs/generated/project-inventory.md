@@ -12,7 +12,7 @@ architecture, and contribution guidance remain in the
 | Surface | Count |
 |---|---:|
 | Graphs | 11 |
-| Capability manifests | 31 |
+| Capability manifests | 33 |
 | CLI command entries | 12 |
 | ADR files | 40 |
 
@@ -78,7 +78,9 @@ architecture, and contribution guidance remain in the
 | [registry/manifests/stock-detector.yaml](../../registry/manifests/stock-detector.yaml) | stock_detection | franka | perception | hub | `src/aisle/nodes/stock_detector.py` |
 | [registry/manifests/task-planner.yaml](../../registry/manifests/task-planner.yaml) | task_planning | franka | decision | hub | `src/aisle/nodes/task_planner.py` |
 | [registry/manifests/task-state-machine.yaml](../../registry/manifests/task-state-machine.yaml) | task_sequencing | franka, so101 | decision | hub | `src/aisle/nodes/task_state_machine.py` |
+| [registry/manifests/turn-barrier.yaml](../../registry/manifests/turn-barrier.yaml) | turn_barrier | franka, so101 | decision | hub | `src/aisle/nodes/turn_barrier.py` |
 | [registry/manifests/verifier-oracle.yaml](../../registry/manifests/verifier-oracle.yaml) | episode_verification | franka, so101 | decision | hub | `src/aisle/verifier/oracle.py` |
+| [registry/manifests/verifier-realistic.yaml](../../registry/manifests/verifier-realistic.yaml) | episode_verification_realistic | franka, so101 | decision | hub | `src/aisle/nodes/verifier_realistic.py` |
 | [registry/manifests/verifier-retail.yaml](../../registry/manifests/verifier-retail.yaml) | retail_verification | franka | decision | hub | `src/aisle/verifier/retail.py` |
 | [registry/manifests/waypoint-nav.yaml](../../registry/manifests/waypoint-nav.yaml) | waypoint_navigation | franka | motion | hub | `src/aisle/nodes/nav_action.py` |
 

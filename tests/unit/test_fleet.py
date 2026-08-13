@@ -28,12 +28,30 @@ def test_stamps_policy_nodes_per_agent_and_shares_the_bridge(base_doc):
             assert f"{node_id}-a{agent}" in ids
 
 
+def test_fleet_keeps_one_barrier_and_rewires_every_participant_closure(base_doc):
+    """BRG-1/BRG-5: fleet expansion preserves one valid terminal barrier."""
+    doc = fleet_graph(base_doc, 2)
+    by_id = {node["id"]: node for node in doc["nodes"]}
+    assert "turn-barrier" in by_id
+    assert not any(node_id.startswith("turn-barrier-a") for node_id in by_id)
+    assert by_id["dora-genesis"]["inputs"]["turn_commit"]["source"] == ("turn-barrier/turn_commit")
+    done_sources = {
+        spec["source"]
+        for name, spec in by_id["turn-barrier"]["inputs"].items()
+        if name.startswith("done_")
+    }
+    assert "rollout-client-a0/turn_done" in done_sources
+    assert "rollout-client-a1/turn_done" in done_sources
+    assert "budget-guard/turn_done" in done_sources
+
+
 def test_bridge_declares_n_envs_and_agents_get_pins(base_doc):
     doc = fleet_graph(base_doc, 2)
     by_id = {n["id"]: n for n in doc["nodes"]}
     assert by_id["dora-genesis"]["env"]["AISLE_N_ENVS"] == "2"
     assert by_id["oracle-pose-a0"]["env"]["AISLE_ENV_PIN"] == "0"
     assert by_id["oracle-pose-a1"]["env"]["AISLE_ENV_PIN"] == "1"
+    assert by_id["oracle-pose-a1"]["env"]["AISLE_TURN_NODE"] == "oracle-pose-a1"
 
 
 def test_guard_fans_in_every_agents_executor(base_doc):

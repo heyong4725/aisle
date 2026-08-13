@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pyarrow as pa
 import pytest
 
@@ -54,6 +56,39 @@ def test_drop_in_node_closes_one_complete_turn():
     done = raw.sent[-1]
     assert done[0] == "turn_done"
     assert done[2]["source_node"] == "worker"
+
+
+def test_one_broadcast_ready_plan_targets_each_participant_exactly_once():
+    """BRG-1: a causal layer is one broadcast, not N targeted fanout messages."""
+    stamp = {"turn_epoch": 1, "turn_id": 0, "sim_time_ns": 0, "seq": 1}
+    raw = Raw(
+        [
+            {
+                "type": "INPUT",
+                "id": "turn",
+                "value": pa.array([0], type=pa.uint64()),
+                "metadata": {
+                    **stamp,
+                    "ready_plan": json.dumps(
+                        {
+                            "other": {"expected_inputs": [], "expected_counts": []},
+                            "worker": {"expected_inputs": [], "expected_counts": []},
+                        }
+                    ),
+                },
+            }
+        ]
+    )
+    node = Node(
+        raw,
+        {
+            "AISLE_LOCKSTEP": "1",
+            "AISLE_TURN_NODE": "worker",
+            "AISLE_TURN_OUTPUTS": "result,turn_done",
+        },
+    )
+    assert [event["id"] for event in node] == ["turn"]
+    assert raw.sent[-1][0] == "turn_done"
 
 
 def test_direct_output_is_stamped_and_counted():
@@ -123,6 +158,80 @@ def test_legacy_topic_sender_default_sim_stamp_is_replaced_by_open_turn():
         if event["id"] == "turn":
             send("result", pa.array([1]), {})
     assert raw.sent[0][2]["sim_time_ns"] == 30
+
+
+def test_episodic_input_stamp_is_replaced_by_current_output_turn():
+    """BRG-1: derived output belongs to the consuming turn, not episodic k-1."""
+    stamp = {"turn_epoch": 2, "turn_id": 3, "sim_time_ns": 30, "seq": 0}
+    prior = {"turn_epoch": 2, "turn_id": 2, "sim_time_ns": 20, "seq": 1}
+    raw = Raw(
+        [
+            {"type": "INPUT", "id": "result", "value": pa.array([1]), "metadata": prior},
+            {
+                "type": "INPUT",
+                "id": "turn",
+                "value": pa.array([3], type=pa.uint64()),
+                "metadata": {
+                    **stamp,
+                    "target_node": "worker",
+                    "expected_inputs": ["result"],
+                    "expected_counts": [1],
+                    "expected_turn_epochs": [2],
+                    "expected_turn_ids": [2],
+                    "expected_sim_time_ns": [20],
+                },
+            },
+        ]
+    )
+    node = Node(
+        raw,
+        {
+            "AISLE_LOCKSTEP": "1",
+            "AISLE_TURN_NODE": "worker",
+            "AISLE_TURN_OUTPUTS": "out,turn_done",
+        },
+    )
+    for event in node:
+        if event["id"] == "result":
+            node.send_output("out", pa.array([1]), event["metadata"])
+    assert raw.sent[0][2]["turn_id"] == 3
+    assert raw.sent[0][2]["sim_time_ns"] == 30
+
+
+def test_unrelated_complete_output_stamp_fails_closed():
+    """TC-2/BRG-1: the wrapper rewrites declared input stamps, not invented ones."""
+    stamp = {"turn_epoch": 2, "turn_id": 3, "sim_time_ns": 30, "seq": 0}
+    raw = Raw(
+        [
+            {
+                "type": "INPUT",
+                "id": "turn",
+                "value": pa.array([3], type=pa.uint64()),
+                "metadata": {
+                    **stamp,
+                    "target_node": "worker",
+                    "expected_inputs": [],
+                    "expected_counts": [],
+                },
+            }
+        ]
+    )
+    node = Node(
+        raw,
+        {
+            "AISLE_LOCKSTEP": "1",
+            "AISLE_TURN_NODE": "worker",
+            "AISLE_TURN_OUTPUTS": "out,turn_done",
+        },
+    )
+    with pytest.raises(ProtocolError, match="unrelated turn stamp"):
+        for event in node:
+            if event["id"] == "turn":
+                node.send_output(
+                    "out",
+                    pa.array([1]),
+                    {"turn_epoch": 9, "turn_id": 9, "sim_time_ns": 90, "seq": 1},
+                )
 
 
 def test_unstamped_wall_input_cannot_emit_functional_output():

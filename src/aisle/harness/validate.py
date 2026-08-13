@@ -189,9 +189,24 @@ def compile_turn_plan(nodes: list[dict], manifests: dict[str, dict]) -> dict:
         producer, _, output = str(source or "").partition("/")
         if producer in participants and output == "turn_done":
             done_ports[port] = producer
+    bridge_inputs = {}
+    bridge = graph_nodes[bridges[0]]
+    bridge_manifest = topology["manifest_for"](bridges[0])
+    declared_bridge_inputs = bridge_manifest.get("inputs", {})
+    for port, raw in sorted((bridge.get("inputs") or {}).items()):
+        effective = _effective_manifest_port(port, declared_bridge_inputs)
+        if effective and declared_bridge_inputs[effective].get("is_clock") is True:
+            continue
+        source = _input_source(raw)
+        if source is None or source.startswith("dora/"):
+            continue
+        producer, _, output = source.partition("/")
+        if producer in participants:
+            bridge_inputs[port] = {"source": producer, "output": output}
     return {
         "bridge": bridges[0],
         "bridge_outputs": sorted(graph_nodes[bridges[0]].get("outputs") or []),
+        "bridge_inputs": bridge_inputs,
         "barrier": barriers[0],
         "participants": participants,
         "done_ports": done_ports,
@@ -213,17 +228,6 @@ def _clock_errors(nodes: list[dict], manifests: dict[str, dict]) -> list[dict]:
     if not bridge_ids:
         return []
     barrier_ids = topology["barrier_ids"]
-    # Legacy/minimal fixture graphs and explicit bring-up dataflows may still
-    # describe a simulator without claiming an attesting clock.  Once either
-    # endpoint opts into ADR-30, however, the whole closed-turn topology is
-    # mandatory and there is no partial-participation exemption.
-    opted_in = bool(barrier_ids) or any(
-        str((graph_nodes[node_id].get("env") or {}).get("AISLE_LOCKSTEP", "")).strip().lower()
-        in {"1", "true", "yes"}
-        for node_id in bridge_ids
-    )
-    if not opted_in:
-        return []
     manifest_for = topology["manifest_for"]
     edge_kind = topology["edge_kind"]
 
@@ -695,10 +699,6 @@ def validate_nodes(
     errors.extend(rung_errors)
     # ADR-32 §1: T4 goal blinding is likewise a property of the graph
     errors.extend(_dialogue_blinding_errors(nodes))
-    # ADR-30/VAL-2: simulation graphs are closed-turn graphs.  Run this
-    # graph-wide pass before per-edge validation so missing participation and
-    # causal cycles are reported even when another edge is also malformed.
-    errors.extend(_clock_errors(nodes, manifests))
     for node in nodes:
         node_id = node["id"]
         # ADR-25 (issue #71, PR #80 review): the bridge's reset-less
@@ -1014,6 +1014,12 @@ def validate_nodes(
                 rung,
                 bridge_ids,
             )
+    # ADR-30/VAL-2: every otherwise-valid simulator graph must prove its
+    # closed-turn topology. Graphs already refused for another concern do not
+    # get secondary CLOCK noise; once that concern is fixed, CLOCK failures
+    # surface before the graph can validate or run.
+    if not errors:
+        errors.extend(_clock_errors(nodes, manifests))
     return errors, warnings
 
 

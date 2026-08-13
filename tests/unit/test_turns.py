@@ -24,6 +24,15 @@ def _watermark(turn_id: int, outputs: dict[str, int], *, epoch: int = 7) -> dict
     return watermark_metadata(TurnStamp(epoch, turn_id, turn_id * 10_000_000), outputs)
 
 
+def _commit(turn_id: int, counts: dict[str, int], *, epoch: int, sim_time_ns: int) -> dict:
+    names = sorted(counts)
+    return {
+        **_stamp(turn_id, epoch=epoch, sim_time_ns=sim_time_ns),
+        "expected_inputs": names,
+        "expected_counts": [counts[name] for name in names],
+    }
+
+
 class TestTurnStamp:
     @pytest.mark.parametrize(
         "metadata",
@@ -83,6 +92,9 @@ class TestTurnBarrier:
         return {
             "bridge": "bridge",
             "bridge_outputs": ["sim_turn", "state"],
+            "bridge_inputs": {
+                "joint_cmd": {"source": "driver", "output": "command"},
+            },
             "participants": {
                 "client": {
                     "outputs": ["goal", "turn_done"],
@@ -134,6 +146,7 @@ class TestTurnBarrier:
         assert barrier.close("driver", _watermark(0, {"command": 1, "turn_done": 1})) == {}
         assert barrier.close("verifier", _watermark(0, {"episode_result": 1, "turn_done": 1})) == {}
         assert barrier.complete
+        assert barrier.bridge_expected_inputs() == {"joint_cmd": 1}
 
     def test_episodic_result_is_consumed_exactly_one_turn_later(self):
         """BRG-1/VAL-2: reply cycles terminate through a one-turn episodic delay."""
@@ -190,6 +203,66 @@ class TestTurnBarrier:
 
 
 class TestBridgeTurn:
+    @staticmethod
+    def _commit_metadata(stamp: TurnStamp, **counts: int) -> dict:
+        names = sorted(counts)
+        return {
+            **stamp.metadata(),
+            "expected_inputs": names,
+            "expected_counts": [counts[name] for name in names],
+        }
+
+    def test_commit_declaration_waits_for_cross_port_command_delivery(self):
+        """BRG-1: a watermark/commit overtaking data cannot close the turn early."""
+        stamp = TurnStamp(3, 9, 90_000_000)
+        turn = BridgeTurn(stamp)
+        assert turn.commit(self._commit_metadata(stamp, joint_cmd=1)) is None
+        assert turn.advances_physics is None
+
+        turn.accept("joint_cmd", "joint", {**stamp.metadata(), "seq": 1})
+        assert turn.ready_to_commit
+        assert turn.finish() == [("joint_cmd", "joint")]
+        assert turn.advances_physics is True
+
+    def test_zero_count_bridge_inputs_close_without_receiving_placeholder_data(self):
+        """BRG-1: declared zero means absence; no message is manufactured."""
+        stamp = TurnStamp(3, 9, 90_000_000)
+        turn = BridgeTurn(stamp)
+        assert turn.commit(self._commit_metadata(stamp, joint_cmd=0, reset=0)) == []
+        assert turn.advances_physics is True
+
+    def test_commands_coalesce_independently_per_environment(self):
+        """BRG-5/BRG-3: one env's command must never replace another env's command."""
+        stamp = TurnStamp(3, 9, 90_000_000)
+        turn = BridgeTurn(stamp, n_envs=2)
+        turn.accept("joint_cmd", "env-0", {**stamp.metadata(), "seq": 1, "env_id": 0})
+        turn.accept("joint_cmd", "env-1", {**stamp.metadata(), "seq": 1, "env_id": 1})
+        assert turn.commit(self._commit_metadata(stamp, joint_cmd=2)) == [
+            ("joint_cmd", "env-0"),
+            ("joint_cmd", "env-1"),
+        ]
+
+    def test_multi_environment_inputs_require_an_explicit_valid_env_id(self):
+        """BRG-5: fleet inputs never fall back silently to environment zero."""
+        stamp = TurnStamp(3, 9, 90_000_000)
+        turn = BridgeTurn(stamp, n_envs=2)
+        with pytest.raises(ProtocolError, match="no env_id"):
+            turn.accept("joint_cmd", "missing", {**stamp.metadata(), "seq": 1})
+        with pytest.raises(ProtocolError, match="outside"):
+            turn.accept("joint_cmd", "out-of-range", {**stamp.metadata(), "seq": 1, "env_id": 2})
+
+    def test_resets_are_unique_per_environment_and_applied_in_env_order(self):
+        """BRG-1/BRG-5: each fleet lane may reset once without replacing a neighbour."""
+        stamp = TurnStamp(3, 9, 90_000_000)
+        turn = BridgeTurn(stamp, n_envs=2)
+        turn.accept("reset", "env-1", {**stamp.metadata(), "seq": 1, "env_id": 1})
+        turn.accept("reset", "env-0", {**stamp.metadata(), "seq": 1, "env_id": 0})
+        assert turn.commit(self._commit_metadata(stamp, reset=2)) == [
+            ("reset", "env-0"),
+            ("reset", "env-1"),
+        ]
+        assert turn.advances_physics is False
+
     def test_commands_are_coalesced_by_seq_and_applied_in_canonical_order(self):
         """BRG-1/BRG-3: arrival order cannot select the simulated trajectory."""
         turn = BridgeTurn(TurnStamp(3, 9, 90_000_000))
@@ -202,7 +275,14 @@ class TestBridgeTurn:
         )
         turn.accept("gripper_cmd", "grip", {**_stamp(9, epoch=3, sim_time_ns=90_000_000), "seq": 1})
 
-        assert turn.commit(_stamp(9, epoch=3, sim_time_ns=90_000_000)) == [
+        assert turn.commit(
+            _commit(
+                9,
+                {"base_cmd": 2, "gripper_cmd": 1, "joint_cmd": 1},
+                epoch=3,
+                sim_time_ns=90_000_000,
+            )
+        ) == [
             ("joint_cmd", "joint"),
             ("gripper_cmd", "grip"),
             ("base_cmd", "base-new"),
@@ -218,7 +298,9 @@ class TestBridgeTurn:
         turn.accept("joint_cmd", new, new["metadata"])
         turn.accept("joint_cmd", stale, stale["metadata"])
         assert (
-            turn.commit(_stamp(9, epoch=3, sim_time_ns=90_000_000))[0][1]["metadata"]["dropped"]
+            turn.commit(_commit(9, {"joint_cmd": 3}, epoch=3, sim_time_ns=90_000_000))[0][1][
+                "metadata"
+            ]["dropped"]
             == 2
         )
 
@@ -227,7 +309,9 @@ class TestBridgeTurn:
         turn = BridgeTurn(TurnStamp(2, 4, 40))
         turn.accept("joint_cmd", "motion", {**_stamp(4, epoch=2, sim_time_ns=40), "seq": 1})
         turn.accept("reset", "seed", {**_stamp(4, epoch=2, sim_time_ns=40), "seq": 1})
-        assert turn.commit(_stamp(4, epoch=2, sim_time_ns=40)) == [("reset", "seed")]
+        assert turn.commit(_commit(4, {"joint_cmd": 1, "reset": 1}, epoch=2, sim_time_ns=40)) == [
+            ("reset", "seed")
+        ]
         assert turn.advances_physics is False
 
     @pytest.mark.parametrize(
@@ -249,9 +333,9 @@ class TestBridgeTurn:
     def test_duplicate_commit_fails(self):
         """BRG-1: exactly one terminal commit closes a turn."""
         turn = BridgeTurn(TurnStamp(3, 9, 90_000_000))
-        turn.commit(_stamp(9, epoch=3, sim_time_ns=90_000_000))
+        turn.commit(_commit(9, {}, epoch=3, sim_time_ns=90_000_000))
         with pytest.raises(ProtocolError):
-            turn.commit(_stamp(9, epoch=3, sim_time_ns=90_000_000))
+            turn.commit(_commit(9, {}, epoch=3, sim_time_ns=90_000_000))
 
 
 class TestParticipantTurn:

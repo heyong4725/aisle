@@ -826,6 +826,14 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     # root is re-based; base_scan is a planar raycast against the scene.
     is_mobile = cfg.embodiment == "mobile"
     topic_rates = rung_topic_rates(cfg.perception, is_mobile)
+    if cfg.lockstep:
+        # A measured graph's declared output set is the executable contract.
+        # Do not render/publish optional sensor ports the graph omitted; their
+        # absence is represented by omission from the bridge's complete
+        # watermark output set, not by an attempted undeclared dora send.
+        topic_rates = {
+            topic: rate for topic, rate in topic_rates.items() if topic in bridge_outputs
+        }
     base_pose = [float(v) for v in profile.get("base_start", [0.0, 0.0, 0.0])]
     base_cmd = [0.0, 0.0]
     if is_store:
@@ -1121,8 +1129,32 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             return
         from aisle.turns import BridgeTurn, ProtocolError, TurnStamp
 
-        current = BridgeTurn(TurnStamp(turn_epoch, turn_id, sim_time_ns))
+        current = BridgeTurn(TurnStamp(turn_epoch, turn_id, sim_time_ns), n_envs=cfg.n_envs)
+        pending_shutdown = False
         open_turn()
+
+        def finish_turn(actions, shutdown: bool):
+            """Apply a count-closed turn, then open its realized successor."""
+            nonlocal current, turn_id
+            reset_turn = bool(actions and actions[0][0] == "reset")
+            if turn_id == 0 and not reset_turn:
+                raise ProtocolError("turn zero committed without the required initial reset")
+            turn_id += 1
+            for _, committed_event in actions:
+                yield committed_event
+            if shutdown:
+                return True
+            if not reset_turn:
+                yield {
+                    "type": "INPUT",
+                    "id": "tick",
+                    "value": pa.array([], type=pa.uint8()),
+                    "metadata": {},
+                }
+            current = BridgeTurn(TurnStamp(turn_epoch, turn_id, sim_time_ns), n_envs=cfg.n_envs)
+            open_turn()
+            return False
+
         for raw in node:
             if raw.get("type") != "INPUT":
                 yield raw
@@ -1131,6 +1163,11 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             metadata_ = raw.get("metadata") or {}
             if topic in ("joint_cmd", "gripper_cmd", "base_cmd", "reset"):
                 current.accept(topic, raw, metadata_)
+                if current.ready_to_commit:
+                    stop = yield from finish_turn(current.finish(), pending_shutdown)
+                    pending_shutdown = False
+                    if stop:
+                        return
                 continue
             if topic == "tick":
                 # A wall timer remains only as a liveness opportunity.  It
@@ -1138,24 +1175,13 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                 continue
             if topic != "turn_commit":
                 raise ProtocolError(f"unexpected bridge input {topic!r} in lockstep mode")
+            pending_shutdown = metadata_.get("shutdown") is True
             actions = current.commit(metadata_)
-            reset_turn = bool(actions and actions[0][0] == "reset")
-            if turn_id == 0 and not reset_turn:
-                raise ProtocolError("turn zero committed without the required initial reset")
-            turn_id += 1
-            for _, committed_event in actions:
-                yield committed_event
-            if metadata_.get("shutdown") is True:
-                return
-            if not reset_turn:
-                yield {
-                    "type": "INPUT",
-                    "id": "tick",
-                    "value": pa.array([], type=pa.uint8()),
-                    "metadata": {},
-                }
-            current = BridgeTurn(TurnStamp(turn_epoch, turn_id, sim_time_ns))
-            open_turn()
+            if actions is not None:
+                stop = yield from finish_turn(actions, pending_shutdown)
+                pending_shutdown = False
+                if stop:
+                    return
 
     for event in bridge_events():
         if event["type"] != "INPUT":
