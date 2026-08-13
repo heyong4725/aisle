@@ -340,11 +340,15 @@ def main(clock=None) -> None:
     import pyarrow as pa
 
     from aisle.mobility.guard import (
+        base_blind_drive,
         base_watchdog_reason,
+        blind_onset,
         clamp_base_cmd,
         load_base_limits,
         parse_env_id,
         parse_sim_stamp,
+        reset_base_watchdog,
+        sim_clock_is_blind,
         update_arm_motion_window,
         valid_base_pose,
     )
@@ -401,6 +405,19 @@ def main(clock=None) -> None:
             "last_base_cmd_sim_ns": None,
             "last_base_cmd_wall_t": None,
             "last_pose_wall_t": None,
+            # wall time the sim clock most recently WENT blind (None while
+            # it is healthy). The blind-drive net measures from here, not
+            # from the last command, so a producer that keeps commanding
+            # cannot hold the net open forever (issue #182).
+            "blind_since_wall": None,
+            # blind-drive stop already reported for the CURRENT blind
+            # stretch. The stop itself is re-applied to every command (that
+            # is what makes it stick), but the violation is an EDGE: without
+            # this the guard emitted one violation and one stderr line per
+            # pose — ~250 per nav goal — which both floods the recorded
+            # violation topic under dora's drop-oldest backpressure and
+            # feeds issue #183. Cleared with the onset (issue #182 review).
+            "blind_stop_reported": False,
             "last_base_safe": [0.0, 0.0],  # last emitted safe base cmd
             "timer": EpisodeTimer(),
         }
@@ -420,6 +437,31 @@ def main(clock=None) -> None:
             send("violation", pa.array([json.dumps(payload)]), metadata, s=s)
             print(f"guard violation: {payload}", file=sys.stderr)
 
+    def refresh_blind(state: dict, now: float) -> tuple[bool, bool]:
+        # (is the sim clock blind now, has it been blind long enough to stop
+        # the base). Both the COMMAND path and the pose-driven watchdog call
+        # this so they cannot disagree (issue #182 review). The onset is
+        # maintained whether or not the base is currently moving: the
+        # quantity is "how long have we had no clock", which does not pause
+        # while the base is stopped — so a base commanded after a long blind
+        # stretch is stopped at once rather than granted a fresh window.
+        blind = sim_clock_is_blind(
+            base_pose_sim_ns=state["base_pose_sim_ns"],
+            last_pose_wall_t=state["last_pose_wall_t"],
+            now_wall=now,
+            limits=base_limits,
+        )
+        state["blind_since_wall"] = blind_onset(
+            state["blind_since_wall"], sim_clock_blind=blind, now_wall=now
+        )
+        if state["blind_since_wall"] is None:
+            # the clock came back: re-arm the edge so a LATER blind stretch
+            # reports its own violation instead of being silently swallowed
+            state["blind_stop_reported"] = False
+        return blind, base_blind_drive(
+            blind_since_wall=state["blind_since_wall"], now_wall=now, limits=base_limits
+        )
+
     def run_watchdog(env_id: int, state: dict, now: float) -> None:
         # MOB-3 watchdog (ADR-29): stop a latched moving base ONCE when the
         # pure verdict says so. Called from the base_pose handler (the sim
@@ -427,6 +469,12 @@ def main(clock=None) -> None:
         # envs on the BG-5 stats tick (the wall net's home: it also covers
         # unstamped sources, a hung sim, and env_ids absent from the pose
         # stream, which the sim clock cannot see).
+        #
+        # The blind bookkeeping runs BEFORE the moving-base gate: "how long
+        # have we had no sim clock" does not pause while the base is
+        # stopped, and the tick sweep is the only thing that keeps it
+        # current for an env whose producer is silent (issue #182 review).
+        blind, _ = refresh_blind(state, now)
         if state["last_base_safe"] == [0.0, 0.0]:
             return
         if state["last_base_cmd_sim_ns"] is None and state["base_pose_sim_ns"] is not None:
@@ -441,10 +489,6 @@ def main(clock=None) -> None:
         # ever arrived for this env, or the pose stream itself went silent
         # past the backstop. While valid stamps flow, the sim-time check
         # owns the verdict — a healthy-but-slow sim can never trip the net.
-        blind = state["base_pose_sim_ns"] is None or (
-            state["last_pose_wall_t"] is not None
-            and now - state["last_pose_wall_t"] > base_limits.base_wall_backstop_s
-        )
         reason = base_watchdog_reason(
             episode_timed_out=state["timer"].timed_out(now, limits.wall_timeout_s),
             last_cmd_sim_ns=state["last_base_cmd_sim_ns"],
@@ -452,6 +496,7 @@ def main(clock=None) -> None:
             last_cmd_wall_t=state["last_base_cmd_wall_t"],
             now_wall=now,
             sim_clock_blind=blind,
+            blind_since_wall=state["blind_since_wall"],
             limits=base_limits,
         )
         if reason is None:
@@ -616,6 +661,31 @@ def main(clock=None) -> None:
                     }
                 )
                 safe_b = [0.0, 0.0]
+            # MOB-3 blind-drive stop, applied HERE and not only in the
+            # pose-driven watchdog (issue #182 review). The watchdog's zero
+            # is emitted from the base_pose handler, but a producer that
+            # commands on every pose re-latches a nonzero base_cmd_safe
+            # immediately behind it, and the bridge is a last-write-wins
+            # latch — so the stop was overwritten before it was ever
+            # integrated and the base never slowed down. Zeroing on the
+            # COMMAND path is what makes the stop stick: every command is
+            # zeroed for as long as the clock stays blind. Same predicate
+            # the watchdog uses, so the two cannot disagree.
+            _, blind_drive = refresh_blind(state, now)
+            if blind_drive and safe_b != [0.0, 0.0]:
+                if not state["blind_stop_reported"]:
+                    # EDGE-triggered: the stop repeats, the violation does
+                    # not (one per pose flooded the topic and stderr)
+                    violations.append(
+                        {
+                            "reason": "base_blind_wall",
+                            "axis": "cmd",
+                            "requested": safe_b,
+                            "clamped": [0.0, 0.0],
+                        }
+                    )
+                    state["blind_stop_reported"] = True
+                safe_b = [0.0, 0.0]
             state["last_base_safe"] = safe_b
             send("base_cmd_safe", pa.array(np.asarray(safe_b, dtype=np.float32)), metadata)
             publish_violations(violations, metadata)
@@ -646,6 +716,26 @@ def main(clock=None) -> None:
             # exactly the neighbour's reset moment (fleet probes 5-6,
             # seed-3 'dropped' at t~26). A reply without env_id keeps the
             # legacy whole-guard boundary.
+            if metadata.get("error"):
+                # a REFUSED reset (ADR-8, TC-6). These replies only reach
+                # the guard since issue #192 moved the boundary onto the
+                # reset service's output, and they must NOT be treated as
+                # one: the sim was never touched, so the robot is NOT at
+                # home and re-referencing velocity/hold state to the home
+                # qpos would clamp the next command against a false origin
+                # — permitting a larger real jump than the limit allows.
+                # Re-anchoring the BG-2 timer would be wrong too: no new
+                # episode started, so the budget must keep running.
+                #
+                # Deliberately narrower than the other consumers, which DO
+                # clear on a refusal to stay in phase with rollout-client
+                # (it proceeds on any reply). Their state carries no
+                # physical claim about where the robot is; this state does.
+                print(
+                    f"guard: reset refused ({metadata['error']}); not an episode boundary",
+                    file=sys.stderr,
+                )
+                continue
             reset_env = metadata.get("env_id")
             if isinstance(reset_env, int) and not isinstance(reset_env, bool):
                 boundary_envs = [(reset_env, envs.setdefault(reset_env, new_state()))]
@@ -674,9 +764,12 @@ def main(clock=None) -> None:
                 # (the sim clock itself keeps running across episodes, so
                 # base_pose_sim_ns is NOT reset)
                 state["base_pose"] = None
-                state["last_base_cmd_sim_ns"] = None
-                state["last_base_cmd_wall_t"] = None
-                state["last_base_safe"] = [0.0, 0.0]
+                # every episode-scoped watchdog field, from the one list
+                # that defines them (BASE_WATCHDOG_EPISODE_RESET). Inline
+                # assignments here are how issue #182's blind onset came to
+                # survive the boundary: a new state key was added and this
+                # handler was not updated, and nothing could catch it.
+                reset_base_watchdog(state)
         elif event["id"] == "tick":
             # the wall net's sweep (ADR-29): every env, fail-closed, on the
             # BG-5 cadence — it can only fire on a pathological run

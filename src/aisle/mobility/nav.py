@@ -46,6 +46,56 @@ def load_near_field_m(embodiment: str) -> float:
         return float(tomllib.load(f)["embodiment"][embodiment]["nav_near_field_m"])
 
 
+def nav_result_is_current(expected_goal_id, result_goal_id) -> bool:
+    """TC-7: does this `nav_result` belong to the leg the caller is waiting
+    on? Shared by every nav_result consumer (s1-expert and the S1/S3 driver
+    skills) so one rule governs them all.
+
+    Issue #179: the handlers took ANY nav_result as completing whatever was
+    pending. A leg still in flight when an episode ended emitted its result
+    into the NEXT episode, where it silently completed a different subtask —
+    invisible in the records, because the episode looks ordinary. Matching
+    the id makes that structurally impossible, and the ids do discriminate:
+    `nav_seq` is monotonic for the life of the process (it is not part of
+    the per-episode `clear()`), so a stale id can never collide with a live
+    one.
+
+    Fail-closed on anything unusable — a missing, None, or non-string id on
+    either side is NOT a match, because "cannot tell" must not complete a
+    subtask."""
+    return (
+        isinstance(expected_goal_id, str)
+        and isinstance(result_goal_id, str)
+        and expected_goal_id != ""
+        and expected_goal_id == result_goal_id
+    )
+
+
+def nav_goal_is_current(machine_epoch, goal_epoch) -> bool:
+    """TC-7, the INBOUND half of the episode correlation (issue #179
+    review). Does this `nav_goal` belong to the episode nav is now in?
+
+    Correlating only `nav_result` left a window the fix itself opened. The
+    boundary clears `target`, so a goal emitted just BEFORE the reset but
+    delivered just after is no longer refused as "nav active" — it is
+    accepted as fresh, and nav drives the PREVIOUS episode's target through
+    the whole new episode while the real goal is refused behind it. Proven
+    against the live node: `base_cmd` kept the stale goal_id and the new
+    episode's goal was refused. Half the correlation was implemented; this
+    is the other half.
+
+    The epoch is `reset_done`'s own `seq` (TC-2), read from the SAME message
+    by nav and by the goal's producer, so the two cannot drift the way two
+    independently maintained counters would.
+
+    A goal carrying NO epoch is accepted: producers that do not track
+    episodes (the MOB-2 acceptance harness, any future planner without a
+    `reset_done` input) must keep working, and this degrades exactly the way
+    `parse_sim_stamp` does. Refusal is reserved for a goal that states an
+    epoch and states the wrong one."""
+    return goal_epoch is None or goal_epoch == machine_epoch
+
+
 def resolve_nav_goal(goal: dict, locations: dict[str, list[float]]) -> list[float]:
     """Resolve a nav_goal to a store-frame [x, y, yaw] (MOB-2).
 
@@ -99,35 +149,88 @@ class NavStateMachine:
         self.stall_s = stall_s
         self.target: list[float] | None = None
         self.goal_id: str | None = None
-        self.pose: list[float] | None = None
-        self.ticks = 0
-        self._sim_ns: int | None = None
-        self._t0_ns: int | None = None
-        self._progress_ns: int | None = None
-        self._best_dist = math.inf
-        self._best_head = math.inf
+        # the episode nav believes it is in: `reset_done`'s TC-2 seq, or None
+        # before the first boundary. EPISODE-scoped, not goal-scoped, so it
+        # is deliberately not in _GOAL_SCOPED (issue #179 review).
+        self.episode_epoch: int | None = None
+        self._reset_goal_scoped()
+
+    #: Every field whose lifetime is ONE nav goal, with its fresh value.
+    #: `target`/`goal_id` are not here: they identify the goal rather than
+    #: scope to it, and each caller sets them differently. Neither is
+    #: `episode_epoch`, whose lifetime is an EPISODE.
+    #:
+    #: One list, applied by `_reset_goal_scoped`, because this state is
+    #: entered from four directions — construction, a new goal, a finished
+    #: goal, and an episode boundary — and a field reset on only some of
+    #: them is exactly how issue #179 (and #182's guard twin) happened.
+    #: Adding a field HERE is the whole change. Adding one that is not here
+    #: is caught by test_the_machine_has_no_state_outside_the_known_sets.
+    _GOAL_SCOPED: tuple[tuple[str, object], ...] = (
+        ("pose", None),
+        ("ticks", 0),
+        # consecutive unstamped poses (issue #182)
+        ("_blind_poses", 0),
+        # the held clock is goal-scoped: if a goal's first pose is unstamped
+        # it must not anchor to the PREVIOUS goal's last stamp (PR #178)
+        ("_sim_ns", None),
+        ("_t0_ns", None),
+        ("_progress_ns", None),
+        ("_best_dist", math.inf),
+        ("_best_head", math.inf),
         # rotate-only latch (T15 round 5): once inside the arrival radius
         # the base must STOP translating and only rotate — un-latched
         # drive/rotate alternation at the boundary chatters, distance never
         # improves, and the stall detector misreads it as blocked
-        self.rotating = False
+        ("rotating", False),
+    )
 
-    def on_goal(self, target_pose: list[float], goal_id: str) -> list:
+    def _reset_goal_scoped(self) -> None:
+        for name, fresh in self._GOAL_SCOPED:
+            setattr(self, name, fresh)
+
+    def on_goal(self, target_pose: list[float], goal_id: str, goal_epoch=None) -> list:
         if self.target is not None:  # TC-7: nav actions do not overlap
+            return []
+        if not nav_goal_is_current(self.episode_epoch, goal_epoch):
+            # a goal from a PREVIOUS episode, in flight across the boundary
+            # (issue #179 review). Before the boundary existed this was
+            # refused as "nav active"; clearing `target` made it look fresh,
+            # so nav would drive the old episode's target through the whole
+            # new one. The caller distinguishes this from a bare refusal.
             return []
         self.target = [float(v) for v in target_pose]
         self.goal_id = goal_id
-        self.pose = None
-        self.ticks = 0
-        # The held clock is goal-scoped: if this goal's first pose is
-        # unstamped, it must not anchor to the previous goal's last stamp.
-        self._sim_ns = None
-        self._t0_ns = None
-        self._progress_ns = None
-        self._best_dist = math.inf
-        self._best_head = math.inf
-        self.rotating = False
+        self._reset_goal_scoped()
         return []
+
+    def on_episode_boundary(self, epoch=None) -> str | None:
+        """Abandon any in-flight goal because the EPISODE ended (issue #179).
+        Returns the abandoned goal_id (None if nav was already idle).
+
+        Without this the machine was cleared only by `on_goal` and `_finish`,
+        and nothing told nav an episode had ended — so a leg still in flight
+        at a timeout or verifier verdict survived the boundary and did three
+        things to the next episode: its first nav_goal was silently refused
+        (`on_goal` returns [] while `target` is set, TC-7 non-overlap being
+        correct in isolation), the carried leg then emitted a `nav_result`
+        that completed the NEW episode's subtask, and PR #178's goal-scoped
+        clock reset never ran because it sits behind that same early return.
+
+        Deliberately emits NOTHING. A `nav_result` here would carry the OLD
+        goal_id into a fresh episode, which is the very confusion being
+        fixed, and "the episode ended" is not one of MOB-2's failure values
+        — the boundary is already in the trace as `reset_done`. The caller
+        zeroes the base and logs. Returning the goal_id rather than an
+        emissions list keeps it structurally impossible to feed this into
+        the `for topic, payload, goal_id in ...` loop the other handlers
+        use."""
+        aborted = self.goal_id
+        self.target = None
+        self.goal_id = None
+        self.episode_epoch = epoch
+        self._reset_goal_scoped()
+        return aborted
 
     def on_base_pose(self, pose: list[float], sim_time_ns: int | None) -> list:
         """Latest base pose (MOB-1 base_pose) with its sim stamp (TC-2);
@@ -137,13 +240,27 @@ class NavStateMachine:
         BG-3 trust boundary extended to nav): geometry still updates —
         control keeps steering — but the machine's clock HOLDS, so the
         stall/timeout budgets freeze rather than anchor at 0 or jump on
-        garbage. On a fully-unstamped source nav therefore never
-        sim-times-out; the guard wall net is the stop on that path (the
-        ADR-29 residual recorded as issue #160 item 2)."""
+        garbage.
+
+        A blind machine cannot enforce its own stall or timeout budget, so
+        it must not steer indefinitely: after BLIND_POSE_BUDGET consecutive
+        unstamped poses the goal fails with `no_sim_clock` and the node
+        zeroes the base (issue #182). An earlier comment here claimed the
+        ADR-29 wall net covered this path; it did not — that net keys off
+        command SILENCE, and this node commands on every pose, so it kept
+        the net open forever. The guard now bounds blind driving directly
+        (`base_blind_wall`, enforced on its COMMAND path so the stop
+        actually sticks) and is the safety bound; this budget ends the GOAL
+        with a diagnosis so nav stops steering a base the guard is holding
+        at zero. It is the slower of the two on the store profile — see
+        BLIND_POSE_BUDGET for the rtf arithmetic."""
         if self.target is not None:
             self.pose = [float(v) for v in pose]
-            if sim_time_ns is not None:
+            if sim_time_ns is None:
+                self._blind_poses += 1
+            else:
                 self._sim_ns = int(sim_time_ns)
+                self._blind_poses = 0
         return []
 
     def _finish(self, status: str, failure: str | None) -> list:
@@ -152,6 +269,13 @@ class NavStateMachine:
         goal_id = self.goal_id
         self.target = None
         self.goal_id = None
+        # a goal's NORMAL exit re-arms the same state its abnormal exit does
+        # (issue #179 review): every reader is gated on `target`, so leaving
+        # `pose`/`_sim_ns`/`_blind_poses` stale here was not a live bug — but
+        # it left the machine in observably different states after the two
+        # exits, which is how a reader eventually gets it wrong. Elapsed is
+        # computed above, before the clock is cleared.
+        self._reset_goal_scoped()
         return [("nav_result", result, goal_id)]
 
     def on_tick(self) -> list:
@@ -188,6 +312,17 @@ class NavStateMachine:
         arrived_dist = dist <= (self.capture_tol_m if self.rotating else self.arrival_tol_m)
         if arrived_dist and yaw_err <= self.arrival_yaw_rad:
             return self._finish("success", None)
+        # blind budget is checked AFTER arrival (issue #182 review): geometry
+        # is measured from base_pose and needs no clock, so a goal that has
+        # actually reached its target has succeeded whether or not stamps
+        # ever arrived — failing a COMPLETED goal would contradict
+        # test_never_stamped_goal_still_controls_and_arrives. What must not
+        # continue is blind STEERING, and that is what this bounds.
+        if self._blind_poses >= BLIND_POSE_BUDGET:
+            # fail closed rather than steer on a clock that never arrived:
+            # the caller zeroes the base on any terminal nav_result, so this
+            # both stops the motion and says why
+            return self._finish("fail", "no_sim_clock")
         # progress tracking (MOB-2 blocked): PHASE-AWARE and three-way —
         # while latched-rotating, progress is the FINAL-yaw error; while
         # driving, progress is distance OR the heading-to-bearing error
@@ -230,6 +365,23 @@ class NavStateMachine:
         # exposed as an unapproved contract field
         return [("nav_feedback", {"t": self.ticks, "dist_remaining": dist}, self.goal_id)]
 
+
+# Consecutive unstamped poses a nav goal tolerates before failing closed
+# (issue #182). Counted in POSES, not wall seconds, so the failure point is
+# a function of the stream rather than host load (CON-5).
+#
+# 250 poses is 5 SIM seconds at the MOB-1 50 Hz cadence. Note SIM: the wall
+# duration is 5/rtf, so ~10 s on the desk profile (rtf~0.5) and ~71 s on the
+# store profile (rtf~0.07) that the mobile embodiment actually runs. An
+# earlier revision of this comment claimed "~5 s ... far inside the guard's
+# 10 s backstop, so nav fails first"; that silently mixed sim and wall and
+# is false on every scene we measure — exactly the trap docs/glossary.md
+# warns about under `rtf`. The guard's blind-drive stop fires FIRST on the
+# store profile, and it is the safety bound; this budget is not a backstop
+# and must not be read as one. It exists to END THE GOAL with a diagnosis
+# (`no_sim_clock`) rather than leave nav steering at a stopped base, and it
+# is deliberately generous so no transient gap can trip it.
+BLIND_POSE_BUDGET = 250
 
 # proportional gains for the diff-drive controller (MOB-2); dimensionless
 # scaling of distance->v and heading-error->omega, clamped to the base

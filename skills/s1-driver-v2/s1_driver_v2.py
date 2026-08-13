@@ -275,7 +275,7 @@ def main() -> None:
     home = np.asarray(profile["home_qpos"], dtype=np.float32)
     meds = load_meds()
     plano = load_planogram()
-    from aisle.mobility.nav import load_locations, load_nav_params
+    from aisle.mobility.nav import load_locations, load_nav_params, nav_result_is_current
 
     locations = load_locations()
     nav_params = load_nav_params("mobile")
@@ -300,6 +300,12 @@ def main() -> None:
     carry_place_z = 0.0
     placed = 0
     nav_seq = 0
+    # the episode this driver is in: reset_done's TC-2 seq, stamped onto
+    # every nav_goal so waypoint-nav can refuse a goal that crossed the
+    # boundary in flight (issue #179 review). NOT reset by clear() --
+    # like nav_seq it is process-scoped, and its value comes from the
+    # boundary message itself, so the two sides cannot drift.
+    episode_epoch: int | None = None
 
     def clear() -> None:
         nonlocal goal, roster, queue, pending, streamer, after_stream
@@ -318,9 +324,21 @@ def main() -> None:
         latest_poses = None
 
     def send_nav(nav_goal: dict) -> None:
-        nonlocal nav_seq
+        # stamps the issued goal_id onto `pending` (issue #179) so the
+        # nav_result handler can tell OUR leg's reply from a stale one. Done
+        # here rather than at each `pending = {...}` site because a retry
+        # reuses `{**done, ...}`, which would otherwise carry the PREVIOUS
+        # leg's id and reject its own reply.
+        nonlocal nav_seq, pending
         nav_seq += 1
-        send("nav_goal", pa.array([json.dumps(nav_goal)]), {"goal_id": f"nav-{nav_seq:03d}"})
+        goal_id = f"nav-{nav_seq:03d}"
+        if pending is not None:
+            pending = {**pending, "goal_id": goal_id}
+        send(
+            "nav_goal",
+            pa.array([json.dumps(nav_goal)]),
+            {"goal_id": goal_id, "episode_epoch": episode_epoch},
+        )
 
     def start_pick(slot_id: str, category: str) -> None:
         nonlocal streamer, carry_q, carry_place_z, after_stream, stream_bails
@@ -438,6 +456,7 @@ def main() -> None:
         if event["type"] != "INPUT":
             continue
         if event["id"] == "reset_done":
+            episode_epoch = (event.get("metadata") or {}).get("seq")
             clear()
         elif event["id"] == "episode_goal":
             goal = json.loads(event["value"][0].as_py())
@@ -507,6 +526,17 @@ def main() -> None:
         elif event["id"] == "nav_result":
             result = json.loads(event["value"][0].as_py())
             if pending is None:
+                continue
+            reply_id = (event.get("metadata") or {}).get("goal_id")
+            if not nav_result_is_current(pending.get("goal_id"), reply_id):
+                # issue #179: a reply from a leg we are NOT waiting on --
+                # above all one carried over from a previous episode -- must
+                # never complete the live subtask
+                print(
+                    f"stale nav_result ignored: goal_id={reply_id!r} "
+                    f"(waiting on {pending.get('goal_id')!r}); {result}",
+                    file=sys.stderr,
+                )
                 continue
             done, pending = pending, None
             if result.get("status") != "success":

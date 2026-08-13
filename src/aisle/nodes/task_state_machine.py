@@ -44,6 +44,7 @@ from __future__ import annotations
 
 READ_TIER = "T2"
 DIALOGUE_TIER = "T4"
+TURN_STAMP_KEYS = ("turn_epoch", "turn_id", "sim_time_ns")
 # per candidate: the first read plus this-many-minus-one refusal retries
 # from later ladder entries. ONE by measurement: every correct read in
 # the offline tour landed on the candidate's FIRST tracked entry, while
@@ -274,7 +275,15 @@ class TaskStateMachine:
             (row, [row[0] - (target_sx or 0.0) / 2.0, row[1], row[2]]) for row in rows
         ]
         self.tour_idx = 0
-        self.tour_meta = dict(metadata)
+        # Retain the perception's semantic annotations across the multi-turn
+        # scan tour, but not its transport stamp.  A later matching read
+        # promotes this candidate in the read-result turn; replaying the
+        # original target-pose turn as the grasp output's stamp violates the
+        # lockstep causal boundary (and gives non-lockstep consumers a stale
+        # observation time).
+        self.tour_meta = {
+            key: value for key, value in metadata.items() if key not in TURN_STAMP_KEYS
+        }
         return self._emit_read_move()
 
     def _emit_read_move(self) -> list:
@@ -315,12 +324,18 @@ class TaskStateMachine:
                 request[key] = payload[key]
         return [("read_request", request, {"request_id": request_id})]
 
-    def on_read_result(self, payload: dict, request_id: str) -> list:
+    def on_read_result(
+        self, payload: dict, request_id: str, event_metadata: dict | None = None
+    ) -> list:
         if self.candidates is None or request_id != self.awaiting:
             return []
         if payload.get("label") == self.goal["target_med"]:
             pos, _ = self.candidates[self.tour_idx]
             metadata = dict(self.tour_meta or {})
+            if event_metadata is not None:
+                metadata.update(
+                    {key: event_metadata[key] for key in TURN_STAMP_KEYS if key in event_metadata}
+                )
             metadata["goal_id"] = self.goal_id
             self._reset_tour()
             return [("grasp_target", {"pos": pos}, metadata)]
@@ -445,7 +460,9 @@ def main() -> None:
         elif event["id"] == "read_result":
             emit(
                 machine.on_read_result(
-                    json.loads(event["value"][0].as_py()), metadata.get("request_id", "")
+                    json.loads(event["value"][0].as_py()),
+                    metadata.get("request_id", ""),
+                    metadata,
                 )
             )
         elif event["id"] == "human_msg":

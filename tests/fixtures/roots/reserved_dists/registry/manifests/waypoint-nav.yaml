@@ -1,38 +1,32 @@
+# design doc §11.4 (ADR-17): plans base motion between named store
+# locations. Current implementation is the T11 nav-action node (MOB-2);
+# a collision-aware planner swaps behind this same manifest. base_cmd
+# goes to the GUARD (MOB-3), never straight to a driver.
 id: waypoint-nav
 kind: node
-provides:
-- waypoint_navigation
+provides: [waypoint_navigation]
 requires: []
 inputs:
-  nav_goal:
-    schema: json_utf8
-    rate_hz: 1
-  base_pose:
-    schema: base_pose3d_f32
-    rate_hz: 50
-  turn:
-    schema: sim_turn_u64
-    rate_hz: 100
-    is_clock: true
+  nav_goal: {schema: json_utf8, rate_hz: 1}
+  # base_pose is also the control clock (ADR-29): one control iteration per
+  # pose, so the loop cadence is the 50 Hz SIM cadence (CON-5) — no wall tick
+  base_pose: {schema: base_pose3d_f32, rate_hz: 50}
+  # the EPISODE boundary (issue #179): nav must abandon an in-flight goal
+  # when the episode ends, or the leg survives into the next one and its
+  # nav_result completes a different episode's subtask. Declared on BOTH
+  # manifests that carry this source (nav-action is the concrete node,
+  # this is the swappable capability) — they describe the same ports.
+  reset_done: {schema: reset_done_u32, rate_hz: 1, turn_edge: episodic}
+  turn: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
 outputs:
-  nav_feedback:
-    schema: json_utf8
-    latency_class: best_effort
-  nav_result:
-    schema: json_utf8
-    latency_class: best_effort
-  base_cmd:
-    schema: base_cmd2d_f32
-    latency_class: soft_rt
-  turn_done:
-    schema: sim_turn_u64
-    latency_class: hard_rt
+  nav_feedback: {schema: json_utf8, latency_class: best_effort}
+  nav_result: {schema: json_utf8, latency_class: best_effort}
+  base_cmd: {schema: base_cmd2d_f32, latency_class: soft_rt}
+  turn_done: {schema: sim_turn_u64, latency_class: hard_rt}
 embodiment:
-  arm:
-  - franka
+  arm: [franka]
   gripper: any
-  base:
-  - mobile
+  base: [mobile]
 safety_class: motion
 eval:
   suite: tests/accept/test_contract_mobile.py (MOB-2 nav lifecycle)

@@ -75,7 +75,15 @@ nodes:
         source: ik-trajectory/gripper_cmd
         queue_size: 100
       reset_done:
-        source: dora-genesis/reset_done
+        # the EPISODE boundary comes from the reset SERVICE, not the bridge
+        # (issue #192): a successful BEHAVIORAL reset (RST-2) never reaches
+        # the bridge, so dora-genesis/reset_done never fires and every
+        # episode-state consumer silently misses the boundary. The service
+        # replies on every route -- teleport (it relays the bridge),
+        # behavioral success, and behavioral exhaustion via fallback -- so it
+        # is the single authority, and it is the same edge rollout-client
+        # already waits on before starting the next episode.
+        source: reset/reset_done
         queue_size: 100
       turn:
         source: turn-barrier/turn
@@ -102,7 +110,15 @@ nodes:
         source: task-state-machine/target_request
         queue_size: 100
       reset_done:
-        source: dora-genesis/reset_done
+        # the EPISODE boundary comes from the reset SERVICE, not the bridge
+        # (issue #192): a successful BEHAVIORAL reset (RST-2) never reaches
+        # the bridge, so dora-genesis/reset_done never fires and every
+        # episode-state consumer silently misses the boundary. The service
+        # replies on every route -- teleport (it relays the bridge),
+        # behavioral success, and behavioral exhaustion via fallback -- so it
+        # is the single authority, and it is the same edge rollout-client
+        # already waits on before starting the next episode.
+        source: reset/reset_done
         queue_size: 100
       turn:
         source: turn-barrier/turn
@@ -150,7 +166,15 @@ nodes:
         # confirmed in M0 run m0-1-e2e07b (episodes 12/13 cascade).
         queue_size: 1
       reset_done:
-        source: dora-genesis/reset_done
+        # the EPISODE boundary comes from the reset SERVICE, not the bridge
+        # (issue #192): a successful BEHAVIORAL reset (RST-2) never reaches
+        # the bridge, so dora-genesis/reset_done never fires and every
+        # episode-state consumer silently misses the boundary. The service
+        # replies on every route -- teleport (it relays the bridge),
+        # behavioral success, and behavioral exhaustion via fallback -- so it
+        # is the single authority, and it is the same edge rollout-client
+        # already waits on before starting the next episode.
+        source: reset/reset_done
         queue_size: 100
       turn:
         source: turn-barrier/turn

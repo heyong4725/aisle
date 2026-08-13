@@ -300,12 +300,21 @@ class TestBaseWatchdogReason:
             last_cmd_wall_t=100.0,
             now_wall=100.0,
             sim_clock_blind=False,
+            blind_since_wall=None,
             limits=load_base_limits("mobile"),
         )
         return base_watchdog_reason(**{**defaults, **kw})
 
     def test_fresh_command_is_left_alone(self):
         assert self._reason(now_sim_ns=int(0.5e9)) is None  # exactly at the window
+
+    def test_helpers_are_importable_by_the_node(self):
+        """CON-12: the guard node imports these by name inside main(); a
+        rename here must fail a unit test, not a live dataflow."""
+        from aisle.mobility import guard
+
+        for name in ("sim_clock_is_blind", "blind_onset", "base_blind_drive"):
+            assert callable(getattr(guard, name)), name
 
     def test_command_goes_stale_past_the_sim_window(self):
         assert self._reason(now_sim_ns=int(0.5e9) + 1) == "base_stale"
@@ -329,17 +338,251 @@ class TestBaseWatchdogReason:
 
     def test_wall_net_sits_far_above_any_healthy_command_gap(self):
         # 2 s wall since the last cmd = a healthy gap even at rtf 0.01
-        assert self._reason(now_wall=102.0, sim_clock_blind=True) is None
+        assert self._reason(now_wall=102.0, sim_clock_blind=True, blind_since_wall=100.0) is None
+
+    def test_blind_drive_stops_a_base_whose_producer_keeps_commanding(self):
+        """MOB-3, ADR-29 (issue #182): the command-silence net cannot fire
+        when the producer emits on every pose, and the sim check cannot
+        advance without a clock — so a base drove blind until the episode
+        budget, up to 30 wall minutes. The blind-drive net measures from the
+        clock going blind instead, so a fresh command does not hold it
+        open."""
+        # commands are FRESH the whole time (now_wall == last_cmd_wall_t)
+        assert self._reason(
+            last_cmd_sim_ns=None,
+            now_sim_ns=None,
+            last_cmd_wall_t=200.0,
+            now_wall=200.0,
+            sim_clock_blind=True,
+            blind_since_wall=100.0,
+        ) == ("base_blind_wall")
+
+    def test_blind_drive_respects_the_same_backstop(self):
+        """MOB-3: it must not fire early — a brief blind gap under the
+        backstop is the transient the sim-time check is allowed to ride
+        out."""
+        assert (
+            self._reason(
+                last_cmd_sim_ns=None,
+                now_sim_ns=None,
+                last_cmd_wall_t=105.0,
+                now_wall=105.0,
+                sim_clock_blind=True,
+                blind_since_wall=100.0,
+            )
+            is None
+        )
+
+    def test_blind_drive_window_is_exactly_the_configured_backstop(self):
+        """MOB-3, CON-5: the window IS `base_wall_backstop_s` from env/
+        limits.toml, not a number that happens to sit between the two cases
+        above. Pins both the boundary (exactly at the window is still legal,
+        mirroring test_fresh_command_is_left_alone) and the coupling to
+        config — without this, hard-coding any threshold in (5, 100] passes."""
+        from aisle.mobility.guard import load_base_limits
+
+        backstop = load_base_limits("mobile").base_wall_backstop_s
+        blind_at = 100.0
+        common = dict(last_cmd_sim_ns=None, now_sim_ns=None, sim_clock_blind=True)
+        # exactly at the window: not yet
+        assert (
+            self._reason(
+                **common,
+                last_cmd_wall_t=blind_at + backstop,
+                now_wall=blind_at + backstop,
+                blind_since_wall=blind_at,
+            )
+            is None
+        )
+        # one epsilon past it: fires
+        assert (
+            self._reason(
+                **common,
+                last_cmd_wall_t=blind_at + backstop + 1e-6,
+                now_wall=blind_at + backstop + 1e-6,
+                blind_since_wall=blind_at,
+            )
+            == "base_blind_wall"
+        )
+
+    def test_command_silence_is_reported_before_blind_drive(self):
+        """MOB-3, ADR-29: the docstring's precedence is a contract, not an
+        accident of layout. When BOTH wall windows are blown, the reported
+        reason is `base_stale_wall` — the last command predates the clock
+        going blind, so command-silence is the earlier and more specific
+        diagnosis. Swapping the two branches must go red."""
+        assert (
+            self._reason(
+                last_cmd_sim_ns=None,
+                now_sim_ns=None,
+                last_cmd_wall_t=100.0,  # silent since 100
+                blind_since_wall=150.0,  # blind only since 150
+                now_wall=200.0,  # both windows (10 s) are blown
+                sim_clock_blind=True,
+            )
+            == "base_stale_wall"
+        )
+
+    def test_blind_drive_needs_a_blind_clock_too(self):
+        """MOB-3: a stale onset left over from an earlier gap must not stop
+        a base whose stamps have returned — the node clears the onset, and
+        the verdict double-checks it."""
+        assert self._reason(now_wall=200.0, sim_clock_blind=False, blind_since_wall=100.0) is None
 
     def test_sim_stale_wins_over_the_wall_net(self):
         """ADR-29 precedence: when both windows are blown, the deterministic
         sim verdict is reported, not the ops-alarm wall reason."""
-        assert self._reason(now_sim_ns=int(0.5e9) + 1, now_wall=200.0, sim_clock_blind=True) == (
-            "base_stale"
-        )
+        assert self._reason(
+            now_sim_ns=int(0.5e9) + 1,
+            now_wall=200.0,
+            sim_clock_blind=True,
+            blind_since_wall=100.0,
+        ) == ("base_stale")
 
     def test_episode_timeout_wins_over_staleness(self):
         assert self._reason(episode_timed_out=True, now_sim_ns=10**12) == "base_timeout"
+
+
+class TestBlindClockBookkeeping:
+    """MOB-3, ADR-29, CON-5 (issue #182 review). The blind ONSET latch is the
+    half of the #182 fix that decides whether the net can ever fire, and it
+    originally lived inside the guard node's event loop where no unit test
+    could reach it — deleting it outright left the whole suite green. It is
+    pure now, and these are the tests that were impossible before."""
+
+    def _limits(self):
+        from aisle.mobility.guard import load_base_limits
+
+        return load_base_limits("mobile")
+
+    def test_no_pose_stamp_yet_reads_as_blind(self):
+        """An env that has never produced a stamped pose has no clock: the
+        wall net must arm rather than wait for a reference that never
+        comes."""
+        from aisle.mobility.guard import sim_clock_is_blind
+
+        assert sim_clock_is_blind(
+            base_pose_sim_ns=None, last_pose_wall_t=None, now_wall=0.0, limits=self._limits()
+        )
+
+    def test_flowing_stamps_are_never_blind_at_any_rtf(self):
+        """PR #156's invariant, restated on the extracted helper: a healthy
+        but very slow sim must be structurally unable to trip the net."""
+        from aisle.mobility.guard import sim_clock_is_blind
+
+        assert not sim_clock_is_blind(
+            base_pose_sim_ns=1,
+            last_pose_wall_t=1000.0,
+            now_wall=1000.0,
+            limits=self._limits(),
+        )
+
+    def test_a_silent_pose_stream_goes_blind_past_the_backstop(self):
+        from aisle.mobility.guard import sim_clock_is_blind
+
+        lim = self._limits()
+        assert sim_clock_is_blind(
+            base_pose_sim_ns=1,
+            last_pose_wall_t=1000.0,
+            now_wall=1000.0 + lim.base_wall_backstop_s + 1e-6,
+            limits=lim,
+        )
+
+    def test_onset_latches_on_entry_and_then_holds(self):
+        """The window must AGE. If the onset were re-stamped on every blind
+        call, `now - onset` would stay ~0 and the net could never fire — the
+        exact mutation (`elif not blind` -> `else`) that shipped green."""
+        from aisle.mobility.guard import blind_onset
+
+        first = blind_onset(None, sim_clock_blind=True, now_wall=100.0)
+        assert first == 100.0
+        assert blind_onset(first, sim_clock_blind=True, now_wall=100.5) == 100.0
+        assert blind_onset(first, sim_clock_blind=True, now_wall=999.0) == 100.0
+
+    def test_onset_clears_the_moment_stamps_return(self):
+        """So a transient gap cannot accumulate across healthy stretches."""
+        from aisle.mobility.guard import blind_onset
+
+        assert blind_onset(100.0, sim_clock_blind=False, now_wall=101.0) is None
+
+    def test_a_returning_clock_restarts_the_whole_window(self):
+        """Two sub-backstop gaps separated by one good stamp must not add up
+        into a stop: the second gap starts its own window."""
+        from aisle.mobility.guard import base_blind_drive, blind_onset
+
+        lim = self._limits()
+        half = lim.base_wall_backstop_s * 0.6
+        onset = blind_onset(None, sim_clock_blind=True, now_wall=0.0)
+        onset = blind_onset(onset, sim_clock_blind=True, now_wall=half)
+        onset = blind_onset(onset, sim_clock_blind=False, now_wall=half)  # stamp returns
+        onset = blind_onset(onset, sim_clock_blind=True, now_wall=half)  # blind again
+        assert not base_blind_drive(blind_since_wall=onset, now_wall=2 * half, limits=lim), (
+            "two sub-backstop gaps summed into a stop"
+        )
+
+    def test_every_field_the_verdict_reads_is_re_armed_at_the_boundary(self):
+        """MOB-3, CON-5 (issue #182 review). The guard node's per-env state
+        must not carry an episode's watchdog windows into the next one, or
+        the outcome depends on the episode INDEX under a fixed seed.
+
+        This is the test the original omission could not have failed: the
+        reset was an inline list of assignments inside the node's event
+        loop. Adding a state key the verdict reads and forgetting the reset
+        now fails HERE — the check is derived from
+        base_watchdog_reason's own signature, not from a hand-copied list."""
+        import inspect
+
+        from aisle.mobility.guard import (
+            BASE_WATCHDOG_EPISODE_RESET,
+            base_watchdog_reason,
+            reset_base_watchdog,
+        )
+
+        # every episode-scoped input the verdict reads, by name. now_wall /
+        # now_sim_ns are readings, not state; limits is config; and
+        # episode_timed_out is the EpisodeTimer's own business.
+        params = set(inspect.signature(base_watchdog_reason).parameters)
+        readings = {"now_wall", "now_sim_ns", "limits", "episode_timed_out", "sim_clock_blind"}
+        state_inputs = params - readings
+        # map verdict parameter -> guard state key
+        state_key = {
+            "last_cmd_sim_ns": "last_base_cmd_sim_ns",
+            "last_cmd_wall_t": "last_base_cmd_wall_t",
+            "blind_since_wall": "blind_since_wall",
+        }
+        missing = {p for p in state_inputs if state_key.get(p) not in BASE_WATCHDOG_EPISODE_RESET}
+        assert not missing, (
+            f"base_watchdog_reason reads {sorted(missing)} but the episode reset does not re-arm "
+            "it; add it to BASE_WATCHDOG_EPISODE_RESET (or to `readings` if it is not state)"
+        )
+
+        # and the reset actually clears a dirtied state dict
+        dirty = {k: "DIRTY" for k in BASE_WATCHDOG_EPISODE_RESET}
+        dirty["base_pose_sim_ns"] = 12345  # deliberately NOT reset (ADR-29)
+        reset_base_watchdog(dirty)
+        assert dirty["blind_since_wall"] is None
+        assert dirty["last_base_safe"] == [0.0, 0.0]
+        assert dirty["base_pose_sim_ns"] == 12345, "the sim clock is monotonic across episodes"
+
+    def test_the_reset_hands_out_distinct_mutable_values(self):
+        """CON-5/BRG-5: `last_base_safe` is a list the node mutates per env.
+        A shared module-level instance would let one env's reset alias
+        another's — the fleet class of bug that dropped a box at a
+        neighbour's reset moment."""
+        from aisle.mobility.guard import reset_base_watchdog
+
+        a, b = {}, {}
+        reset_base_watchdog(a)
+        reset_base_watchdog(b)
+        assert a["last_base_safe"] == b["last_base_safe"]
+        assert a["last_base_safe"] is not b["last_base_safe"]
+
+    def test_blind_drive_is_false_without_an_onset(self):
+        """BG-3: a caller that has never seen a blind moment must not crash
+        or fire — the guard node's event loop is not allowed to raise."""
+        from aisle.mobility.guard import base_blind_drive
+
+        assert not base_blind_drive(blind_since_wall=None, now_wall=10**6, limits=self._limits())
 
 
 class TestGuardMetadataParsing:
@@ -414,6 +657,238 @@ def test_base_topic_schemas_in_vocabulary():
     assert vocab["base_pose3d_f32"] == {"arrow": "Float32", "shape": "3"}
     assert vocab["base_cmd2d_f32"] == {"arrow": "Float32", "shape": "2"}
     assert vocab["base_scan_f32"] == {"arrow": "Float32", "shape": "n_scan"}
+
+
+class TestEpisodeBoundary:
+    """MOB-2, TC-7, CON-5 (issue #179). `waypoint-nav` was the only stateful
+    node in the retail graphs with no `reset_done` input, so a nav leg still
+    in flight when an episode ended survived the boundary: the next
+    episode's first goal was refused as "nav active", and the carried leg's
+    nav_result then completed the NEW episode's subtask — invisible in the
+    records, because the episode looks ordinary."""
+
+    STEP_NS = 20_000_000
+
+    def _machine(self):
+        from aisle.mobility.nav import NavStateMachine
+
+        return NavStateMachine(arrival_tol_m=0.1, timeout_s=10.0, stall_s=2.0, arrival_yaw_rad=0.1)
+
+    def test_an_in_flight_goal_is_abandoned_and_the_next_one_is_accepted(self):
+        """The headline failure: without the boundary the next episode's
+        first nav_goal is silently dropped by the TC-7 non-overlap guard."""
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-001")
+        m.on_base_pose([0.0, 0.0, 0.0], self.STEP_NS)
+        m.on_tick()
+        assert m.target is not None  # mid-leg when the episode ends
+
+        assert m.on_episode_boundary() == "nav-001"  # reports what it dropped
+        assert m.target is None and m.goal_id is None
+
+        # the NEW episode's first goal is accepted, not refused
+        m.on_goal([1.0, 0.0, 0.0], "nav-002")
+        assert m.goal_id == "nav-002"
+
+    def test_the_boundary_emits_nothing(self):
+        """A nav_result here would carry the OLD goal_id into a fresh
+        episode — the very confusion being fixed — and "the episode ended"
+        is not one of MOB-2's failure values. Returning the goal_id rather
+        than an emissions list also makes it impossible to feed into the
+        `for topic, payload, goal_id in ...` loop the other handlers use."""
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-001")
+        out = m.on_episode_boundary()
+        assert isinstance(out, str)  # NOT a list of emissions
+
+    def test_an_idle_boundary_is_a_no_op(self):
+        """Resets arrive every episode, most with no leg in flight; the
+        caller keys its log and its base-stop off a None return."""
+        m = self._machine()
+        assert m.on_episode_boundary() is None
+
+    def test_the_boundary_clears_every_goal_scoped_field(self):
+        """CON-5: the carried clock is the third consequence of #179 — PR
+        #178 made the clock goal-scoped, but that reset sits behind the
+        non-overlap early return, so the episode path never reached it.
+
+        Enumerates `_GOAL_SCOPED`, so it proves every LISTED field is
+        re-armed. It cannot prove the list is complete — a field added to
+        the machine but never added to the list is invisible here, which is
+        the mistake the list exists to prevent. That completeness check is
+        test_the_machine_has_no_state_outside_the_known_sets."""
+        from aisle.mobility.nav import NavStateMachine
+
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-001")
+        # dirty every goal-scoped field with a value that is not its fresh one
+        for name, fresh in NavStateMachine._GOAL_SCOPED:
+            setattr(m, name, "DIRTY" if fresh is None else None)
+        m.on_episode_boundary()
+        for name, fresh in NavStateMachine._GOAL_SCOPED:
+            assert getattr(m, name) == fresh, f"{name} survived the episode boundary"
+
+    def test_the_machine_has_no_state_outside_the_known_sets(self):
+        """MOB-2, CON-5 (issue #179 review). The completeness half: every
+        instance attribute must be either goal-scoped (`_GOAL_SCOPED`, reset
+        on every goal and every boundary), episode-scoped, or config fixed
+        at construction. A field that is none of those is state nobody
+        re-arms — exactly the shape of #179 — and the sibling test above
+        cannot see it, because that one enumerates the very list you would
+        have forgotten to update.
+
+        Drive the machine through a full goal first, so any attribute
+        created lazily outside __init__ exists by the time we look."""
+        from aisle.mobility.nav import NavStateMachine
+
+        m = self._machine()
+        m.on_goal([1.0, 0.0, 0.0], "nav-001")
+        m.on_base_pose([0.0, 0.0, 0.0], self.STEP_NS)
+        m.on_tick()
+        m.on_base_pose([1.0, 0.0, 0.0], 2 * self.STEP_NS)
+        m.on_tick()  # arrives -> _finish
+        m.on_episode_boundary(epoch=1)
+
+        goal_scoped = {name for name, _ in NavStateMachine._GOAL_SCOPED}
+        identity = {"target", "goal_id"}  # set by each caller, not scoped
+        episode_scoped = {"episode_epoch"}
+        config = {
+            "arrival_tol_m",
+            "arrival_yaw_rad",
+            "capture_tol_m",
+            "timeout_s",
+            "stall_s",
+        }
+        unaccounted = set(vars(m)) - goal_scoped - identity - episode_scoped - config
+        assert not unaccounted, (
+            f"{sorted(unaccounted)} is machine state that no reset path re-arms; add it to "
+            "_GOAL_SCOPED (per-goal), to episode_scoped, or to config if it is fixed at "
+            "construction"
+        )
+
+    def test_goal_scoped_defaults_are_immutable(self):
+        """`_reset_goal_scoped` hands every instance the SAME object out of a
+        class-level tuple, so a mutable default (`[]`, `{}`, `set()`) would
+        be shared across machines and across episodes — one goal's writes
+        leaking into the next, which is the bug class this list exists to
+        prevent. Cheap to add, impossible to notice by reading."""
+        from aisle.mobility.nav import NavStateMachine
+
+        for name, fresh in NavStateMachine._GOAL_SCOPED:
+            assert isinstance(fresh, (type(None), bool, int, float, str, tuple)), (
+                f"{name}'s default {fresh!r} is mutable and would be SHARED by every "
+                "NavStateMachine; store a factory or rebuild it per reset instead"
+            )
+
+    def test_every_graph_running_nav_wires_the_boundary_to_it(self):
+        """The machine method is useless if nav never hears about the
+        boundary, and "nobody wired the input" IS issue #179 — the pure
+        tests above all pass on the broken graph. Checks the real graphs,
+        not a fixture, and covers every graph that runs the node so the
+        fix cannot land on expert_s1 alone (the other three had the
+        identical hole)."""
+        from pathlib import Path
+
+        import yaml
+
+        root = Path(__file__).resolve().parents[2]
+        graphs = sorted(
+            p for p in (root / "graphs").glob("*.yaml") if "nav_action.py" in p.read_text()
+        )
+        assert graphs, "no graph runs nav_action.py; this test has lost its subject"
+        for path in graphs:
+            nodes = yaml.safe_load(path.read_text())["nodes"]
+            nav = [n for n in nodes if "nav_action.py" in str(n.get("path", ""))]
+            assert nav, path.name
+            # nav must cut the episode at the same instant the GUARD does.
+            # The guard is the canonical episode-state consumer (its BG-2
+            # timer re-anchors on this edge), so matching it is what keeps
+            # nav, the guard and the driver in phase. The rollout client is
+            # deliberately excluded: it is the reset REQUESTER and takes the
+            # service's own reply, which is a different edge by design.
+            guard_src = next(
+                (
+                    (n.get("inputs") or {})["reset_done"]["source"]
+                    for n in nodes
+                    if "budget_guard.py" in str(n.get("path", ""))
+                    and isinstance((n.get("inputs") or {}).get("reset_done"), dict)
+                ),
+                None,
+            )
+            for node in nav:
+                inputs = node.get("inputs") or {}
+                assert "reset_done" in inputs, (
+                    f"{path.name}: {node['id']} has no reset_done input — an in-flight "
+                    "nav leg will survive the episode boundary (issue #179)"
+                )
+                if guard_src is not None:
+                    assert inputs["reset_done"]["source"] == guard_src, (
+                        f"{path.name}: {node['id']} takes reset_done from "
+                        f"{inputs['reset_done']['source']!r} but the guard takes it from "
+                        f"{guard_src!r} — they would cut the episode at different instants"
+                    )
+
+    def test_the_manifests_declare_the_boundary_input(self):
+        """CAP-1/VAL: the graph edge only validates if the manifest declares
+        the port, and TWO manifests carry nav_action.py — the concrete
+        `nav-action` node and the swappable `waypoint-nav` capability. They
+        describe the same source, so they must not drift."""
+        from pathlib import Path
+
+        import yaml
+
+        root = Path(__file__).resolve().parents[2]
+        carrying = [
+            (p, m)
+            for p in sorted((root / "registry" / "manifests").glob("*.yaml"))
+            if isinstance(m := yaml.safe_load(p.read_text()), dict)
+            and m.get("source") == "src/aisle/nodes/nav_action.py"
+        ]
+        assert len(carrying) >= 2, [p.name for p, _ in carrying]
+        for path, manifest in carrying:
+            port = (manifest.get("inputs") or {}).get("reset_done")
+            assert port is not None, path.name
+            # the SCHEMA too, not just the key: the validator matches edges on
+            # schema, so a port declared with the wrong one validates against
+            # nothing and the graph edge fails at load, not here
+            assert port.get("schema") == "reset_done_u32", (path.name, port)
+
+
+class TestNavResultRouting:
+    """TC-7 (issue #179): a nav_result completes the leg it names, or
+    nothing. Shared by s1-expert and both driver skills."""
+
+    def test_the_matching_goal_id_is_accepted(self):
+        from aisle.mobility.nav import nav_result_is_current
+
+        assert nav_result_is_current("nav-007", "nav-007")
+
+    def test_a_foreign_goal_id_is_rejected(self):
+        """The #179 core: a leg carried over from a PREVIOUS episode emits
+        its result into the next one. `nav_seq` is monotonic for the life of
+        the process, so the ids genuinely discriminate."""
+        from aisle.mobility.nav import nav_result_is_current
+
+        assert not nav_result_is_current("nav-009", "nav-004")
+
+    @pytest.mark.parametrize(
+        ("expected", "reply"),
+        [
+            (None, "nav-001"),  # nothing pending an id
+            ("nav-001", None),  # reply carried no goal_id
+            (None, None),
+            ("", ""),  # nav_action's empty-id base_cmd convention
+            ("nav-001", 1),  # non-string metadata from the wire
+            (1, "nav-001"),
+        ],
+    )
+    def test_anything_unusable_fails_closed(self, expected, reply):
+        """BG-3-style trust boundary: "cannot tell" must not complete a
+        subtask. An empty id in particular is what nav_action stamps on its
+        terminal zero base_cmd, and must never match a pending leg."""
+        from aisle.mobility.nav import nav_result_is_current
+
+        assert not nav_result_is_current(expected, reply)
 
 
 class TestNavLifecycle:
@@ -514,10 +989,12 @@ class TestNavLifecycle:
         assert out and out[0][0] == "nav_result" and out[0][1]["failure"] == "blocked"
 
     def test_never_stamped_goal_still_controls_and_arrives(self):
-        """Issue #160 item 1: a fully-unstamped source never starts the
-        sim budgets (no sim clock exists to measure them), but control and
-        arrival are pure geometry — the goal still completes; the guard
-        wall net covers the stop path on such sources (item 2)."""
+        """Issue #160 item 1 (MOB-2): a fully-unstamped source never starts
+        the sim budgets (no sim clock exists to measure them), but control
+        and arrival are pure geometry — the goal still completes. The #182
+        blind budget does not change this: it is checked AFTER arrival, so
+        it bounds blind STEERING, never a goal that got there
+        (test_arrival_wins_over_the_blind_budget)."""
         m = self._machine()
         m.on_goal([1.0, 0.0, 0.0], "nav-1")
         m.on_base_pose([0.0, 0.0, 0.0], None)
@@ -549,6 +1026,101 @@ class TestNavLifecycle:
         out = m.on_tick()
         assert out[0][0] == "nav_feedback"
         assert m._t0_ns == 2_000_000_000
+
+    def test_blind_nav_fails_closed_instead_of_steering_forever(self):
+        """MOB-2, CON-5 (issue #182): a nav goal whose poses never carry a
+        usable stamp cannot enforce its own stall or timeout budget, so it
+        must not keep steering. After BLIND_POSE_BUDGET consecutive
+        unstamped poses the goal ends with `no_sim_clock` and the node
+        zeroes the base."""
+        from aisle.mobility.nav import BLIND_POSE_BUDGET
+
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-1")
+        for _ in range(BLIND_POSE_BUDGET - 1):
+            m.on_base_pose([1.0, 0.0, 0.0], None)
+            out = m.on_tick()
+            assert not (out and out[0][0] == "nav_result"), "failed before its budget"
+
+        m.on_base_pose([1.0, 0.0, 0.0], None)
+        out = m.on_tick()
+        assert out and out[0][0] == "nav_result"
+        assert out[0][1]["failure"] == "no_sim_clock"
+        assert m.target is None  # the goal is released, not left latched
+
+    def test_a_returning_stamp_clears_the_blind_streak(self):
+        """MOB-2, CON-5: the budget counts CONSECUTIVE blind poses — a
+        transient gap must not accumulate across healthy stretches into a
+        spurious failure. Three near-budget gaps, each ended by one good
+        stamp, total 3x the budget, so an implementation that never resets
+        the streak fails somewhere in here."""
+        from aisle.mobility.nav import BLIND_POSE_BUDGET
+
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-1")
+        emitted = []
+        for cycle in range(3):
+            for _ in range(BLIND_POSE_BUDGET - 1):
+                m.on_base_pose([1.0, 0.0, 0.0], None)
+                emitted += m.on_tick()  # collect INSIDE the gap, not just after
+            m.on_base_pose([1.0, 0.0, 0.0], (cycle + 1) * self.STEP_NS)
+            emitted += m.on_tick()
+            assert m.target is not None, f"goal released during gap {cycle}"
+
+        blind_failures = [
+            e for e in emitted if e[0] == "nav_result" and e[1].get("failure") == "no_sim_clock"
+        ]
+        assert not blind_failures, blind_failures
+
+    def test_arrival_wins_over_the_blind_budget(self):
+        """MOB-2 (issue #182 review): arrival is pure geometry and needs no
+        clock, so a goal that actually REACHED its target has succeeded even
+        if it did so on the very pose that exhausts the blind budget.
+        Failing a completed goal would contradict
+        test_never_stamped_goal_still_controls_and_arrives; the budget
+        bounds blind STEERING, not blind arriving."""
+        from aisle.mobility.nav import BLIND_POSE_BUDGET
+
+        m = self._machine()
+        m.on_goal([1.0, 0.0, 0.0], "nav-1")
+        # burn the budget down to its last pose, parked away from the target
+        for _ in range(BLIND_POSE_BUDGET - 1):
+            m.on_base_pose([0.0, 0.0, 0.0], None)
+            m.on_tick()
+        # the pose that exhausts the budget is ALSO the one that arrives
+        m.on_base_pose([1.0, 0.0, 0.0], None)
+        out = m.on_tick()
+        assert out and out[0][0] == "nav_result"
+        assert out[0][1]["status"] == "success", out[0][1]
+        assert out[0][1]["failure"] is None
+
+    def test_blind_budget_is_generous_against_the_guard_backstop(self):
+        """MOB-2/MOB-3, CON-5 (issue #182 review). Pins the MAGNITUDE, which
+        the two tests above cannot: they import BLIND_POSE_BUDGET and loop
+        against it, so they follow the constant anywhere — 100000 kept them
+        green while removing the net entirely.
+
+        The two bounds have different jobs and different clocks. The guard's
+        blind-drive stop is WALL (base_wall_backstop_s) and is the safety
+        bound; this budget is SIM (poses / MOB-1 50 Hz) and only ends the
+        goal with a diagnosis. So the requirement is NOT "nav fires first" —
+        at the store profile's rtf~0.07 it emphatically does not — but that
+        the budget is comfortably longer than any transient gap and still
+        far short of the BG-2 episode budget."""
+        from aisle.mobility.guard import load_base_limits
+        from aisle.mobility.nav import BLIND_POSE_BUDGET
+
+        pose_hz = 50.0  # MOB-1 base_pose cadence, in SIM
+        sim_s = BLIND_POSE_BUDGET / pose_hz
+        assert sim_s == pytest.approx(5.0), "budget moved; re-derive the rtf note on the constant"
+        # far above a transient: at least an order of magnitude past the
+        # ~0.1 sim-s scale of a dropped frame or two
+        assert sim_s >= 1.0
+        # and still far inside the episode budget it must never reach --
+        # even on the SLOWEST profile on record (store, rtf~0.07)
+        assert sim_s / 0.07 < 300.0
+        # the guard's own net is wall-clocked and independent of this
+        assert load_base_limits("mobile").base_wall_backstop_s == 10.0
 
     def test_yaw_must_converge_before_success(self):
         """MOB-2 (PR #14 re-review): a pose goal is NOT complete on x/y alone

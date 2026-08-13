@@ -101,3 +101,29 @@ def test_refusal_reply_metadata_is_tc6_complete():
     }
     malformed = refusal_reply_metadata({"request_id": "req-10"}, np.array([], np.uint32), "bad")
     assert "seed" not in malformed and malformed["request_id"] == "req-10"
+
+
+def test_reply_metadata_carries_env_id_on_every_route():
+    """BRG-5 + issue #192: episode-state consumers now take the boundary
+    from the SERVICE's reset_done rather than the bridge's, and the guard
+    slices its per-env boundary on `env_id`. A reply without one defaults to
+    env 0 (see `stamp` above) and would clear only that env's state, so the
+    behavioral and refusal routes must carry the same routing key the
+    bridge's teleport reply does — or the modes cut different envs."""
+    from aisle.reset.behavioral import BehavioralOutcome, behavioral_reply_metadata
+
+    request = {"request_id": "req-1", "env_id": 3}
+    behavioral = behavioral_reply_metadata(request, BehavioralOutcome(fallback=False, attempts=2))
+    assert behavioral["env_id"] == 3
+
+    refusal = refusal_reply_metadata(request, np.array([7, 1], dtype=np.uint32), "nope")
+    assert refusal["env_id"] == 3
+
+    # a request WITHOUT env_id must not invent one — stamp()'s default is
+    # the single-env behaviour every legacy caller already relies on
+    assert "env_id" not in behavioral_reply_metadata(
+        {"request_id": "r"}, BehavioralOutcome(fallback=True, attempts=1)
+    )
+    assert "env_id" not in refusal_reply_metadata(
+        {"request_id": "r"}, np.array([], np.uint32), "bad"
+    )
