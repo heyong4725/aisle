@@ -640,23 +640,6 @@ def _metadata(sim_time_ns: int, env_id: int, seq: int, **extra) -> dict:
     return {"sim_time_ns": sim_time_ns, "env_id": env_id, "seq": seq, **extra}
 
 
-def _scan_obstacles(physics: dict, embodiment: str) -> list[tuple[float, float, float, float]]:
-    """AABBs (cx, cy, hx, hy) the base_scan raycast sees: the shelf boards
-    and the tray, in the store frame (SPEC 210 MOB-1, ADR-13)."""
-    from aisle.scenes.pharmacy import level_x_span, resolve_layout
-
-    layout = resolve_layout(physics, embodiment)
-    shelf, tray = layout["shelf"], layout["tray"]
-    width = shelf["level_size"][1]
-    obstacles = [
-        ((x0 + x1) / 2, shelf["pos"][1], (x1 - x0) / 2, width / 2)
-        for level in range(len(shelf["level_heights"]))
-        for x0, x1 in [level_x_span(shelf, level)]
-    ]
-    obstacles.append((tray["pos"][0], tray["pos"][1], tray["size"][0] / 2, tray["size"][1] / 2))
-    return obstacles
-
-
 def main(clock: Callable[[], float] = time.perf_counter) -> None:
     """The clock is injected (CON-5): reset timing must never reach for a
     wall clock ad hoc."""
@@ -668,6 +651,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     from aisle.scenes.pharmacy import (
         SceneCfg,
         build_scene,
+        desk_scan_obstacles,
         load_physics,
         oracle_state,
         resolve_layout,
@@ -803,7 +787,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     if is_store:
         scan_obstacles = store_scan_obstacles(load_planogram())
     else:
-        scan_obstacles = _scan_obstacles(physics, cfg.embodiment) if is_mobile else []
+        scan_obstacles = desk_scan_obstacles(physics, cfg.embodiment) if is_mobile else []
 
     scheduler = RateScheduler(topic_rates, dt)
     commands = CommandQueue(cfg.n_envs)

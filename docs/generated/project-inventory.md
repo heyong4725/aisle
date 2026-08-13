@@ -14,7 +14,7 @@ architecture, and contribution guidance remain in the
 | Graphs | 11 |
 | Capability manifests | 31 |
 | CLI command entries | 12 |
-| ADR files | 40 |
+| ADR files | 41 |
 
 ## Graphs
 
@@ -133,6 +133,7 @@ inference.
 | [docs/decisions/ADR-30.md](../decisions/ADR-30.md) | ADR-30 — Run-to-quiescence simulation turns close issue #71's wall-latency channel | PROPOSED (agent-drafted 2026-08-11 at the owner's direction; amended |
 | [docs/decisions/ADR-31.md](../decisions/ADR-31.md) | ADR-31 — T2 frozen-scene change authorization (sign-off record) | RECORD of a human decision (CON-7 review trail). |
 | [docs/decisions/ADR-32.md](../decisions/ADR-32.md) | ADR-32 — T4 dialogue contract (spec-change sketch, awaiting human review) | ACCEPTED (owner approved and merged the spec-change PR #170 on |
+| [docs/decisions/ADR-33.md](../decisions/ADR-33.md) | ADR-33 — the CON-7 fence covers safety VERDICTS, not the guard's module | ACCEPTED (issue #189). Widens the frozen set; supersedes no ADR. |
 | [docs/decisions/ADR-4.md](../decisions/ADR-4.md) | ADR-4: validator interpretations for T03 (SPEC 060) | ACCEPTED; amended by ADR-5's ratified safety-class boundary. |
 | [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | ACCEPTED (owner-ratified 2026-08-03) |
 | [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |
