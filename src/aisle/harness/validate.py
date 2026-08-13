@@ -673,30 +673,72 @@ def validate_nodes(
 #: on `latest_rgb is None` and falls back to teleport (issue #196).
 BEHAVIORAL_RESET_INPUTS = ("bridge_info", "rgb_overhead", "depth_overhead", "joint_state")
 BEHAVIORAL_RESET_OUTPUTS = ("reset_joint_cmd", "reset_gripper_cmd")
+#: The reset service is identified by the SOURCE it runs, not by node id:
+#: `graphs/` happens to id it `reset` but `tests/conftest.py` ids the same
+#: node `reset-service`, and the repo's other cross-node check
+#: (test_episode_boundary_wiring._node_sources) already resolves it by path.
+RESET_SERVICE_SOURCE = "reset/service.py"
 
 
 def behavioral_reset_gaps(nodes: list) -> list[str]:
     """RST-2 (issue #196): what this graph is missing to serve a behavioral
     reset, or [] if it can.
 
-    Ten of eleven graphs wire the reset node with `{reset, reset_done}`
-    only. `--reset behavioral` on one of them is accepted, pays a ~2 s
-    model load inside the first reset request (the `bridge_info` pre-warm
-    is unreachable without that input), exhausts all three attempts on a
+    Most graphs wire the reset node with `{reset, reset_done}` only.
+    `--reset behavioral` on one of them is accepted, pays a ~2 s model load
+    inside the first reset request (the `bridge_info` pre-warm is
+    unreachable without that input), exhausts all three attempts on a
     missing frame, and falls back to teleport -- reporting
     `fallback: true, behavioral_attempts: 3` every episode. An A6 ablation
     run that way is a teleport run that measures nothing, with no error
     anywhere.
 
-    Pure so the refusal is unit-testable without a rollout."""
-    reset = [n for n in nodes if isinstance(n, dict) and n.get("id") == "reset"]
-    if not reset:
-        return ["no `reset` node in the graph"]
-    node = reset[0]
-    have_in = set(node.get("inputs") or {})
-    have_out = set(node.get("outputs") or [])
+    Declaring the ports is not the same as being wired for them, so the
+    command outputs are checked for a CONSUMER too: the reset has no
+    private channel to the arm (VAL-5), so `reset_joint_cmd` that reaches
+    no budget guard is exactly as inert as one that was never declared,
+    and `validate` has no rule against an unconsumed output. The input
+    side needs no such check -- VAL-2/VAL-3 already refuse an edge whose
+    source does not resolve, and this runs after that gate.
+
+    Pure so the refusal is unit-testable without a rollout. Tolerant of
+    malformed shapes rather than raising: `load_graph` owns those verdicts
+    (GRAPH_INVALID), and a TypeError out of here would leave the CLI with
+    no JSON to print (CON-8)."""
+    nodes = [n for n in nodes if isinstance(n, dict)] if isinstance(nodes, list) else []
+    resets = [
+        n
+        for n in nodes
+        if str(n.get("path") or "").replace("\\", "/").endswith(RESET_SERVICE_SOURCE)
+    ] or [n for n in nodes if n.get("id") == "reset"]
+    if not resets:
+        return [f"no node running {RESET_SERVICE_SOURCE} in the graph"]
+    # a graph with more than one is served if ANY of them can serve it
+    return min((_reset_node_gaps(n, nodes) for n in resets), key=len)
+
+
+def _reset_node_gaps(node: dict, nodes: list) -> list[str]:
+    """`behavioral_reset_gaps` for one candidate reset node."""
+    inputs = node.get("inputs")
+    have_in = set(inputs) if isinstance(inputs, dict) else set()
+    outputs = node.get("outputs")
+    have_out = {o for o in outputs if isinstance(o, str)} if isinstance(outputs, list) else set()
+    consumed = set()
+    for other in nodes:
+        if other is node or not isinstance(other.get("inputs"), dict):
+            continue
+        for raw in other["inputs"].values():
+            source = _input_source(raw) or ""
+            producer, _, topic = source.partition("/")
+            if topic and producer == node.get("id"):
+                consumed.add(topic)
     gaps = [f"input {name!r}" for name in BEHAVIORAL_RESET_INPUTS if name not in have_in]
     gaps += [f"output {name!r}" for name in BEHAVIORAL_RESET_OUTPUTS if name not in have_out]
+    gaps += [
+        f"output {name!r} reaches no consumer"
+        for name in BEHAVIORAL_RESET_OUTPUTS
+        if name in have_out and name not in consumed
+    ]
     return gaps
 
 

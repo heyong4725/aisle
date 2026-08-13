@@ -943,34 +943,6 @@ def rollout(
     perception_gate = perception_check(root, graph, perception, graph_snapshot)
     if not perception_gate["ok"]:
         return {"ok": False, "refused": perception_gate}
-    if reset_mode == "behavioral":
-        # RST-2 (issue #196): refuse rather than silently degrade. Ten of the
-        # eleven graphs wire the reset node with {reset, reset_done} only; on
-        # those, mode 1 is accepted, burns all three attempts on a frame that
-        # never arrives, and falls back to teleport every episode. The run
-        # then reports fallback:true and measures nothing, with no error.
-        from aisle.harness.validate import behavioral_reset_gaps
-
-        try:
-            gaps = behavioral_reset_gaps((yaml.safe_load(graph_snapshot) or {}).get("nodes") or [])
-        except yaml.YAMLError as exc:
-            gaps = [f"unparseable graph: {exc}"]
-        if gaps:
-            return {
-                "ok": False,
-                "refused": {
-                    "gate": "reset_mode",
-                    "detail": [
-                        {
-                            "code": "BEHAVIORAL_RESET_UNSUPPORTED",
-                            "node": "reset",
-                            "detail": f"graph cannot serve a behavioral reset; missing {gaps}",
-                            "hint": "use --reset teleport, or a graph whose reset node is wired "
-                            "for RST-2 (see graphs/expert_t1_behavioral.yaml)",
-                        }
-                    ],
-                },
-            }
     authored_graph_hash = hashlib.sha256(graph_snapshot).hexdigest()
     gates = run_gates(
         root,
@@ -985,6 +957,38 @@ def rollout(
     )
     if not gates["ok"]:
         return {"ok": False, "refused": gates}
+    if reset_mode == "behavioral":
+        # RST-2 (issue #196): refuse rather than silently degrade. Most
+        # graphs wire the reset node with {reset, reset_done} only; on those,
+        # mode 1 is accepted, burns all three attempts on a frame that never
+        # arrives, and falls back to teleport every episode. The run then
+        # reports fallback:true and measures nothing, with no error.
+        #
+        # BELOW run_gates deliberately: validate owns the verdict on a
+        # malformed graph (GRAPH_INVALID), so a `nodes:`-less or wrong-shaped
+        # file is diagnosed as broken rather than as "cannot serve a
+        # behavioral reset" — the diagnosis must not depend on --reset.
+        # ABOVE the ledger: a refusal costs no episodes.
+        from aisle.harness.validate import behavioral_reset_gaps, load_graph
+
+        gaps = behavioral_reset_gaps(load_graph(graph, graph_snapshot)[0] or [])
+        if gaps:
+            return {
+                "ok": False,
+                "refused": {
+                    "gate": "reset_mode",
+                    "detail": [
+                        {
+                            "code": "BEHAVIORAL_RESET_UNSUPPORTED",
+                            "node": "reset",
+                            "detail": "graph cannot serve a behavioral reset",
+                            "missing": gaps,
+                            "hint": "use --reset teleport, or a graph whose reset node is wired "
+                            "for RST-2 (see graphs/expert_t1_behavioral.yaml)",
+                        }
+                    ],
+                },
+            }
     # ADR-21 round 3: RESERVE atomically before launch (trusted runs only;
     # the ledger meters the campaign, not development) — concurrent
     # rollouts contend under the ledger lock and an interrupted run stays

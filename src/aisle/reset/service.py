@@ -170,8 +170,13 @@ def main(clock=None) -> None:
                 # exhaustion falls back to teleport — never hangs:
                 # every stage has a bounded bail and every attempt a
                 # bounded budget)
-                rt = get_runtime()
+                # the clock starts ABOVE get_runtime(): when `bridge_info`
+                # has not landed first, the FIRST behavioral request pays
+                # the ~2 s model load inside itself, and RST-1's budget is
+                # <2 s — a t_reset_ms that excludes the load cannot see the
+                # breach it exists to report (round-2 review)
                 behavioral_started = clock()
+                rt = get_runtime()
                 rt.start(int(payload[0]), metadata)
                 if rt.outcome == "exhausted":  # unplannable from the start
                     print("behavioral reset: unplannable, fallback", file=sys.stderr)
@@ -251,6 +256,13 @@ def main(clock=None) -> None:
                     "reset_done", pa.array(np.array([1], dtype=np.uint32)), stamp(reply, seq_reply)
                 )
                 runtime.outcome = None
+                # cleared WITH the outcome: `0` already means "the sim was
+                # never touched" on the refusal path, so a stale anchor
+                # would report the PREVIOUS request's start as this one's
+                # duration rather than reading as missing. Unreachable
+                # today (success requires a start), but that is a property
+                # of runtime.py, not of this loop (round-2 review)
+                behavioral_started = None
             elif runtime.outcome == "exhausted":
                 print(
                     f"behavioral reset: exhausted after {runtime.attempts}, fallback",
