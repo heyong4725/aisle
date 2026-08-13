@@ -27,7 +27,9 @@ EXPECTED_IDS = {
     "arm-driver-sim",
     "gripper-driver-sim",
     "task-state-machine",
+    "turn-barrier",  # ADR-30 terminal run-to-quiescence coordinator
     "verifier-oracle",
+    "verifier-realistic",  # A7's ADR-30 verdict-bearing participant
     "reset",
     "budget-guard",  # SPEC 080 BG-1 (T07)
     "dora-genesis",  # executable bridge identity (T08)
@@ -226,6 +228,32 @@ def test_lint_rejects_unknown_schema_name(tmp_path):
     code, report = run_registry("lint", "--root", str(root))
     assert code != 0
     assert any("made_up_schema" in e["message"] for e in report["errors"])
+
+
+def test_lint_accepts_clock_and_episodic_input_declarations(tmp_path):
+    """CAP-1/CAP-2: lockstep clocks and episodic back-edges are closed,
+    typed manifest fields rather than graph comments or conventions."""
+    root = make_root(tmp_path)
+    manifest = valid_manifest()
+    manifest["inputs"] = {
+        "turn": {"schema": "sim_turn_u64", "rate_hz": 100, "is_clock": True},
+        "result": {"schema": "json_utf8", "rate_hz": 1, "turn_edge": "episodic"},
+    }
+    write_manifest(root, manifest)
+    code, report = run_registry("lint", "--root", str(root))
+    assert code == 0, report
+
+
+@pytest.mark.parametrize("bad_value", [0, 1, "true", None, [], {}])
+def test_lint_rejects_non_boolean_is_clock(tmp_path, bad_value):
+    """CAP-1: is_clock is exactly boolean; truthy coercions are forbidden."""
+    root = make_root(tmp_path)
+    manifest = valid_manifest()
+    manifest["inputs"]["rgb"]["is_clock"] = bad_value
+    write_manifest(root, manifest)
+    code, report = run_registry("lint", "--root", str(root))
+    assert code != 0
+    assert report["ok"] is False
 
 
 @pytest.mark.parametrize(

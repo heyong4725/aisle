@@ -258,6 +258,31 @@ class TestArmMotionMutexWindow:
         assert not (1.5 > 0 and 1.5 < deadline)  # 1.5 s later: released
 
 
+class TestArmMotionContractClock:
+    def test_changed_target_uses_sim_stamp_not_wall_arrival(self):
+        """MOB-3/CON-5: the mutex hold is measured on the command contract clock."""
+        from aisle.mobility.guard import update_arm_motion_window
+
+        state = update_arm_motion_window(None, None, True, {"sim_time_ns": 2_000_000_000}, 1.0)
+        assert state == (3_000_000_000, 2_000_000_000, True)
+
+    @pytest.mark.parametrize(
+        "metadata",
+        [{}, {"sim_time_ns": 0}, {"sim_time_ns": None}, {"sim_time_ns": "bad"}],
+    )
+    def test_missing_zero_or_malformed_stamp_fails_closed(self, metadata):
+        """MOB-3: an untrusted moving-arm stamp cannot release the base."""
+        from aisle.mobility.guard import update_arm_motion_window
+
+        assert update_arm_motion_window(None, None, True, metadata, 1.0)[2] is False
+
+    def test_regressing_stamp_fails_closed(self):
+        """MOB-3: a regressing contract clock never shortens the exclusion."""
+        from aisle.mobility.guard import update_arm_motion_window
+
+        assert update_arm_motion_window(3_000, 2_000, True, {"sim_time_ns": 1_999}, 1.0)[2] is False
+
+
 class TestBaseWatchdogReason:
     """MOB-3 watchdog verdict (CON-5, ADR-29): sim-time staleness is the
     primary, deterministic check — it bounds the runaway TRAJECTORY a

@@ -63,10 +63,10 @@ def main() -> None:
     import json
 
     import pyarrow as pa
-    from dora import Node
 
     from aisle.scenes.store import load_planogram
     from aisle.topics import make_sender
+    from aisle.turn_node import Node
 
     node = Node()
     send = make_sender(node)

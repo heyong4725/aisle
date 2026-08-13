@@ -49,7 +49,8 @@ def main() -> None:
     import json
 
     import pyarrow as pa
-    from dora import Node
+
+    from aisle.turn_node import Node
 
     node = Node()
     seq_reply = 0

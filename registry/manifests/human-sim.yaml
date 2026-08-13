@@ -12,8 +12,10 @@ inputs:
   # the dialogue back-edge: episodic under ADR-30 lockstep, so the
   # human_msg/robot_msg cycle stays legal (VAL-2 CLOCK_CYCLE)
   robot_msg: {schema: json_utf8, rate_hz: 1, turn_edge: episodic}
+  turn: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
 outputs:
   human_msg: {schema: json_utf8, latency_class: best_effort}
+  turn_done: {schema: sim_turn_u64, latency_class: hard_rt}
 embodiment:
   arm: [franka, so101]
   gripper: any

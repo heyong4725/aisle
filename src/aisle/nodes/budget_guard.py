@@ -338,20 +338,21 @@ def main(clock=None) -> None:
     import time
 
     import pyarrow as pa
-    from dora import Node
 
     from aisle.mobility.guard import (
-        base_creep_deadline,
         base_watchdog_reason,
         clamp_base_cmd,
         load_base_limits,
         parse_env_id,
         parse_sim_stamp,
+        update_arm_motion_window,
         valid_base_pose,
     )
+    from aisle.turn_node import Node
 
     clock = clock or time.monotonic
     embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
+    lockstep = os.environ.get("AISLE_LOCKSTEP", "0").strip().lower() in ("1", "true", "yes")
     limits = load_limits(embodiment)
     fallback = np.asarray(limits.fallback_qpos, dtype=np.float32)
     is_mobile = embodiment == "mobile"
@@ -387,7 +388,9 @@ def main(clock=None) -> None:
             "last_gripper": 0.0,
             # MOB-3 mutex: the base is held at creep until this deadline; a
             # commanded arm-target change pushes it out, silence lets it pass
-            "arm_motion_deadline": float("-inf"),
+            "arm_motion_deadline_ns": None,
+            "last_arm_cmd_sim_ns": None,
+            "arm_motion_stamp_trusted": True,
             "base_pose": None,  # latest base_pose feedback (MOB-3 keep-out)
             # the watchdog's clocks (ADR-29, see run_watchdog): newest pose
             # sim stamp (None = sim clock blind), the pose stamp referenced
@@ -501,8 +504,20 @@ def main(clock=None) -> None:
             # and a still-moving arm keeps it clamped. Deterministic (CON-5).
             if is_mobile:
                 changed = bool(np.any(safe[: limits.n_arm_dof] != prev_arm))
-                state["arm_motion_deadline"] = base_creep_deadline(
-                    state["arm_motion_deadline"], changed, now, base_limits.arm_motion_hold_s
+                # An earlier changed target with an untrusted stamp may still
+                # be moving.  The first later trustworthy command therefore
+                # opens a full hold window even when it repeats that target.
+                changed = changed or not state["arm_motion_stamp_trusted"]
+                (
+                    state["arm_motion_deadline_ns"],
+                    state["last_arm_cmd_sim_ns"],
+                    state["arm_motion_stamp_trusted"],
+                ) = update_arm_motion_window(
+                    state["arm_motion_deadline_ns"],
+                    state["last_arm_cmd_sim_ns"],
+                    changed,
+                    metadata,
+                    base_limits.arm_motion_hold_s,
                 )
             state["last_safe"] = safe
             # the fingers ARE the gripper: keep the gripper channel's rate
@@ -567,7 +582,18 @@ def main(clock=None) -> None:
             state["last_base_cmd_sim_ns"] = state["base_pose_sim_ns"]
             state["last_base_cmd_wall_t"] = now
             timed_out = state["timer"].timed_out(now, limits.wall_timeout_s)
-            arm_in_motion = now < state["arm_motion_deadline"]
+            cmd_stamp_ns = parse_sim_stamp(metadata)
+            arm_in_motion = not state["arm_motion_stamp_trusted"]
+            if state["arm_motion_deadline_ns"] is not None:
+                arm_in_motion = (
+                    arm_in_motion
+                    or cmd_stamp_ns is None
+                    or (
+                        state["last_arm_cmd_sim_ns"] is not None
+                        and cmd_stamp_ns < state["last_arm_cmd_sim_ns"]
+                    )
+                    or cmd_stamp_ns < state["arm_motion_deadline_ns"]
+                )
             arm = np.asarray(state["last_safe"], dtype=np.float32)[: limits.n_arm_dof]
             ee = fk_ee_pos(arm)
             arm_extended = float(np.hypot(ee[0], ee[1])) > base_limits.arm_extended_reach_m
@@ -640,7 +666,9 @@ def main(clock=None) -> None:
                 state["timer"].on_reset(now)
                 state["last_safe"] = fallback
                 state["last_gripper"] = 0.0
-                state["arm_motion_deadline"] = float("-inf")
+                state["arm_motion_deadline_ns"] = None
+                state["last_arm_cmd_sim_ns"] = None
+                state["arm_motion_stamp_trusted"] = True
                 # MOB-3: clear the cached pose (keep-out fails closed until a
                 # fresh pose arrives) and the watchdog/latched-base state
                 # (the sim clock itself keeps running across episodes, so
@@ -652,7 +680,7 @@ def main(clock=None) -> None:
         elif event["id"] == "tick":
             # the wall net's sweep (ADR-29): every env, fail-closed, on the
             # BG-5 cadence — it can only fire on a pathological run
-            if is_mobile:
+            if is_mobile and not lockstep:
                 for env_id, state in envs.items():
                     run_watchdog(env_id, state, now)
             # BG-5: cumulative violation counts every 5 s, timer-driven —

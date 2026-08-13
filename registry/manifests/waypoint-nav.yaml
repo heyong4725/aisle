@@ -11,10 +11,12 @@ inputs:
   # base_pose is also the control clock (ADR-29): one control iteration per
   # pose, so the loop cadence is the 50 Hz SIM cadence (CON-5) — no wall tick
   base_pose: {schema: base_pose3d_f32, rate_hz: 50}
+  turn: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
 outputs:
   nav_feedback: {schema: json_utf8, latency_class: best_effort}
   nav_result: {schema: json_utf8, latency_class: best_effort}
   base_cmd: {schema: base_cmd2d_f32, latency_class: soft_rt}
+  turn_done: {schema: sim_turn_u64, latency_class: hard_rt}
 embodiment:
   arm: [franka]
   gripper: any

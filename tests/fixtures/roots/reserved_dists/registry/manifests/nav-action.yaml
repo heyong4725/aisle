@@ -10,6 +10,10 @@ inputs:
   base_pose:
     schema: base_pose3d_f32
     rate_hz: 50
+  turn:
+    schema: sim_turn_u64
+    rate_hz: 100
+    is_clock: true
 outputs:
   nav_feedback:
     schema: json_utf8
@@ -20,6 +24,9 @@ outputs:
   base_cmd:
     schema: base_cmd2d_f32
     latency_class: soft_rt
+  turn_done:
+    schema: sim_turn_u64
+    latency_class: hard_rt
 embodiment:
   arm:
   - franka

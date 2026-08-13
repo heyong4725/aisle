@@ -708,6 +708,18 @@ def test_a7_mode_rewires_the_loop_to_the_realistic_verdict(tmp_path):
     assert "verifier-realistic__episode_result" in recorder["inputs"]
     # the A7 premise inherited from both-mode: no privileged state
     assert "oracle_state" not in nodes["verifier-realistic"]["inputs"]
+    # ADR-30: unlike `both`'s measurement tap, the A7 judge is causal and
+    # therefore participates in the dynamically compiled closed-turn plan.
+    realistic = nodes["verifier-realistic"]
+    assert realistic["inputs"]["turn"]["queue_policy"] == "backpressure"
+    assert "turn_done" in realistic["outputs"]
+    assert realistic["env"]["AISLE_LOCKSTEP"] == "1"
+    assert "turn" not in nodes["verifier-oracle"]["inputs"]
+    barrier = nodes["turn-barrier"]
+    plan_path = __import__("pathlib").Path(barrier["env"]["AISLE_TURN_PLAN"])
+    plan = __import__("json").loads(plan_path.read_text())
+    assert plan["participants"]["verifier-realistic"]["verdict_bearing"] is True
+    assert "verifier-oracle" not in plan["participants"]
 
 
 def test_both_mode_loop_still_advances_on_the_oracle(tmp_path):

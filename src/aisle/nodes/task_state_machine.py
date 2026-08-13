@@ -342,9 +342,9 @@ def main() -> None:
 
     import numpy as np
     import pyarrow as pa
-    from dora import Node
 
     from aisle.topics import env_accepts, env_pin_from_env, make_sender
+    from aisle.turn_node import Node
 
     tier = os.environ.get("AISLE_TASK_TIER", "T1")
     if tier not in ("T1", READ_TIER, DIALOGUE_TIER):
@@ -383,6 +383,8 @@ def main() -> None:
     machine = TaskStateMachine(
         tier=tier, candidate_bounds=candidate_bounds, max_retries=int(max_retries_raw)
     )
+    lockstep = os.environ.get("AISLE_LOCKSTEP", "0").strip().lower() in ("1", "true", "yes")
+    last_tick_sim_ns = -1
 
     def emit(emissions) -> None:
         for topic, payload, metadata in emissions:
@@ -409,12 +411,21 @@ def main() -> None:
             if not emissions:
                 print(f"goal {metadata.get('goal_id')} refused: episode active", file=sys.stderr)
             emit(emissions)
+            if lockstep:
+                last_tick_sim_ns = int(metadata.get("sim_time_ns", 0))
         elif event["id"] == "episode_result":
             emit(machine.on_result())
         elif event["id"] == "violation":
             machine.on_violation(json.loads(event["value"][0].as_py()))
-        elif event["id"] == "tick":
+        elif event["id"] == "tick" and not lockstep:
             emit(machine.on_tick())
+        elif event["id"] == "turn" and lockstep:
+            sim_time_ns = int(metadata.get("sim_time_ns", 0))
+            if last_tick_sim_ns < 0:
+                last_tick_sim_ns = sim_time_ns
+            while sim_time_ns - last_tick_sim_ns >= 1_000_000_000:
+                last_tick_sim_ns += 1_000_000_000
+                emit(machine.on_tick())
         elif event["id"] == "plan_done":
             machine.on_plan_done()
         elif event["id"] == "target_pose":

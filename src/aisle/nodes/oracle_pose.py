@@ -28,9 +28,9 @@ def main() -> None:
     import sys
 
     import pyarrow as pa
-    from dora import Node
 
     from aisle.topics import env_accepts, env_pin_from_env, make_sender
+    from aisle.turn_node import Node
 
     env_pin = env_pin_from_env(os.environ)
     node = Node()

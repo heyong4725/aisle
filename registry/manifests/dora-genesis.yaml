@@ -12,6 +12,7 @@ inputs:
   # SPEC 210 MOB-1 (mobile only): diff-drive command [v, omega]
   base_cmd: {schema: base_cmd2d_f32, rate_hz: 50}
   reset: {schema: reset_request_u32, rate_hz: 1}
+  turn_commit: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
 outputs:
   bridge_info: {schema: json_utf8, latency_class: best_effort}
   joint_state: {schema: jointvec_f32, latency_class: hard_rt}
@@ -30,6 +31,7 @@ outputs:
   base_pose: {schema: base_pose3d_f32, latency_class: hard_rt}
   base_scan: {schema: base_scan_f32, latency_class: soft_rt}
   frame_info: {schema: json_utf8, latency_class: best_effort}
+  sim_turn: {schema: sim_turn_u64, latency_class: hard_rt}
 embodiment:
   arm: [franka, so101]
   gripper: any
