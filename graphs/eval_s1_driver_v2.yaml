@@ -97,6 +97,14 @@ nodes:
         # shallow enough to bound stale-pose replay under pathological load
         source: dora-genesis/base_pose
         queue_size: 10
+      reset_done:
+        # the EPISODE boundary (issue #179): without it waypoint-nav was the
+        # only stateful node here that never learned an episode ended, so an
+        # in-flight leg survived into the next one and its nav_result
+        # completed a different episode's subtask. Same source the guard and
+        # s1-expert use, so all three cut the episode at the same instant.
+        source: dora-genesis/reset_done
+        queue_size: 100
     outputs:
       - nav_feedback
       - nav_result

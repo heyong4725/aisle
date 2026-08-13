@@ -71,6 +71,21 @@ def main() -> None:
                 print(f"nav goal {metadata.get('goal_id')} refused: nav active", file=sys.stderr)
             else:
                 machine.on_goal(target, metadata.get("goal_id", ""))
+        elif event["id"] == "reset_done":
+            # the episode boundary (issue #179). waypoint-nav was the only
+            # stateful node in these graphs without this input, so a leg
+            # still in flight at a timeout or verifier verdict survived into
+            # the next episode: its first nav_goal was refused as
+            # "nav active", and the carried leg's nav_result then completed
+            # the NEW episode's subtask.
+            aborted = machine.on_episode_boundary()
+            if aborted is not None:
+                print(f"nav goal {aborted} abandoned: episode boundary", file=sys.stderr)
+                # stop commanding. The guard emits its own zero at
+                # reset_done (MOB-3), so this is belt-and-braces — but nav
+                # owns its own output and must not leave a live command as
+                # the last thing it said.
+                send_base_cmd(0.0, 0.0, "")
         elif event["id"] == "base_pose":
             # the TC-2 sim stamp drives the machine's stall/timeout budgets
             # (SIM seconds, CON-5) — outcomes must not depend on host rtf.

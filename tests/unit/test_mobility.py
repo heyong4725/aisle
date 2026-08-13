@@ -634,6 +634,175 @@ def test_base_topic_schemas_in_vocabulary():
     assert vocab["base_scan_f32"] == {"arrow": "Float32", "shape": "n_scan"}
 
 
+class TestEpisodeBoundary:
+    """MOB-2, TC-7, CON-5 (issue #179). `waypoint-nav` was the only stateful
+    node in the retail graphs with no `reset_done` input, so a nav leg still
+    in flight when an episode ended survived the boundary: the next
+    episode's first goal was refused as "nav active", and the carried leg's
+    nav_result then completed the NEW episode's subtask — invisible in the
+    records, because the episode looks ordinary."""
+
+    STEP_NS = 20_000_000
+
+    def _machine(self):
+        from aisle.mobility.nav import NavStateMachine
+
+        return NavStateMachine(arrival_tol_m=0.1, timeout_s=10.0, stall_s=2.0, arrival_yaw_rad=0.1)
+
+    def test_an_in_flight_goal_is_abandoned_and_the_next_one_is_accepted(self):
+        """The headline failure: without the boundary the next episode's
+        first nav_goal is silently dropped by the TC-7 non-overlap guard."""
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-001")
+        m.on_base_pose([0.0, 0.0, 0.0], self.STEP_NS)
+        m.on_tick()
+        assert m.target is not None  # mid-leg when the episode ends
+
+        assert m.on_episode_boundary() == "nav-001"  # reports what it dropped
+        assert m.target is None and m.goal_id is None
+
+        # the NEW episode's first goal is accepted, not refused
+        m.on_goal([1.0, 0.0, 0.0], "nav-002")
+        assert m.goal_id == "nav-002"
+
+    def test_the_boundary_emits_nothing(self):
+        """A nav_result here would carry the OLD goal_id into a fresh
+        episode — the very confusion being fixed — and "the episode ended"
+        is not one of MOB-2's failure values. Returning the goal_id rather
+        than an emissions list also makes it impossible to feed into the
+        `for topic, payload, goal_id in ...` loop the other handlers use."""
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-001")
+        out = m.on_episode_boundary()
+        assert isinstance(out, str)  # NOT a list of emissions
+
+    def test_an_idle_boundary_is_a_no_op(self):
+        """Resets arrive every episode, most with no leg in flight; the
+        caller keys its log and its base-stop off a None return."""
+        m = self._machine()
+        assert m.on_episode_boundary() is None
+
+    def test_the_boundary_clears_every_goal_scoped_field(self):
+        """CON-5: the carried clock is the third consequence of #179 — PR
+        #178 made the clock goal-scoped, but that reset sits behind the
+        non-overlap early return, so the episode path never reached it.
+
+        Derived from `_GOAL_SCOPED` rather than a hand-copied list, so a
+        field added to the machine and forgotten in one of the three reset
+        paths fails HERE."""
+        from aisle.mobility.nav import NavStateMachine
+
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-001")
+        # dirty every goal-scoped field with a value that is not its fresh one
+        for name, fresh in NavStateMachine._GOAL_SCOPED:
+            setattr(m, name, "DIRTY" if fresh is None else None)
+        m.on_episode_boundary()
+        for name, fresh in NavStateMachine._GOAL_SCOPED:
+            assert getattr(m, name) == fresh or (
+                getattr(m, name) != getattr(m, name) and fresh != fresh
+            ), f"{name} survived the episode boundary"
+
+    def test_every_graph_running_nav_wires_the_boundary_to_it(self):
+        """The machine method is useless if nav never hears about the
+        boundary, and "nobody wired the input" IS issue #179 — the pure
+        tests above all pass on the broken graph. Checks the real graphs,
+        not a fixture, and covers every graph that runs the node so the
+        fix cannot land on expert_s1 alone (the other three had the
+        identical hole)."""
+        from pathlib import Path
+
+        import yaml
+
+        root = Path(__file__).resolve().parents[2]
+        graphs = sorted(
+            p for p in (root / "graphs").glob("*.yaml") if "nav_action.py" in p.read_text()
+        )
+        assert graphs, "no graph runs nav_action.py; this test has lost its subject"
+        for path in graphs:
+            nodes = yaml.safe_load(path.read_text())["nodes"]
+            nav = [n for n in nodes if "nav_action.py" in str(n.get("path", ""))]
+            assert nav, path.name
+            for node in nav:
+                inputs = node.get("inputs") or {}
+                assert "reset_done" in inputs, (
+                    f"{path.name}: {node['id']} has no reset_done input — an in-flight "
+                    "nav leg will survive the episode boundary (issue #179)"
+                )
+
+    def test_the_manifests_declare_the_boundary_input(self):
+        """CAP-1/VAL: the graph edge only validates if the manifest declares
+        the port, and TWO manifests carry nav_action.py — the concrete
+        `nav-action` node and the swappable `waypoint-nav` capability. They
+        describe the same source, so they must not drift."""
+        from pathlib import Path
+
+        import yaml
+
+        root = Path(__file__).resolve().parents[2]
+        carrying = [
+            (p, m)
+            for p in sorted((root / "registry" / "manifests").glob("*.yaml"))
+            if isinstance(m := yaml.safe_load(p.read_text()), dict)
+            and m.get("source") == "src/aisle/nodes/nav_action.py"
+        ]
+        assert len(carrying) >= 2, [p.name for p, _ in carrying]
+        for path, manifest in carrying:
+            assert "reset_done" in (manifest.get("inputs") or {}), path.name
+
+    def test_a_new_goal_and_the_boundary_agree_on_what_is_goal_scoped(self):
+        """The two reset paths must not drift: whatever `on_goal` freshens,
+        the boundary must freshen too (they share `_reset_goal_scoped`)."""
+        from aisle.mobility.nav import NavStateMachine
+
+        after_goal, after_boundary = self._machine(), self._machine()
+        after_goal.on_goal([1.0, 0.0, 0.0], "nav-001")
+        after_boundary.on_goal([1.0, 0.0, 0.0], "nav-001")
+        after_boundary.on_base_pose([0.5, 0.0, 0.0], self.STEP_NS)
+        after_boundary.on_tick()
+        after_boundary.on_episode_boundary()
+        for name, _ in NavStateMachine._GOAL_SCOPED:
+            a, b = getattr(after_goal, name), getattr(after_boundary, name)
+            assert a == b or (a != a and b != b), name
+
+
+class TestNavResultRouting:
+    """TC-7 (issue #179): a nav_result completes the leg it names, or
+    nothing. Shared by s1-expert and both driver skills."""
+
+    def test_the_matching_goal_id_is_accepted(self):
+        from aisle.mobility.nav import nav_result_is_current
+
+        assert nav_result_is_current("nav-007", "nav-007")
+
+    def test_a_foreign_goal_id_is_rejected(self):
+        """The #179 core: a leg carried over from a PREVIOUS episode emits
+        its result into the next one. `nav_seq` is monotonic for the life of
+        the process, so the ids genuinely discriminate."""
+        from aisle.mobility.nav import nav_result_is_current
+
+        assert not nav_result_is_current("nav-009", "nav-004")
+
+    @pytest.mark.parametrize(
+        ("expected", "reply"),
+        [
+            (None, "nav-001"),  # nothing pending an id
+            ("nav-001", None),  # reply carried no goal_id
+            (None, None),
+            ("", ""),  # nav_action's empty-id base_cmd convention
+            ("nav-001", 1),  # non-string metadata from the wire
+            (1, "nav-001"),
+        ],
+    )
+    def test_anything_unusable_fails_closed(self, expected, reply):
+        """BG-3-style trust boundary: "cannot tell" must not complete a
+        subtask. An empty id in particular is what nav_action stamps on its
+        terminal zero base_cmd, and must never match a pending leg."""
+        from aisle.mobility.nav import nav_result_is_current
+
+        assert not nav_result_is_current(expected, reply)
+
+
 class TestNavLifecycle:
     """MOB-2: the nav action's pure lifecycle — goal opens it, per-tick
     feedback {t, dist_remaining} >= 2 Hz, and a result {status, failure,
