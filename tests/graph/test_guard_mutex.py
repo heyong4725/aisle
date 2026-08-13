@@ -150,6 +150,7 @@ def _write_watchdog_graph(
     *,
     stamp_poses: bool = True,
     pose_count: int = 0,
+    keep_commanding: bool = False,
     sweep_ms: int | None = None,
     recorder_s: float | None = None,
     await_spec: str | None = None,
@@ -158,7 +159,9 @@ def _write_watchdog_graph(
     """One-command-then-silent driver + guard. stamp_poses=False exercises
     the ADR-29 wall net (unstamped poses blind the sim clock); pose_count=N
     stops the pose stream after N ticks (a hung sim — only the stats-tick
-    sweep can act). Both need a `tick` (sweep_ms) wired; guard_stats then
+    sweep can act); keep_commanding=True never goes silent, which is the
+    issue #182 shape (see the fixture docstring). Both need a `tick`
+    (sweep_ms) wired; guard_stats then
     also feeds the recorder so the capture window can settle after the
     command stream dies. await_spec ("topic:count") holds the recorder
     window open until the awaited row lands (issue #160: the wall-net
@@ -189,6 +192,7 @@ def _write_watchdog_graph(
                 "env": {
                     "LATCH_STAMP_POSES": "1" if stamp_poses else "0",
                     "LATCH_POSE_COUNT": str(pose_count),
+                    "LATCH_KEEP_COMMANDING": "1" if keep_commanding else "0",
                 },
             },
             {
@@ -212,6 +216,8 @@ def _write_watchdog_graph(
     import yaml
 
     name = "watchdog" if stamp_poses else "wall_net"
+    if keep_commanding:
+        name += "_blind_drive"
     path = tmp / (f"{name}_hung.yaml" if pose_count else f"{name}.yaml")
     path.write_text(yaml.safe_dump(graph))
     return path
@@ -271,6 +277,60 @@ def test_wall_net_stops_latched_command_without_sim_stamps(tmp_path, dataflow):
     )
     dataflow.run_until_settled(graph, rec_out, deadline_s=int(backstop * 3 + 30))
     _assert_latched_command_stopped(dataflow.read(rec_out), "base_stale_wall")
+
+
+def test_blind_drive_stop_sticks_against_a_producer_that_keeps_commanding(tmp_path, dataflow):
+    """MOB-3 (issue #182 + its review): the regression test for the actual
+    bug. The driver commands forward on EVERY tick while its poses carry no
+    sim stamps — nav_action's real shape. Both older nets are structurally
+    disarmed: command-silence never arms (the command is always fresh) and
+    sim-time cannot advance (no clock). Only `base_blind_wall` can act.
+
+    The oracle is deliberately STRICTER than the shared one. The first
+    revision of this fix emitted the stop from the pose handler only, and
+    the producer's next command re-latched a nonzero base_cmd_safe behind
+    it — the bridge is last-write-wins, so the base never actually slowed.
+    `any(v == 0)` passes on that; "no nonzero after the stop" does not.
+
+    It also pins the violation as an EDGE: the un-throttled version emitted
+    one violation and one stderr line PER POSE (~250 per nav goal), which
+    floods the recorded topic under drop-oldest backpressure (issue #183)."""
+    import json
+
+    from aisle.mobility.guard import load_base_limits
+
+    rec_out = tmp_path / "blind_drive.jsonl"
+    backstop = load_base_limits("mobile").base_wall_backstop_s
+    graph = _write_watchdog_graph(
+        tmp_path,
+        rec_out,
+        stamp_poses=False,
+        keep_commanding=True,
+        sweep_ms=1000,
+        recorder_s=backstop + 8,
+        await_spec="violation:1",
+        await_tail_s=4.0,
+    )
+    dataflow.run_until_settled(graph, rec_out, deadline_s=int(backstop * 3 + 30))
+    rows = dataflow.read(rec_out)
+    safes = [r["value"] for r in rows if r["id"] == "base_cmd_safe"]
+    viols = [json.loads(r["value"][0]) for r in rows if r["id"] == "violation"]
+
+    assert any(s[0] > 0.0 for s in safes), "the base never drove; the setup proves nothing"
+    blind = [v for v in viols if v["reason"] == "base_blind_wall"]
+    assert blind, f"no base_blind_wall; reasons={sorted({v['reason'] for v in viols})}"
+
+    # STICKY: once stopped, no nonzero command may reach the bridge again --
+    # the producer is still commanding forward the whole time
+    first_stop = next(i for i, s in enumerate(safes) if s[0] == 0.0)
+    resumed = [s for s in safes[first_stop + 1 :] if s[0] != 0.0]
+    assert not resumed, (
+        f"{len(resumed)} nonzero commands forwarded AFTER the stop -- "
+        f"the base is stuttering, not stopped: {safes[first_stop : first_stop + 8]}"
+    )
+
+    # EDGE-triggered: one violation for the blind stretch, not one per pose
+    assert len(blind) <= 2, f"blind-drive violation flooded: {len(blind)} emitted"
 
 
 def test_tick_sweep_stops_latched_command_when_poses_cease(tmp_path, dataflow):

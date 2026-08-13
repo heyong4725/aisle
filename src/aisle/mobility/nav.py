@@ -101,6 +101,12 @@ class NavStateMachine:
         self.goal_id: str | None = None
         self.pose: list[float] | None = None
         self.ticks = 0
+        # consecutive unstamped poses (issue #182). Initialized HERE as well
+        # as in on_goal: every other field of the machine is, and a field
+        # that only exists after a goal is an AttributeError waiting for the
+        # first reader that runs before one — which would kill nav's event
+        # loop, the exact failure this area was hardened against (#160).
+        self._blind_poses = 0
         self._sim_ns: int | None = None
         self._t0_ns: int | None = None
         self._progress_ns: int | None = None
@@ -146,9 +152,12 @@ class NavStateMachine:
         zeroes the base (issue #182). An earlier comment here claimed the
         ADR-29 wall net covered this path; it did not — that net keys off
         command SILENCE, and this node commands on every pose, so it kept
-        the net open forever. The guard now also bounds blind driving
-        directly (`base_blind_wall`); this budget is the fast, honest
-        failure in front of it."""
+        the net open forever. The guard now bounds blind driving directly
+        (`base_blind_wall`, enforced on its COMMAND path so the stop
+        actually sticks) and is the safety bound; this budget ends the GOAL
+        with a diagnosis so nav stops steering a base the guard is holding
+        at zero. It is the slower of the two on the store profile — see
+        BLIND_POSE_BUDGET for the rtf arithmetic."""
         if self.target is not None:
             self.pose = [float(v) for v in pose]
             if sim_time_ns is None:
@@ -172,11 +181,6 @@ class NavStateMachine:
         `ticks` counts poses, while stall/timeout stay pure sim-time."""
         if self.target is None or self.pose is None:
             return []
-        if self._blind_poses >= BLIND_POSE_BUDGET:
-            # fail closed rather than steer on a clock that never arrived
-            # (issue #182): the caller zeroes the base on any terminal
-            # nav_result, so this both stops the motion and says why
-            return self._finish("fail", "no_sim_clock")
         self.ticks += 1
         # budgets anchor at the first USABLE stamp (issue #160 item 1): a
         # goal whose poses are all unstamped keeps _t0_ns None and skips
@@ -205,6 +209,17 @@ class NavStateMachine:
         arrived_dist = dist <= (self.capture_tol_m if self.rotating else self.arrival_tol_m)
         if arrived_dist and yaw_err <= self.arrival_yaw_rad:
             return self._finish("success", None)
+        # blind budget is checked AFTER arrival (issue #182 review): geometry
+        # is measured from base_pose and needs no clock, so a goal that has
+        # actually reached its target has succeeded whether or not stamps
+        # ever arrived — failing a COMPLETED goal would contradict
+        # test_never_stamped_goal_still_controls_and_arrives. What must not
+        # continue is blind STEERING, and that is what this bounds.
+        if self._blind_poses >= BLIND_POSE_BUDGET:
+            # fail closed rather than steer on a clock that never arrived:
+            # the caller zeroes the base on any terminal nav_result, so this
+            # both stops the motion and says why
+            return self._finish("fail", "no_sim_clock")
         # progress tracking (MOB-2 blocked): PHASE-AWARE and three-way —
         # while latched-rotating, progress is the FINAL-yaw error; while
         # driving, progress is distance OR the heading-to-bearing error
@@ -250,10 +265,19 @@ class NavStateMachine:
 
 # Consecutive unstamped poses a nav goal tolerates before failing closed
 # (issue #182). Counted in POSES, not wall seconds, so the failure point is
-# a function of the stream rather than host load (CON-5). 250 poses is ~5 s
-# at the MOB-1 50 Hz cadence — far past any transient gap, far inside the
-# guard's own 10 s blind-drive backstop, so nav fails first and explains
-# why while the guard remains the backstop that does not trust it.
+# a function of the stream rather than host load (CON-5).
+#
+# 250 poses is 5 SIM seconds at the MOB-1 50 Hz cadence. Note SIM: the wall
+# duration is 5/rtf, so ~10 s on the desk profile (rtf~0.5) and ~71 s on the
+# store profile (rtf~0.07) that the mobile embodiment actually runs. An
+# earlier revision of this comment claimed "~5 s ... far inside the guard's
+# 10 s backstop, so nav fails first"; that silently mixed sim and wall and
+# is false on every scene we measure — exactly the trap docs/glossary.md
+# warns about under `rtf`. The guard's blind-drive stop fires FIRST on the
+# store profile, and it is the safety bound; this budget is not a backstop
+# and must not be read as one. It exists to END THE GOAL with a diagnosis
+# (`no_sim_clock`) rather than leave nav steering at a stopped base, and it
+# is deliberately generous so no transient gap can trip it.
 BLIND_POSE_BUDGET = 250
 
 # proportional gains for the diff-drive controller (MOB-2); dimensionless
