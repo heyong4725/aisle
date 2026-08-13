@@ -1068,3 +1068,25 @@ def oracle_state(handle: SceneHandle) -> np.ndarray:
         parts.extend((pos, quat_xyzw))
     state = np.concatenate(parts, axis=-1).astype(np.float32)
     return state[0] if state.shape[0] == 1 else state
+
+
+def desk_scan_obstacles(physics: dict, embodiment: str) -> list[tuple[float, float, float, float]]:
+    """AABBs (cx, cy, hx, hy) the base_scan raycast sees: the shelf boards
+    and the tray, in the store frame (SPEC 210 MOB-1, ADR-13).
+
+    Lives here, not in the bridge, because the budget guard reads it to
+    build its MOB-3 keep-out (issue #189): geometry the guard refuses
+    motion against is a safety verdict input and belongs inside the CON-7
+    fence. Its store-scene twin, `store_scan_obstacles`, was already
+    frozen in scenes/store.py -- this one sitting in dora_genesis.py was
+    the accident, not the rule."""
+    layout = resolve_layout(physics, embodiment)
+    shelf, tray = layout["shelf"], layout["tray"]
+    width = shelf["level_size"][1]
+    obstacles = [
+        ((x0 + x1) / 2, shelf["pos"][1], (x1 - x0) / 2, width / 2)
+        for level in range(len(shelf["level_heights"]))
+        for x0, x1 in [level_x_span(shelf, level)]
+    ]
+    obstacles.append((tray["pos"][0], tray["pos"][1], tray["size"][0] / 2, tray["size"][1] / 2))
+    return obstacles

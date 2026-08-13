@@ -521,3 +521,70 @@ def test_committed_hash_matches_this_tree():
         "on the final tree and include it in this change (CON-7)"
     )
     assert computed["n_files"] == committed["n_files"]
+
+
+def _frozen_set():
+    """The fence, read from the checker itself rather than restated."""
+    import sys
+
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    import env_hash
+
+    return env_hash.FROZEN_DIRS, env_hash.FROZEN_FILES
+
+
+def _is_fenced(rel: str) -> bool:
+    dirs, files = _frozen_set()
+    return rel in files or any(rel.startswith(d + "/") for d in dirs)
+
+
+def test_the_guards_safety_inputs_are_all_fenced():
+    """CON-7 (issue #189): the fence's unit is the SAFETY VERDICT, not the
+    guard's module. budget_guard.py is plumbing around verdicts that live in
+    other modules — so freezing the file while leaving those outside means a
+    run's env_hash can stay identical while the velocity clamp, the keep-out,
+    or a watchdog verdict changes underneath it.
+
+    That was not hypothetical: PR #177 changed nav's stall/timeout budgets in
+    `src/aisle/mobility/nav.py`, touched no other frozen file, and moved no
+    hash.
+
+    Derived from the guard's own imports, so adding a dependency on unfenced
+    code fails HERE and forces the decision, instead of silently widening
+    what can change without moving the hash."""
+    import ast
+
+    guard = REPO_ROOT / "src" / "aisle" / "nodes" / "budget_guard.py"
+    tree = ast.parse(guard.read_text())
+    modules = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("aisle")
+    }
+    assert modules, "found no first-party imports; this test has lost its subject"
+
+    unfenced = []
+    for mod in sorted(modules):
+        rel = "src/" + mod.replace(".", "/") + ".py"
+        if not (REPO_ROOT / rel).is_file():
+            continue  # a package, not a module file
+        if not _is_fenced(rel):
+            unfenced.append(rel)
+    assert not unfenced, (
+        f"budget_guard reads {unfenced} to reach its verdicts, but they are OUTSIDE the CON-7 "
+        "fence — they can change without moving env_hash. Add them to FROZEN_DIRS/FROZEN_FILES "
+        "in tools/env_hash.py, or move the safety-relevant part into a module that is fenced."
+    )
+
+
+def test_the_frozen_set_covers_the_mobility_verdicts():
+    """Issue #189, stated as the concrete claim rather than only derived:
+    the MOB-3 verdict surface and the stamp trust boundary are inside."""
+    for rel in (
+        "src/aisle/mobility/guard.py",  # base_watchdog_reason, clamp_base_cmd
+        "src/aisle/mobility/nav.py",  # the stall/timeout budgets PR #177 changed
+        "src/aisle/topics.py",  # parse_sim_stamp, the BG-3 trust boundary
+        "src/aisle/kinematics.py",  # SO-101 FK behind the workspace check
+    ):
+        assert (REPO_ROOT / rel).is_file(), rel
+        assert _is_fenced(rel), f"{rel} decides a safety verdict but is outside the CON-7 fence"

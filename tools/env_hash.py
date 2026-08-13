@@ -22,17 +22,42 @@ import subprocess
 import sys
 from pathlib import Path
 
+# THE RULE (issue #189): everything the budget guard reads to reach a
+# SAFETY VERDICT is inside the fence, plus the scene/verifier/reset
+# artifacts that define what a run is. "The guard's module" is not the
+# unit — the guard is 700 lines of plumbing around verdicts that live
+# elsewhere, and freezing the plumbing while leaving the verdicts outside
+# is the hole this list closes.
+#
+# `tests/unit/test_env_hash.py::test_the_guards_safety_inputs_are_all_fenced`
+# enforces it: every first-party module the guard imports must resolve
+# inside. A new import fails that test rather than silently widening what
+# can change without moving the hash.
 FROZEN_DIRS = (
     "src/aisle/scenes",
     "src/aisle/verifier",
     "src/aisle/reset",
+    # MOB-3 verdicts: base_watchdog_reason, clamp_base_cmd, valid_base_pose,
+    # the keep-out geometry and the blind-drive predicates. Outside the
+    # fence until issue #189 — PR #177 changed nav's stall/timeout budgets
+    # here and moved no hash, so two runs with different failure conditions
+    # attested as the same environment.
+    "src/aisle/mobility",
     "assets/so101",
     "env",
 )
 # SPEC 080: the guard and its limits are frozen safety artifacts — a run's
 # env_hash must change if either does. harness/budget.toml carries the
 # campaign ceilings (ADR-21): budgets get the same tamper trust as limits.
-FROZEN_FILES = ("src/aisle/nodes/budget_guard.py", "harness/budget.toml")
+# topics.py is the TC-2/BG-3 stamp trust boundary the guard reads on every
+# message; kinematics.py is the SO-101 forward chain behind the workspace
+# check (fk_ee_pose). Both decide verdicts, neither is a scene artifact.
+FROZEN_FILES = (
+    "src/aisle/nodes/budget_guard.py",
+    "src/aisle/topics.py",
+    "src/aisle/kinematics.py",
+    "harness/budget.toml",
+)
 HASH_FILE = "tools/env_hash.json"
 SELF = "tools/env_hash.py"
 
