@@ -34,12 +34,20 @@ def route_reset(mode: int) -> str:
 def refusal_reply_metadata(request_meta: dict, payload: np.ndarray, error: str) -> dict:
     """TC-6 reply keys for a refused request: echo request_id, seed/mode
     when the payload was well-formed enough to carry them, t_reset_ms=0
-    (the sim was never touched), and the error (ADR-8)."""
+    (the sim was never touched), and the error (ADR-8).
+
+    `env_id` rides through (issue #192) for the same reason the behavioral
+    reply carries it: every episode-state consumer now takes the boundary
+    from this output, and the guard slices per env (BRG-5). No
+    `sim_time_ns` — a refused reset genuinely has none, and the consumers
+    that read it already treat absent as None (BG-3)."""
     meta = {
         "request_id": request_meta.get("request_id", ""),
         "t_reset_ms": 0,
         "error": error,
     }
+    if "env_id" in request_meta:
+        meta["env_id"] = request_meta["env_id"]
     if payload.shape[0] == 2:
         meta["seed"], meta["mode"] = int(payload[0]), int(payload[1])
     return meta
