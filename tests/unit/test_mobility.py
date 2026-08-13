@@ -699,9 +699,21 @@ class TestEpisodeBoundary:
             setattr(m, name, "DIRTY" if fresh is None else None)
         m.on_episode_boundary()
         for name, fresh in NavStateMachine._GOAL_SCOPED:
-            assert getattr(m, name) == fresh or (
-                getattr(m, name) != getattr(m, name) and fresh != fresh
-            ), f"{name} survived the episode boundary"
+            assert getattr(m, name) == fresh, f"{name} survived the episode boundary"
+
+    def test_goal_scoped_defaults_are_immutable(self):
+        """`_reset_goal_scoped` hands every instance the SAME object out of a
+        class-level tuple, so a mutable default (`[]`, `{}`, `set()`) would
+        be shared across machines and across episodes — one goal's writes
+        leaking into the next, which is the bug class this list exists to
+        prevent. Cheap to add, impossible to notice by reading."""
+        from aisle.mobility.nav import NavStateMachine
+
+        for name, fresh in NavStateMachine._GOAL_SCOPED:
+            assert isinstance(fresh, (type(None), bool, int, float, str, tuple)), (
+                f"{name}'s default {fresh!r} is mutable and would be SHARED by every "
+                "NavStateMachine; store a factory or rebuild it per reset instead"
+            )
 
     def test_every_graph_running_nav_wires_the_boundary_to_it(self):
         """The machine method is useless if nav never hears about the
@@ -762,8 +774,7 @@ class TestEpisodeBoundary:
         after_boundary.on_tick()
         after_boundary.on_episode_boundary()
         for name, _ in NavStateMachine._GOAL_SCOPED:
-            a, b = getattr(after_goal, name), getattr(after_boundary, name)
-            assert a == b or (a != a and b != b), name
+            assert getattr(after_goal, name) == getattr(after_boundary, name), name
 
 
 class TestNavResultRouting:
