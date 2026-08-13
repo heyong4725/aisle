@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """env_hash: fingerprint the CON-7 frozen set (CON-5, CON-8).
 
-Hashes src/aisle/{scenes,verifier,reset}, assets/so101, graphs/expert_*.yaml, and the
-SPEC 080 frozen safety artifacts (env/limits.toml + the budget-guard
-module) — sorted relative paths + file contents; __pycache__ excluded —
-into one sha256. Modes: compute (default), --write (commit tools/env_hash.json),
+Hashes the frozen set defined by FROZEN_DIRS + FROZEN_FILES below plus
+graphs/expert_*.yaml — sorted relative paths + file contents; __pycache__
+excluded — into one sha256. Read those constants, not this paragraph: an
+enumeration here would be a second copy of the fence that goes stale, which
+is how src/aisle/mobility stayed outside it (issue #189, ADR-33).
+
+Modes: compute (default), --write (commit tools/env_hash.json),
 --check (compare against the committed hash; rollout refuses on mismatch,
 HAR-2). --check --baseline <git-ref> is the TRUSTED mode (PR #24, ADR-21):
 the baseline hash is read from the git object store at <ref> (a protected
@@ -52,10 +55,15 @@ FROZEN_DIRS = (
 # topics.py is the TC-2/BG-3 stamp trust boundary the guard reads on every
 # message; kinematics.py is the SO-101 forward chain behind the workspace
 # check (fk_ee_pose). Both decide verdicts, neither is a scene artifact.
+# embodiment.py holds SO101_ARM_JOINTS, the TC-5 joint order `so101_chain()`
+# refuses to build against a mismatched URDF — one hop behind the workspace
+# check, and found only by following the fence's OWN imports rather than the
+# guard's (issue #189 review).
 FROZEN_FILES = (
     "src/aisle/nodes/budget_guard.py",
     "src/aisle/topics.py",
     "src/aisle/kinematics.py",
+    "src/aisle/embodiment.py",
     "harness/budget.toml",
 )
 HASH_FILE = "tools/env_hash.json"

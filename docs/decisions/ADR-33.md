@@ -33,7 +33,11 @@ that identical tuples hold identical environments was false for that pair.
 event loop.** Everything the budget guard reads to reach a verdict is inside.
 
 1. `src/aisle/mobility/` joins `FROZEN_DIRS`.
-2. `src/aisle/topics.py` and `src/aisle/kinematics.py` join `FROZEN_FILES`.
+2. `src/aisle/topics.py`, `src/aisle/kinematics.py` and
+   `src/aisle/embodiment.py` join `FROZEN_FILES`. The last was found only by
+   walking the fence's OWN imports: `kinematics.py` reads `SO101_ARM_JOINTS`
+   from it, and `so101_chain()` refuses to build a chain whose joint order
+   disagrees — one hop behind the workspace check.
 3. `_scan_obstacles` **moves** from `nodes/dora_genesis.py` to
    `scenes/pharmacy.py` as `desk_scan_obstacles`, rather than freezing the
    1300-line sim bridge to reach 15 lines of geometry. Its store-scene twin,
@@ -41,18 +45,24 @@ event loop.** Everything the budget guard reads to reach a verdict is inside.
    version living in the bridge was the accident, not the rule.
 4. The rule is **enforced, not documented**:
    `tests/unit/test_env_hash.py::test_the_guards_safety_inputs_are_all_fenced`
-   derives the guard's first-party imports and fails if any resolves outside
-   the fence. A new dependency on unfenced code fails that test and forces
-   the decision, instead of silently widening what can change without moving
-   the hash.
+   walks the CLOSURE from the guard through every fenced module and fails on
+   any edge reaching unfenced code. Edges that are provably not verdict paths
+   are listed in `_NOT_A_VERDICT_PATH` with a reason — currently only
+   `scenes/pharmacy._assert_reachable`, a build-time SCN-3 check that imports
+   the planners inside the function and that the guard never reaches.
 
-The fence grows from 52 to 58 files.
+   The first version of this test checked only the guard's DIRECT imports and
+   missed `aisle.embodiment` entirely. Depth 1 is not the rule; the closure
+   is. That miss is recorded because it is the same shape as the bug the ADR
+   exists to fix — checking the obvious layer and calling it complete.
+
+The fence grows from 52 to 59 files.
 
 ## Consequences
 
 - `env_hash` changes once, here. Any change under `src/aisle/mobility/`,
-  `topics.py`, or `kinematics.py` is now an `env-change` needing human
-  review (CON-7) and a regenerated hash.
+  `topics.py`, `kinematics.py` or `embodiment.py` is now an `env-change`
+  needing human review (CON-7) and a regenerated hash.
 - The sim bridge stays outside. That is a deliberate line, not an oversight:
   the bridge determines physics and arguably belongs inside, but it is
   1300 lines that change often, and folding it in would make nearly every
@@ -77,11 +87,14 @@ The fence grows from 52 to 58 files.
   1300 lines to fence 15, and it would make routine bridge work an
   env-change. Moving the function is smaller and puts the geometry beside
   the scene config it derives from.
-- **Freeze the guard's whole transitive import closure.** Rejected: it pulls
-  in `ik_trajectory`, `grasp_topdown` and the bridge through
-  `dora_genesis`, which is most of the codebase. Direct reads are the
-  defensible line; a deeper dependency that starts deciding a verdict shows
-  up as a new direct import and trips the enforcing test.
+- **Freeze the guard's whole transitive import closure.** Rejected as a
+  FENCE, kept as a CHECK. Freezing the closure would pull in
+  `ik_trajectory`, `grasp_topdown` and the bridge through `dora_genesis` —
+  most of the codebase. But the enforcing test still WALKS that closure and
+  demands every escape be justified in `_NOT_A_VERDICT_PATH`, so the line is
+  drawn per-edge with a written reason rather than by import depth. Only two
+  edges are excluded today, both into `pharmacy._assert_reachable`, a
+  build-time check the guard never reaches.
 - **Document the rule without enforcing it.** Rejected: a hand-maintained
   list in three parts is exactly how `src/aisle/mobility/` came to be
   omitted for the entire life of the mobile embodiment.

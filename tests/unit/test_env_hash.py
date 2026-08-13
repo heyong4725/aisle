@@ -1,8 +1,9 @@
 """Unit tests for tools/env_hash.py (CON-7, CON-5, CON-8).
 
-CON-7: the frozen set is src/aisle/{scenes,verifier,reset}, assets/so101, and
-graphs/expert_*.yaml; tools/env_hash.py fingerprints it so rollout can
-refuse on mismatch.
+CON-7: tools/env_hash.py fingerprints the frozen set so rollout can refuse
+on mismatch. The set itself is FROZEN_DIRS + FROZEN_FILES + the
+graphs/expert_*.yaml glob in that module — these tests read it from there
+rather than restating it, so widening the fence cannot leave them stale.
 """
 
 import json
@@ -534,8 +535,67 @@ def _frozen_set():
 
 
 def _is_fenced(rel: str) -> bool:
+    """Mirrors frozen_files() for PYTHON MODULE paths only.
+
+    Deliberately omits that function's `graphs/expert_*.yaml` glob: every
+    path fed here is derived from an `aisle.*` module name, so the glob can
+    never match. Widen this if a future frozen glob ever covers .py files."""
     dirs, files = _frozen_set()
     return rel in files or any(rel.startswith(d + "/") for d in dirs)
+
+
+#: Edges from fenced code to unfenced code that are NOT verdict paths, each
+#: justified. An edge NOT listed here fails the closure test below.
+_NOT_A_VERDICT_PATH = {
+    # scenes/pharmacy._assert_reachable is a BUILD-TIME assertion (SCN-3:
+    # "placements MUST be reachable -- assert at build time"). It imports the
+    # planners inside that function; the guard never reaches it, calling only
+    # load_physics and desk_scan_obstacles. Freezing the planners would drag
+    # ik_trajectory, grasp_topdown and most of the tree in behind them.
+    ("src/aisle/scenes/pharmacy.py", "src/aisle/nodes/ik_trajectory.py"),
+    ("src/aisle/scenes/pharmacy.py", "src/aisle/nodes/grasp_topdown.py"),
+}
+
+
+def _first_party_imports(rel: str) -> set[str]:
+    """Module names this file imports from `aisle`, at any nesting depth.
+
+    Covers the four static forms, because three of them were missed by the
+    first version and each is a way to pull in an unfenced verdict input:
+    `from a.b import c`, `import a.b`, `from a import b` where `b` is a
+    MODULE not a name (indistinguishable at the AST level, so both readings
+    are returned and the caller drops the one that is not a file), and
+    relative `from .b import c`.
+
+    NOT covered, and it cannot be: `importlib.import_module` and
+    `__import__` take runtime strings. A verdict input reached that way is
+    invisible here — which is a reason not to reach one that way."""
+    import ast
+
+    tree = ast.parse((REPO_ROOT / rel).read_text())
+    pkg = rel[len("src/") :].rsplit("/", 1)[0].replace("/", ".")
+    found = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found.update(a.name for a in node.names if a.name.startswith("aisle"))
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:  # relative: resolve against this file's package
+                base = ".".join(pkg.split(".")[: len(pkg.split(".")) - node.level + 1])
+                module = f"{base}.{node.module}" if node.module else base
+            else:
+                module = node.module or ""
+            if not module.startswith("aisle"):
+                continue
+            found.add(module)
+            # `from aisle.nodes import dora_genesis` — the imported name may
+            # itself be a module; the caller keeps only those that are files
+            found.update(f"{module}.{a.name}" for a in node.names)
+    return found
+
+
+def _module_rel(mod: str) -> str | None:
+    rel = "src/" + mod.replace(".", "/") + ".py"
+    return rel if (REPO_ROOT / rel).is_file() else None
 
 
 def test_the_guards_safety_inputs_are_all_fenced():
@@ -549,31 +609,31 @@ def test_the_guards_safety_inputs_are_all_fenced():
     `src/aisle/mobility/nav.py`, touched no other frozen file, and moved no
     hash.
 
-    Derived from the guard's own imports, so adding a dependency on unfenced
-    code fails HERE and forces the decision, instead of silently widening
-    what can change without moving the hash."""
-    import ast
-
-    guard = REPO_ROOT / "src" / "aisle" / "nodes" / "budget_guard.py"
-    tree = ast.parse(guard.read_text())
-    modules = {
-        node.module
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("aisle")
-    }
-    assert modules, "found no first-party imports; this test has lost its subject"
-
-    unfenced = []
-    for mod in sorted(modules):
-        rel = "src/" + mod.replace(".", "/") + ".py"
-        if not (REPO_ROOT / rel).is_file():
-            continue  # a package, not a module file
-        if not _is_fenced(rel):
-            unfenced.append(rel)
-    assert not unfenced, (
-        f"budget_guard reads {unfenced} to reach its verdicts, but they are OUTSIDE the CON-7 "
-        "fence — they can change without moving env_hash. Add them to FROZEN_DIRS/FROZEN_FILES "
-        "in tools/env_hash.py, or move the safety-relevant part into a module that is fenced."
+    Walks the CLOSURE, not just the guard's direct imports. Depth 1 was the
+    first version of this test and it missed `aisle.embodiment`, which the
+    fenced `kinematics.py` reads for the TC-5 joint order that `so101_chain()`
+    validates the guard's workspace FK against (issue #189 review). Any edge
+    from fenced code to unfenced code must be listed in _NOT_A_VERDICT_PATH
+    with a reason, or this fails."""
+    frontier, seen, escapes = ["src/aisle/nodes/budget_guard.py"], set(), []
+    while frontier:
+        rel = frontier.pop()
+        if rel in seen:
+            continue
+        seen.add(rel)
+        for mod in sorted(_first_party_imports(rel)):
+            dep = _module_rel(mod)
+            if dep is None:
+                continue  # a package __init__, not a module file
+            if _is_fenced(dep):
+                frontier.append(dep)
+            elif (rel, dep) not in _NOT_A_VERDICT_PATH:
+                escapes.append(f"{rel} -> {dep}")
+    assert len(seen) > 5, f"the walk collapsed to {seen}; this test has lost its subject"
+    assert not escapes, (
+        f"fenced code reaches UNFENCED code on a verdict path: {sorted(escapes)}. Those modules "
+        "can change without moving env_hash. Fence them in tools/env_hash.py, or add the edge to "
+        "_NOT_A_VERDICT_PATH with a reason it cannot affect a verdict."
     )
 
 
