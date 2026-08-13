@@ -10,6 +10,60 @@ The canonical status table is [the README's](../README.md#status) (issue
 #142). This page carries protocol and evidence detail; if a verdict here
 ever disagrees with the README, the README is right and this page is stale.
 
+For the technical framing behind these protocols—what the research object is,
+why evidence collection is part of the system, what claims each record can
+support, and how VLA/world-model/WAM comparisons fit—read the
+[AISLE research program](research-program.md).
+
+## What is actually under experiment?
+
+The robot task is the instrument. The primary experimental object is an
+autonomous engineering system:
+
+```text
+coding agent + contract + tools + registry + mutable robot artifacts
+             + dora runtime + trusted envelope + campaign budget
+```
+
+The agent acts between episodes. It composes a typed graph, changes nodes or
+parameters, reads trace and failure evidence, and may register an evaluated
+skill. The resulting graph acts within an episode. Separating those loops lets
+us measure two different questions: whether the coding agent can improve a
+robot system, and whether the chosen inner-loop architecture—classical, VLA,
+world-model-based, WAM, or hybrid—performs well.
+
+The H1-H5 campaign family isolates five claims:
+
+| Claim family | Named treatment or contrast | Outcomes needed for a verdict |
+|---|---|---|
+| Build | agent + registry composition under a frozen task | validation, launch, repair cycles, first task success |
+| Diagnose and improve | trace-guided research loop under a fixed budget | held-out performance and time/token/rollout cost |
+| Reuse | persistent evaluated library vs. wiped arm | matched later-task time-to-success and successful reuse |
+| Substrate | typed dataflow/hot-swap workflow vs. matched alternative | iteration latency, failure rate, change attribution |
+| Safety | free agent iteration behind fixed trust boundaries | adverse outcomes, unsafe proposals, guard interventions and bypass rejections |
+
+Learned models add treatments inside this design; they do not replace it. A
+model family name is insufficient evidence. A valid comparison also records
+the checkpoint/revision, preprocessing, precision, inference backend and
+device, observation and action contract, decoding parameters, latency, compute
+cost, and any model-specific randomness.
+
+## Evidence and claim discipline
+
+Evidence collection exists to make the causal chain inspectable:
+
+```text
+idea -> frozen treatment -> validated graph -> seeded execution
+     -> outcomes/traces/costs -> integrity audit -> scoped claim
+```
+
+The chain is deliberately fail-closed. A run with unknown code, treatment
+drift, incomplete held-out scoring, or a failed post-run audit may still be
+useful diagnostic material, but it cannot silently become verdict evidence.
+Likewise, many episodes from one graph estimate that graph's task performance;
+they are not independent replications of a research agent's ability to discover
+the graph. Independent agent sessions are the research-process replicates.
+
 ## Hypotheses
 
 | Id | Claim | Status |
@@ -19,6 +73,7 @@ ever disagrees with the README, the README is right and this page is stale.
 | H3 | Persistent skill library ≥2x faster on later tasks | **Verdict PENDING** (`met: null`, `complete: false`) — campaign ran; both tiers UNDECIDED. Every library-arm cell fell to drift (repo, treatment or runtime) under the ADR-h3 admissibility amendment, and the wiped arm's clean cells never succeeded at S2/S3, so one arm cannot decide a ratio tier. The earlier "NOT MET" headline was dissolved by the retroactive `treatment_drift` flag on L/S2, not replaced by a met verdict. → `analysis/h3/h3_findings.md` |
 | H4 | Hot-swap iteration beats relaunch | **Measured at T0**, phase-randomized (ADR-h4 rev 2): hot-swap median 32.4 s vs relaunch 41.8 s (ratio 1.29), n=6 per path, zero infra failures; the mutation mechanism alone is ~1.7x faster (2.4 s vs 4.0–4.7 s). Extremes overlap and no significance/equivalence claim is made at n=6. **UNATTESTED** dev measurement (ADR-24): no reproducibility claim. Two superseded designs are retained as evidence. → `analysis/h4/h4_findings.md` |
 | H5 | wrong-object stays 0 under free iteration | **Holding** on committed evidence: 0 wrong-object in 224/224 episodes across the three H2 runs (`analysis/h2/`). H3's records do not extend the denominator: its cells are inadmissible for verdict purposes (above). |
+| H6 | Agent operates a running system: detect, localize, hot-swap, recover | **Registered, not yet run** (August 2026). The operation/inference claim: an agent restores an induced degradation in a *live* dataflow from traces and guard evidence alone, with no human in the loop, no guard bypass, and no `wrong_object` during the intervention. Runs on machinery that already exists (traces, hot-swap, validator, attestation); needs a fault-injection protocol and an ADR before a campaign. |
 
 Ablation A1 (agent-composed vs expert graphs) has a provenance-explicit
 data inventory at `analysis/a1/a1_table.md` — read its "what the

@@ -4,12 +4,17 @@
 > This page describes the implementation in this tree; dated research results
 > remain tied to the commits recorded in their evidence.
 
-AISLE is the **Agentic In-Store Learning Environment**: an experimental system
+AISLE is the **Agentic Infrastructure for Safe Learning and Execution**: an experimental system
 in which coding agents assemble and improve typed robot dataflows, run them in
 simulation, inspect structured evidence, and carry successful components into
 harder tasks. Its central research question is not merely whether an agent can
 write a robot policy. It is whether an agent can conduct a safe, reproducible
 engineering loop around a modular physical-AI system.
+
+The full question, experimental logic, evidence standard, and advanced-model
+agenda are developed in the technical
+**[AISLE research program](research-program.md)**. This page remains the map
+from that framing to the implementation in the repository.
 
 This guide is the broad map. Use the linked specifications for normative
 requirements and the linked code for exact behavior. Exact graph, capability,
@@ -1121,6 +1126,13 @@ not automatically rewrite, qualitative maturity claims.
 
 ## 19. Glossary
 
+This table covers the concepts used on this page. For the full notation
+reference — every requirement-ID prefix (`CON`, `TC`, `HAR`, `VER`, `SCN`,
+`BRG`, `CAP`, `VAL`, `MOB`, `BG`, `RS`, `PW`, `FT`, `BAL`, `TOOL`), plus
+`ADR`, `DoD`, Class A/B/C, the `H1`-`H5` hypotheses, the `A1`-`A7`
+ablations, tiers, perception rungs, and campaign-arm notation — see
+[`glossary.md`](glossary.md).
+
 | Term | Meaning |
 |---|---|
 | Episode | One reset → goal → rollout → verdict cycle. |
@@ -1141,6 +1153,8 @@ not automatically rewrite, qualitative maturity claims.
 
 ## 20. Primary reading index
 
+- Standalone technical report: [`docs/AISLE-technical-report.md`](AISLE-technical-report.md)
+- Notation and acronyms: [`docs/glossary.md`](glossary.md)
 - Project intent: [`docs/Project_AISLE_Experiment_Design.md`](Project_AISLE_Experiment_Design.md)
 - Normative constitution: [`specs/000-constitution.md`](../specs/000-constitution.md)
 - Runtime topic contract: [`specs/010-topic-contract.md`](../specs/010-topic-contract.md)

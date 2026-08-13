@@ -1,9 +1,17 @@
-# AISLE — Agentic In-Store Learning Environment
+# AISLE — Agentic Infrastructure for Safe Learning and Execution
 
 New contributor? Start with the
 **[AISLE contributor wiki](docs/contributor-wiki.md)** for a source-linked
 project overview, architecture, use cases, extension guide, code map, research
 status, and known limitations.
+
+*AISLE is an **environment** in the reinforcement-learning sense — a simulated
+world with tasks, dynamics, and a frozen scorer that agents act in — and the
+**infrastructure** around it: the typed contract, registry, validator, safety
+guard, and evidence harness. The name nods to the pharmacy aisle where the
+first task family lives, but the scope is the substrate, not the store: the
+bench suite (SPEC 300/310) is laboratory powder handling, and hardware
+execution is the intended path.*
 
 Agentic auto-research for robot manipulation on open infrastructure:
 coding agents (Claude Code / Codex) compose and evolve **typed dora-rs
@@ -13,10 +21,43 @@ typed dataflow substrate makes agentic robotics faster, safer, more
 auditable, and more reusable than script-level iteration — reproducible
 on a MacBook.
 
-Full experiment design: `docs/Project_AISLE_Experiment_Design.md`.
-New to the repo? Start with `docs/getting-started.md` — and for the
+## Research question
+
+> Can AI coding agents autonomously build, diagnose, improve, reuse, and safely
+> operate robotic systems when those systems are composed as typed dora
+> dataflows?
+
+AISLE does not treat a successful robot demo as sufficient evidence. The object
+under study is the full engineering loop: an agent chooses and connects
+capabilities, validates the graph, runs budgeted episodes, diagnoses typed
+traces and failure classes, improves the system, and carries evaluated skills
+into later tasks. The task result, research cost, safety events, graph and code
+identity, environment, seeds, and admissibility audit are recorded together so
+we can distinguish an attributable improvement from an easier seed, changed
+scorer, environment drift, contamination, or extra compute.
+
+The current model-light runtime is an experimental control, not the intended
+limit of the architecture. VLA policies, world-model planners/environments, and
+World Action Models (WAMs) can enter as typed, swappable nodes behind the same
+action adapters, guard, verifier, and evidence contract. That makes “classical
+pipeline vs. learned policy vs. predictive/hybrid system” a matched systems
+experiment that the coding agent can itself propose and run.
+
+Read the **[AISLE technical report](docs/AISLE-technical-report.md)** for the
+full standalone treatment: architecture, determinism, evidence design, the
+experimental program, results to date, threats to validity, and the staged
+VLA/world-model/WAM agenda. The **[AISLE research program](docs/research-program.md)** gives the
+technical-report framing: research object, falsifiable questions, why
+experiments and evidence collection matter, claim discipline, and the staged
+VLA/world-model/WAM agenda. The full original experiment design is
+[`docs/Project_AISLE_Experiment_Design.md`](docs/Project_AISLE_Experiment_Design.md).
+New to the repo? Start with `docs/getting-started.md` — for the
 concepts behind it all (Physical AI, VLM/VLA/world models/WAMs,
-sim-to-real, agentic auto-research), `docs/physical-ai-primer.md`.
+sim-to-real, agentic auto-research), `docs/physical-ai-primer.md` — and
+for the shorthand every other page uses (`CON-5`, `ADR-30`, `H3`, `A7`,
+`T2`, `L1`, Class C, DoD, the frozen set),
+**[`docs/glossary.md`](docs/glossary.md)**, which expands each identifier
+and names the file that defines it.
 
 ## Status
 
@@ -39,6 +80,7 @@ Orientation for contributors: [`docs/contributor-wiki.md`](docs/contributor-wiki
 | H3 — skill accumulation (S1→S3 transfer) | **verdict PENDING** (`met: null`, `complete: false`) — S2 and S3 both UNDECIDED. No admissible library-arm cell survived the integrity audit (repo, treatment or runtime drift); the wiped arm's clean cells never succeeded at S2/S3. A formal verdict needs an owner-accepted incomplete closure or a budget-corrected new campaign (`analysis/h3/`) |
 | H4 — hot-swap vs relaunch iteration | **measured at T0**, phase-randomized (ADR-h4 rev 2): hot-swap median iteration latency 32.4 s vs relaunch 41.8 s (ratio 1.29), n=6 per path, zero infra failures. Extremes overlap; no significance or equivalence claim at n=6. UNATTESTED dev measurement — makes no reproducibility claim (`analysis/h4/`) |
 | H5 — zero wrong-object under free iteration | holding on committed evidence: 0 wrong-object in 224/224 episodes across the three H2 campaign runs (`analysis/h2/`) |
+| H6 — agent operates a running system | **registered, not yet run** (August 2026): detect an induced degradation in a live dataflow, localize it, propose a validated hot-swap, recover — no human in the loop, no guard bypass, no wrong-object during the intervention. The inference/operation half of the programme; needs a fault-injection protocol and an ADR before it runs |
 | Retail suite S1–S3 (mobile, long-horizon) | implemented: store scene, planogram verifier, mobility contract, S1 expert graph |
 | Perception ladder L0/L1/L2 (TC-9) | implemented: L0 oracle poses, L1 segmentation + depth (`segmented-pose`), L2 RGB identity + same-stamp sensor-depth geometry (`l2-pose`); the rung rides the graph and is asserted per run (`--perception`) |
 | Realistic verifier (VER-5) | implemented (`src/aisle/verifier/realistic.py`, OWLv2 + rules, CPU-pinned); ADR at `docs/decisions/ADR-realistic-verifier.md` |
