@@ -690,6 +690,26 @@ def main(clock=None) -> None:
             # exactly the neighbour's reset moment (fleet probes 5-6,
             # seed-3 'dropped' at t~26). A reply without env_id keeps the
             # legacy whole-guard boundary.
+            if metadata.get("error"):
+                # a REFUSED reset (ADR-8, TC-6). These replies only reach
+                # the guard since issue #192 moved the boundary onto the
+                # reset service's output, and they must NOT be treated as
+                # one: the sim was never touched, so the robot is NOT at
+                # home and re-referencing velocity/hold state to the home
+                # qpos would clamp the next command against a false origin
+                # — permitting a larger real jump than the limit allows.
+                # Re-anchoring the BG-2 timer would be wrong too: no new
+                # episode started, so the budget must keep running.
+                #
+                # Deliberately narrower than the other consumers, which DO
+                # clear on a refusal to stay in phase with rollout-client
+                # (it proceeds on any reply). Their state carries no
+                # physical claim about where the robot is; this state does.
+                print(
+                    f"guard: reset refused ({metadata['error']}); not an episode boundary",
+                    file=sys.stderr,
+                )
+                continue
             reset_env = metadata.get("env_id")
             if isinstance(reset_env, int) and not isinstance(reset_env, bool):
                 boundary_envs = [(reset_env, envs.setdefault(reset_env, new_state()))]
