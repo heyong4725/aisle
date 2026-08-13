@@ -398,6 +398,11 @@ def main(clock=None) -> None:
             "last_base_cmd_sim_ns": None,
             "last_base_cmd_wall_t": None,
             "last_pose_wall_t": None,
+            # wall time the sim clock most recently WENT blind (None while
+            # it is healthy). The blind-drive net measures from here, not
+            # from the last command, so a producer that keeps commanding
+            # cannot hold the net open forever (issue #182).
+            "blind_since_wall": None,
             "last_base_safe": [0.0, 0.0],  # last emitted safe base cmd
             "timer": EpisodeTimer(),
         }
@@ -442,6 +447,14 @@ def main(clock=None) -> None:
             state["last_pose_wall_t"] is not None
             and now - state["last_pose_wall_t"] > base_limits.base_wall_backstop_s
         )
+        # latch the blind ONSET: the blind-drive net needs "how long have we
+        # been driving without a clock", which is not recoverable from the
+        # command stream (issue #182). Cleared the moment stamps return, so a
+        # transient gap cannot accumulate across healthy stretches.
+        if blind and state["blind_since_wall"] is None:
+            state["blind_since_wall"] = now
+        elif not blind:
+            state["blind_since_wall"] = None
         reason = base_watchdog_reason(
             episode_timed_out=state["timer"].timed_out(now, limits.wall_timeout_s),
             last_cmd_sim_ns=state["last_base_cmd_sim_ns"],
@@ -449,6 +462,7 @@ def main(clock=None) -> None:
             last_cmd_wall_t=state["last_base_cmd_wall_t"],
             now_wall=now,
             sim_clock_blind=blind,
+            blind_since_wall=state["blind_since_wall"],
             limits=base_limits,
         )
         if reason is None:

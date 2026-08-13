@@ -119,6 +119,7 @@ class NavStateMachine:
         self.goal_id = goal_id
         self.pose = None
         self.ticks = 0
+        self._blind_poses = 0  # consecutive unstamped poses (issue #182)
         # The held clock is goal-scoped: if this goal's first pose is
         # unstamped, it must not anchor to the previous goal's last stamp.
         self._sim_ns = None
@@ -137,13 +138,24 @@ class NavStateMachine:
         BG-3 trust boundary extended to nav): geometry still updates —
         control keeps steering — but the machine's clock HOLDS, so the
         stall/timeout budgets freeze rather than anchor at 0 or jump on
-        garbage. On a fully-unstamped source nav therefore never
-        sim-times-out; the guard wall net is the stop on that path (the
-        ADR-29 residual recorded as issue #160 item 2)."""
+        garbage.
+
+        A blind machine cannot enforce its own stall or timeout budget, so
+        it must not steer indefinitely: after BLIND_POSE_BUDGET consecutive
+        unstamped poses the goal fails with `no_sim_clock` and the node
+        zeroes the base (issue #182). An earlier comment here claimed the
+        ADR-29 wall net covered this path; it did not — that net keys off
+        command SILENCE, and this node commands on every pose, so it kept
+        the net open forever. The guard now also bounds blind driving
+        directly (`base_blind_wall`); this budget is the fast, honest
+        failure in front of it."""
         if self.target is not None:
             self.pose = [float(v) for v in pose]
-            if sim_time_ns is not None:
+            if sim_time_ns is None:
+                self._blind_poses += 1
+            else:
                 self._sim_ns = int(sim_time_ns)
+                self._blind_poses = 0
         return []
 
     def _finish(self, status: str, failure: str | None) -> list:
@@ -160,6 +172,11 @@ class NavStateMachine:
         `ticks` counts poses, while stall/timeout stay pure sim-time."""
         if self.target is None or self.pose is None:
             return []
+        if self._blind_poses >= BLIND_POSE_BUDGET:
+            # fail closed rather than steer on a clock that never arrived
+            # (issue #182): the caller zeroes the base on any terminal
+            # nav_result, so this both stops the motion and says why
+            return self._finish("fail", "no_sim_clock")
         self.ticks += 1
         # budgets anchor at the first USABLE stamp (issue #160 item 1): a
         # goal whose poses are all unstamped keeps _t0_ns None and skips
@@ -230,6 +247,14 @@ class NavStateMachine:
         # exposed as an unapproved contract field
         return [("nav_feedback", {"t": self.ticks, "dist_remaining": dist}, self.goal_id)]
 
+
+# Consecutive unstamped poses a nav goal tolerates before failing closed
+# (issue #182). Counted in POSES, not wall seconds, so the failure point is
+# a function of the stream rather than host load (CON-5). 250 poses is ~5 s
+# at the MOB-1 50 Hz cadence — far past any transient gap, far inside the
+# guard's own 10 s blind-drive backstop, so nav fails first and explains
+# why while the guard remains the backstop that does not trust it.
+BLIND_POSE_BUDGET = 250
 
 # proportional gains for the diff-drive controller (MOB-2); dimensionless
 # scaling of distance->v and heading-error->omega, clamped to the base

@@ -275,6 +275,7 @@ class TestBaseWatchdogReason:
             last_cmd_wall_t=100.0,
             now_wall=100.0,
             sim_clock_blind=False,
+            blind_since_wall=None,
             limits=load_base_limits("mobile"),
         )
         return base_watchdog_reason(**{**defaults, **kw})
@@ -304,14 +305,54 @@ class TestBaseWatchdogReason:
 
     def test_wall_net_sits_far_above_any_healthy_command_gap(self):
         # 2 s wall since the last cmd = a healthy gap even at rtf 0.01
-        assert self._reason(now_wall=102.0, sim_clock_blind=True) is None
+        assert self._reason(now_wall=102.0, sim_clock_blind=True, blind_since_wall=100.0) is None
+
+    def test_blind_drive_stops_a_base_whose_producer_keeps_commanding(self):
+        """Issue #182: the command-silence net cannot fire when the producer
+        emits on every pose, and the sim check cannot advance without a
+        clock — so a base drove blind until the BG-2 episode budget, up to
+        30 wall minutes. The blind-drive net measures from the clock going
+        blind instead, so a perfectly fresh command does not hold it open."""
+        # commands are FRESH the whole time (now_wall == last_cmd_wall_t)
+        assert self._reason(
+            last_cmd_sim_ns=None,
+            now_sim_ns=None,
+            last_cmd_wall_t=200.0,
+            now_wall=200.0,
+            sim_clock_blind=True,
+            blind_since_wall=100.0,
+        ) == ("base_blind_wall")
+
+    def test_blind_drive_respects_the_same_backstop(self):
+        """It must not fire early: a brief blind gap under the backstop is
+        the transient the sim-time check is allowed to ride out."""
+        assert (
+            self._reason(
+                last_cmd_sim_ns=None,
+                now_sim_ns=None,
+                last_cmd_wall_t=105.0,
+                now_wall=105.0,
+                sim_clock_blind=True,
+                blind_since_wall=100.0,
+            )
+            is None
+        )
+
+    def test_blind_drive_needs_a_blind_clock_too(self):
+        """A stale onset left over from an earlier gap must not stop a base
+        whose stamps have returned — the node clears the onset, and the
+        verdict double-checks it."""
+        assert self._reason(now_wall=200.0, sim_clock_blind=False, blind_since_wall=100.0) is None
 
     def test_sim_stale_wins_over_the_wall_net(self):
         """ADR-29 precedence: when both windows are blown, the deterministic
         sim verdict is reported, not the ops-alarm wall reason."""
-        assert self._reason(now_sim_ns=int(0.5e9) + 1, now_wall=200.0, sim_clock_blind=True) == (
-            "base_stale"
-        )
+        assert self._reason(
+            now_sim_ns=int(0.5e9) + 1,
+            now_wall=200.0,
+            sim_clock_blind=True,
+            blind_since_wall=100.0,
+        ) == ("base_stale")
 
     def test_episode_timeout_wins_over_staleness(self):
         assert self._reason(episode_timed_out=True, now_sim_ns=10**12) == "base_timeout"
@@ -524,6 +565,51 @@ class TestNavLifecycle:
         out = m.on_tick()
         assert out[0][0] == "nav_feedback"
         assert m._t0_ns == 2_000_000_000
+
+    def test_blind_nav_fails_closed_instead_of_steering_forever(self):
+        """Issue #182: a nav goal whose poses never carry a usable stamp
+        cannot enforce its own stall or timeout budget, so it must not keep
+        steering. After BLIND_POSE_BUDGET consecutive unstamped poses the
+        goal fails `no_sim_clock`; the node zeroes the base on any terminal
+        nav_result, so this is what actually stops the motion."""
+        from aisle.mobility.nav import BLIND_POSE_BUDGET
+
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-1")
+        for _ in range(BLIND_POSE_BUDGET - 1):
+            m.on_base_pose([1.0, 0.0, 0.0], None)
+            out = m.on_tick()
+            assert not (out and out[0][0] == "nav_result"), "failed before its budget"
+
+        m.on_base_pose([1.0, 0.0, 0.0], None)
+        out = m.on_tick()
+        assert out and out[0][0] == "nav_result"
+        assert out[0][1]["failure"] == "no_sim_clock"
+        assert m.target is None  # the goal is released, not left latched
+
+    def test_a_returning_stamp_clears_the_blind_streak(self):
+        """The budget counts CONSECUTIVE blind poses: a transient gap must
+        not accumulate across healthy stretches into a spurious failure.
+        Three near-budget gaps, each ended by one good stamp, total 3x the
+        budget — so an implementation that never resets the streak fails
+        somewhere in here."""
+        from aisle.mobility.nav import BLIND_POSE_BUDGET
+
+        m = self._machine()
+        m.on_goal([5.0, 0.0, 0.0], "nav-1")
+        emitted = []
+        for cycle in range(3):
+            for _ in range(BLIND_POSE_BUDGET - 1):
+                m.on_base_pose([1.0, 0.0, 0.0], None)
+                emitted += m.on_tick()  # collect INSIDE the gap, not just after
+            m.on_base_pose([1.0, 0.0, 0.0], (cycle + 1) * self.STEP_NS)
+            emitted += m.on_tick()
+            assert m.target is not None, f"goal released during gap {cycle}"
+
+        blind_failures = [
+            e for e in emitted if e[0] == "nav_result" and e[1].get("failure") == "no_sim_clock"
+        ]
+        assert not blind_failures, blind_failures
 
     def test_yaw_must_converge_before_success(self):
         """MOB-2 (PR #14 re-review): a pose goal is NOT complete on x/y alone

@@ -127,6 +127,7 @@ def base_watchdog_reason(
     last_cmd_wall_t: float | None,
     now_wall: float,
     sim_clock_blind: bool,
+    blind_since_wall: float | None,
     limits: BaseLimits,
 ) -> str | None:
     """MOB-3 watchdog verdict for a latched MOVING base (the caller gates on
@@ -150,6 +151,23 @@ def base_watchdog_reason(
       rtf (PR #156 review): while valid stamps flow, the sim-time check
       above owns the verdict. Distinct reason: this firing is an ops
       alarm, not the sim-time mechanism working as designed.
+    - ``base_blind_wall``: the base has been DRIVING with a blind sim
+      clock for ``base_wall_backstop_s`` WALL seconds, measured from when
+      the clock went blind rather than from the last command (issue
+      #182). Without this, a producer that keeps commanding on every pose
+      refreshes ``last_cmd_wall_t`` forever, so ``base_stale_wall`` never
+      arms while ``base_stale`` cannot advance for want of a clock — and
+      nothing stopped the base until the BG-2 episode budget, up to 30
+      wall minutes later. It regressed in when the nav node's stamp
+      parser was made total: before that a malformed stamp killed nav's
+      event loop, commands ceased, and the command-silence net fired in
+      ~10 s. A crash is not a safety mechanism, so the bound now lives
+      here, where it does not depend on any producer's behaviour.
+
+    Both wall reasons are retained and whichever fires first wins:
+    command-silence can trip earlier when the last command predates the
+    clock going blind, and blind-drive covers the case where commands
+    never stop.
 
     Pure/deterministic: the caller injects every stamp and clock reading."""
     if episode_timed_out:
@@ -166,6 +184,12 @@ def base_watchdog_reason(
         and now_wall - last_cmd_wall_t > limits.base_wall_backstop_s
     ):
         return "base_stale_wall"
+    if (
+        sim_clock_blind
+        and blind_since_wall is not None
+        and now_wall - blind_since_wall > limits.base_wall_backstop_s
+    ):
+        return "base_blind_wall"
     return None
 
 
