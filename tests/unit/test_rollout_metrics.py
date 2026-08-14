@@ -290,6 +290,7 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
 
     spawns = []
     episode_bases = []
+    stdout_logs = []
     stderr_logs = []
 
     def fake_popen(cmd, cwd=None, env=None, **kwargs):
@@ -301,6 +302,9 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
             return proc
         spawns.append(env["AISLE_SEEDS"])
         episode_bases.append(env.get("AISLE_EPISODE_BASE"))
+        # issue #201: dora's tracing subscriber writes the daemon stream to
+        # stdout, so DEVNULL would discard the launch diagnostics entirely.
+        stdout_logs.append(Path(kwargs["stdout"].name).name)
         # issue #183: the stderr sink is opened per launch in "w" mode
         stderr_logs.append(Path(kwargs["stderr"].name).name)
         results = Path(env["AISLE_RESULTS"])
@@ -361,6 +365,11 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
     # review: scrubbing also covers the fleet and h4 paths, which an
     # explicit set inside rollout() did not).
     assert episode_bases == [None, "2"]
+    # HAR-4 / issue #201: dora emits its daemon INFO/WARN stream on stdout.
+    # A file sink is non-blocking with respect to PIPE capacity and preserves
+    # the scheduler/startup/exit evidence for the launch that wedged.
+    assert stdout_logs == ["dora.stdout.log", "dora.stdout.relaunch-1.log"], stdout_logs
+    assert len(set(stdout_logs)) == len(stdout_logs), "two launches shared one stdout sink"
     # issue #183: each launch gets its OWN stderr sink. Popen opens these in
     # "w" mode, so one shared path meant the relaunch truncated the stderr
     # of the launch that had just wedged — deleting the only file that
@@ -369,7 +378,7 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
     assert len(set(stderr_logs)) == len(stderr_logs), "two launches shared one stderr sink"
     # and they really are on disk, not just named apart
     run_dir = root / "runs" / "clamp"
-    for name in stderr_logs:
+    for name in [*stdout_logs, *stderr_logs]:
         assert (run_dir / name).exists(), f"{name} was never opened"
     # the PROPERTY, not just the env var: no two attempts in the run share
     # an episode index, which is what keeps goal_ids unambiguous
@@ -654,22 +663,25 @@ class TestEpisodeBaseConfig:
             parse_episode_base({"AISLE_EPISODE_BASE": "-5"})
 
 
-def test_dora_stderr_log_is_per_launch(tmp_path):
-    """HAR-4 (issue #183): evidence must survive. `Popen` opens this sink in
-    write mode, so every launch needs its own path — a shared one meant each
-    wall-clamp relaunch (ADR-23) truncated the wedged launch's diagnostics.
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+def test_dora_runtime_log_is_per_launch(tmp_path, stream):
+    """HAR-4 (issues #183/#201): runtime evidence must survive. `Popen`
+    opens each sink in write mode, so every launch and stream needs its own
+    path — a shared one meant a wall-clamp relaunch (ADR-23) truncated the
+    wedged launch's diagnostics, while DEVNULL discarded stdout entirely.
 
     Launch 1 keeps the bare name so existing docs and habits still find it."""
-    from aisle.harness.rollout import dora_stderr_log
+    from aisle.harness import rollout as ro
 
     run = tmp_path / "run"
-    assert dora_stderr_log(run).name == "dora.stderr.log"
-    assert dora_stderr_log(run, 0).name == "dora.stderr.log"
-    names = [dora_stderr_log(run, n).name for n in range(4)]
+    runtime_log = getattr(ro, f"dora_{stream}_log")
+    assert runtime_log(run).name == f"dora.{stream}.log"
+    assert runtime_log(run, 0).name == f"dora.{stream}.log"
+    names = [runtime_log(run, n).name for n in range(4)]
     assert len(set(names)) == 4, names
     # all at the run root, beside each other, and sortable
-    assert all(dora_stderr_log(run, n).parent == run for n in range(4))
-    assert names[1:] == [f"dora.stderr.relaunch-{n}.log" for n in (1, 2, 3)]
+    assert all(runtime_log(run, n).parent == run for n in range(4))
+    assert names[1:] == [f"dora.{stream}.relaunch-{n}.log" for n in (1, 2, 3)]
 
 
 def _gaps_for(name):
