@@ -20,9 +20,9 @@ architecture, and contribution guidance remain in the
 
 | Graph | Scene/scenario | Embodiment | Perception | Nodes |
 |---|---|---|---|---:|
-| [graphs/agent_campaign.yaml](../../graphs/agent_campaign.yaml) | store / S3 | mobile | L0 (default) | 7 |
-| [graphs/eval_s1_driver_v2.yaml](../../graphs/eval_s1_driver_v2.yaml) | store / S1 | mobile | L0 (default) | 9 |
-| [graphs/eval_s3_driver_v1.yaml](../../graphs/eval_s3_driver_v1.yaml) | store / S3 | mobile | L0 (default) | 7 |
+| [graphs/agent_campaign.yaml](../../graphs/agent_campaign.yaml) | store / S3 | mobile | L0 (default) | 8 |
+| [graphs/eval_s1_driver_v2.yaml](../../graphs/eval_s1_driver_v2.yaml) | store / S1 | mobile | L0 (default) | 10 |
+| [graphs/eval_s3_driver_v1.yaml](../../graphs/eval_s3_driver_v1.yaml) | store / S3 | mobile | L0 (default) | 8 |
 | [graphs/expert_s1.yaml](../../graphs/expert_s1.yaml) | store / S1 | mobile | L0 (default) | 10 |
 | [graphs/expert_t0.yaml](../../graphs/expert_t0.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 10 |
 | [graphs/expert_t1.yaml](../../graphs/expert_t1.yaml) | pharmacy (default) / — | franka (default) | L1 | 10 |
@@ -34,9 +34,9 @@ architecture, and contribution guidance remain in the
 
 ### Graph node membership
 
-- **graphs/agent_campaign.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `s3-driver-v1`, `verifier-retail`, `rollout-client`
-- **graphs/eval_s1_driver_v2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `order-reader`, `task-planner`, `s1-driver-v2`, `verifier-retail`, `rollout-client`
-- **graphs/eval_s3_driver_v1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `s3-driver-v1`, `verifier-retail`, `rollout-client`
+- **graphs/agent_campaign.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `s3-driver-v1`, `verifier-retail`, `rollout-client`, `turn-barrier`
+- **graphs/eval_s1_driver_v2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `order-reader`, `task-planner`, `s1-driver-v2`, `verifier-retail`, `rollout-client`, `turn-barrier`
+- **graphs/eval_s3_driver_v1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `s3-driver-v1`, `verifier-retail`, `rollout-client`, `turn-barrier`
 - **graphs/expert_s1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `order-reader`, `task-planner`, `s1-expert`, `verifier-retail`, `rollout-client`, `turn-barrier`
 - **graphs/expert_t0.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/expert_t1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`

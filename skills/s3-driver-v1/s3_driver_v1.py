@@ -318,10 +318,10 @@ def main() -> None:
     import sys
 
     import pyarrow as pa
-    from dora import Node
 
     from aisle.nodes.ik_trajectory import StageStreamer
     from aisle.topics import make_sender
+    from aisle.turn_node import Node
 
     physics = load_physics()
     profile = physics["embodiment"]["mobile"]
