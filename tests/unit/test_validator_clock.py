@@ -320,3 +320,104 @@ def test_committed_turn_plans_match_the_graphs_they_compile_from():
         f"turn plans stale against their graphs: {stale} — regenerate with "
         "compile_turn_plan(graph_nodes, manifests); the barrier loads these at runtime"
     )
+
+
+def _real_graph_and_manifests(stem="expert_t0"):
+    from pathlib import Path
+
+    import yaml
+
+    from aisle.harness.registry import load_manifests, load_vocabulary
+
+    root = Path(__file__).resolve().parents[2]
+    manifest_list, errors = load_manifests(root)
+    assert not errors, errors
+    nodes = yaml.safe_load((root / "graphs" / f"{stem}.yaml").read_text())["nodes"]
+    vocab = set(load_vocabulary(root))
+    return root, nodes, {m["id"]: m for _, m in manifest_list}, vocab
+
+
+def _mirror_graph_dir(tmp_path, root):
+    """A stand-in `graphs/` whose relative node paths still resolve.
+
+    The graph's nodes use `../src/aisle/...`, so pointing `graph_dir` at a
+    bare tmp dir trips VAL-2 PATH_MANIFEST_MISMATCH first — and since the
+    turn-plan rule runs behind the caller's `if not errors` gate, it would
+    then be suppressed and the test would pass for the wrong reason."""
+    (tmp_path / "src").symlink_to(root / "src")
+    graph_dir = tmp_path / "graphs"
+    graph_dir.mkdir()
+    (graph_dir / "turn_plans").mkdir()
+    return graph_dir
+
+
+def test_validate_refuses_a_graph_whose_committed_turn_plan_is_stale(tmp_path):
+    """ADR-30 / issue #213: the barrier loads the COMMITTED plan, and refuses
+    any participant whose watermark output set disagrees with it. A graph
+    edit that skips regenerating the plan therefore does not fail at the
+    gate — it kills the barrier on the first watermark, and the operator
+    sees only every episode wall-clamping and `pass1: 0.0` twenty minutes
+    later (measured, round-2 review of #208).
+
+    Driven through `validate_nodes` rather than the pure helper, because the
+    lesson of #204 is that a rule nobody CALLS passes every test of the rule
+    itself. `graph_dir` is redirected at a tmp copy of the plan so the real
+    committed one is never touched."""
+    import json
+
+    from aisle.harness.validate import validate_nodes
+
+    root, nodes, manifests, _VOCAB = _real_graph_and_manifests()
+    graph_dir = _mirror_graph_dir(tmp_path, root)
+    plans = graph_dir / "turn_plans"
+    good = json.loads((root / "graphs" / "turn_plans" / "expert_t0.json").read_text())
+
+    def codes(plan):
+        (plans / "expert_t0.json").write_text(json.dumps(plan))
+        errors, _ = validate_nodes(
+            nodes, manifests, _VOCAB, "franka", False, graph_dir=graph_dir, root=root
+        )
+        return {e["code"] for e in errors}
+
+    assert "TURN_PLAN_STALE" not in codes(good), "the committed plan is already stale"
+
+    stale = json.loads(json.dumps(good))
+    stale["participants"]["reset"]["outputs"] = [
+        o for o in stale["participants"]["reset"]["outputs"] if o != "reset_refused"
+    ]
+    assert "TURN_PLAN_STALE" in codes(stale), "the exact #208 mismatch validated clean"
+
+    dropped = json.loads(json.dumps(good))
+    dropped["participants"].pop("reset")
+    assert "TURN_PLAN_STALE" in codes(dropped)
+
+
+def test_an_unreadable_plan_is_refused_but_a_relocated_graph_is_not(tmp_path):
+    """The rule is scoped to graphs that sit BESIDE their plan.
+
+    A relocated copy — an instrumented run graph, or the staged copy
+    `harness swap` validates — legitimately differs from the committed plan
+    (instrumentation adds the recorder; A7 rewrites the topology and
+    compiles its own). Comparing those would refuse correct graphs, which is
+    exactly what the first revision of this rule did: it broke all six
+    `harness swap` tests. A genuinely absent plan stays the barrier's own
+    refusal, which is loud rather than silent — silence was the defect.
+
+    A plan that IS beside the graph and cannot be parsed is refused here."""
+    from aisle.harness.validate import validate_nodes
+
+    root, nodes, manifests, _VOCAB = _real_graph_and_manifests()
+    graph_dir = _mirror_graph_dir(tmp_path, root)
+
+    errors, _ = validate_nodes(
+        nodes, manifests, _VOCAB, "franka", False, graph_dir=graph_dir, root=root
+    )
+    assert "TURN_PLAN_STALE" not in {e["code"] for e in errors}, (
+        "a relocated graph was refused for a plan that is not its own"
+    )
+
+    (graph_dir / "turn_plans" / "expert_t0.json").write_text("{not json")
+    errors, _ = validate_nodes(
+        nodes, manifests, _VOCAB, "franka", False, graph_dir=graph_dir, root=root
+    )
+    assert "TURN_PLAN_STALE" in {e["code"] for e in errors}, "an unreadable plan validated clean"
