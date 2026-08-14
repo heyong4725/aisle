@@ -967,3 +967,181 @@ def test_arm_l_guard_survives_skills_tracked_at_the_pin(tmp_path):
     assert report["kept_skills"] == ["prior-skill"]
     assert (repo / "skills" / "prior-skill" / "node.py").read_text() == "pin copy"
     assert (repo / "registry" / "manifests" / "prior-skill.yaml").exists()
+
+
+def _write_scenario_record(
+    out: Path,
+    arm: str,
+    tier: str,
+    attempt: int,
+    *,
+    prior_skills: list[str],
+    skills_after: list[str],
+) -> None:
+    """Create the generated record consumed by rerun-chain recovery."""
+    import json
+
+    from h3_campaign import scenario_slot
+
+    path = out / f"arm_{arm}" / scenario_slot(tier, attempt) / "scenario.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"prior_skills": prior_skills, "skills_after": skills_after}))
+
+
+def test_first_rerun_tier_replays_its_original_starting_library(tmp_path):
+    """ADR-h3 resume amendment §2: without a completed same-attempt
+    predecessor, a rerun starts from this tier's attempt-1 prior_skills;
+    skills registered during the failed tier cannot ride into its rerun."""
+    from h3_campaign import DESK_SCENARIOS, rerun_skill_allowlist
+
+    _write_scenario_record(
+        tmp_path,
+        "L",
+        "T2",
+        1,
+        prior_skills=["from-t1"],
+        skills_after=["from-failed-t2", "from-t1"],
+    )
+
+    allow, error = rerun_skill_allowlist(tmp_path, "L", "T2", 2, DESK_SCENARIOS)
+
+    assert error is None
+    assert allow == ["from-t1"]
+
+
+def test_chained_rerun_inherits_completed_same_attempt_predecessor(tmp_path):
+    """ADR-h3 resume amendment §2 / CON-5: T3-r2 inherits the VALID T2-r2
+    library, not T3's attempt-1 cross-pin prior_skills. Reading the
+    persisted predecessor makes this identical in one process or a later
+    `--scenarios T3,T4 --attempt 2` resume."""
+    from h3_campaign import DESK_SCENARIOS, rerun_skill_allowlist
+
+    _write_scenario_record(
+        tmp_path,
+        "L",
+        "T3",
+        1,
+        prior_skills=["from-invalid-t2"],
+        skills_after=["from-failed-t3", "from-invalid-t2"],
+    )
+    _write_scenario_record(
+        tmp_path,
+        "L",
+        "T2",
+        2,
+        prior_skills=["from-t1"],
+        skills_after=["from-t1", "t2-r2-fixed"],
+    )
+
+    allow, error = rerun_skill_allowlist(tmp_path, "L", "T3", 2, DESK_SCENARIOS)
+
+    assert error is None
+    assert allow == ["from-t1", "t2-r2-fixed"]
+    assert "from-invalid-t2" not in allow
+
+
+def test_rerun_allowlist_refuses_when_no_auditable_record_exists(tmp_path):
+    """CON-8 / ADR-h3 §6: missing treatment history cannot silently mean
+    'keep every registered skill'; the runner must return an actionable
+    JSON refusal before spending campaign budget."""
+    from h3_campaign import DESK_SCENARIOS, rerun_skill_allowlist
+
+    allow, error = rerun_skill_allowlist(tmp_path, "L", "T2", 2, DESK_SCENARIOS)
+
+    assert allow is None
+    assert "missing" in error and "T2/scenario.json" in error
+
+
+def test_recorded_campaign_pin_accepts_one_pin_and_refuses_drift(tmp_path):
+    """ADR-h3 §1/§6, CON-5: all aggregates in a campaign output directory
+    bind resumes to one immutable treatment OID."""
+    import json
+
+    from h3_campaign import resume_pin_error
+
+    pin = "a" * 40
+    (tmp_path / "h3_results.json").write_text(json.dumps({"treatment": {"commit": pin}}))
+    (tmp_path / "h3_results-r2.json").write_text(json.dumps({"treatment": {"commit": pin}}))
+
+    assert resume_pin_error(tmp_path, pin) is None
+    error = resume_pin_error(tmp_path, "b" * 40)
+    assert "resume pin mismatch" in error
+    assert f"--commit {pin}" in error
+
+
+def test_campaign_cli_refuses_a_pin_mismatching_the_recorded_aggregate(tmp_path):
+    """ADR-h3 §1/§6, CON-8: the CLI wires the pin guard before runtime,
+    auth, or scenario work and returns its refusal as JSON on stdout."""
+    import json
+
+    out = tmp_path / "campaign"
+    out.mkdir()
+    recorded = "a" * 40
+    (out / "h3_results.json").write_text(
+        json.dumps({"ok": True, "treatment": {"commit": recorded, "suite": "desk"}})
+    )
+    current = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "tools" / "h3_campaign.py"),
+            "--suite",
+            "desk",
+            "--arms",
+            "L",
+            "--out",
+            str(out),
+            "--commit",
+            current,
+            "--expect-dora-sha256",
+            "0" * 64,
+        ],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+
+    report = json.loads(proc.stdout)
+    assert proc.returncode != 0
+    assert report["ok"] is False
+    assert "resume pin mismatch" in report["error"]
+    assert f"--commit {recorded}" in report["error"]
+
+
+@pytest.mark.parametrize(
+    ("contents", "message"),
+    [
+        ("not json", "unreadable campaign aggregate"),
+        ('{"treatment": {}}', "has no treatment commit"),
+    ],
+)
+def test_recorded_campaign_pin_fails_closed_on_unauditable_aggregate(tmp_path, contents, message):
+    """CON-8 / ADR-h3 §6: a corrupt or incomplete prior aggregate cannot
+    be ignored and thereby let a moving origin/main choose a new pin."""
+    from h3_campaign import resume_pin_error
+
+    (tmp_path / "h3_results.json").write_text(contents)
+
+    assert message in resume_pin_error(tmp_path, "a" * 40)
+
+
+def test_recorded_campaign_pin_reports_conflicting_history(tmp_path):
+    """ADR-h3 §6: a directory already containing cross-pin aggregates is
+    contaminated, so neither pin may be guessed as canonical."""
+    import json
+
+    from h3_campaign import resume_pin_error
+
+    (tmp_path / "h3_results-prev1.json").write_text(json.dumps({"treatment": {"commit": "a" * 40}}))
+    (tmp_path / "h3_results.json").write_text(json.dumps({"treatment": {"commit": "b" * 40}}))
+
+    error = resume_pin_error(tmp_path, "a" * 40)
+    assert "conflicting campaign pins" in error
+    assert "h3_results-prev1.json" in error and "h3_results.json" in error
