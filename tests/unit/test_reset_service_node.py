@@ -463,3 +463,115 @@ def test_the_two_pre_existing_routes_still_report_the_timing_key(monkeypatch):
     )
     assert len(refusals(refused)) == 1
     assert refusals(refused)[0]["t_reset_ms"] == 0
+
+
+def test_the_fallback_reply_carries_the_behavioral_audit_trail(monkeypatch):
+    """RST-2 (issue #205): "fall back to teleport with `fallback:true` in
+    reply metadata". On the wire it was not there.
+
+    `fallback_teleport` attaches `fallback`/`behavioral_attempts` to the
+    FORWARD, and the bridge builds its reply metadata fresh — echoing only
+    `request_id` (dora_genesis `_metadata(...)`). So after three real motion
+    attempts the reply consumers see was byte-for-byte a plain teleport, and
+    nothing downstream of the graph could tell the two apart. A6 audited its
+    fallbacks from the node's STDERR, which is why this stayed invisible.
+
+    The service is the right place to fix it: it already relays the bridge's
+    reply on its own output (issue #192) and it is the only node that knows
+    the behavioral context. No bridge change, no cross-node contract."""
+    node = run_service(
+        [
+            reset_request(5, BEHAVIORAL, request_id="req-9"),
+            joint_state(),
+            bridge_reply(sim_time_ns=42, request_id="req-9", t_reset_ms=12, seed=5, mode=0),
+        ],
+        monkeypatch,
+        outcome="exhausted",
+    )
+    assert len(replies(node)) == 1, replies(node)
+    reply = replies(node)[0]
+    assert reply["fallback"] is True, "RST-2's fallback flag is still missing from the reply"
+    assert reply["behavioral_attempts"] == 1, reply
+    assert reply["sim_time_ns"] == 42, "the bridge's post-teleport stamp must survive the merge"
+
+
+def test_the_fallback_t_reset_ms_covers_the_whole_reset(monkeypatch):
+    """RST-1 (issue #194): the exhaustion route's `t_reset_ms` came from the
+    bridge, so it measured only the fallback teleport and silently excluded
+    the up-to-three behavioral attempts that preceded it — on the one route
+    where the reset is most expensive, against a <2 s budget.
+
+    The injected clock advances 0.25 s per read, so the whole reset spans
+    strictly more than the bridge's own 12 ms."""
+    node = run_service(
+        [
+            reset_request(5, BEHAVIORAL, request_id="req-9"),
+            joint_state(),
+            bridge_reply(sim_time_ns=42, request_id="req-9", t_reset_ms=12, seed=5, mode=0),
+        ],
+        monkeypatch,
+        outcome="exhausted",
+    )
+    assert replies(node)[0]["t_reset_ms"] >= 250, (
+        f"t_reset_ms {replies(node)[0]['t_reset_ms']} is the teleport alone, not the reset"
+    )
+
+
+def test_the_fallback_reply_reports_the_REQUESTED_mode(monkeypatch):
+    """TC-6 is silent on whether `mode` is the mode requested or the one
+    executed, and the routes disagreed: the refusal echoes the request, the
+    fallback reported the bridge's 0. Interpretation recorded in ADR-35 —
+    `mode` is what was ASKED FOR on every route, and `fallback` is what says
+    a teleport actually ran. That keeps one meaning per key and loses
+    nothing: both facts are still recoverable."""
+    node = run_service(
+        [
+            reset_request(5, BEHAVIORAL, request_id="req-9"),
+            joint_state(),
+            bridge_reply(sim_time_ns=42, request_id="req-9", t_reset_ms=12, seed=5, mode=0),
+        ],
+        monkeypatch,
+        outcome="exhausted",
+    )
+    assert replies(node)[0]["mode"] == BEHAVIORAL, replies(node)[0]
+
+
+def test_a_plain_teleport_relay_is_untouched_by_the_fallback_merge(monkeypatch):
+    """The control. The merge must fire ONLY for a reply that answers a
+    fallback this service forwarded — an ordinary teleport carries the
+    bridge's own timing and mode, and inventing a behavioral audit trail on
+    it would be a different lie from the one being fixed."""
+    node = run_service(
+        [reset_request(7, TELEPORT, request_id="t-1"), bridge_reply(request_id="t-1", mode=0)],
+        monkeypatch,
+    )
+    reply = replies(node)[0]
+    assert "fallback" not in reply and "behavioral_attempts" not in reply, reply
+    assert reply["mode"] == TELEPORT
+
+
+def test_the_fallback_merge_is_correlated_not_positional(monkeypatch):
+    """TC-6 correlates request and reply on `request_id`, and the merge must
+    too: it decorates the reply to THIS fallback, not whichever reply
+    happens to arrive next.
+
+    Without the check the first bridge reply to show up gets stamped
+    `fallback: true` with another request's attempt count — a fabricated
+    audit trail, which is a worse failure than the missing one being fixed
+    here. Caught by mutation: replacing the correlation with a bare
+    `if pending_fallback:` left every other test in this file green."""
+    node = run_service(
+        [
+            reset_request(5, BEHAVIORAL, request_id="mine"),
+            joint_state(),
+            # a reply that answers something else entirely
+            bridge_reply(sim_time_ns=7, request_id="someone-elses", t_reset_ms=3, seed=1, mode=0),
+            bridge_reply(sim_time_ns=42, request_id="mine", t_reset_ms=12, seed=5, mode=0),
+        ],
+        monkeypatch,
+        outcome="exhausted",
+    )
+    stray, mine = replies(node)
+    assert "fallback" not in stray, f"a stray reply was dressed up as this fallback: {stray}"
+    assert stray["mode"] == TELEPORT and stray["t_reset_ms"] == 3, stray
+    assert mine["fallback"] is True and mine["behavioral_attempts"] == 1, mine

@@ -101,6 +101,10 @@ def main(clock=None) -> None:
     # motion attempts, and it is the only route whose reply carried no
     # timing at all (issue #194).
     behavioral_started = None
+    # the fallback whose bridge reply has not come back yet (RST-2, #205):
+    # {request_id, attempts, started}. One slot, because TC-6 resets never
+    # overlap; correlated on request_id so a stray reply cannot pick it up.
+    pending_fallback = None
 
     def get_runtime():
         nonlocal runtime
@@ -119,9 +123,18 @@ def main(clock=None) -> None:
         return runtime
 
     def fallback_teleport(seed: int, request_meta: dict, attempts: int) -> None:
-        nonlocal seq_forward
+        nonlocal seq_forward, pending_fallback
         from aisle.reset.behavioral import BehavioralOutcome, behavioral_reply_metadata
 
+        # RST-2/#205: the bridge answers this teleport, and it builds its
+        # reply metadata FRESH — echoing only request_id. So the forward's
+        # audit keys never come back on their own; remember them here and
+        # merge them onto the relay, which this node already owns (#192).
+        pending_fallback = {
+            "request_id": request_meta.get("request_id", ""),
+            "attempts": attempts,
+            "started": behavioral_started,
+        }
         forward_meta = dict(request_meta)
         forward_meta.update(
             behavioral_reply_metadata(
@@ -205,8 +218,25 @@ def main(clock=None) -> None:
             seq_forward += 1
             node.send_output("bridge_reset", pa.array(payload), stamp(dict(metadata), seq_forward))
         elif event["id"] == "reset_done":
+            reply_meta = dict(metadata)
+            if pending_fallback and reply_meta.get("request_id") == pending_fallback["request_id"]:
+                # RST-2 (#205): restore the audit trail the bridge could not
+                # carry. RST-1 (#194): t_reset_ms spans the WHOLE reset —
+                # the behavioral attempts plus this teleport — because the
+                # bridge only ever timed its own hop, on the route where the
+                # reset is most expensive. `mode` is the mode REQUESTED, on
+                # every route (ADR-35); `fallback` is what says a teleport
+                # actually ran.
+                reply_meta["fallback"] = True
+                reply_meta["behavioral_attempts"] = pending_fallback["attempts"]
+                reply_meta["mode"] = BEHAVIORAL
+                started = pending_fallback["started"]
+                if started is not None:
+                    reply_meta["t_reset_ms"] = int((clock() - started) * 1000)
+                pending_fallback = None
+                behavioral_started = None
             seq_reply += 1
-            node.send_output("reset_done", event["value"], stamp(metadata, seq_reply))
+            node.send_output("reset_done", event["value"], stamp(reply_meta, seq_reply))
         elif event["id"] == "bridge_info":
             # builds the runtime early so the model load (~2 s) never
             # lands inside a reset request
