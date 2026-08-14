@@ -574,15 +574,12 @@ def main() -> None:  # pragma: no cover — dora runtime
                 session.on_read_request(request, metadata.get("request_id", "")), barrier
             )
         elif event["id"] == "reset_done":
-            if metadata.get("error"):
-                # a REFUSED reset (ADR-8) is not an episode boundary, and it
-                # carries no sim stamp — passing it through would take
-                # on_reset_done's unfenced branch and clear a LIVE read
-                # request, hanging the tour silently (issue #192 review).
-                # These replies only reach this node because #192 moved the
-                # boundary onto the reset service's output.
-                print(f"ocr: reset refused ({metadata['error']}); not a boundary", file=sys.stderr)
-                continue
+            # every reply here IS a boundary (ADR-34): refusals ride
+            # `reset_refused`, which this node does not subscribe to. The
+            # `metadata["error"]` filter that used to stand here — a
+            # stamp-less refusal takes on_reset_done's unfenced branch and
+            # clears a LIVE read request, hanging the tour silently — is
+            # deleted because the shape, not this node, now prevents it.
             session.on_reset_done(parse_sim_stamp(metadata))
         elif event["id"] == "clock":
             barrier = (session.pending or {}).get("frame_after_sim_time_ns")

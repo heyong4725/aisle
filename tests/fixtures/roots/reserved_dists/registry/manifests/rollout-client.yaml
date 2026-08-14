@@ -6,6 +6,10 @@ provides: [episode_driving]
 requires: [episode_verification]
 inputs:
   reset_done: {schema: reset_done_u32, rate_hz: 1}
+  # ADR-34: the requester is the ONLY node that hears a refusal — it is the
+  # one correlating on request_id, and without it a refused reset would
+  # leave the client waiting on a reply published to nobody
+  reset_refused: {schema: reset_refused_u32, rate_hz: 1}
   episode_result: {schema: json_utf8, rate_hz: 1}
   # HAR-3: the retry count rides in feedback; the record carries it
   episode_feedback: {schema: json_utf8, rate_hz: 1}

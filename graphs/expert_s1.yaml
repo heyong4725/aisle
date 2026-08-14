@@ -54,6 +54,7 @@ nodes:
     outputs:
       - bridge_reset
       - reset_done
+      - reset_refused
 
   - id: budget-guard
     path: ../src/aisle/nodes/budget_guard.py
@@ -201,6 +202,9 @@ nodes:
       tick: dora/timer/millis/1000
       reset_done:
         source: reset/reset_done
+        queue_size: 100
+      reset_refused:
+        source: reset/reset_refused
         queue_size: 100
       episode_result:
         source: verifier-retail/episode_result

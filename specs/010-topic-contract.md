@@ -62,6 +62,16 @@ MUST honor it byte-for-byte.
   where mode 0=teleport 1=behavioral; reply `reset_done` payload UInt32[1]=1
   with metadata `seed`, `mode`, `t_reset_ms`. The bridge MUST NOT publish
   observations between receiving `reset` and sending `reset_done`.
+  A request the service REFUSES (unparseable payload, unknown mode — ADR-8)
+  MUST be answered on `reset_refused`, payload UInt32[1]=0, with metadata
+  `request_id`, `t_reset_ms`=0, `error`, plus `seed`/`mode` when the payload
+  was well-formed enough to carry them. `reset_done` therefore means exactly
+  one thing — THE EPISODE BOUNDARY PASSED, the sim was touched — and a
+  consumer of it needs no discriminator to know that (ADR-34, issue #195).
+  A refusal is a reply, not a boundary: its audience is the one requester
+  that correlates on `request_id`, while the boundary is broadcast state.
+  `reset_done` MUST NOT carry a payload of 0 — the refusal case that used
+  to make it contradict this clause now leaves on its own topic (issue #194).
 - TC-7: An episode is a dora ACTION (goal/feedback/result via `goal_id`):
   goal `episode_goal` = JSON `{tier, target_med, timeout_s, seed}`;
   feedback `episode_feedback` = JSON `{t, phase}` at ≥1 Hz;

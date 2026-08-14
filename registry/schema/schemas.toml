@@ -51,6 +51,15 @@ shape = "2"
 arrow = "UInt32"
 shape = "1"
 
+# TC-6/ADR-34: a REFUSED reset request. Same wire shape as reset_done but a
+# different topic on purpose — payload 0, metadata carries request_id,
+# t_reset_ms=0, error, and seed/mode when the payload was well-formed enough
+# to carry them. Refusals left the boundary topic so `reset_done` means
+# exactly one thing (issue #195). Class C vocabulary change (CAP-2).
+[reset_refused_u32]
+arrow = "UInt32"
+shape = "1"
+
 # dora builtin timer payload — opaque; consumers MUST NOT read it. Added
 # for nodes that declare a dora/timer input (BG-5 stats cadence). Class C
 # vocabulary change (CAP-2), flagged in PR #8 for owner sign-off.

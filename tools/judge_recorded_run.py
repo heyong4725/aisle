@@ -88,7 +88,9 @@ def main() -> int:
         # successful BEHAVIORAL reset never reaches the bridge, so keying
         # off dora-genesis segments such a run by its fallbacks alone. The
         # bridge stays the fallback for runs with no service node. A
-        # payload of 0 is a REFUSED reset (ADR-8), not a boundary.
+        # payload of 0 is a REFUSED reset (ADR-8), not a boundary — kept as
+        # a legacy-compat guard for pre-ADR-34 recordings; refusals ride
+        # `reset_refused` now and can no longer land here (issue #195).
         reset_rows: list[dict] = []
         for producer in ("reset", "dora-genesis"):
             reset_rows = _rows(traces, f"{producer}__reset_done")

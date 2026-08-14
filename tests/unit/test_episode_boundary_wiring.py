@@ -142,3 +142,52 @@ def test_every_node_that_handles_the_boundary_is_wired_to_it(path):
         f"{path.name}: {missing} handle reset_done in code but the graph never delivers it — "
         "the node silently misses every episode boundary (issue #179)"
     )
+
+
+def _sources_of(node: dict, port_name: str):
+    port = (node.get("inputs") or {}).get(port_name)
+    return port.get("source") if isinstance(port, dict) else port
+
+
+@pytest.mark.parametrize("path", GRAPHS, ids=lambda p: p.name)
+def test_refusals_ride_their_own_topic_and_reach_only_the_requester(path):
+    """TC-6/ADR-34 (issue #195): a refused reset is a REPLY, not a boundary.
+
+    It goes to the one requester that correlates on `request_id`; the
+    boundary is broadcast state. Wiring `reset_refused` into a boundary
+    consumer would put back exactly what this change removes — the guard
+    re-referencing hold state to a home the robot is not at, and the OCR
+    session clearing a live read request — except now with no `error` key
+    left in either node to catch it, because ADR-34 deleted both filters."""
+    doc = yaml.safe_load(path.read_text()) or {}
+    nodes = doc.get("nodes", [])
+    service = [n for n in nodes if n["id"] == RELAY]
+    if not service:
+        pytest.skip(f"{path.name} has no reset service")
+    assert "reset_refused" in (service[0].get("outputs") or []), (
+        f"{path.name}: the reset service declares no reset_refused output — refusals would "
+        "have nowhere to go but the boundary topic (ADR-34)"
+    )
+    subscribers = {n["id"] for n in nodes if _sources_of(n, "reset_refused")}
+    assert subscribers == {"rollout-client"}, (
+        f"{path.name}: reset_refused reaches {sorted(subscribers)}; only the requester may "
+        "consume it — a boundary consumer that hears a refusal is the ADR-34 bug returning"
+    )
+
+
+@pytest.mark.parametrize("path", GRAPHS, ids=lambda p: p.name)
+def test_every_node_that_handles_a_refusal_is_wired_to_it(path):
+    """The issue #179 shape, for the new topic: a node whose code handles
+    `reset_refused` while the graph never delivers it waits forever on a
+    reply that is being published to nobody. Derived from node SOURCE, not
+    a hand-kept list, so it covers a node the day it is written."""
+    doc = yaml.safe_load(path.read_text()) or {}
+    wired = {n["id"] for n in doc.get("nodes", []) if _sources_of(n, "reset_refused")}
+    missing = [
+        (node_id, src.name)
+        for node_id, src in _node_sources(path).items()
+        if src.is_file() and node_id not in wired and '== "reset_refused"' in src.read_text()
+    ]
+    assert not missing, (
+        f"{path.name}: {missing} handle reset_refused in code but the graph never delivers it"
+    )

@@ -164,8 +164,23 @@ def main() -> None:
                     f"reset sent: episode {episode_base + episode} seed {seeds[episode]}",
                     file=sys.stderr,
                 )
-        elif event["id"] == "reset_done" and phase == "awaiting_reset":
+        elif event["id"] in ("reset_done", "reset_refused") and phase == "awaiting_reset":
             reset_meta = event.get("metadata") or {}
+            if event["id"] == "reset_refused":
+                # ADR-34 (issue #195): a refusal reaches the REQUESTER only,
+                # and the client proceeds on it exactly as it did while
+                # refusals rode `reset_done` — this change moved the
+                # routing, not the policy. `reset_sim_ns` then falls back to
+                # 0, as it always did, because a refused reset carries no
+                # stamp. The policy is questionable (an episode whose scene
+                # was never reset measures nothing) and is open separately;
+                # folding it in here would hide a behavior change inside a
+                # contract change.
+                print(
+                    f"reset REFUSED ({reset_meta.get('error')}) — proceeding with "
+                    f"episode {episode_base + episode} on an un-reset scene",
+                    file=sys.stderr,
+                )
             if retail:
                 # RS-3/RS-6: the retail goal IS the seeded oracle task
                 # description; the verifier derives requirements from it

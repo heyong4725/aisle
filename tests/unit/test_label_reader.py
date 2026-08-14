@@ -503,12 +503,17 @@ class TestRefusedResetIsNotABoundary:
             "may now be guarding nothing; re-check issue #192's reasoning"
         )
 
-    def test_the_node_filters_refusals_before_the_session_sees_them(self):
-        """`label_reader.main()` must not pass a refusal through. Driving
-        the node needs the OCR model pair, so this reads the dispatch
-        instead: the reset_done branch must test `error` before calling
-        on_reset_done. Weaker than an execution test and labelled as such —
-        the behavioural half is pinned above."""
+    def test_the_node_no_longer_needs_a_refusal_filter(self):
+        """ADR-34 (issue #195) DELETED this node's `metadata["error"]`
+        filter, because refusals ride `reset_refused` and this node does not
+        subscribe to it. The hazard above is unchanged and still real — a
+        stamp-less `on_reset_done` clears a live read request — so what
+        changed is only WHERE it is excluded.
+
+        This asserts the deletion rather than pretending the old check is
+        still there, and names the two tests that now carry the guarantee:
+        if either goes red, the hazard is live and this node has nothing
+        left to catch it."""
         import inspect
 
         from aisle.nodes import label_reader
@@ -516,7 +521,11 @@ class TestRefusedResetIsNotABoundary:
         src = inspect.getsource(label_reader.main)
         branch = src[src.index('event["id"] == "reset_done"') :]
         branch = branch[: branch.index("elif")]
-        assert 'metadata.get("error")' in branch and "continue" in branch, (
-            "the reset_done branch no longer filters refused resets; a "
-            "stamp-less refusal will clear a live read request (issue #192)"
+        assert 'metadata.get("error")' not in branch, (
+            "a refusal filter reappeared here; either ADR-34 was reverted (then "
+            "restore the #192 test) or this is dead code guarding nothing"
+        )
+        assert '"reset_refused"' not in inspect.getsource(label_reader), (
+            "this node subscribes to reset_refused — it is a boundary consumer, "
+            "not the requester, and ADR-34 sends refusals only to the requester"
         )
