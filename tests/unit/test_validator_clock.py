@@ -421,3 +421,75 @@ def test_an_unreadable_plan_is_refused_but_a_relocated_graph_is_not(tmp_path):
         nodes, manifests, _VOCAB, "franka", False, graph_dir=graph_dir, root=root
     )
     assert "TURN_PLAN_STALE" in {e["code"] for e in errors}, "an unreadable plan validated clean"
+
+
+def test_an_episodic_edge_whose_producer_is_upstream_is_refused():
+    """ADR-30 / issue #220: `turn_edge: episodic` is only sound on a genuine
+    BACK edge — one whose producer the barrier schedules AFTER the consumer.
+
+    On a forward edge it is not a harmless mislabel. The consumer resolves an
+    episodic input from the PREVIOUS turn's watermark, while dora delivers
+    the current turn's message, so the very first time the producer emits,
+    `ParticipantTurn` sees an excess input with a wrong stamp and raises. The
+    barrier's watchdog then kills the dataflow about a second in. Measured on
+    `expert_s1`: every episode wall-clamps and the run reports pass1 0.0
+    twenty minutes later.
+
+    `_clock_errors` used `turn_edge` only to DELETE edges from the cycle
+    check, so nothing ever asked whether the producer was actually
+    downstream. Two graphs shipped broken before this rule existed."""
+    nodes, manifests = _complete_graph()
+    assert _clock_errors(nodes, manifests) == []
+
+    # client -> state -> guard is a forward chain, so `client` sits two
+    # layers above `guard` and emits well before it opens. Feeding guard from
+    # client and calling THAT episodic is the #220 defect exactly: the same
+    # shape as reset(L2) -> waypoint-nav(L4) on expert_s1.
+    guard = next(n for n in nodes if n["id"] == "guard")
+    guard["inputs"]["goal"] = {"source": "client/goal", "queue_size": 10}
+    manifests["guard"]["inputs"]["goal"] = {"turn_edge": "episodic"}
+    assert "EPISODIC_NOT_A_BACK_EDGE" in _codes(nodes, manifests)
+
+    # and the same edge declared FORWARD is fine — it is only the episodic
+    # label that is wrong, so the rule must not just reject the extra edge
+    manifests["guard"]["inputs"]["goal"] = {}
+    assert "EPISODIC_NOT_A_BACK_EDGE" not in _codes(nodes, manifests)
+
+
+def test_a_genuine_back_edge_stays_valid():
+    """The control: `result` (verifier -> client) and `violation`
+    (guard -> state) ARE back edges — they close cycles the forward DAG
+    cannot. A rule that flagged those would refuse every correct lockstep
+    graph, so this pins that the check discriminates rather than just
+    rejecting the word `episodic`."""
+    nodes, manifests = _complete_graph()
+    assert manifests["client"]["inputs"]["result"]["turn_edge"] == "episodic"
+    assert manifests["state"]["inputs"]["violation"]["turn_edge"] == "episodic"
+    assert "EPISODIC_NOT_A_BACK_EDGE" not in _codes(nodes, manifests)
+
+
+def test_no_shipped_graph_declares_a_forward_edge_episodic():
+    """The corpus regression for #220. Two graphs shipped with this defect
+    (`expert_s1` via waypoint-nav/nav-action `reset_done`, `expert_t4` via
+    task-state-machine `episode_result`) and every gate stayed green, because
+    validation never modelled what episodic MEANS."""
+    from pathlib import Path
+
+    import yaml
+
+    from aisle.harness.registry import load_manifests
+
+    root = Path(__file__).resolve().parents[2]
+    manifest_list, errors = load_manifests(root)
+    assert not errors, errors
+    manifests = {m["id"]: m for _, m in manifest_list}
+
+    broken = {}
+    for graph in sorted((root / "graphs").glob("*.yaml")):
+        nodes = yaml.safe_load(graph.read_text())["nodes"]
+        codes = [
+            e for e in _clock_errors(nodes, manifests) if e["code"] == "EPISODIC_NOT_A_BACK_EDGE"
+        ]
+        if codes:
+            broken[graph.name] = [e["detail"] for e in codes]
+    assert not broken, broken

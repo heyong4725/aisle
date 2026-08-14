@@ -1,21 +1,22 @@
 {
   "command": "uv run --extra sim python tools/adr30_cost.py --horizon-s 60",
-  "date": "2026-08-13",
+  "date": "2026-08-14",
   "horizon_s": 60.0,
+  "note": "Re-measured for issue #220. The previous artifact was written before `turn_edge: episodic` reached waypoint-nav/nav-action reset_done in a later merge commit of #197, so it attested a topology that never merged and expert_s1 could not in fact complete a lockstep run.",
   "ok": true,
   "samples": [
     {
-      "free_run_wall_s": 60.5922,
+      "free_run_wall_s": 60.5535,
       "graph": "graphs/expert_t0.yaml",
-      "lockstep_wall_s": 68.9475,
-      "ratio": 1.137893,
+      "lockstep_wall_s": 70.647,
+      "ratio": 1.166687,
       "within_2x": true
     },
     {
-      "free_run_wall_s": 116.9468,
+      "free_run_wall_s": 116.3704,
       "graph": "graphs/expert_s1.yaml",
-      "lockstep_wall_s": 124.6524,
-      "ratio": 1.06589,
+      "lockstep_wall_s": 123.2347,
+      "ratio": 1.058986,
       "within_2x": true
     }
   ]

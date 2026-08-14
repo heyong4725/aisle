@@ -13,7 +13,7 @@ inputs:
   # the EPISODE boundary (issue #179): nav must abandon an in-flight goal
   # when the episode ends, or the leg survives into the next one and its
   # nav_result completes a different episode's subtask
-  reset_done: {schema: reset_done_u32, rate_hz: 1, turn_edge: episodic}
+  reset_done: {schema: reset_done_u32, rate_hz: 1}
 outputs:
   # >=2 Hz lifecycle (MOB-2): {t, dist_remaining} then {status, failure, t_end}
   nav_feedback: {schema: json_utf8, latency_class: best_effort}
