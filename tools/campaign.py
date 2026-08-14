@@ -27,7 +27,7 @@ import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from env_hash import FROZEN_DIRS, FROZEN_FILES  # noqa: E402
+from env_hash import FROZEN_DIRS, FROZEN_FILES, FROZEN_GLOBS  # noqa: E402
 from h1_protocol import DEFAULT_MODELS, InfraError, make_worktree  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -270,8 +270,11 @@ def audit_frozen(wt: Path, oid: str) -> list[str]:
     pinned OID; any drifted path is reported (the gate would have refused
     rollouts under drift, but the audit makes tampering visible even
     without a rollout)."""
-    # expert graphs are part of the env-hashed frozen set (env_hash.py)
-    paths = [*FROZEN_DIRS, *FROZEN_FILES, "graphs/expert_*.yaml"]
+    # derived from env_hash's own globs, never re-listed here (issue #228):
+    # the hardcoded "graphs/expert_*.yaml" already missed
+    # graphs/turn_plans/expert_*.json when #197 froze it, so an agent could
+    # have edited ADR-30 scheduler topology with the tamper audit blind to it.
+    paths = [*FROZEN_DIRS, *FROZEN_FILES, *FROZEN_GLOBS]
     diff = subprocess.run(
         ["git", "diff", "--name-only", oid, "--", *paths],
         cwd=wt,

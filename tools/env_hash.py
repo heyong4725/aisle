@@ -61,6 +61,23 @@ FROZEN_DIRS = (
 # refuses to build against a mismatched URDF — one hop behind the workspace
 # check, and found only by following the fence's OWN imports rather than the
 # guard's (issue #189 review).
+#: Frozen by pattern rather than by name, because the set grows with the
+#: corpus. `graphs/expert_*.yaml` are the measured expert graphs.
+#: `graphs/eval_*.yaml` are the skill GATE — `skills/*/eval.yaml` names them
+#: and `harness skill register` rolls out through one before writing a
+#: manifest, so a candidate that can edit them can edit its own exam
+#: (ADR-36, issue #228). `agent_campaign.yaml` is deliberately absent: it is
+#: the agent's own deliverable and freezing it would put CON-7 in conflict
+#: with the experiment.
+#: The turn_plans entries are ADR-30 scheduler topology the barrier loads at
+#: runtime — generated, but executable, so they are hashed beside the graphs
+#: they compile from rather than treated as documentation.
+FROZEN_GLOBS = (
+    "graphs/expert_*.yaml",
+    "graphs/eval_*.yaml",
+    "graphs/turn_plans/expert_*.json",
+    "graphs/turn_plans/eval_*.json",
+)
 FROZEN_FILES = (
     "src/aisle/nodes/budget_guard.py",
     "src/aisle/topics.py",
@@ -80,10 +97,8 @@ def frozen_files(root: Path) -> list[Path]:
         base = root / d
         if base.is_dir():
             files.extend(p for p in base.rglob("*") if p.is_file() and "__pycache__" not in p.parts)
-    files.extend(p for p in (root / "graphs").glob("expert_*.yaml") if p.is_file())
-    # ADR-30: these generated plans are executable scheduler topology, not
-    # documentation. Hash them beside the measured graphs they compile from.
-    files.extend(p for p in (root / "graphs" / "turn_plans").glob("expert_*.json") if p.is_file())
+    for pattern in FROZEN_GLOBS:
+        files.extend(p for p in root.glob(pattern) if p.is_file())
     files.extend(root / f for f in FROZEN_FILES if (root / f).is_file())
     return sorted(files, key=lambda p: p.relative_to(root).as_posix())
 

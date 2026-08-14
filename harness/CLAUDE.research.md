@@ -29,7 +29,13 @@ the retail verifier.
    `src/aisle/turn_node.py`, `src/aisle/turns.py`,
    `src/aisle/kinematics.py`, `src/aisle/embodiment.py`,
    `harness/budget.toml`, or
-   `graphs/expert_*.yaml`. The rule is the safety VERDICT, not the module
+   `graphs/expert_*.yaml`, `graphs/eval_*.yaml` (the gate your OWN
+   skills are measured through — a candidate that can edit its exam is
+   not being examined, ADR-36), or the `graphs/turn_plans/expert_*.json`
+   and `graphs/turn_plans/eval_*.json` those graphs compile to.
+   `graphs/agent_campaign.yaml` is YOURS: edit it freely, and regenerate
+   its plan with `harness validate <graph> --write-turn-plan`.
+   The rule is the safety VERDICT, not the module
    that hosts the event loop (ADR-33): the guard reads its watchdog
    verdicts, its stamp and lockstep trust boundaries, and its forward
    kinematics from those other modules, so they are fenced too. `harness rollout` FETCHES the protected

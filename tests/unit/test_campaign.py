@@ -1,6 +1,7 @@
 """Unit tests for tools/campaign.py (ADR-h2-campaign-protocol; design doc
 §8.3 item 6, hypothesis H2). Pure runner logic — no sim, no agent CLIs."""
 
+import inspect
 import json
 import subprocess
 import sys
@@ -953,3 +954,29 @@ def test_credential_seed_survives_short_writes(tmp_path, monkeypatch):
     rec2, err2 = c.seed_session_credentials("codex", env2)
     assert rec2 is None and "credential seed failed" in err2
     assert not (Path(env2["CODEX_HOME"]) / "auth.json").exists()
+
+
+def test_the_frozen_audit_covers_every_env_hashed_path():
+    """ADR-h2 point 5 / issue #228: the campaign's tamper audit must diff
+    the SAME paths env_hash freezes.
+
+    It re-listed `graphs/expert_*.yaml` by hand beside the shared constants,
+    so it already missed `graphs/turn_plans/expert_*.json` when #197 froze
+    that — an agent could have edited ADR-30 scheduler topology with the
+    audit blind to it. Derived from `FROZEN_GLOBS` now; this pins that it
+    stays derived."""
+    import sys
+
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    import campaign
+    from env_hash import FROZEN_DIRS, FROZEN_FILES, FROZEN_GLOBS
+
+    source = inspect.getsource(campaign.audit_frozen)
+    assert "FROZEN_GLOBS" in source, "the audit re-lists frozen paths instead of deriving them"
+    # the `paths` assignment only — a comment naming a pattern is fine, a
+    # string literal in the list is the drift this test exists to catch
+    assignment = next(line for line in source.splitlines() if line.strip().startswith("paths ="))
+    for pattern in (*FROZEN_DIRS, *FROZEN_FILES, *FROZEN_GLOBS):
+        assert pattern not in assignment, (
+            f"{pattern!r} is hardcoded in audit_frozen; it will drift from env_hash"
+        )
