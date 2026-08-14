@@ -192,7 +192,19 @@ def main() -> None:
                 "advancing would leave the rest of the graph an episode behind",
                 file=sys.stderr,
             )
-            break
+            # ADR-30: same rule as the normal termination below — a bare
+            # `break` from inside the yielded turn raises GeneratorExit at
+            # the yield, so `turn_node` never emits `turn_done` and the
+            # terminal barrier blocks every other node until the ADR-23 wall
+            # clamp. Ending the run must not become HANGING the run, which
+            # is what issue #206 made reachable: refusals were unreachable
+            # from the shipped client until a cold model cache could produce
+            # one (cross-review of #223).
+            phase = "done"
+            if lockstep:
+                node.stop_after_turn()
+            else:
+                break
         elif event["id"] == "reset_done" and phase == "awaiting_reset":
             reset_meta = event.get("metadata") or {}
             if retail:

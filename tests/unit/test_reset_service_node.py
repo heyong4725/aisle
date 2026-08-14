@@ -51,6 +51,8 @@ class StubRuntime:
         self, *, succeed_after: int = 1, outcome: str = "success", start_raises=None, **_kwargs
     ):
         self.start_raises = start_raises
+        self.bridge_info_raises = _kwargs.pop("bridge_info_raises", None)
+        self.calibration = None
         self.succeed_after = succeed_after
         self.final_outcome = outcome
         self.seed = 0
@@ -77,8 +79,10 @@ class StubRuntime:
         self._started = True
         self._ticks = 0
 
-    def on_bridge_info(self, info):  # pragma: no cover - not exercised here
-        pass
+    def on_bridge_info(self, info):
+        if getattr(self, "bridge_info_raises", None) is not None:
+            raise self.bridge_info_raises
+        self.calibration = info.get("calibration")
 
     def on_rgb(self, rgb):  # pragma: no cover
         pass
@@ -137,7 +141,10 @@ def run_service(
     def clock():
         return next(ticks) * 0.25
 
+    builds = []
+
     def build_runtime(**kw):
+        builds.append(1)
         # `runtime_load_ticks` stands in for the ~2 s Owlv2 load real
         # construction pays. Without it the fake builds instantly and NO test
         # can tell whether the reset clock starts above or below get_runtime()
@@ -159,6 +166,7 @@ def run_service(
     from aisle.reset.service import main
 
     main(clock=clock)
+    node.builds = len(builds)
     return node
 
 
@@ -678,3 +686,32 @@ def test_a_runtime_that_fails_mid_start_is_discarded_not_reused(monkeypatch):
     commands = [topic for topic, _, _ in node.sent if topic.startswith("reset_")]
     assert commands == ["reset_refused"], f"a discarded runtime still drove the arm: {commands}"
     assert replies(node) == [], "a half-started runtime produced an episode boundary"
+
+
+def test_a_failed_prewarm_keeps_the_runtime_it_already_built(monkeypatch):
+    """RST-2 (cross-review of #223): the pre-warm guard must NOT discard a
+    runtime that built.
+
+    `bridge_info` is emitted ONCE, before the bridge's event loop, and
+    `on_bridge_info` is the only writer of `calibration`. Dropping the
+    runtime there loses calibration permanently, and every later behavioral
+    reset then burns all three attempts on `calibration is None` and reports
+    `fallback: true, behavioral_attempts: 3` — the silent A6 void that
+    `harness validate` refuses unwired graphs to prevent, and the exact lie
+    the behavioral branch refuses to write. A failed BUILD leaves `runtime`
+    unset anyway, so the retry path is unaffected.
+
+    Observable: the service builds the runtime once, not twice."""
+    node = run_service(
+        [
+            _inp("bridge_info", pa.array(['{"calibration": {}}']), {}),
+            reset_request(3, BEHAVIORAL, request_id="after"),
+            joint_state(sim_ns=1_000),
+        ],
+        monkeypatch,
+        bridge_info_raises=KeyError("calibration"),
+    )
+    assert node.builds == 1, (
+        f"the pre-warm failure discarded a runtime that had already built ({node.builds} builds) "
+        "— calibration is written once and cannot be recovered"
+    )

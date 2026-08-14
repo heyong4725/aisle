@@ -74,6 +74,7 @@ def main(clock=None) -> None:
     must be reproducible in tests without sleeping."""
     import json
     import time
+    import traceback
 
     import pyarrow as pa
 
@@ -212,7 +213,7 @@ def main(clock=None) -> None:
                 try:
                     rt = get_runtime()
                     rt.start(int(payload[0]), metadata)
-                except Exception as broken:  # noqa: BLE001 — see below
+                except Exception as broken:
                     # issue #206: building the runtime does file I/O and an
                     # Owlv2 from_pretrained, and starting it plans. Any of
                     # that can fail on a first run with a cold or corrupt
@@ -227,6 +228,7 @@ def main(clock=None) -> None:
                     # dressing an infrastructure failure as a behavioral
                     # outcome would put a lie in the A6 measurement. Teleport
                     # needs no runtime, so the service keeps serving.
+                    traceback.print_exc()
                     print(f"behavioral reset unavailable: {broken!r}", file=sys.stderr)
                     runtime = None  # rebuild next time rather than reuse a half-started one
                     behavioral_started = None
@@ -278,9 +280,21 @@ def main(clock=None) -> None:
             # than inheriting a half-constructed runtime.
             try:
                 get_runtime().on_bridge_info(json.loads(event["value"][0].as_py()))
-            except Exception as broken:  # noqa: BLE001 — dora does not restart nodes
-                print(f"behavioral pre-warm failed: {broken!r}", file=sys.stderr)
-                runtime = None
+            except Exception:
+                # Deliberately does NOT discard the runtime (cross-review of
+                # #223). `bridge_info` is emitted ONCE, before the bridge's
+                # event loop, and `on_bridge_info` is the only writer of
+                # `calibration` — so dropping a runtime that BUILT would
+                # throw calibration away permanently, and every later
+                # behavioral reset would burn all three attempts on
+                # `calibration is None` and report `fallback: true,
+                # behavioral_attempts: 3`. That is precisely the silent A6
+                # void `validate.py`'s REFUSAL of unwired graphs exists to
+                # prevent, and precisely the lie the behavioral branch above
+                # refuses to write. A failed build leaves `runtime` unset
+                # anyway, so the next request retries it.
+                traceback.print_exc()
+                print("behavioral pre-warm failed; teleport is unaffected", file=sys.stderr)
         elif event["id"] == "rgb_overhead":
             h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
             if runtime is not None and h > 0 and w > 0:
