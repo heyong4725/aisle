@@ -26,6 +26,12 @@ class FakeNode:
     def __init__(self, events):
         self._events = events
         self.sent: list[tuple[str, list, dict]] = []
+        self.stopped_after_turn = False
+
+    def stop_after_turn(self) -> None:
+        # `turn_node.Node`'s lockstep-safe exit: it closes the open turn and
+        # emits turn_done before iteration ends. A bare `break` skips that.
+        self.stopped_after_turn = True
 
     def __iter__(self):
         return iter(self._events)
@@ -42,14 +48,22 @@ def tick():
     return _inp("tick", pa.array(np.zeros(1, dtype=np.uint8)))
 
 
-def run_client(events, monkeypatch, tmp_path):
+def run_client(events, monkeypatch, tmp_path, *, lockstep=False):
     node = FakeNode(events)
     fake_dora = types.ModuleType("dora")
     fake_dora.Node = lambda: node
     monkeypatch.setitem(sys.modules, "dora", fake_dora)
+    # substitute the lockstep wrapper itself: this file tests the CLIENT's
+    # decisions (does it advance? does it close its turn?), not turn_node's
+    # protocol, and the real wrapper refuses to construct without a full
+    # AISLE_TURN_* participant config plus barrier-stamped events.
+    import aisle.turn_node as turn_node_mod
+
+    monkeypatch.setattr(turn_node_mod, "Node", lambda: node)
     monkeypatch.setenv("AISLE_SEEDS", "0")
     monkeypatch.setenv("AISLE_TIER", "T0")
     monkeypatch.setenv("AISLE_RESULTS", str(tmp_path / "episodes.jsonl"))
+    monkeypatch.setenv("AISLE_LOCKSTEP", "1" if lockstep else "0")
 
     from aisle.harness.rollout_client import main
 
@@ -119,4 +133,43 @@ def test_a_refused_reset_ends_the_run_instead_of_advancing(monkeypatch, tmp_path
     assert goals(refused) == [], (
         "the client started an episode on a scene that was never reset, leaving every "
         "other boundary consumer an episode behind (ADR-34, issue #209)"
+    )
+
+
+def turn():
+    return _inp("turn", pa.array(np.zeros(1, dtype=np.uint64)))
+
+
+def test_a_refusal_ends_the_run_without_stranding_the_turn_barrier(monkeypatch, tmp_path):
+    """ADR-30 + ADR-34 (cross-review of #223): ending the run must not become
+    HANGING the run.
+
+    Under lockstep this node is a turn participant. A bare `break` from
+    inside the yielded turn raises GeneratorExit at the yield, so
+    `turn_node` never emits `turn_done` and the terminal barrier blocks
+    every other node until the ADR-23 wall clamp. The client's normal
+    termination already knew this and calls `stop_after_turn()`; the refusal
+    path added in #208 did not, and every shipped graph runs this node in
+    lockstep.
+
+    Latent until #206 made a refusal reachable from the shipped client — the
+    reason ADR-34 gave for the route being safe was that nothing could
+    produce one, and a cold model cache now can."""
+    refused = run_client(
+        [
+            turn(),
+            _inp(
+                "reset_refused",
+                pa.array(np.array([0], dtype=np.uint32)),
+                {"request_id": "r", "error": "behavioral runtime unavailable: no model cache"},
+            ),
+        ],
+        monkeypatch,
+        tmp_path,
+        lockstep=True,
+    )
+    assert goals(refused) == [], "the client started an episode on an un-reset scene"
+    assert refused.stopped_after_turn, (
+        "the client broke out of an open turn instead of closing it — turn_done never "
+        "leaves and the terminal barrier hangs every other node (ADR-30)"
     )
