@@ -54,3 +54,28 @@ def test_infra_error_is_the_agents_record_not_the_configs():
     record = run_agent(0, 4, "not-a-real-oid", Path("/nonexistent/dir"), 1.0)
     assert record["agent_index"] == 0 and record["fleet"] == 4
     assert "infra_error" in record
+
+
+def test_agent_lane_passes_the_full_ceilings_contract(tmp_path, monkeypatch):
+    """A5 live failure (first launch): run_session requires prior_wall_s
+    alongside prior_tokens -- a missing key KeyError'd EVERY lane into
+    infra_error in seconds. Pin the exact ceilings contract by driving a
+    lane with run_session stubbed to record its arguments."""
+    import a5_fleet as a5
+
+    seen = {}
+
+    def fake_run_session(agent, cmd, wt, out, ceilings, env=None):
+        seen.update(ceilings)
+        return {"stopped": "agent_done", "rc": 0, "tokens": 1, "wall_s": 1.0}
+
+    monkeypatch.setattr(a5, "make_worktree", lambda oid, wt: wt.mkdir(parents=True))
+    monkeypatch.setattr(a5, "isolated_session_env", lambda out, env_baseline_oid: ({}, {}))
+    monkeypatch.setattr(a5, "seed_session_credentials", lambda agent, env: ({}, None))
+    monkeypatch.setattr(a5, "run_session", fake_run_session)
+    monkeypatch.setattr(a5, "campaign_metrics", lambda wt, t0, pin=None: {"rollouts": []})
+    monkeypatch.setattr(a5, "scrub_session_credentials", lambda home: [])
+    monkeypatch.setattr(a5, "sweep_worktree", lambda wt: [])
+    record = a5.run_agent(0, 1, "oid", tmp_path, 1.0)
+    assert "infra_error" not in record, record
+    assert set(seen) >= {"prior_tokens", "prior_wall_s", "token_ceiling", "wall_ceiling_s"}
