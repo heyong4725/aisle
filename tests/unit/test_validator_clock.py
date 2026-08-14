@@ -277,3 +277,46 @@ def test_bridge_requires_exactly_one_terminal_commit(mutation):
     else:
         bridge["inputs"]["turn_commit"]["source"] = "client/reset"
     assert "CLOCK_COMMIT_COUNT" in _codes(nodes, manifests)
+
+
+def test_committed_turn_plans_match_the_graphs_they_compile_from():
+    """ADR-30: `graphs/turn_plans/*.json` are RUNTIME inputs, not artifacts.
+
+    The barrier loads the committed file (`AISLE_TURN_PLAN:
+    turn_plans/<stem>.json` in each graph) and refuses any participant whose
+    watermark output set disagrees with the plan's. So a graph edit that
+    does not regenerate its plan does not fail loudly at validate time — it
+    kills the barrier on the first watermark, which surfaces as every
+    episode hitting the ADR-23 wall clamp, relaunching, and the run
+    reporting pass1 0.0 about twenty minutes later.
+
+    That is exactly what an unregenerated plan cost in the round-2 review of
+    #208, and nothing caught it: unit tests, `harness validate`, and
+    `env_hash` were all green, because the plans are frozen INPUTS to the
+    hash rather than derived from the graphs. One second here beats a
+    nineteen-minute live run."""
+    import json
+    from pathlib import Path
+
+    import yaml
+
+    from aisle.harness.registry import load_manifests
+
+    root = Path(__file__).resolve().parents[2]
+    manifest_list, errors = load_manifests(root)
+    assert not errors, errors
+    manifests = {m["id"]: m for _, m in manifest_list}
+
+    plans = sorted((root / "graphs" / "turn_plans").glob("expert_*.json"))
+    assert plans, "no committed turn plans — the corpus moved and this test went blind"
+    stale = []
+    for plan_path in plans:
+        graph = root / "graphs" / f"{plan_path.stem}.yaml"
+        assert graph.is_file(), f"{plan_path.name} has no graph — an orphan plan is dead weight"
+        expected = compile_turn_plan(yaml.safe_load(graph.read_text())["nodes"], manifests)
+        if json.loads(plan_path.read_text()) != expected:
+            stale.append(plan_path.name)
+    assert not stale, (
+        f"turn plans stale against their graphs: {stale} — regenerate with "
+        "compile_turn_plan(graph_nodes, manifests); the barrier loads these at runtime"
+    )
