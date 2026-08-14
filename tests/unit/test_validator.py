@@ -119,28 +119,13 @@ def test_expert_t1_is_good():
     assert report["warnings"] == []
 
 
-#: issue #211: ADR-30 lockstep (#197) wired the eight expert_* graphs as turn
-#: participants and left these three behind, so every CLOCK_* rule rejects
-#: them. Pre-existing on main — verified against main's OWN validator in a
-#: clean worktree, not inferred.
-NOT_LOCKSTEP_WIRED = {"agent_campaign", "eval_s1_driver_v2", "eval_s3_driver_v1"}
-
-
 def _graph_params() -> list:
     # a list, not a generator: pytest deprecated non-Collection argvalues
     # (PytestRemovedIn10Warning), and a warning this suite prints on every
     # run is one nobody reads by the time it matters
-    params = []
-    for path in sorted((REPO_ROOT / "graphs").glob("*.yaml")):
-        # strict: an XPASS fails, so fixing #211 turns this red until the
-        # entry is removed — an xfail nobody notices is worse than no test
-        marks = (
-            [pytest.mark.xfail(strict=True, reason="issue #211: not wired for ADR-30 lockstep")]
-            if path.stem in NOT_LOCKSTEP_WIRED
-            else []
-        )
-        params.append(pytest.param(path, marks=marks, id=path.name))
-    return params
+    return [
+        pytest.param(path, id=path.name) for path in sorted((REPO_ROOT / "graphs").glob("*.yaml"))
+    ]
 
 
 @pytest.mark.parametrize("graph", _graph_params())
