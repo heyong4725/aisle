@@ -558,3 +558,47 @@ def test_lint_rejects_nonmotion_actuation_emitter(tmp_path):
     code, report = run_registry("lint", "--root", str(root))
     assert code != 0
     assert any("motion" in e["message"] and "ADR-5" in e["message"] for e in report["errors"])
+
+
+def test_a_registered_skill_and_its_manifest_have_not_drifted():
+    """CAP-1/CAP-7 (issue #225): `registry/manifests/<id>.yaml` is DERIVED
+    from `skills/<id>/skill.yaml` — `harness skill register` writes it with
+    `installed.write_text(yaml.safe_dump(_provisional_manifest(...)))`, and
+    `_provisional_manifest` is the skill's own manifest with only `eval`
+    replaced.
+
+    Both files are checked in and edited by hand, and nothing compared them.
+    That matters because `harness validate` reads the MANIFEST while
+    re-registering rewrites it FROM the skill: if the two drift, an agent
+    running the documented loop (`harness skill register skills/<id>`,
+    CLAUDE.research.md) silently reverts the manifest to the stale copy.
+
+    #219 made that concrete by adding ADR-30 lockstep declarations
+    (`turn`, `turn_done`, `turn_edge: episodic`) to both files for the two
+    retail drivers. Losing them from the manifest turns a validated graph
+    into one that dies at the first watermark.
+
+    `eval` is excluded and only `eval`: the registry carries the evaluated
+    card, the skill ships `eval: null` until it earns one."""
+    checked = []
+    for skill_dir in sorted((REPO_ROOT / "skills").iterdir()):
+        skill_yaml = skill_dir / "skill.yaml"
+        if not skill_yaml.is_file():
+            continue
+        skill = yaml.safe_load(skill_yaml.read_text())
+        manifest_path = MANIFESTS_DIR / f"{skill.get('id', skill_dir.name)}.yaml"
+        if not manifest_path.is_file():
+            continue  # registered skills only; an unregistered skill has no copy yet
+        manifest = yaml.safe_load(manifest_path.read_text())
+        drifted = {
+            key
+            for key in set(manifest) | set(skill)
+            if key != "eval" and manifest.get(key) != skill.get(key)
+        }
+        assert not drifted, (
+            f"{manifest_path.name} and {skill_yaml.relative_to(REPO_ROOT)} disagree on "
+            f"{sorted(drifted)} — `harness skill register` would overwrite the manifest "
+            "from the skill and drop whatever the manifest has that the skill lacks"
+        )
+        checked.append(skill_dir.name)
+    assert checked, "no registered skill has a skill.yaml — this test went blind"

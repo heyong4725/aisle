@@ -307,8 +307,17 @@ def test_committed_turn_plans_match_the_graphs_they_compile_from():
     assert not errors, errors
     manifests = {m["id"]: m for _, m in manifest_list}
 
-    plans = sorted((root / "graphs" / "turn_plans").glob("expert_*.json"))
+    plans = sorted((root / "graphs" / "turn_plans").glob("*.json"))
     assert plans, "no committed turn plans — the corpus moved and this test went blind"
+    # EVERY plan, not `expert_*` (issue #226): #219 added agent_campaign and
+    # the two eval driver plans, and the prefix silently left them out. A
+    # mutated eval plan passed this test while only TURN_PLAN_STALE caught
+    # it — the whole point of this file is that one gate is not enough for a
+    # defect that cost a nineteen-minute diagnosis in #208.
+    assert len(plans) == len(list((root / "graphs").glob("*.yaml"))), (
+        f"{len(plans)} plans for {len(list((root / 'graphs').glob('*.yaml')))} graphs — "
+        "a lockstep graph without a committed plan, or a plan with no graph"
+    )
     stale = []
     for plan_path in plans:
         graph = root / "graphs" / f"{plan_path.stem}.yaml"
