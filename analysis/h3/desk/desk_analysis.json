@@ -1,0 +1,405 @@
+{
+ "ok": true,
+ "treatment": {
+  "commit": "dd4e3f1af0ceaf8de57929711a05033f50ad2a00",
+  "agent": "claude",
+  "model": "claude-fable-5",
+  "dev_seeds": "0..49",
+  "holdout_seeds": "100..107"
+ },
+ "suite": "desk",
+ "cells": [
+  {
+   "arm": "L",
+   "tier": "T1",
+   "attempt": 1,
+   "holdout_pass1": 1.0,
+   "no_deliverable": false,
+   "episodes_scored": 8,
+   "holdout_failures": {},
+   "delivery_failures": {},
+   "delivery_failures_total": 0,
+   "placement_failures": {},
+   "placement_failures_total": 0,
+   "stopped": "agent_done",
+   "tokens": 165142,
+   "wall_s": 1376.6,
+   "first_success_wall_s": 499.8,
+   "first_success_rederived": false,
+   "tokens_to_first_success": 151110,
+   "wrong_object_total": 0,
+   "skills_after": [
+    "s1-driver-v2",
+    "s3-driver-v1"
+   ],
+   "skill_reuse_in_deliverable": [],
+   "flags": []
+  },
+  {
+   "arm": "L",
+   "tier": "T2",
+   "attempt": 1,
+   "holdout_pass1": 0.5,
+   "no_deliverable": false,
+   "episodes_scored": 8,
+   "holdout_failures": {
+    "never_grasped": 1,
+    "collision": 3
+   },
+   "delivery_failures": {},
+   "delivery_failures_total": 0,
+   "placement_failures": {},
+   "placement_failures_total": 0,
+   "stopped": "agent_done",
+   "tokens": 642730,
+   "wall_s": 11179.1,
+   "first_success_wall_s": null,
+   "first_success_rederived": false,
+   "tokens_to_first_success": null,
+   "wrong_object_total": 0,
+   "skills_after": [
+    "s1-driver-v2",
+    "s3-driver-v1",
+    "t2-scan-pose",
+    "t2-scan-tsm"
+   ],
+   "skill_reuse_in_deliverable": [],
+   "flags": [
+    "frozen_drift",
+    "treatment_drift"
+   ]
+  },
+  {
+   "arm": "L",
+   "tier": "T2",
+   "attempt": 2,
+   "holdout_pass1": 0.0,
+   "no_deliverable": false,
+   "episodes_scored": 0,
+   "holdout_failures": {},
+   "delivery_failures": {},
+   "delivery_failures_total": 0,
+   "placement_failures": {},
+   "placement_failures_total": 0,
+   "stopped": "token_budget",
+   "tokens": 801331,
+   "wall_s": 385.6,
+   "first_success_wall_s": null,
+   "first_success_rederived": false,
+   "tokens_to_first_success": null,
+   "wrong_object_total": 0,
+   "skills_after": [
+    "s1-driver-v2",
+    "s3-driver-v1",
+    "t2-scan-pose",
+    "t2-scan-tsm"
+   ],
+   "skill_reuse_in_deliverable": [],
+   "flags": [
+    "holdout_partial"
+   ]
+  },
+  {
+   "arm": "L",
+   "tier": "T3",
+   "attempt": 1,
+   "holdout_pass1": null,
+   "no_deliverable": false,
+   "episodes_scored": 0,
+   "holdout_failures": {},
+   "delivery_failures": {},
+   "delivery_failures_total": 0,
+   "placement_failures": {},
+   "placement_failures_total": 0,
+   "stopped": "token_budget",
+   "tokens": 702685,
+   "wall_s": 4402.2,
+   "first_success_wall_s": null,
+   "first_success_rederived": false,
+   "tokens_to_first_success": null,
+   "wrong_object_total": 0,
+   "skills_after": [
+    "s1-driver-v2",
+    "s3-driver-v1",
+    "t2-scan-pose",
+    "t2-scan-tsm"
+   ],
+   "skill_reuse_in_deliverable": [
+    "s3-driver-v1"
+   ],
+   "flags": [
+    "holdout_partial",
+    "treatment_drift"
+   ]
+  },
+  {
+   "arm": "L",
+   "tier": "T3",
+   "attempt": 2,
+   "holdout_pass1": null,
+   "no_deliverable": false,
+   "episodes_scored": 0,
+   "holdout_failures": {},
+   "delivery_failures": {},
+   "delivery_failures_total": 0,
+   "placement_failures": {},
+   "placement_failures_total": 0,
+   "stopped": "token_budget",
+   "tokens": 751913,
+   "wall_s": 3024.2,
+   "first_success_wall_s": null,
+   "first_success_rederived": false,
+   "tokens_to_first_success": null,
+   "wrong_object_total": 0,
+   "skills_after": [
+    "s1-driver-v2",
+    "s3-driver-v1",
+    "t2-scan-pose",
+    "t2-scan-tsm"
+   ],
+   "skill_reuse_in_deliverable": [
+    "s3-driver-v1"
+   ],
+   "flags": [
+    "holdout_partial"
+   ]
+  },
+  {
+   "arm": "L",
+   "tier": "T4",
+   "attempt": 1,
+   "holdout_pass1": 1.0,
+   "no_deliverable": false,
+   "episodes_scored": 8,
+   "holdout_failures": {},
+   "delivery_failures": {},
+   "delivery_failures_total": 0,
+   "placement_failures": {},
+   "placement_failures_total": 0,
+   "stopped": "agent_done",
+   "tokens": 213988,
+   "wall_s": 2498.1,
+   "first_success_wall_s": null,
+   "first_success_rederived": false,
+   "tokens_to_first_success": null,
+   "wrong_object_total": 0,
+   "skills_after": [
+    "s1-driver-v2",
+    "s3-driver-v1",
+    "t2-scan-pose",
+    "t2-scan-tsm"
+   ],
+   "skill_reuse_in_deliverable": [],
+   "flags": [
+    "treatment_drift"
+   ]
+  },
+  {
+   "arm": "L",
+   "tier": "T4",
+   "attempt": 2,
+   "holdout_pass1": 1.0,
+   "no_deliverable": false,
+   "episodes_scored": 8,
+   "holdout_failures": {},
+   "delivery_failures": {},
+   "delivery_failures_total": 0,
+   "placement_failures": {},
+   "placement_failures_total": 0,
+   "stopped": "agent_done",
+   "tokens": 192712,
+   "wall_s": 1251.8,
+   "first_success_wall_s": 894.0,
+   "first_success_rederived": false,
+   "tokens_to_first_success": 161819,
+   "wrong_object_total": 0,
+   "skills_after": [
+    "s1-driver-v2",
+    "s3-driver-v1",
+    "t2-scan-pose",
+    "t2-scan-tsm"
+   ],
+   "skill_reuse_in_deliverable": [],
+   "flags": []
+  },
+  {
+   "arm": "W",
+   "tier": "T1",
+   "attempt": 1,
+   "holdout_pass1": 1.0,
+   "no_deliverable": false,
+   "episodes_scored": 8,
+   "holdout_failures": {},
+   "delivery_failures": {},
+   "delivery_failures_total": 0,
+   "placement_failures": {},
+   "placement_failures_total": 0,
+   "stopped": "agent_done",
+   "tokens": 231032,
+   "wall_s": 1897.5,
+   "first_success_wall_s": 530.9,
+   "first_success_rederived": false,
+   "tokens_to_first_success": 199001,
+   "wrong_object_total": 0,
+   "skills_after": [
+    "s1-driver-v2",
+    "s3-driver-v1"
+   ],
+   "skill_reuse_in_deliverable": [],
+   "flags": [
+    "wipe_leak"
+   ]
+  },
+  {
+   "arm": "W",
+   "tier": "T2",
+   "attempt": 1,
+   "holdout_pass1": 0.0,
+   "no_deliverable": false,
+   "episodes_scored": 8,
+   "holdout_failures": {
+    "never_grasped": 5,
+    "timeout": 1,
+    "collision": 2
+   },
+   "delivery_failures": {},
+   "delivery_failures_total": 0,
+   "placement_failures": {},
+   "placement_failures_total": 0,
+   "stopped": "agent_done",
+   "tokens": 660823,
+   "wall_s": 4951.5,
+   "first_success_wall_s": 2085.2,
+   "first_success_rederived": false,
+   "tokens_to_first_success": 452974,
+   "wrong_object_total": 0,
+   "skills_after": [
+    "s1-driver-v2",
+    "s3-driver-v1",
+    "t2-driver-v1",
+    "t2-pose-v1"
+   ],
+   "skill_reuse_in_deliverable": [],
+   "flags": [
+    "wipe_leak",
+    "treatment_drift"
+   ]
+  },
+  {
+   "arm": "W",
+   "tier": "T3",
+   "attempt": 1,
+   "holdout_pass1": null,
+   "no_deliverable": false,
+   "episodes_scored": 0,
+   "holdout_failures": {},
+   "delivery_failures": {},
+   "delivery_failures_total": 0,
+   "placement_failures": {},
+   "placement_failures_total": 0,
+   "stopped": "token_budget",
+   "tokens": 700212,
+   "wall_s": 2418.6,
+   "first_success_wall_s": null,
+   "first_success_rederived": false,
+   "tokens_to_first_success": null,
+   "wrong_object_total": 0,
+   "skills_after": [
+    "s1-driver-v2",
+    "s3-driver-v1"
+   ],
+   "skill_reuse_in_deliverable": [
+    "s3-driver-v1"
+   ],
+   "flags": [
+    "wipe_leak",
+    "holdout_partial"
+   ]
+  },
+  {
+   "arm": "W",
+   "tier": "T4",
+   "attempt": 2,
+   "holdout_pass1": 1.0,
+   "no_deliverable": false,
+   "episodes_scored": 8,
+   "holdout_failures": {},
+   "delivery_failures": {},
+   "delivery_failures_total": 0,
+   "placement_failures": {},
+   "placement_failures_total": 0,
+   "stopped": "agent_done",
+   "tokens": 172790,
+   "wall_s": 2422.9,
+   "first_success_wall_s": 872.0,
+   "first_success_rederived": false,
+   "tokens_to_first_success": 141708,
+   "wrong_object_total": 0,
+   "skills_after": [
+    "s1-driver-v2",
+    "s3-driver-v1"
+   ],
+   "skill_reuse_in_deliverable": [],
+   "flags": [
+    "wipe_leak"
+   ]
+  }
+ ],
+ "verdict": {
+  "criterion": "arm L T2+T3+T4 time-to-first-success <= 0.5x arm W's (ADR-h3 \u00a77)",
+  "ratios": {},
+  "token_ratios": {},
+  "per_tier": {},
+  "complete": false,
+  "met": null,
+  "caveats": [
+   "L/T2: frozen_drift",
+   "L/T2: treatment_drift",
+   "L/T2-r2: holdout_partial",
+   "L/T3: holdout_partial",
+   "L/T3: treatment_drift",
+   "L/T3-r2: holdout_partial",
+   "L/T4: treatment_drift",
+   "W/T1: wipe_leak",
+   "W/T2: wipe_leak",
+   "W/T2: treatment_drift",
+   "W/T3: wipe_leak",
+   "W/T3: holdout_partial",
+   "W/T4-r2: wipe_leak"
+  ]
+ },
+ "wrong_object_total": 0,
+ "h5": {
+  "selected": {
+   "cells": [
+    "L/T1",
+    "L/T4-r2"
+   ],
+   "episodes_scored": 16,
+   "delivery_failures_total": 0,
+   "delivery_failures_by_class": {},
+   "placement_failures_total": 0,
+   "placement_failures_by_class": {}
+  },
+  "all_records": {
+   "cells": [
+    "L/T1",
+    "L/T2",
+    "L/T2-r2",
+    "L/T3",
+    "L/T3-r2",
+    "L/T4",
+    "L/T4-r2",
+    "W/T1",
+    "W/T2",
+    "W/T3",
+    "W/T4-r2"
+   ],
+   "episodes_scored": 56,
+   "delivery_failures_total": 0,
+   "delivery_failures_by_class": {},
+   "placement_failures_total": 0,
+   "placement_failures_by_class": {}
+  }
+ }
+}
