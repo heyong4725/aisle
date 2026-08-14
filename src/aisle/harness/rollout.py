@@ -810,8 +810,25 @@ def scrub_bringup_env(env: dict) -> dict:
     return {k: v for k, v in env.items() if k not in SCRUBBED_ENV}
 
 
+def _dora_runtime_log(run_dir: Path, stream: str, relaunch: int = 0) -> Path:
+    """Return the per-launch sink for one dora process stream."""
+    suffix = f".relaunch-{relaunch}" if relaunch else ""
+    return run_dir / f"dora.{stream}{suffix}.log"
+
+
+def dora_stdout_log(run_dir: Path, relaunch: int = 0) -> Path:
+    """Where a launch's dora daemon log goes (issue #201).
+
+    The pinned dora tracing subscriber writes its INFO/WARN stream to stdout.
+    A regular file preserves that scheduler, startup, and exit evidence without
+    the bounded-buffer deadlock risk of an unread PIPE.  Each wall-clamp
+    relaunch gets a distinct sink so the wedged launch's diagnostics survive.
+    """
+    return _dora_runtime_log(run_dir, "stdout", relaunch)
+
+
 def dora_stderr_log(run_dir: Path, relaunch: int = 0) -> Path:
-    """Where a launch's dora stderr goes (issue #183).
+    """Where a launch's dora error stream goes (issue #183).
 
     Per LAUNCH, not per run. `Popen` opens this in write mode, so pointing
     every wall-clamp relaunch (ADR-23) at one path meant each relaunch
@@ -824,7 +841,7 @@ def dora_stderr_log(run_dir: Path, relaunch: int = 0) -> Path:
     relaunches sort next to it. Kept at the run root rather than inside
     `traces/relaunch-N/` because this is the dora runtime's own log, not
     recorded evidence, and `traces/` is the recorder's namespace."""
-    return run_dir / (f"dora.stderr.relaunch-{relaunch}.log" if relaunch else "dora.stderr.log")
+    return _dora_runtime_log(run_dir, "stderr", relaunch)
 
 
 def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict, relaunch: int = 0) -> subprocess.Popen:
@@ -835,14 +852,15 @@ def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict, relaunch: int = 0) -
         # nothing and leaked nodes raced the cleanup (T09 smoke)
         cwd=run_dir,
         env=env,
-        stdout=subprocess.DEVNULL,
-        # dora's OWN stderr to a file in the run dir, not to a pipe nobody
-        # drains: an unread PIPE can fill (64 KB) and block the child, and the
-        # bytes were being discarded anyway. Per-NODE stderr is separate and
-        # already persisted by dora as out/<dataflow>/log_<node>.jsonl rows with
-        # "stream":"stderr", which is where a bridge refusal actually lands.
-        # Per-LAUNCH path (issue #183): "w" mode plus one shared path meant a
-        # relaunch erased the wedged launch's own diagnostics.
+        # The pinned dora tracing subscriber emits the daemon INFO/WARN stream
+        # on stdout (issue #201). A file has no PIPE capacity ceiling, preserves
+        # the scheduler/startup/exit diagnostics, and cannot block because the
+        # parent forgot to drain it. Per-launch paths also stop a wall-clamp
+        # relaunch from erasing the wedged launch's evidence (issue #183).
+        stdout=dora_stdout_log(run_dir, relaunch).open("w"),
+        # Top-level eyre errors and panics still land on dora's own stderr.
+        # Per-NODE stderr is separate and already persisted by dora as
+        # out/<dataflow>/log_<node>.jsonl rows with "stream":"stderr".
         stderr=dora_stderr_log(run_dir, relaunch).open("w"),
         text=True,
         start_new_session=True,
