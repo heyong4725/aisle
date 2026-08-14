@@ -209,8 +209,39 @@ def main(clock=None) -> None:
                 # <2 s — a t_reset_ms that excludes the load cannot see the
                 # breach it exists to report (round-2 review)
                 behavioral_started = clock()
-                rt = get_runtime()
-                rt.start(int(payload[0]), metadata)
+                try:
+                    rt = get_runtime()
+                    rt.start(int(payload[0]), metadata)
+                except Exception as broken:  # noqa: BLE001 — see below
+                    # issue #206: building the runtime does file I/O and an
+                    # Owlv2 from_pretrained, and starting it plans. Any of
+                    # that can fail on a first run with a cold or corrupt
+                    # model cache — and this node's death has NO recovery:
+                    # since #192 every consumer in every graph takes its
+                    # episode boundary from here, and dora does not restart
+                    # nodes. Broad on purpose: the alternative to catching an
+                    # unlisted exception is stranding the run.
+                    #
+                    # Refused, not fallen back: RST-2's teleport fallback
+                    # reports `fallback: true, behavioral_attempts: N`, and
+                    # dressing an infrastructure failure as a behavioral
+                    # outcome would put a lie in the A6 measurement. Teleport
+                    # needs no runtime, so the service keeps serving.
+                    print(f"behavioral reset unavailable: {broken!r}", file=sys.stderr)
+                    runtime = None  # rebuild next time rather than reuse a half-started one
+                    behavioral_started = None
+                    seq_refused += 1
+                    node.send_output(
+                        "reset_refused",
+                        pa.array(np.array([0], dtype=np.uint32)),
+                        stamp(
+                            refusal_reply_metadata(
+                                metadata, payload, f"behavioral runtime unavailable: {broken}"
+                            ),
+                            seq_refused,
+                        ),
+                    )
+                    continue
                 if rt.outcome == "exhausted":  # unplannable from the start
                     print("behavioral reset: unplannable, fallback", file=sys.stderr)
                     fallback_teleport(int(payload[0]), metadata, rt.attempts)
@@ -239,8 +270,17 @@ def main(clock=None) -> None:
             node.send_output("reset_done", event["value"], stamp(reply_meta, seq_reply))
         elif event["id"] == "bridge_info":
             # builds the runtime early so the model load (~2 s) never
-            # lands inside a reset request
-            get_runtime().on_bridge_info(json.loads(event["value"][0].as_py()))
+            # lands inside a reset request — which makes THIS the first
+            # place a cold or corrupt model cache surfaces (issue #206).
+            # Nothing is owed a reply on a broadcast input; the requirement
+            # is that the boundary authority survives to serve teleports,
+            # and that the next behavioral request retries the build rather
+            # than inheriting a half-constructed runtime.
+            try:
+                get_runtime().on_bridge_info(json.loads(event["value"][0].as_py()))
+            except Exception as broken:  # noqa: BLE001 — dora does not restart nodes
+                print(f"behavioral pre-warm failed: {broken!r}", file=sys.stderr)
+                runtime = None
         elif event["id"] == "rgb_overhead":
             h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
             if runtime is not None and h > 0 and w > 0:

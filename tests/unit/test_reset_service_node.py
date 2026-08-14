@@ -47,7 +47,10 @@ class StubRuntime:
     runtime settling asynchronously rather than inside `start()`.
     """
 
-    def __init__(self, *, succeed_after: int = 1, outcome: str = "success", **_kwargs):
+    def __init__(
+        self, *, succeed_after: int = 1, outcome: str = "success", start_raises=None, **_kwargs
+    ):
+        self.start_raises = start_raises
         self.succeed_after = succeed_after
         self.final_outcome = outcome
         self.seed = 0
@@ -62,6 +65,11 @@ class StubRuntime:
         return self._started
 
     def start(self, seed: int, request_meta: dict) -> None:
+        if self.start_raises is not None:
+            # partially started, THEN failed — the shape that leaves a live
+            # half-initialised runtime behind if the service keeps it
+            self._started = True
+            raise self.start_raises
         self.seed = seed
         self.request_meta = dict(request_meta)
         self.attempts = 1
@@ -110,7 +118,9 @@ def joint_state(sim_ns: int = 1_000_000) -> dict:
     )
 
 
-def run_service(events, monkeypatch, *, runtime_load_ticks: int = 0, **runtime_kwargs) -> FakeNode:
+def run_service(
+    events, monkeypatch, *, runtime_load_ticks: int = 0, build_raises=None, **runtime_kwargs
+) -> FakeNode:
     node = FakeNode(events)
     fake_dora = types.ModuleType("dora")
     fake_dora.Node = lambda: node
@@ -134,6 +144,11 @@ def run_service(events, monkeypatch, *, runtime_load_ticks: int = 0, **runtime_k
         # — which is exactly how that bug shipped (round-2 review).
         for _ in range(runtime_load_ticks):
             next(ticks)
+        if build_raises is not None:
+            # what a missing/corrupt model cache looks like from here: the
+            # real construction does load_physics/load_meds/load_pinned, and
+            # load_pinned is an Owlv2 from_pretrained (issue #206)
+            raise build_raises
         return StubRuntime(**kw, **runtime_kwargs)
 
     monkeypatch.setattr(runtime_mod, "BehavioralRuntime", build_runtime)
@@ -575,3 +590,91 @@ def test_the_fallback_merge_is_correlated_not_positional(monkeypatch):
     assert "fallback" not in stray, f"a stray reply was dressed up as this fallback: {stray}"
     assert stray["mode"] == TELEPORT and stray["t_reset_ms"] == 3, stray
     assert mine["fallback"] is True and mine["behavioral_attempts"] == 1, mine
+
+
+def test_a_runtime_that_cannot_be_built_refuses_instead_of_killing_the_node(monkeypatch):
+    """Issue #206: `get_runtime()` does file I/O and an Owlv2
+    `from_pretrained`, and it sat OUTSIDE the try/except that guards the
+    payload parse. An OSError from a missing model cache therefore escaped
+    `for event in node:` and killed the node.
+
+    This node's death has no recovery: since issue #192 every consumer in
+    every graph takes its episode boundary from here, and dora does not
+    restart nodes. So a first-run cache problem stranded the whole run —
+    strictly worse than the failure #192 was fixed to prevent.
+
+    The request is refused (ADR-34: on `reset_refused`), the error says what
+    broke, and the service keeps serving."""
+    node = run_service(
+        [reset_request(4, BEHAVIORAL, request_id="boom")],
+        monkeypatch,
+        build_raises=OSError("model cache missing"),
+    )
+    assert len(refusals(node)) == 1, "the node died instead of refusing"
+    refusal = refusals(node)[0]
+    assert refusal["request_id"] == "boom"
+    assert "model cache missing" in refusal["error"], refusal
+    assert replies(node) == [], "an infrastructure failure was reported as a boundary"
+
+
+def test_a_failed_runtime_does_not_end_the_service(monkeypatch):
+    """The property that matters more than the refusal itself: teleport needs
+    no runtime at all, so a behavioral request that cannot build one must not
+    take the teleport route down with it."""
+    node = run_service(
+        [
+            reset_request(4, BEHAVIORAL, request_id="boom"),
+            reset_request(5, TELEPORT, request_id="after"),
+            bridge_reply(sim_time_ns=99, request_id="after"),
+        ],
+        monkeypatch,
+        build_raises=OSError("model cache missing"),
+    )
+    assert len(refusals(node)) == 1
+    assert forwards(node) == [[5, TELEPORT]], (
+        "the teleport after the failure never reached the bridge"
+    )
+    assert len(replies(node)) == 1 and replies(node)[0]["sim_time_ns"] == 99
+
+
+def test_the_bridge_info_prewarm_cannot_kill_the_node_either(monkeypatch):
+    """The OTHER unguarded construction path, which issue #206 does not name:
+    `bridge_info` builds the runtime early so the model load never lands
+    inside a reset. That is precisely where a bad cache surfaces FIRST, and
+    it called `get_runtime()` bare. No reply is owed to a broadcast input —
+    the requirement is only that the service survives and still resets."""
+    node = run_service(
+        [
+            _inp("bridge_info", pa.array(['{"calibration": {}}']), {}),
+            reset_request(6, TELEPORT, request_id="after"),
+            bridge_reply(sim_time_ns=7, request_id="after"),
+        ],
+        monkeypatch,
+        build_raises=OSError("model cache missing"),
+    )
+    assert forwards(node) == [[6, TELEPORT]], "a pre-warm failure killed the boundary authority"
+    assert len(replies(node)) == 1
+
+
+def test_a_runtime_that_fails_mid_start_is_discarded_not_reused(monkeypatch):
+    """Issue #206, the half-started case: the build can SUCCEED and
+    `rt.start()` fail during planning, which leaves a cached runtime that
+    already believes it is active.
+
+    Keeping it means the next `joint_state` drives a half-initialised
+    runtime — streaming commands through the guard, or settling an outcome,
+    for a reset that never really began. The service drops it so the next
+    behavioral request builds a fresh one."""
+    node = run_service(
+        [
+            reset_request(4, BEHAVIORAL, request_id="boom"),
+            joint_state(sim_ns=5_000),
+            joint_state(sim_ns=6_000),
+        ],
+        monkeypatch,
+        start_raises=RuntimeError("planner blew up"),
+    )
+    assert len(refusals(node)) == 1, refusals(node)
+    commands = [topic for topic, _, _ in node.sent if topic.startswith("reset_")]
+    assert commands == ["reset_refused"], f"a discarded runtime still drove the arm: {commands}"
+    assert replies(node) == [], "a half-started runtime produced an episode boundary"
