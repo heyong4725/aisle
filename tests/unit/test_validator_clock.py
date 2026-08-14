@@ -502,3 +502,70 @@ def test_no_shipped_graph_declares_a_forward_edge_episodic():
         if codes:
             broken[graph.name] = [e["detail"] for e in codes]
     assert not broken, broken
+
+
+def test_write_turn_plan_unblocks_a_graph_whose_plan_went_stale(tmp_path):
+    """Issue #227: the barrier loads the COMMITTED plan, so #214's
+    TURN_PLAN_STALE refuses a graph whose topology moved — correctly, since
+    a stale plan kills the barrier at the first watermark instead of failing
+    at the gate. But `compile_turn_plan` was reachable only from Python and
+    the research contract never mentioned turn plans, so an agent editing
+    its own `graphs/agent_campaign.yaml` had no way out and burned metered
+    budget (ADR-21) rediscovering the rule.
+
+    Drives the whole loop through the same entry point the agent uses:
+    stale -> refused -> `--write-turn-plan` -> validates."""
+    import json
+    import shutil
+    from pathlib import Path
+
+    from aisle.harness.validate import validate, write_turn_plan
+
+    root = Path(__file__).resolve().parents[2]
+    graph = root / "graphs" / "expert_t0.yaml"
+    plan_path = root / "graphs" / "turn_plans" / "expert_t0.json"
+    backup = tmp_path / "expert_t0.json"
+    shutil.copy(plan_path, backup)
+    try:
+        stale = json.loads(plan_path.read_text())
+        victim = sorted(stale["participants"])[0]
+        stale["participants"][victim]["outputs"] = stale["participants"][victim]["outputs"][:-1]
+        plan_path.write_text(json.dumps(stale, sort_keys=True, separators=(",", ":")) + "\n")
+
+        refused = validate(graph, root, "franka", False)
+        assert "TURN_PLAN_STALE" in {e["code"] for e in refused["errors"]}, refused["errors"]
+
+        written = write_turn_plan(graph, root)
+        assert written["ok"] is True, written
+        assert str(plan_path) in written["written"], written
+
+        assert validate(graph, root, "franka", False)["ok"] is True
+        # idempotent: the recovery reproduces the committed bytes exactly
+        assert plan_path.read_text() == backup.read_text()
+    finally:
+        shutil.copy(backup, plan_path)
+
+
+def test_write_turn_plan_refuses_a_graph_that_has_no_plan(tmp_path):
+    """CON-8: a free-run graph declares no AISLE_TURN_PLAN, so there is
+    nothing to rewrite. Refuse loudly rather than write an artifact nobody
+    reads, or return ok having done nothing — both of which read as success
+    to the agent that just ran it."""
+    from pathlib import Path
+
+    import yaml
+
+    from aisle.harness.validate import write_turn_plan
+
+    root = Path(__file__).resolve().parents[2]
+    doc = yaml.safe_load((root / "graphs" / "expert_t0.yaml").read_text())
+    for node in doc["nodes"]:
+        env = node.get("env")
+        if isinstance(env, dict):
+            env.pop("AISLE_TURN_PLAN", None)
+    graph = tmp_path / "free_run.yaml"
+    graph.write_text(yaml.safe_dump(doc, sort_keys=False))
+
+    report = write_turn_plan(graph, root)
+    assert report["ok"] is False
+    assert {e["code"] for e in report["errors"]} == {"TURN_PLAN_ABSENT"}, report["errors"]

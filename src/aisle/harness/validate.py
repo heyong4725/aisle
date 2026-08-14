@@ -1760,3 +1760,74 @@ def validate(
     report["warnings"] = warnings
     report["ok"] = not errors
     return report
+
+
+def write_turn_plan(graph_path: Path, root: Path) -> dict:
+    """Rewrite a graph's committed ADR-30 turn plan from its own topology.
+
+    Issue #227. The barrier loads the COMMITTED plan at runtime, and #214's
+    TURN_PLAN_STALE refuses a graph whose plan disagrees — correctly, since a
+    stale plan kills the barrier on the first watermark rather than failing
+    at the gate. But `compile_turn_plan` was reachable only from Python and
+    `harness/CLAUDE.research.md` never mentioned turn plans, so a research
+    agent editing its own `graphs/agent_campaign.yaml` had no documented way
+    to recover and burned metered budget (ADR-21) rediscovering the rule.
+
+    Refuses rather than guesses when the graph is not a lockstep participant
+    graph or declares no plan path: writing a plan for a graph that never
+    asked for one would put an unread artifact in the tree, and silently
+    writing nothing would look like success (CON-8).
+    """
+    report: dict = {"ok": False, "graph": str(graph_path), "errors": [], "warnings": []}
+    nodes, load_errors = load_graph(graph_path)
+    if nodes is None:
+        report["errors"] = load_errors
+        return report
+    manifest_list, manifest_errors = load_manifests(root)
+    if manifest_errors:
+        report["errors"] = manifest_errors
+        return report
+    manifests = {m["id"]: m for _, m in manifest_list}
+
+    declared = [
+        str((node.get("env") or {}).get("AISLE_TURN_PLAN", "")).strip()
+        for node in nodes
+        if isinstance(node, dict) and isinstance(node.get("env"), dict)
+    ]
+    plans = [raw for raw in declared if raw.endswith(".json")]
+    if not plans:
+        report["errors"] = [
+            _entry(
+                "TURN_PLAN_ABSENT",
+                {"node": str(graph_path)},
+                "no node declares an AISLE_TURN_PLAN path, so this graph has no committed "
+                "plan to rewrite",
+                "run this on a lockstep graph; a free-run graph needs no turn plan",
+            )
+        ]
+        return report
+
+    try:
+        plan = compile_turn_plan(nodes, manifests)
+    except ValueError as exc:
+        report["errors"] = [
+            _entry(
+                "TURN_PLAN_ABSENT",
+                {"node": str(graph_path)},
+                f"cannot compile a turn plan for this graph: {exc}",
+                "a lockstep plan needs exactly one sim bridge and one turn barrier",
+            )
+        ]
+        return report
+
+    written = []
+    for raw in sorted(set(plans)):
+        path = Path(raw)
+        if not path.is_file():
+            path = graph_path.parent / raw
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(plan, sort_keys=True, separators=(",", ":")) + "\n")
+        written.append(str(path))
+    report["ok"] = True
+    report["written"] = written
+    return report
