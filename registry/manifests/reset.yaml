@@ -19,7 +19,13 @@ outputs:
   reset_gripper_cmd: {schema: scalar_f32, latency_class: soft_rt}
   # teleport passthrough to the bridge, which owns state injection (BRG-4)
   bridge_reset: {schema: reset_request_u32, latency_class: best_effort}
+  # THE episode boundary, and nothing else (ADR-34): every consumer of this
+  # treats it as "the sim was touched", with no discriminator to remember
   reset_done: {schema: reset_done_u32, latency_class: best_effort}
+  # a refused request (ADR-8) — a reply, not a boundary. Only the requester
+  # subscribes (issue #195); the reply carries request_id for the audit
+  # trail, though the client does not match on it (one request at a time)
+  reset_refused: {schema: reset_refused_u32, latency_class: best_effort}
   turn_done: {schema: sim_turn_u64, latency_class: hard_rt}
 embodiment:
   arm: [franka, so101]

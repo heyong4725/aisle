@@ -503,20 +503,41 @@ class TestRefusedResetIsNotABoundary:
             "may now be guarding nothing; re-check issue #192's reasoning"
         )
 
-    def test_the_node_filters_refusals_before_the_session_sees_them(self):
-        """`label_reader.main()` must not pass a refusal through. Driving
-        the node needs the OCR model pair, so this reads the dispatch
-        instead: the reset_done branch must test `error` before calling
-        on_reset_done. Weaker than an execution test and labelled as such —
-        the behavioural half is pinned above."""
+    def test_the_node_no_longer_needs_a_refusal_filter(self):
+        """ADR-34 (issue #195) DELETED this node's `metadata["error"]`
+        filter, because refusals ride `reset_refused` and this node does not
+        subscribe to it. The hazard above is unchanged and still real — a
+        stamp-less `on_reset_done` clears a live read request — so what
+        changed is only WHERE it is excluded.
+
+        This asserts the deletion rather than pretending the old check is
+        still there. The guarantee now lives in
+        `test_episode_boundary_wiring.py::test_refusals_ride_their_own_topic_and_reach_only_the_requester`
+        and in validate's REFUSAL_UNROUTED rule; if either goes red, the
+        hazard is live and this node has nothing left to catch it."""
+        import ast
         import inspect
 
         from aisle.nodes import label_reader
 
-        src = inspect.getsource(label_reader.main)
-        branch = src[src.index('event["id"] == "reset_done"') :]
-        branch = branch[: branch.index("elif")]
-        assert 'metadata.get("error")' in branch and "continue" in branch, (
-            "the reset_done branch no longer filters refused resets; a "
-            "stamp-less refusal will clear a live read request (issue #192)"
+        # AST, not a text scan: the first revision asserted the literal
+        # '"reset_refused"' was absent from the module source, which was wrong
+        # in BOTH directions — a single-quoted handler passed, and a bare
+        # mention in a comment failed. What matters is whether this node
+        # DISPATCHES on the topic, which is a Compare against a constant.
+        tree = ast.parse(inspect.getsource(label_reader.main))
+        dispatched = {
+            node.comparators[0].value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Compare)
+            and len(node.comparators) == 1
+            and isinstance(node.comparators[0], ast.Constant)
+            and isinstance(node.comparators[0].value, str)
+        }
+        assert "reset_refused" not in dispatched, (
+            "this node dispatches on reset_refused — it is a boundary consumer, not the "
+            "requester, and ADR-34 sends refusals only to the requester"
+        )
+        assert "reset_done" in dispatched, (
+            "the boundary branch vanished, so the assertion above proves nothing"
         )

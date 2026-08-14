@@ -1014,13 +1014,78 @@ def validate_nodes(
                 rung,
                 bridge_ids,
             )
+    errors += _refusal_routing_errors(nodes)
     # ADR-30/VAL-2: every otherwise-valid simulator graph must prove its
     # closed-turn topology. Graphs already refused for another concern do not
     # get secondary CLOCK noise; once that concern is fixed, CLOCK failures
-    # surface before the graph can validate or run.
+    # surface before the graph can validate or run. REFUSAL_UNROUTED is
+    # deliberately ABOVE this: an unroutable refusal is the more specific
+    # diagnosis, and the two would otherwise both fire on the same graph.
     if not errors:
         errors.extend(_clock_errors(nodes, manifests))
     return errors, warnings
+
+
+def _refusal_routing_errors(nodes: list[dict]) -> list[dict]:
+    """TC-6/ADR-34: a graph carrying a reset service MUST route refusals.
+
+    dora DROPS a `send_output` to an output the graph does not declare — one
+    warning to the node's stderr, `Ok(())` to the caller (dora node
+    `validate_output`). So a graph whose reset node omits `reset_refused`
+    does not fail loudly; the refusal evaporates and the requester waits in
+    `awaiting_reset` until the wall clamp. That is strictly worse than the
+    silent degradation this split removed, and it is invisible to every
+    other rule here: VAL-4 checks that declared outputs exist in the
+    manifest, never that a manifest output is declared.
+
+    Two halves, because either alone still hangs the run: the service must
+    DECLARE the output, and something must CONSUME it (round-2 review of
+    #208)."""
+    errors: list[dict] = []
+    reset_nodes = [
+        n
+        for n in nodes
+        if isinstance(n, dict)
+        and str(n.get("path") or "").replace("\\", "/").endswith(RESET_SERVICE_SOURCE)
+    ]
+    for node in reset_nodes:
+        node_id = str(node.get("id", ""))
+        outputs = node.get("outputs")
+        if "reset_refused" not in (outputs if isinstance(outputs, list) else []):
+            errors.append(
+                _entry(
+                    "REFUSAL_UNROUTED",
+                    {"node": node_id, "output": "reset_refused"},
+                    f"{node_id!r} runs the reset service but declares no `reset_refused` "
+                    "output; dora would DROP every refusal with a stderr warning and the "
+                    "requester would wait forever (TC-6, ADR-34)",
+                    "add `reset_refused` to the node's outputs and wire it to the node "
+                    "that sends `reset` (see graphs/expert_t0.yaml)",
+                )
+            )
+            continue
+        consumers = [
+            other["id"]
+            for other in nodes
+            if isinstance(other, dict)
+            and isinstance(other.get("inputs"), dict)
+            and any(
+                (_input_source(raw) or "") == f"{node_id}/reset_refused"
+                for raw in other["inputs"].values()
+            )
+        ]
+        if not consumers:
+            errors.append(
+                _entry(
+                    "REFUSAL_UNROUTED",
+                    {"node": node_id, "output": "reset_refused"},
+                    f"{node_id}/reset_refused reaches no consumer; a refused reset would "
+                    "be published to nobody and the requester would wait forever "
+                    "(TC-6, ADR-34)",
+                    "wire `reset_refused` into the node that sends `reset`",
+                )
+            )
+    return errors
 
 
 #: What a reset node must be wired for to actually PERFORM a behavioral

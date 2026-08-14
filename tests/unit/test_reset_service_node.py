@@ -151,6 +151,11 @@ def replies(node: FakeNode) -> list[dict]:
     return [m for topic, _, m in node.sent if topic == "reset_done"]
 
 
+def refusals(node: FakeNode) -> list[dict]:
+    """ADR-34: refusals answer on their own topic, never on the boundary."""
+    return [m for topic, _, m in node.sent if topic == "reset_refused"]
+
+
 def forwards(node: FakeNode) -> list[list]:
     return [v for topic, v, _ in node.sent if topic == "bridge_reset"]
 
@@ -207,17 +212,40 @@ def test_behavioral_exhaustion_falls_back_and_still_answers_exactly_once(monkeyp
     assert len(replies(node)) == 1, f"expected exactly one boundary, got {replies(node)}"
 
 
-def test_a_refused_request_still_answers(monkeypatch):
-    """ADR-8/TC-6: a malformed payload is refused loudly — but it must still
-    produce a reply, because since #192 a silent refusal would hang every
-    consumer rather than just the requester."""
+def test_a_refused_request_still_answers_on_its_own_topic(monkeypatch):
+    """ADR-8/TC-6/ADR-34: a malformed payload is refused loudly — it must
+    still produce a reply (a silent refusal hangs the requester), and since
+    issue #195 that reply leaves on `reset_refused`, NOT on the boundary."""
     node = run_service(
         [_inp("reset", pa.array(np.array([1, 2, 3], dtype=np.uint32)), {"request_id": "req-2"})],
         monkeypatch,
     )
     assert forwards(node) == []
-    assert len(replies(node)) == 1
-    assert "error" in replies(node)[0]
+    assert len(refusals(node)) == 1
+    assert "error" in refusals(node)[0]
+    assert refusals(node)[0]["request_id"] == "req-2"  # TC-6 correlation survives the move
+    assert replies(node) == [], "a refusal reached the episode boundary topic (ADR-34)"
+
+
+def test_the_boundary_topic_never_carries_a_refusal(monkeypatch):
+    """The single guarantee ADR-34 buys, pinned on its own.
+
+    `budget_guard` and `label_reader` each used to filter `metadata["error"]`
+    off `reset_done`; ADR-34 DELETED both filters, so from here on the
+    guard re-references velocity/hold state to home on every reply it hears,
+    and the OCR session clears its read barrier on every one. That is only
+    safe while this holds. Every refusable shape in one test, because the
+    cost of a leak is silent: a clamp against a false origin permits a
+    larger real jump than the limit allows."""
+    for payload, meta in (
+        (pa.array(np.array([1, 2, 3], dtype=np.uint32)), {"request_id": "wrong-shape"}),
+        (pa.array(["not-a-number"]), {"request_id": "non-numeric"}),
+        (pa.array(np.array([4, 9], dtype=np.uint32)), {"request_id": "unknown-mode"}),
+    ):
+        node = run_service([_inp("reset", payload, meta)], monkeypatch)
+        assert len(refusals(node)) == 1, (payload, refusals(node))
+        assert replies(node) == [], f"{meta['request_id']} refusal rode the boundary topic"
+        assert forwards(node) == [], f"{meta['request_id']} was forwarded to the bridge"
 
 
 def test_the_episode_epoch_is_monotonic_across_mixed_routes(monkeypatch):
@@ -239,6 +267,37 @@ def test_the_episode_epoch_is_monotonic_across_mixed_routes(monkeypatch):
     )
     seqs = [m["seq"] for m in replies(node)]
     assert seqs == [1, 2, 3], f"episode epochs are not monotonic across routes: {seqs}"
+
+
+def test_a_refusal_does_not_advance_the_episode_epoch(monkeypatch):
+    """CON-5 + issue #179, the case the sibling test cannot see: a refusal
+    is not a boundary, so it must not consume a boundary sequence number.
+
+    While refusals shared `reset_done` they also shared its counter, so a
+    refused request between two real resets made the epoch jump 1 -> 3.
+    Consumers read that seq as the episode epoch and nav REFUSES goals
+    stamped with a stale one, so the gap is not cosmetic. ADR-34 gives
+    `reset_refused` its own sequence; this pins that it did."""
+    node = run_service(
+        [
+            reset_request(1, TELEPORT),
+            bridge_reply(sim_time_ns=1),
+            _inp("reset", pa.array(np.array([9, 9, 9], dtype=np.uint32)), {"request_id": "bad1"}),
+            reset_request(2, TELEPORT),
+            bridge_reply(sim_time_ns=2),
+            _inp("reset", pa.array(np.array([8, 8, 8], dtype=np.uint32)), {"request_id": "bad2"}),
+        ],
+        monkeypatch,
+    )
+    assert [m["seq"] for m in replies(node)] == [1, 2], (
+        f"a refusal consumed an episode epoch: {[m['seq'] for m in replies(node)]}"
+    )
+    # TWO refusals: with one, `seq_refused = 1` (a constant) is
+    # indistinguishable from a counter, and TC-2 wants per-topic MONOTONIC,
+    # not per-topic constant (round-2 review).
+    assert [m["seq"] for m in refusals(node)] == [1, 2], (
+        f"reset_refused's sequence does not advance: {[m['seq'] for m in refusals(node)]}"
+    )
 
 
 def test_a_request_without_request_id_is_dropped_with_no_reply(monkeypatch):
@@ -289,23 +348,25 @@ def test_a_real_boundary_retracts_a_latched_base_command(monkeypatch):
     assert safes[-1] == [0.0, 0.0], f"a real boundary did not retract the latch: {safes}"
 
 
-def test_a_refusal_is_not_an_episode_boundary_for_the_guard(monkeypatch):
-    """BG-2/ADR-8 (issue #192 review): the guard re-references velocity and
-    hold state to the HOME qpos on a boundary, because after a teleport the
-    robot IS at home. A refused reset never touched the sim, so that claim
-    is false — clamping the next command against a false origin permits a
-    larger real jump than the limit allows, and re-anchoring the BG-2 timer
-    restarts a budget for an episode that never began.
+def test_the_guard_now_trusts_every_reply_on_the_boundary_topic(monkeypatch):
+    """ADR-34 (issue #195) replaced the guard's `metadata["error"]` filter
+    with a structural guarantee, and this pins the consequence honestly: the
+    guard no longer inspects reply metadata at all, so a reply carrying an
+    `error` key IS treated as a boundary here.
 
-    Refusal replies only reach the guard because #192 moved the boundary
-    onto the reset service's output, so this is a hole that change opened.
-    Compared against the control above: a refusal must NOT retract the
-    latch, because no reset happened."""
-    node = _run_guard([_base_cmd(0.4), _boundary(error="unsupported mode 2")], monkeypatch)
+    That is safe ONLY because refusals no longer ride this topic — the
+    service publishes them on `reset_refused`, which
+    `test_the_boundary_topic_never_carries_a_refusal` pins at the node and
+    `test_refusals_ride_their_own_topic_and_reach_only_the_requester` pins
+    in every graph. If either of those goes red, the hazard BG-2/ADR-8
+    described is live again: velocity and hold state re-referenced to a home
+    the robot is not at, clamping the next command against a false origin.
+    Read this test with those two, never alone."""
+    node = _run_guard([_base_cmd(0.4), _boundary(error="stale key from somewhere")], monkeypatch)
     safes = [v for topic, v, _ in node.sent if topic == "base_cmd_safe"]
     assert safes and safes[0][0] > 0.0, f"the base command never latched: {safes}"
-    assert safes[-1] != [0.0, 0.0], (
-        f"the guard treated a REFUSED reset as an episode boundary: {safes}"
+    assert safes[-1] == [0.0, 0.0], (
+        f"the guard still branches on reply metadata; ADR-34 deleted that filter: {safes}"
     )
 
 
@@ -319,8 +380,8 @@ def test_a_non_numeric_payload_is_refused_not_fatal(monkeypatch):
         [_inp("reset", pa.array(["not-a-number"]), {"request_id": "req-3"})],
         monkeypatch,
     )
-    assert len(replies(node)) == 1, "a malformed request killed the boundary authority"
-    assert "error" in replies(node)[0]
+    assert len(refusals(node)) == 1, "a malformed request killed the boundary authority"
+    assert "error" in refusals(node)[0]
     assert forwards(node) == []
 
 
@@ -400,5 +461,5 @@ def test_the_two_pre_existing_routes_still_report_the_timing_key(monkeypatch):
         [_inp("reset", pa.array(np.array([1, 2, 3], dtype=np.uint32)), {"request_id": "r"})],
         monkeypatch,
     )
-    assert len(replies(refused)) == 1
-    assert replies(refused)[0]["t_reset_ms"] == 0
+    assert len(refusals(refused)) == 1
+    assert refusals(refused)[0]["t_reset_ms"] == 0

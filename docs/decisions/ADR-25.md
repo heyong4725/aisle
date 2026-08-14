@@ -115,8 +115,10 @@ is edited by this ADR.
   reset chain (the sim keeps stepping during the round trip). Decision 2
   removes the cadence-phase residue of that race.
 - **A refused/lost first reset now freezes the sim instead of timing
-  out**: the rollout client accepts any `reset_done` (even an error
-  reply) and the verifier's episode timeout counts SIM seconds, which
+  out**: the rollout client accepts any reply — since ADR-34 (issue #195)
+  that means `reset_done` OR `reset_refused`, where it used to mean a
+  `reset_done` carrying an error field; the behaviour is unchanged, only
+  the topic — and the verifier's episode timeout counts SIM seconds, which
   no longer advance pre-reset — a malformed first reset would stall the
   dataflow until the wall-clamp relaunch instead of failing fast. The
   production client always sends well-formed resets, so this is a

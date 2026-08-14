@@ -167,6 +167,32 @@ def main() -> None:
                     f"reset sent: episode {episode_base + episode} seed {seeds[episode]}",
                     file=sys.stderr,
                 )
+        elif event["id"] == "reset_refused" and phase == "awaiting_reset":
+            # ADR-34 (issue #195, issue #209): a refused reset ENDS the run.
+            #
+            # The client used to proceed on any reply, and the other
+            # episode-state consumers stayed in phase with it by clearing on
+            # the refusal too — they all received it, because it rode the
+            # boundary topic. Once refusals reach only the requester, that
+            # arrangement cannot survive: advancing here would put this node
+            # in episode N+1 while ik-trajectory holds a stale plan, s1-expert
+            # drops the new episode's plan as a duplicate, and nav carries a
+            # leg across the boundary. That is issue #179's class, and the
+            # comment deleted from budget_guard.py named the dependency.
+            #
+            # Stopping is also the honest answer on its own terms: the scene
+            # was never reset, so the episode would measure nothing, and this
+            # repo already chose refuse-over-degrade for `--reset behavioral`
+            # (#196/#204). Exiting the loop is the client's NORMAL
+            # termination path — results are flushed per line, so completed
+            # episodes survive and the runner reports the short count.
+            print(
+                f"reset REFUSED ({(event.get('metadata') or {}).get('error')}) — ending the "
+                f"run at episode {episode_base + episode}; the scene was never reset, and "
+                "advancing would leave the rest of the graph an episode behind",
+                file=sys.stderr,
+            )
+            break
         elif event["id"] == "reset_done" and phase == "awaiting_reset":
             reset_meta = event.get("metadata") or {}
             if retail:

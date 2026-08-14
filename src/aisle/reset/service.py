@@ -7,6 +7,11 @@ attempt loop from reset/behavioral.py — retry <=3, then TELEPORT
 fallback with `fallback: true` in the reply metadata; the loop never
 hangs on a reset. Invalid requests are refused per-request — the service
 never forwards anything the bridge would reject, and never dies (TC-6).
+
+`reset_done` carries exactly one meaning: the episode boundary passed and
+the sim was touched. Refusals answer on `reset_refused`, whose audience is
+the one requester correlating on `request_id` (ADR-34, issue #195) — so a
+boundary consumer needs no discriminator, and cannot forget one.
 """
 
 from __future__ import annotations
@@ -42,12 +47,16 @@ def refusal_reply_metadata(request_meta: dict, payload: np.ndarray, error: str) 
 
     Deliberately NO `sim_time_ns` — a refused reset never touched the sim,
     so there is none to report and inventing one would be a lie the
-    verifier's episode baseline depends on. That makes the `error` key the
-    discriminator every consumer must check: a stamp-less reply drives
-    `label_reader.on_reset_done` down its UNFENCED branch, and the guard
-    would re-reference hold state to a home the robot is not at. Both
-    filter on `error`; an earlier revision of this docstring claimed absent
-    stamps were benign, which was wrong."""
+    verifier's episode baseline depends on.
+
+    This rides `reset_refused`, never `reset_done` (ADR-34, issue #195).
+    While it shared the boundary topic, the missing stamp was a hazard every
+    consumer had to defend against: it drove `label_reader.on_reset_done`
+    down its UNFENCED branch and would have had the guard re-reference hold
+    state to a home the robot is not at. Both nodes filtered on `error`;
+    both filters are now DELETED, because a refusal no longer reaches
+    them. The `error` key is still here — it tells the requester what went
+    wrong — but nothing routes on it any more."""
     meta = {
         "request_id": request_meta.get("request_id", ""),
         "t_reset_ms": 0,
@@ -75,6 +84,16 @@ def main(clock=None) -> None:
     seq_reply = 0
     seq_forward = 0
     seq_cmd = 0
+    # its OWN sequence, because TC-2 defines `seq` as PER-TOPIC monotonic
+    # and these are now two topics. Consumers read `reset_done`'s seq as the
+    # episode epoch (nav_action, s1_expert), so keeping the counters joined
+    # would leave gaps in the boundary sequence that ADR-7 §13 says exist to
+    # distinguish drops from normal flow — false gaps, not lost messages.
+    # (An earlier revision of this comment claimed the shared counter caused
+    # epoch DRIFT between consumers. It did not: the refusal was delivered on
+    # `reset_done`, so every consumer read the same seq off the same message.
+    # The reason is TC-2 conformance, not drift — round-2 review.)
+    seq_refused = 0
     runtime = None  # BehavioralRuntime, built lazily on first behavioral request
     latest_sim_ns = 0
     # when the CURRENT behavioral request started, for its TC-6 t_reset_ms.
@@ -157,11 +176,11 @@ def main(clock=None) -> None:
                 # issue #192 and dora does not restart nodes, but NOT claimed
                 # as tested.
                 print(f"reset refused: {refusal}", file=sys.stderr)
-                seq_reply += 1
+                seq_refused += 1
                 node.send_output(
-                    "reset_done",
+                    "reset_refused",
                     pa.array(np.array([0], dtype=np.uint32)),
-                    stamp(refusal_reply_metadata(metadata, payload, str(refusal)), seq_reply),
+                    stamp(refusal_reply_metadata(metadata, payload, str(refusal)), seq_refused),
                 )
                 continue
             if route == "behavioral":

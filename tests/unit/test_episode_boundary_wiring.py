@@ -142,3 +142,79 @@ def test_every_node_that_handles_the_boundary_is_wired_to_it(path):
         f"{path.name}: {missing} handle reset_done in code but the graph never delivers it — "
         "the node silently misses every episode boundary (issue #179)"
     )
+
+
+def _edges_from(node: dict, topic: str) -> dict:
+    """{local port name: source} for every input of `node` sourced from a
+    `*/topic` edge — keyed on the SOURCE, never on the local port name.
+
+    dora delivers an event under the LOCAL PORT NAME, so
+    `reset_done: {source: reset/reset_refused}` makes a boundary consumer
+    dispatch a refusal down its `reset_done` branch. Keying on the port name
+    is blind to exactly that, which is the one wiring that matters
+    (round-2 review of #208: rewriting every consumer's source that way left
+    all 118 tests green)."""
+    found = {}
+    for port, raw in (node.get("inputs") or {}).items():
+        source = raw.get("source") if isinstance(raw, dict) else raw
+        if isinstance(source, str) and source.endswith(f"/{topic}"):
+            found[port] = source
+    return found
+
+
+@pytest.mark.parametrize("path", GRAPHS, ids=lambda p: p.name)
+def test_refusals_ride_their_own_topic_and_reach_only_the_requester(path):
+    """TC-6/ADR-34 (issue #195): a refused reset is a REPLY, not a boundary.
+
+    It goes to the one requester; the boundary is broadcast state. Feeding a
+    refusal to a boundary consumer puts back exactly what this change
+    removes — the guard re-referencing hold state to a home the robot is not
+    at, and the OCR session clearing a live read request — and both nodes'
+    `error` filters are gone, so nothing downstream would catch it.
+
+    Checked on EDGE SOURCES and on the producer, both learned the hard way:
+    keying on the local port name missed the only dangerous shape, and not
+    pinning the producer let `dora-genesis/reset_refused` (a topic with no
+    producer) pass while the requester silently never heard a refusal."""
+    doc = yaml.safe_load(path.read_text()) or {}
+    nodes = doc.get("nodes", [])
+    service = [n for n in nodes if n["id"] == RELAY]
+    if not service:
+        pytest.skip(f"{path.name} has no reset service")
+    assert "reset_refused" in (service[0].get("outputs") or []), (
+        f"{path.name}: the reset service declares no reset_refused output — dora DROPS a "
+        "send_output to an undeclared output, so every refusal would vanish into a stderr "
+        "warning and the requester would wait forever (ADR-34)"
+    )
+    consumers = {n["id"]: _edges_from(n, "reset_refused") for n in nodes}
+    consumers = {nid: edges for nid, edges in consumers.items() if edges}
+    assert set(consumers) == {"rollout-client"}, (
+        f"{path.name}: reset_refused reaches {sorted(consumers)}; only the requester may "
+        "consume it — a boundary consumer that hears a refusal is the ADR-34 bug returning"
+    )
+    assert list(consumers["rollout-client"].values()) == [f"{RELAY}/reset_refused"], (
+        f"{path.name}: the requester's refusal edge is {consumers['rollout-client']}, not "
+        f"{RELAY}/reset_refused — a refusal from any other producer never arrives"
+    )
+
+
+@pytest.mark.parametrize("path", GRAPHS, ids=lambda p: p.name)
+def test_every_node_that_handles_a_refusal_is_wired_to_it(path):
+    """The issue #179 shape, for the new topic: a node whose code handles
+    `reset_refused` while the graph never delivers it waits forever on a
+    reply published to nobody. Derived from node SOURCE, not a hand-kept
+    list, so it covers a node the day it is written. BOTH quote forms, like
+    the reset_done sibling above — a single-quoted handler slipped past the
+    first revision of this test (round-2 review)."""
+    doc = yaml.safe_load(path.read_text()) or {}
+    wired = {n["id"] for n in doc.get("nodes", []) if _edges_from(n, "reset_refused")}
+    missing = []
+    for node_id, src in _node_sources(path).items():
+        if not src.is_file() or node_id in wired:
+            continue
+        text = src.read_text()
+        if '== "reset_refused"' in text or "== 'reset_refused'" in text:
+            missing.append((node_id, src.name))
+    assert not missing, (
+        f"{path.name}: {missing} handle reset_refused in code but the graph never delivers it"
+    )

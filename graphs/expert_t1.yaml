@@ -45,7 +45,7 @@ nodes:
   env:
     AISLE_LOCKSTEP: '1'
     AISLE_TURN_NODE: 'reset'
-    AISLE_TURN_OUTPUTS: 'bridge_reset,reset_done,turn_done'
+    AISLE_TURN_OUTPUTS: 'bridge_reset,reset_done,reset_refused,turn_done'
   inputs:
     reset:
       source: rollout-client/reset
@@ -60,6 +60,7 @@ nodes:
   outputs:
   - bridge_reset
   - reset_done
+  - reset_refused
   - turn_done
 - id: budget-guard
   path: ../src/aisle/nodes/budget_guard.py
@@ -246,6 +247,9 @@ nodes:
     tick: dora/timer/millis/1000
     reset_done:
       source: reset/reset_done
+      queue_size: 100
+    reset_refused:
+      source: reset/reset_refused
       queue_size: 100
     episode_result:
       source: verifier-oracle/episode_result

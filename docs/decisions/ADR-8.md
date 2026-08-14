@@ -50,6 +50,11 @@ carries env_id and seq (TC-2). (13) The reset service refuses a bad
 request per-request — stderr plus a correlated reset_done reply with
 payload [0] and an error field — and keeps serving (a raise in the event
 loop would kill the service for all later teleports, violating TC-6).
+AMENDED 2026-08-13 (ADR-34, issue #195): the refusal reply moved OFF
+`reset_done` onto its own `reset_refused` topic, payload [0] unchanged.
+Refusals were sharing the topic every consumer reads as the episode
+boundary, which forced two of them to special-case `error`. Only the
+requester hears a refusal now; `reset_done` means the boundary passed.
 Resets in acceptance A2 route THROUGH the dispatcher so RST-1's <2 s
 budget is measured end-to-end across both hops.
 

@@ -387,11 +387,15 @@ class ReaderSession:
 
         A stamp-less call takes the UNFENCED branch below — the destructive
         one — so the caller must only make it for a real boundary. Since
-        issue #192 the boundary arrives from the reset service, which also
-        replies to REFUSED resets (ADR-8) carrying no sim stamp; those are
-        filtered at the call site, because a refusal is not a boundary and
-        clearing a live request on one is exactly the hang this fence was
-        built to prevent."""
+        issue #192 the boundary arrives from the reset service; its REFUSED
+        replies (ADR-8) carry no sim stamp, and clearing a live request on
+        one is exactly the hang this fence was built to prevent. The call
+        site used to filter them on `metadata["error"]`. It no longer does,
+        and no longer needs to: since ADR-34 (issue #195) refusals leave on
+        `reset_refused`, which this node does not subscribe to, so the only
+        thing reaching the call site is a boundary. The graph is what
+        enforces that now — see tests/unit/test_episode_boundary_wiring.py
+        and the REFUSAL_UNROUTED validator rule."""
         reset_ns = sim_time_ns if sim_time_ns is not None else None
         if reset_ns is not None and reset_ns > self.last_reset_sim_time_ns:
             self.last_reset_sim_time_ns = reset_ns
@@ -574,15 +578,12 @@ def main() -> None:  # pragma: no cover — dora runtime
                 session.on_read_request(request, metadata.get("request_id", "")), barrier
             )
         elif event["id"] == "reset_done":
-            if metadata.get("error"):
-                # a REFUSED reset (ADR-8) is not an episode boundary, and it
-                # carries no sim stamp — passing it through would take
-                # on_reset_done's unfenced branch and clear a LIVE read
-                # request, hanging the tour silently (issue #192 review).
-                # These replies only reach this node because #192 moved the
-                # boundary onto the reset service's output.
-                print(f"ocr: reset refused ({metadata['error']}); not a boundary", file=sys.stderr)
-                continue
+            # every reply here IS a boundary (ADR-34): refusals ride
+            # `reset_refused`, which this node does not subscribe to. The
+            # `metadata["error"]` filter that used to stand here — a
+            # stamp-less refusal takes on_reset_done's unfenced branch and
+            # clears a LIVE read request, hanging the tour silently — is
+            # deleted because the shape, not this node, now prevents it.
             session.on_reset_done(parse_sim_stamp(metadata))
         elif event["id"] == "clock":
             barrier = (session.pending or {}).get("frame_after_sim_time_ns")

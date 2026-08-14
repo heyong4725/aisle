@@ -63,9 +63,14 @@ def _reset_boundaries(run_dir: Path) -> list[int]:
 
     Reads the reset SERVICE's endpoint, which answers on every route, and
     falls back to the bridge's for runs whose graph has no service node.
-    REFUSED resets are excluded: the service replies to those too (ADR-8,
-    payload 0 rather than 1) and they are not boundaries — the sim was
-    never touched."""
+
+    The payload-0 filter is now a LEGACY-COMPAT guard, not a live
+    discriminator (ADR-34, issue #195): refusals moved to `reset_refused`,
+    so nothing recorded from here on can put a 0 on this topic. It stays
+    because this function reads RECORDED traces, and runs predating ADR-34
+    could carry one — a refused reset is not a boundary in either era, since
+    the sim was never touched. Deleting it would be a claim about corpora
+    that are not present in every checkout (`runs/h3/` ships no traces)."""
     for node in ("reset", "dora-genesis"):
         try:
             table = _load(run_dir, "reset_done", node=node)
