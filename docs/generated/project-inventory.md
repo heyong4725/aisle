@@ -14,7 +14,7 @@ architecture, and contribution guidance remain in the
 | Graphs | 11 |
 | Capability manifests | 33 |
 | CLI command entries | 12 |
-| ADR files | 43 |
+| ADR files | 44 |
 
 ## Graphs
 
@@ -146,6 +146,7 @@ inference.
 | [docs/decisions/ADR-9.md](../decisions/ADR-9.md) | ADR-9: T07 budget-guard interpretations (SPEC 080) | ACCEPTED |
 | [docs/decisions/ADR-M0.md](../decisions/ADR-M0.md) | ADR-M0 — Milestone M0 sign-off (SPEC 090, M0-6) | SIGNED 2026-07-21 (option (a), M0-5 deferred); RE-AFFIRMED on |
 | [docs/decisions/ADR-a3-protocol.md](../decisions/ADR-a3-protocol.md) | ADR-a3-protocol — A3 ablation: params-only vs params+code authorship | PROPOSED, **rev 2** (rev 1 drafted 2026-08-12 by the dev loop; |
+| [docs/decisions/ADR-a5-protocol.md](../decisions/ADR-a5-protocol.md) | ADR-a5-protocol — A5 fleet scaling: 1/4/8 concurrent agents on T1 | ACCEPTED (owner-directed launch 2026-08-14: "run A5 fleet |
 | [docs/decisions/ADR-h1-protocol.md](../decisions/ADR-h1-protocol.md) | ADR-h1-protocol — H1 composition-experiment protocol (design doc §8.2.4) | accepted (CON-15: §8.2.4 defines what to record but not the |
 | [docs/decisions/ADR-h2-campaign-protocol.md](../decisions/ADR-h2-campaign-protocol.md) | ADR-h2-campaign-protocol — single-scenario research campaign runner (design doc §8.3 item 6) | accepted (CON-15: §8.3 names the campaign but not the mechanics; |
 | [docs/decisions/ADR-h3-campaign-protocol.md](../decisions/ADR-h3-campaign-protocol.md) | ADR-h3-campaign-protocol — H3 accumulation campaign, S1→S2→S3 (design doc §11.5, §8.4) | accepted 2026-07-27 (decisions D1–D6 resolved by human; D1 |
