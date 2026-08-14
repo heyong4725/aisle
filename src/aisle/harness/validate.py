@@ -418,6 +418,55 @@ def _clock_errors(nodes: list[dict], manifests: dict[str, dict]) -> list[dict]:
 
     for node_id in sorted(adjacency):
         visit(node_id, [node_id])
+    # An episodic edge must be a genuine BACK edge (issue #220). The rule
+    # above uses `turn_edge` only to DELETE edges from the cycle check, so
+    # nothing asked whether the producer is actually scheduled AFTER the
+    # consumer. On a FORWARD edge the label is not a harmless mislabel: the
+    # consumer resolves an episodic input from the PREVIOUS turn's
+    # watermark while dora delivers the current turn's message, so the first
+    # time the producer emits, ParticipantTurn sees an excess input with a
+    # wrong stamp and raises — the barrier watchdog then kills the dataflow
+    # about a second in. `expert_s1` and `expert_t4` both shipped that way.
+    # Forward-DAG layer: the barrier releases a participant once its forward
+    # inputs are satisfied, so a strictly LOWER layer means "emits earlier in
+    # this same turn". Equal-or-higher is safe: the producer has not run yet
+    # when the consumer opens (a genuine back edge), or the two are unordered
+    # and the barrier never places the producer first. Verified against the
+    # corpus: this marks `expert_s1` and `expert_t4` and leaves `expert_t0`
+    # through `t3` alone, which matches what actually runs.
+    layer_of: dict[str, int] = {}
+
+    def forward_layer(node_id: str, stack: tuple[str, ...] = ()) -> int:
+        if node_id in layer_of:
+            return layer_of[node_id]
+        if node_id in stack:  # defensive: CLOCK_CYCLE reports the real fault
+            return 0
+        upstream = [p for p, outs in adjacency.items() if node_id in outs]
+        depth = 1 + max((forward_layer(p, stack + (node_id,)) for p in upstream), default=0)
+        layer_of[node_id] = depth
+        return depth
+
+    for consumer in sorted(participants):
+        for port, raw in sorted((graph_nodes[consumer].get("inputs") or {}).items()):
+            if edge_kind(consumer, port) != "episodic":
+                continue
+            source = _input_source(raw)
+            producer = source.partition("/")[0] if source else ""
+            if producer not in participants or producer == consumer:
+                continue
+            if forward_layer(producer) < forward_layer(consumer):
+                add(
+                    "EPISODIC_NOT_A_BACK_EDGE",
+                    {"node": consumer, "input": port, "source": source},
+                    f"{consumer}/{port} is declared turn_edge: episodic, but {producer!r} is "
+                    f"not downstream of {consumer!r} — an episodic input is resolved from the "
+                    "previous turn while this one arrives in the current turn, so the "
+                    "participant raises on the first message (ADR-30, issue #220)",
+                    f"declare {port!r} forward on the manifest that carries it, and regenerate "
+                    "the committed turn plans; keep turn_edge: episodic for reply/verdict/"
+                    "result back-edges only",
+                )
+
     if cycle is not None:
         add(
             "CLOCK_CYCLE",

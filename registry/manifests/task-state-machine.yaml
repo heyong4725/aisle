@@ -4,7 +4,7 @@ provides: [task_sequencing]
 requires: [episode_verification]
 inputs:
   episode_goal: {schema: json_utf8, rate_hz: 1}
-  episode_result: {schema: json_utf8, rate_hz: 1, turn_edge: episodic}
+  episode_result: {schema: json_utf8, rate_hz: 1}
   violation: {schema: json_utf8, rate_hz: 1, turn_edge: episodic}
   # 1 Hz feedback cadence (TC-7); wire from dora/timer/millis/1000
   tick: {schema: timer_tick, rate_hz: 1}
