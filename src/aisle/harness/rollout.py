@@ -810,7 +810,24 @@ def scrub_bringup_env(env: dict) -> dict:
     return {k: v for k, v in env.items() if k not in SCRUBBED_ENV}
 
 
-def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict) -> subprocess.Popen:
+def dora_stderr_log(run_dir: Path, relaunch: int = 0) -> Path:
+    """Where a launch's dora stderr goes (issue #183).
+
+    Per LAUNCH, not per run. `Popen` opens this in write mode, so pointing
+    every wall-clamp relaunch (ADR-23) at one path meant each relaunch
+    truncated the stderr of the launch that had just wedged — deleting the
+    one file you would read to explain why the clamp fired. Traces already
+    get this isolation (`traces/relaunch-N/`) for exactly the same reason;
+    stderr did not.
+
+    Launch 1 keeps the bare name so existing habits and docs still find it;
+    relaunches sort next to it. Kept at the run root rather than inside
+    `traces/relaunch-N/` because this is the dora runtime's own log, not
+    recorded evidence, and `traces/` is the recorder's namespace."""
+    return run_dir / (f"dora.stderr.relaunch-{relaunch}.log" if relaunch else "dora.stderr.log")
+
+
+def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict, relaunch: int = 0) -> subprocess.Popen:
     return subprocess.Popen(
         ["dora", "run", str(exec_graph), "--uv"],
         # cwd = the run dir: dora spawns nodes with this cwd, which is what
@@ -824,7 +841,9 @@ def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict) -> subprocess.Popen:
         # bytes were being discarded anyway. Per-NODE stderr is separate and
         # already persisted by dora as out/<dataflow>/log_<node>.jsonl rows with
         # "stream":"stderr", which is where a bridge refusal actually lands.
-        stderr=(run_dir / "dora.stderr.log").open("w"),
+        # Per-LAUNCH path (issue #183): "w" mode plus one shared path meant a
+        # relaunch erased the wedged launch's own diagnostics.
+        stderr=dora_stderr_log(run_dir, relaunch).open("w"),
         text=True,
         start_new_session=True,
     )
@@ -1009,6 +1028,38 @@ def rollout(
     )
     if not gates["ok"]:
         return {"ok": False, "refused": gates}
+    if reset_mode == "behavioral":
+        # RST-2 (issue #196): refuse rather than silently degrade. Most
+        # graphs wire the reset node with {reset, reset_done} only; on those,
+        # mode 1 is accepted, burns all three attempts on a frame that never
+        # arrives, and falls back to teleport every episode. The run then
+        # reports fallback:true and measures nothing, with no error.
+        #
+        # BELOW run_gates deliberately: validate owns the verdict on a
+        # malformed graph (GRAPH_INVALID), so a `nodes:`-less or wrong-shaped
+        # file is diagnosed as broken rather than as "cannot serve a
+        # behavioral reset" — the diagnosis must not depend on --reset.
+        # ABOVE the ledger: a refusal costs no episodes.
+        from aisle.harness.validate import behavioral_reset_gaps, load_graph
+
+        gaps = behavioral_reset_gaps(load_graph(graph, graph_snapshot)[0] or [])
+        if gaps:
+            return {
+                "ok": False,
+                "refused": {
+                    "gate": "reset_mode",
+                    "detail": [
+                        {
+                            "code": "BEHAVIORAL_RESET_UNSUPPORTED",
+                            "node": "reset",
+                            "detail": "graph cannot serve a behavioral reset",
+                            "missing": gaps,
+                            "hint": "use --reset teleport, or a graph whose reset node is wired "
+                            "for RST-2 (see graphs/expert_t1_behavioral.yaml)",
+                        }
+                    ],
+                },
+            }
     # ADR-21 round 3: RESERVE atomically before launch (trusted runs only;
     # the ledger meters the campaign, not development) — concurrent
     # rollouts contend under the ledger lock and an interrupted run stays
@@ -1222,7 +1273,7 @@ def rollout(
                 deadline += GENESIS_BUILD_BUDGET_S
                 if hard_cap_s is not None:
                     deadline = min(deadline, started + hard_cap_s)
-                proc = _spawn_dora(exec_graph, run_dir, env)
+                proc = _spawn_dora(exec_graph, run_dir, env, relaunch=relaunches)
                 lines_at_launch = last_lines = lines + 1
                 last_line_t = time.monotonic()
                 last_size = -1

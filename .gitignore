@@ -11,3 +11,9 @@ dist/
 *.egg-info/
 .DS_Store
 out/
+
+# `dora graph <graph>.yaml` renders a mermaid visualization to
+# <stem>-graph.html in the CWD. Useful while reading a dataflow, never an
+# input to one: it is derived from graphs/, so committing it would be a
+# second copy of the topology that silently goes stale.
+*-graph.html

@@ -376,9 +376,9 @@ def main(clock=None) -> None:
 
             shelves = store_scan_obstacles(load_planogram())
         else:
-            from aisle.nodes.dora_genesis import _scan_obstacles
+            from aisle.scenes.pharmacy import desk_scan_obstacles
 
-            shelves = _scan_obstacles(physics, embodiment)
+            shelves = desk_scan_obstacles(physics, embodiment)
         footprint_r = float(physics["embodiment"][embodiment]["base_footprint_radius_m"])
 
     node = Node()

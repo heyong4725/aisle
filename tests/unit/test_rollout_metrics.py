@@ -290,6 +290,7 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
 
     spawns = []
     episode_bases = []
+    stderr_logs = []
 
     def fake_popen(cmd, cwd=None, env=None, **kwargs):
         # subprocess.run (the git calls) rides the same Popen; only the
@@ -300,6 +301,8 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
             return proc
         spawns.append(env["AISLE_SEEDS"])
         episode_bases.append(env.get("AISLE_EPISODE_BASE"))
+        # issue #183: the stderr sink is opened per launch in "w" mode
+        stderr_logs.append(Path(kwargs["stderr"].name).name)
         results = Path(env["AISLE_RESULTS"])
         with open(results, "a") as f:
             if len(spawns) == 1:  # first launch: seed 0 lands, then wedges
@@ -358,6 +361,16 @@ def test_per_episode_wall_clamp_records_and_relaunches(tmp_path, monkeypatch):
     # review: scrubbing also covers the fleet and h4 paths, which an
     # explicit set inside rollout() did not).
     assert episode_bases == [None, "2"]
+    # issue #183: each launch gets its OWN stderr sink. Popen opens these in
+    # "w" mode, so one shared path meant the relaunch truncated the stderr
+    # of the launch that had just wedged — deleting the only file that
+    # explains why the clamp fired. Same isolation traces/relaunch-N/ has.
+    assert stderr_logs == ["dora.stderr.log", "dora.stderr.relaunch-1.log"], stderr_logs
+    assert len(set(stderr_logs)) == len(stderr_logs), "two launches shared one stderr sink"
+    # and they really are on disk, not just named apart
+    run_dir = root / "runs" / "clamp"
+    for name in stderr_logs:
+        assert (run_dir / name).exists(), f"{name} was never opened"
     # the PROPERTY, not just the env var: no two attempts in the run share
     # an episode index, which is what keeps goal_ids unambiguous
     indices = [e["episode"] for e in report["episodes"]]
@@ -639,3 +652,178 @@ class TestEpisodeBaseConfig:
 
         with pytest.raises(SystemExit, match="AISLE_EPISODE_BASE"):
             parse_episode_base({"AISLE_EPISODE_BASE": "-5"})
+
+
+def test_dora_stderr_log_is_per_launch(tmp_path):
+    """HAR-4 (issue #183): evidence must survive. `Popen` opens this sink in
+    write mode, so every launch needs its own path — a shared one meant each
+    wall-clamp relaunch (ADR-23) truncated the wedged launch's diagnostics.
+
+    Launch 1 keeps the bare name so existing docs and habits still find it."""
+    from aisle.harness.rollout import dora_stderr_log
+
+    run = tmp_path / "run"
+    assert dora_stderr_log(run).name == "dora.stderr.log"
+    assert dora_stderr_log(run, 0).name == "dora.stderr.log"
+    names = [dora_stderr_log(run, n).name for n in range(4)]
+    assert len(set(names)) == 4, names
+    # all at the run root, beside each other, and sortable
+    assert all(dora_stderr_log(run, n).parent == run for n in range(4))
+    assert names[1:] == [f"dora.stderr.relaunch-{n}.log" for n in (1, 2, 3)]
+
+
+def _gaps_for(name):
+    from aisle.harness.validate import behavioral_reset_gaps
+
+    doc = yaml.safe_load((REPO_ROOT / "graphs" / f"{name}.yaml").read_text())
+    return behavioral_reset_gaps(doc["nodes"])
+
+
+def test_behavioral_reset_is_refused_on_a_graph_that_cannot_serve_it():
+    """RST-2 (issue #196): most graphs wire the reset node with
+    `{reset, reset_done}` only. `--reset behavioral` on one of those is
+    accepted today, burns all three attempts on a frame that never arrives,
+    and falls back to teleport EVERY episode — reporting `fallback: true,
+    behavioral_attempts: 3` with no error anywhere. An A6 ablation run that
+    way is a teleport run that measures nothing.
+
+    Checked against the real graphs, so a future graph that gains the RST-2
+    wiring is recognised without editing this test."""
+    from aisle.harness.validate import behavioral_reset_gaps
+
+    # the graph named for behavioral resets can serve one
+    assert _gaps_for("expert_t1_behavioral") == []
+    # its teleport twin cannot, and says exactly what is missing
+    gaps = _gaps_for("expert_t1")
+    assert gaps, "expert_t1 has no RST-2 wiring but was reported capable"
+    assert any("rgb_overhead" in g for g in gaps), gaps
+    assert any("reset_joint_cmd" in g for g in gaps), gaps
+    # a graph with no reset service at all is refused, not crashed
+    assert behavioral_reset_gaps([{"id": "other"}]) == [
+        "no node running reset/service.py in the graph"
+    ]
+
+
+def test_declaring_the_command_ports_is_not_being_wired_for_them():
+    """The check is a CAPABILITY check, not a spelling check (round-2
+    review). The reset has no private channel to the arm (VAL-5): a
+    `reset_joint_cmd` no budget guard consumes is exactly as inert as one
+    never declared, and `validate` has no rule against an unconsumed
+    output — so without this, a graph could pass the gate and still burn
+    every attempt, the precise failure the gate exists to refuse."""
+    from aisle.harness.validate import behavioral_reset_gaps
+
+    wired = yaml.safe_load((REPO_ROOT / "graphs" / "expert_t1_behavioral.yaml").read_text())
+    assert behavioral_reset_gaps(wired["nodes"]) == []
+
+    # same reset node, guard no longer listening: still refused
+    orphaned = [n if n["id"] != "budget-guard" else {**n, "inputs": {}} for n in wired["nodes"]]
+    gaps = behavioral_reset_gaps(orphaned)
+    assert gaps == [
+        "output 'reset_joint_cmd' reaches no consumer",
+        "output 'reset_gripper_cmd' reaches no consumer",
+    ], gaps
+
+
+def test_the_reset_service_is_found_by_source_not_by_node_id():
+    """`graphs/` ids the node `reset`; `tests/conftest.py` ids the same
+    source `reset-service`. Keying on the id would refuse a fully wired
+    graph for naming it differently, so the node is resolved by the path it
+    runs — the same convention test_episode_boundary_wiring uses."""
+    from aisle.harness.validate import behavioral_reset_gaps
+
+    wired = yaml.safe_load((REPO_ROOT / "graphs" / "expert_t1_behavioral.yaml").read_text())
+    renamed = []
+    for node in wired["nodes"]:
+        node = dict(node)
+        if node["id"] == "reset":
+            node["id"] = "reset-service"
+        elif isinstance(node.get("inputs"), dict):
+            node["inputs"] = {
+                port: (
+                    {**raw, "source": raw["source"].replace("reset/", "reset-service/")}
+                    if isinstance(raw, dict) and str(raw.get("source", "")).startswith("reset/")
+                    else raw.replace("reset/", "reset-service/")
+                    if isinstance(raw, str) and raw.startswith("reset/")
+                    else raw
+                )
+                for port, raw in node["inputs"].items()
+            }
+        renamed.append(node)
+    assert behavioral_reset_gaps(renamed) == []
+
+
+def test_a_malformed_graph_never_raises_out_of_the_capability_check():
+    """CON-8: `cli.py` calls `rollout()` unwrapped, so a TypeError here
+    would exit on a traceback with NO JSON on stdout — on the graph typo an
+    author is likeliest to make. `load_graph` owns the GRAPH_INVALID verdict
+    on every shape below; this one only has to not crash (round-2 review)."""
+    from aisle.harness.validate import behavioral_reset_gaps
+
+    for shape in (
+        [],
+        ["not-a-node"],
+        [{"id": "reset", "inputs": [{"source": "a/b"}], "outputs": [{"x": 1}]}],
+        [{"id": "reset", "inputs": "rgb_overhead", "outputs": "reset_joint_cmd"}],
+        [{"id": "reset"}, {"id": "reset", "inputs": None, "outputs": None}],
+    ):
+        assert isinstance(behavioral_reset_gaps(shape), list), shape
+
+
+def test_exactly_one_graph_is_behavioral_capable_today():
+    """Pins the graph INVENTORY, not the capability check (a weakened check
+    is caught by the sibling tests, not by this one): if a second graph
+    gains RST-2 wiring, that is a deliberate act and this test should be
+    updated to say so."""
+    from aisle.harness.validate import behavioral_reset_gaps
+
+    capable = [
+        p.stem
+        for p in sorted((REPO_ROOT / "graphs").glob("*.yaml"))
+        if not behavioral_reset_gaps(yaml.safe_load(p.read_text()).get("nodes") or [])
+    ]
+    assert capable == ["expert_t1_behavioral"], capable
+
+
+def test_rollout_refuses_behavioral_before_reserving_any_episodes(tmp_path, monkeypatch):
+    """The gate itself, not just the predicate behind it (round-2 review):
+    mutating `if reset_mode == "behavioral":` to `if False:` left the whole
+    suite green, because every other test called the pure function directly.
+    That is the PR #177 lesson repeating — the arithmetic was tested, the
+    WIRING was not.
+
+    The teleport arm is the positive control: same graph, same everything,
+    and it must get PAST this gate — it stops later, somewhere else, which
+    is the point. Without it, a mutation that fires the gate unconditionally
+    would still pass."""
+    from aisle.harness import rollout as ro
+
+    monkeypatch.setattr(ro, "run_gates", lambda *a, **k: {"ok": True, "sim_backend": "genesis"})
+
+    def run(mode):
+        return ro.rollout(
+            root=tmp_path,
+            graph=REPO_ROOT / "graphs" / "expert_t1.yaml",
+            tier="T1",
+            episodes=1,
+            seeds=[0],
+            reset_mode=mode,
+            verifier="oracle",
+            run_id=f"reset-gate-{mode}",
+            branch="b",
+            no_idea_gate=True,
+            env_baseline="local",
+        )
+
+    refused = run("behavioral")
+    assert refused["ok"] is False
+    assert refused["refused"]["gate"] == "reset_mode"
+    entry = refused["refused"]["detail"][0]
+    assert entry["code"] == "BEHAVIORAL_RESET_UNSUPPORTED"
+    # machine-readable, not only interpolated into the prose (CON-8)
+    assert any("rgb_overhead" in m for m in entry["missing"]), entry
+    # refused BEFORE anything is written or reserved
+    assert not (tmp_path / "runs" / "reset-gate-behavioral").exists()
+
+    control = run("teleport")
+    assert control["refused"]["gate"] != "reset_mode", control
