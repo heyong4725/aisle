@@ -419,9 +419,19 @@ home state. It runs alongside the oracle for fidelity analysis; it does not
 replace oracle metrics.
 
 [`reset/service.py`](../src/aisle/reset/service.py) implements the typed reset
-service. Teleport reset is implemented; behavioral reset remains a future
-hardware-facing concern. Reset, scenes, verifiers, and expert graphs are in the
-post-M0 frozen set.
+service. Both modes are implemented **in simulation**: teleport (RST-1) delegates
+state injection to the bridge, and behavioral (RST-2) commands the robot to
+re-shelve the delivered box through the guarded motion path, with bounded retry
+and a teleport fallback. [A6](../analysis/a6/a6_findings.md) measured a paired
+10-episode ablation — 7 behavioral successes, 3 fallbacks — on
+[`graphs/expert_t1_behavioral.yaml`](../graphs/expert_t1_behavioral.yaml), the
+one graph wired to serve it (`harness rollout --reset behavioral` refuses the
+others rather than silently teleporting, issue #196). Hardware reset parity
+remains untested; that is the future-facing part.
+
+`reset_done` is the episode boundary and nothing else — a refused request answers
+on `reset_refused` (ADR-34). Reset, scenes, verifiers, and expert graphs are in
+the post-M0 frozen set.
 
 ### 5.7 Capability registry
 
