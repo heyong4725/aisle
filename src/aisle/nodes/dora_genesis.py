@@ -118,9 +118,28 @@ def rung_topic_rates(perception: str, is_mobile: bool) -> dict[str, int]:
 # few ticks until it receives reset_done and clears, and those stale
 # commands would drive the just-homed arm back off home — the next
 # episode then starts from a bad pose and sweeps the shelf (M0 run
-# t10-clearcheck, ep9 cascade). 20 ticks (0.2 s) covers the executor's
-# reset_done round-trip and is far shorter than the goal->grasp latency,
-# so no real command for the NEW episode is dropped.
+# t10-clearcheck, ep9 cascade).
+#
+# MEASURED 2026-08-14 (issue #196), because issue #192/#193 put the reset
+# service between the bridge and the executor and nobody had checked what
+# the extra hop cost. Instrumented `quarantine.arm()` and the executor's
+# `streamer = None`, then ran two T0 episodes:
+#
+#   round-trip = 0 bridge ticks. The executor clears before the next
+#   joint_state arrives, because BRG-4 forbids the bridge from publishing
+#   observations between receiving `reset` and sending `reset_done`, and
+#   the service's relay is a same-tick passthrough. 20 ticks is ~20x
+#   margin, not a tight fit — the extra hop cost nothing measurable.
+#
+# The same run corrected the other half of this comment, which used to
+# claim "far shorter than the goal->grasp latency, so no real command for
+# the NEW episode is dropped". Not true: the NEW episode's commands start
+# arriving at quarantine tick 8 and are dropped through tick 20. Harmless
+# — the executor streams continuously, so the arm simply begins moving
+# ~0.12 s later and both episodes passed — but it is a real cost of the
+# window, not the absence of one. Left at 20: the hazard it exists for is
+# a stale command reaching a homed arm, and there is no evidence for
+# trimming it.
 RESET_SETTLE_TICKS = 20
 
 
