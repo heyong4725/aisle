@@ -1023,7 +1023,86 @@ def validate_nodes(
     # diagnosis, and the two would otherwise both fire on the same graph.
     if not errors:
         errors.extend(_clock_errors(nodes, manifests))
+        errors.extend(_turn_plan_errors(nodes, manifests, graph_dir))
     return errors, warnings
+
+
+def _turn_plan_errors(nodes: list[dict], manifests: dict, graph_dir: Path | None) -> list[dict]:
+    """ADR-30 / issue #213: the COMMITTED turn plan must match this graph.
+
+    `graphs/turn_plans/<stem>.json` is not documentation — the barrier
+    (`nodes/turn_barrier.py::load_plan`) reads the committed file at runtime
+    and `turns.py::_check_output_set` refuses any participant whose
+    watermark output set disagrees with it. The plan is also FROZEN
+    (`tools/env_hash.py`) precisely because manifests are not: compiling it
+    at run time instead would let an unfrozen manifest edit change the
+    scheduler topology without moving `env_hash`. So the artifact has to
+    stay committed, and staleness has to be caught somewhere else.
+
+    Without this rule it is caught nowhere. A graph edit that skips the
+    regeneration passes validate and `env_hash` (which hashes the plan as an
+    INPUT, not as something derived), then kills the barrier on the first
+    watermark — visible only as every episode hitting the ADR-23 wall clamp,
+    relaunching, and the run reporting `pass1: 0.0` about twenty minutes
+    later, with the actual ProtocolError buried in the barrier's per-node
+    dora log. Measured in the round-2 review of #208.
+
+    Runs only on an otherwise-valid graph (the caller's `if not errors`
+    gate), so `compile_turn_plan` cannot be handed a malformed one."""
+    errors: list[dict] = []
+    for node in nodes:
+        env = node.get("env")
+        raw = str((env or {}).get("AISLE_TURN_PLAN", "")).strip() if isinstance(env, dict) else ""
+        if not raw or not raw.endswith(".json"):
+            continue  # inline JSON or no plan: the barrier owns those verdicts
+        node_id = str(node.get("id", ""))
+        # Only an AUTHORED graph — one sitting beside its own plan — is
+        # comparable. A RELOCATED copy (an instrumented run graph, or the
+        # staged copy `harness swap` validates) legitimately differs from the
+        # committed plan: instrumentation adds the trace recorder, and A7
+        # rewrites the topology and compiles its own plan into the run dir.
+        # Comparing those against the authored plan would refuse correct
+        # graphs. The barrier resolves a missing relative path against
+        # <repo>/graphs, so a relocated copy still runs the committed plan —
+        # which the authored graph's own validation already covers.
+        path = Path(raw)
+        if not path.is_file():
+            if graph_dir is None:
+                continue
+            path = Path(graph_dir) / raw
+            if not path.exists():
+                continue  # not beside the graph: see above
+        where = {"node": node_id, "plan": raw}
+        try:
+            committed = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            errors.append(
+                _entry(
+                    "TURN_PLAN_STALE",
+                    where,
+                    f"cannot read the committed turn plan {raw!r}: {exc}",
+                    "regenerate it with compile_turn_plan(graph_nodes, manifests); the "
+                    "barrier loads this file at runtime",
+                )
+            )
+            continue
+        expected = compile_turn_plan(nodes, manifests)
+        if committed != expected:
+            differing = sorted(
+                k for k in set(committed) | set(expected) if committed.get(k) != expected.get(k)
+            ) or ["(identical keys, different nesting)"]
+            errors.append(
+                _entry(
+                    "TURN_PLAN_STALE",
+                    where,
+                    f"the committed turn plan {raw!r} does not match this graph; "
+                    f"differing sections: {differing}",
+                    "regenerate it with compile_turn_plan(graph_nodes, manifests) — the "
+                    "barrier loads the COMMITTED file, so a stale one kills it on the "
+                    "first watermark and every episode wall-clamps (issue #213)",
+                )
+            )
+    return errors
 
 
 def _refusal_routing_errors(nodes: list[dict]) -> list[dict]:
