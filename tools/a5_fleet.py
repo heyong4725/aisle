@@ -80,7 +80,12 @@ def run_agent(k: int, n: int, oid: str, config_dir: Path, budget_scale: float) -
             cmd,
             wt,
             out_k,
-            {"prior_tokens": 0, "token_ceiling": tokens, "wall_ceiling_s": wall_h * 3600.0},
+            {
+                "prior_tokens": 0,
+                "prior_wall_s": 0.0,
+                "token_ceiling": tokens,
+                "wall_ceiling_s": wall_h * 3600.0,
+            },
             env=env,
         )
         record |= {
