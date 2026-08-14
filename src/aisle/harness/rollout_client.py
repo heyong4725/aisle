@@ -164,23 +164,34 @@ def main() -> None:
                     f"reset sent: episode {episode_base + episode} seed {seeds[episode]}",
                     file=sys.stderr,
                 )
-        elif event["id"] in ("reset_done", "reset_refused") and phase == "awaiting_reset":
+        elif event["id"] == "reset_refused" and phase == "awaiting_reset":
+            # ADR-34 (issue #195, issue #209): a refused reset ENDS the run.
+            #
+            # The client used to proceed on any reply, and the other
+            # episode-state consumers stayed in phase with it by clearing on
+            # the refusal too — they all received it, because it rode the
+            # boundary topic. Once refusals reach only the requester, that
+            # arrangement cannot survive: advancing here would put this node
+            # in episode N+1 while ik-trajectory holds a stale plan, s1-expert
+            # drops the new episode's plan as a duplicate, and nav carries a
+            # leg across the boundary. That is issue #179's class, and the
+            # comment deleted from budget_guard.py named the dependency.
+            #
+            # Stopping is also the honest answer on its own terms: the scene
+            # was never reset, so the episode would measure nothing, and this
+            # repo already chose refuse-over-degrade for `--reset behavioral`
+            # (#196/#204). Exiting the loop is the client's NORMAL
+            # termination path — results are flushed per line, so completed
+            # episodes survive and the runner reports the short count.
+            print(
+                f"reset REFUSED ({(event.get('metadata') or {}).get('error')}) — ending the "
+                f"run at episode {episode_base + episode}; the scene was never reset, and "
+                "advancing would leave the rest of the graph an episode behind",
+                file=sys.stderr,
+            )
+            break
+        elif event["id"] == "reset_done" and phase == "awaiting_reset":
             reset_meta = event.get("metadata") or {}
-            if event["id"] == "reset_refused":
-                # ADR-34 (issue #195): a refusal reaches the REQUESTER only,
-                # and the client proceeds on it exactly as it did while
-                # refusals rode `reset_done` — this change moved the
-                # routing, not the policy. `reset_sim_ns` then falls back to
-                # 0, as it always did, because a refused reset carries no
-                # stamp. The policy is questionable (an episode whose scene
-                # was never reset measures nothing) and is open separately;
-                # folding it in here would hide a behavior change inside a
-                # contract change.
-                print(
-                    f"reset REFUSED ({reset_meta.get('error')}) — proceeding with "
-                    f"episode {episode_base + episode} on an un-reset scene",
-                    file=sys.stderr,
-                )
             if retail:
                 # RS-3/RS-6: the retail goal IS the seeded oracle task
                 # description; the verifier derives requirements from it

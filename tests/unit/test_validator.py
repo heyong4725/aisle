@@ -119,6 +119,62 @@ def test_expert_t1_is_good():
     assert report["warnings"] == []
 
 
+@pytest.mark.parametrize(
+    "graph", sorted((REPO_ROOT / "graphs").glob("*.yaml")), ids=lambda p: p.name
+)
+def test_every_shipped_graph_validates(graph):
+    """VAL-7 over the WHOLE corpus, not a hand-kept three.
+
+    `expert_t0`/`expert_t1`/`expert_t1_l2` were validated in place and the
+    other eight were not, so an edge added to those eight had no producer
+    check at all — measured in the round-2 review of #208, where pointing a
+    new edge at a non-existent producer left every test green while
+    `harness validate` rejected the file. A per-graph parametrize means a
+    new graph is covered the day it lands.
+
+    Mobile graphs are validated under their own embodiment; asserting only
+    `ok` (not zero warnings) because the sibling tests above own the
+    stricter no-warnings claim for the graphs they name."""
+    mobile = {"expert_s1", "eval_s1_driver_v2", "eval_s3_driver_v1", "agent_campaign"}
+    extra = ["--embodiment", "mobile"] if graph.stem in mobile else []
+    code, report = run_validate(graph, *extra)
+    assert code == 0, report
+    assert report["ok"] is True and report["errors"] == [], report["errors"]
+
+
+def test_a_graph_that_cannot_deliver_a_refusal_is_rejected(tmp_path):
+    """TC-6/ADR-34: dora DROPS `send_output` to an undeclared output — one
+    stderr warning, `Ok(())` to the caller — so a graph whose reset node
+    omits `reset_refused` does not fail, it HANGS: the refusal evaporates
+    and the requester waits in `awaiting_reset` until the wall clamp.
+
+    That is strictly worse than the silent degradation the topic split
+    removed, and no other rule sees it: VAL-4 checks that declared outputs
+    exist in the manifest, never that a manifest output is declared. Both
+    halves are pinned, because either alone still hangs the run."""
+    doc = yaml.safe_load((REPO_ROOT / "graphs" / "expert_t0.yaml").read_text())
+
+    def written(mutate, name):
+        copy = yaml.safe_load(yaml.safe_dump(doc))
+        mutate(copy["nodes"])
+        path = tmp_path / name
+        path.write_text(yaml.safe_dump(copy, sort_keys=False))
+        return path
+
+    def drop_output(nodes):
+        node = next(n for n in nodes if n["id"] == "reset")
+        node["outputs"] = [o for o in node["outputs"] if o != "reset_refused"]
+
+    def drop_consumer(nodes):
+        for node in nodes:
+            (node.get("inputs") or {}).pop("reset_refused", None)
+
+    for mutate, name in ((drop_output, "no_output.yaml"), (drop_consumer, "no_consumer.yaml")):
+        code, report = run_validate(written(mutate, name))
+        assert code != 0, f"{name} validated despite being unable to deliver a refusal"
+        assert "REFUSAL_UNROUTED" in {e["code"] for e in report["errors"]}, report["errors"]
+
+
 def test_expert_t1_with_poses_routed_is_rejected(tmp_path):
     """VAL-8/TC-9 mutation-proofing on the REAL graph: take expert_t1.yaml
     verbatim, re-add the bridge's ground-truth `poses` output and route it

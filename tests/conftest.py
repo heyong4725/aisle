@@ -83,6 +83,10 @@ def write_bridge_dataflow(
         # checks stay valid across the extra hop
         recorder_inputs["reset_done"] = "reset-service/reset_done"
         recorder_inputs["bridge_reset_done"] = "bridge/reset_done"
+        # ADR-34: refusals answer here, not on the boundary. The recorder is
+        # this fixture graph's requester-side consumer; without an edge dora
+        # would drop the refusal and a refusal test would hang rather than fail
+        recorder_inputs["reset_refused"] = "reset-service/reset_refused"
         # the request stream too: reset request arrival and reset_done
         # arrival share the recorder's clock, so their wall_t delta is a
         # true end-to-end RST-1 latency across all dispatcher hops
@@ -183,7 +187,11 @@ def write_bridge_dataflow(
                             "reset": _q("driver/reset"),
                             "reset_done": _q("bridge/reset_done"),
                         },
-                        "outputs": ["bridge_reset", "reset_done"],
+                        # `reset_refused` is declared and consumed (ADR-34):
+                        # dora silently DROPS a send_output to an undeclared
+                        # output, so a fixture missing it would turn a
+                        # refusal into a hang rather than a failure
+                        "outputs": ["bridge_reset", "reset_done", "reset_refused"],
                     }
                 ]
                 if with_reset_service

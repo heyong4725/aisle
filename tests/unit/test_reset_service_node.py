@@ -282,16 +282,22 @@ def test_a_refusal_does_not_advance_the_episode_epoch(monkeypatch):
         [
             reset_request(1, TELEPORT),
             bridge_reply(sim_time_ns=1),
-            _inp("reset", pa.array(np.array([9, 9, 9], dtype=np.uint32)), {"request_id": "bad"}),
+            _inp("reset", pa.array(np.array([9, 9, 9], dtype=np.uint32)), {"request_id": "bad1"}),
             reset_request(2, TELEPORT),
             bridge_reply(sim_time_ns=2),
+            _inp("reset", pa.array(np.array([8, 8, 8], dtype=np.uint32)), {"request_id": "bad2"}),
         ],
         monkeypatch,
     )
     assert [m["seq"] for m in replies(node)] == [1, 2], (
         f"a refusal consumed an episode epoch: {[m['seq'] for m in replies(node)]}"
     )
-    assert [m["seq"] for m in refusals(node)] == [1], "reset_refused has no sequence of its own"
+    # TWO refusals: with one, `seq_refused = 1` (a constant) is
+    # indistinguishable from a counter, and TC-2 wants per-topic MONOTONIC,
+    # not per-topic constant (round-2 review).
+    assert [m["seq"] for m in refusals(node)] == [1, 2], (
+        f"reset_refused's sequence does not advance: {[m['seq'] for m in refusals(node)]}"
+    )
 
 
 def test_a_request_without_request_id_is_dropped_with_no_reply(monkeypatch):

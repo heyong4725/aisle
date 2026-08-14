@@ -68,10 +68,17 @@ MUST honor it byte-for-byte.
   was well-formed enough to carry them. `reset_done` therefore means exactly
   one thing — THE EPISODE BOUNDARY PASSED, the sim was touched — and a
   consumer of it needs no discriminator to know that (ADR-34, issue #195).
-  A refusal is a reply, not a boundary: its audience is the one requester
-  that correlates on `request_id`, while the boundary is broadcast state.
-  `reset_done` MUST NOT carry a payload of 0 — the refusal case that used
-  to make it contradict this clause now leaves on its own topic (issue #194).
+  A refusal is a reply, not a boundary: its audience is the one requester,
+  while the boundary is broadcast state. `reset_done` MUST NOT carry a
+  payload of 0 — the refusal case that used to make it contradict this
+  clause now leaves on its own topic (issue #194). A graph carrying a reset
+  service MUST declare `reset_refused` AND route it to the requester: dora
+  silently DROPS a `send_output` to an undeclared output, so an unrouted
+  refusal hangs the requester rather than failing it (validator rule
+  `REFUSAL_UNROUTED`). The requester MUST NOT begin an episode on a refusal
+  — the scene was never reset, and every other episode-state consumer takes
+  its boundary from `reset_done` alone, so advancing would leave them an
+  episode behind (issue #209).
 - TC-7: An episode is a dora ACTION (goal/feedback/result via `goal_id`):
   goal `episode_goal` = JSON `{tier, target_med, timeout_s, seed}`;
   feedback `episode_feedback` = JSON `{t, phase}` at ≥1 Hz;

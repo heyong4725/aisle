@@ -40,8 +40,11 @@ on a new output, `reset_refused` (payload `UInt32[1]=0`, schema
    the sim was touched. Its payload is always `1`, as TC-6 always said.
 2. Both `metadata["error"]` special cases are DELETED, not documented. The
    class is removed rather than its two instances.
-3. Only `rollout-client` — the requester that correlates on `request_id` —
-   subscribes to `reset_refused`.
+3. Only `rollout-client` — the requester — subscribes to `reset_refused`.
+   The reply carries `request_id` for the audit trail; the client does not
+   match on it, because TC-6 resets never overlap (one request at a time).
+   An earlier draft of this ADR and of the manifests claimed the client
+   "correlates on `request_id`", which the code has never done.
 4. The payload filters in `harness/traces.py` and `tools/judge_recorded_run.py`
    **stay**, reclassified from live discriminator to legacy-compat guard.
    Issue #195 sketched deleting them, and for freshly recorded runs they are
@@ -93,13 +96,42 @@ while the graph never delivers it fails the build (the issue #179 shape).
   because a refused reset never touched the sim, and inventing one would be
   a lie the verifier's episode baseline depends on.
 
-## Open question
+## A refused reset ends the run (issue #209, folded in)
 
-`rollout-client` currently proceeds into the episode on ANY reply, including
-a refusal — with `reset_sim_ns` defaulting to 0. That behavior is preserved
-verbatim here (the routing changes, the policy does not), but running an
-episode whose scene was never reset is a garbage measurement, and the
-"refuse rather than silently degrade" rule this repo applied to
-`--reset behavioral` in #204 argues it should abort loudly instead. Filed
-separately rather than folded in, so the contract change stays reviewable
-on its own.
+The first draft of this ADR kept `rollout-client` advancing on a refusal and
+called that "moving the routing, not the policy". **That was wrong**, and the
+round-2 review caught it against the very comment this change deleted from
+`budget_guard.py`:
+
+> Deliberately narrower than the other consumers, which DO clear on a refusal
+> to stay in phase with rollout-client (it proceeds on any reply).
+
+Verified at the base commit: `oracle_pose`, `ik_trajectory`, `nav_action`,
+`s1_expert`, `l2_pose` and `segmented_pose` carry no `error` filter — they
+cleared on refusals BY DESIGN, because refusals rode the topic they all
+subscribe to. Routing refusals to the requester alone therefore cannot leave
+the policy untouched: the client would enter episode N+1 while
+`ik-trajectory` holds a stale plan, `s1-expert` drops the new episode's plan
+as a duplicate, and nav carries a leg across the boundary. That is issue
+#179's class, reached by policy instead of by wiring.
+
+So the client now **ends the run** on a refusal. Nothing advances, so nothing
+can fall out of phase; the scene was never reset, so the episode would
+measure nothing anyway; and it matches the refuse-over-degrade rule this repo
+applied to `--reset behavioral` in #196/#204. Ending the loop is the client's
+normal termination path — results flush per line, so completed episodes
+survive and the runner reports the short count.
+
+## dora drops undeclared outputs, so the routing is validated
+
+`send_output` to an output a graph does not declare is IGNORED — one stderr
+warning, `Ok(())` to the caller (dora node `validate_output`). Before this
+change refusals rode `reset_done`, which every graph with a reset service
+already declares, so a refusal was always deliverable. Afterwards a graph
+that was not updated would drop it, and the requester would wait until the
+wall clamp: a hang, which is worse than the degradation this ADR removes.
+
+`harness validate` therefore gains **REFUSAL_UNROUTED**: a graph whose reset
+service does not declare `reset_refused`, or declares it with no consumer,
+is refused. No pre-existing rule covered this — VAL-4 checks that declared
+outputs exist in the manifest, never that a manifest output is declared.

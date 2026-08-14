@@ -9,6 +9,7 @@ refused request arrives on a different topic than the one it used to.
 dora is faked (CON-12 keeps the import inside `main()`); no sim, no models.
 """
 
+import json
 import sys
 import types
 
@@ -60,21 +61,17 @@ def goals(node) -> list:
     return [v for topic, v, _ in node.sent if topic == "episode_goal"]
 
 
-def test_the_handshake_advances_on_each_reply_topic(monkeypatch, tmp_path):
-    """TC-6/ADR-34 (issue #195): the client waits in `awaiting_reset` until
-    its request is ANSWERED, and after the refusal split there are two
-    topics an answer can arrive on. If the client listens to only one, a
-    refused reset strands the run — it waits forever on a reply that was
-    published to a topic nobody reads, which is strictly worse than the
-    silent-degradation this split was made to prevent.
-
-    Both arms assert the same observable (an episode_goal was sent), and the
-    no-reply arm is what makes that observable meaningful."""
-    # the `episode_feedback` is deliberate: it is dispatched AFTER the reply
-    # branch, so a client that advanced on any event while awaiting a reset
-    # would answer it with a goal. Without it the control only proves ticks
-    # do not advance the handshake, which is a weaker claim than it reads as.
+def test_a_completed_reset_starts_the_episode_on_the_reset_stamp(monkeypatch, tmp_path):
+    """TC-7/BRG-4: the goal carries `reset_sim_ns` from the reply, and the
+    verifier captures the episode's initial poses only at or after it — a
+    pre-reset frame becoming the baseline reads as a mass collision (issue
+    #120). Asserting the VALUE, not just that a goal was sent: the field is
+    the whole reason the reply's stamp is threaded through here."""
     stranded = run_client(
+        # `episode_feedback` is deliberate: it dispatches AFTER the reply
+        # branch, so a client that advanced on any event while awaiting a
+        # reset would answer it with a goal. A tick cannot reach that branch,
+        # so a tick-only control proves less than it appears to.
         [tick(), _inp("episode_feedback", pa.array(['{"t": 0.1, "phase": "x"}']))],
         monkeypatch,
         tmp_path,
@@ -87,7 +84,24 @@ def test_the_handshake_advances_on_each_reply_topic(monkeypatch, tmp_path):
         tmp_path,
     )
     assert len(goals(done)) == 1, "a completed reset did not start the episode"
+    assert json.loads(done.sent[-1][1][0])["reset_sim_ns"] == 7, done.sent[-1]
 
+
+def test_a_refused_reset_ends_the_run_instead_of_advancing(monkeypatch, tmp_path):
+    """ADR-34 / issue #209: the client must NOT start an episode on a
+    refusal.
+
+    While refusals rode the boundary topic, every episode-state consumer
+    received them and cleared in step with this node — the comment deleted
+    from `budget_guard.py` recorded that dependency explicitly. Once
+    refusals reach only the requester, advancing here puts this node in
+    episode N+1 while `ik-trajectory` still holds a stale plan, `s1-expert`
+    drops the new plan as a duplicate, and nav carries a leg across the
+    boundary: issue #179's class, arrived at by policy rather than wiring.
+
+    It is also the honest answer on its own: the scene was never reset, so
+    the episode would measure nothing. Ending the loop is the client's
+    normal termination — completed episodes are already flushed."""
     refused = run_client(
         [
             tick(),
@@ -96,11 +110,13 @@ def test_the_handshake_advances_on_each_reply_topic(monkeypatch, tmp_path):
                 pa.array(np.array([0], dtype=np.uint32)),
                 {"request_id": "r", "error": "reset mode must be 0 or 1, got 9", "t_reset_ms": 0},
             ),
+            # would be consumed if the client kept running
+            _inp("reset_done", pa.array(np.array([1], dtype=np.uint32)), {"sim_time_ns": 9}),
         ],
         monkeypatch,
         tmp_path,
     )
-    assert len(goals(refused)) == 1, (
-        "a refused reset left the client in awaiting_reset — the run hangs on a reply "
-        "published to a topic it does not read (ADR-34)"
+    assert goals(refused) == [], (
+        "the client started an episode on a scene that was never reset, leaving every "
+        "other boundary consumer an episode behind (ADR-34, issue #209)"
     )

@@ -22,7 +22,8 @@ outputs:
   # treats it as "the sim was touched", with no discriminator to remember
   reset_done: {schema: reset_done_u32, latency_class: best_effort}
   # a refused request (ADR-8) — a reply, not a boundary. Only the requester
-  # that correlates on request_id subscribes (issue #195)
+  # subscribes (issue #195); the reply carries request_id for the audit
+  # trail, though the client does not match on it (one request at a time)
   reset_refused: {schema: reset_refused_u32, latency_class: best_effort}
 embodiment:
   arm: [franka, so101]

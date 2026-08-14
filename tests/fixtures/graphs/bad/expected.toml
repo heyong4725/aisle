@@ -220,7 +220,12 @@ codes = ["INSTALL_MISSING"]
 root = "tests/fixtures/roots/reserved_dists"
 
 [path_manifest_mismatch_spoof]
-codes = ["PATH_MANIFEST_MISMATCH"]
+# REFUSAL_UNROUTED joins it under ADR-34: this fixture's `reset` node really
+# does run src/aisle/reset/service.py (that is the spoof), and it declares no
+# `reset_refused` output — so it genuinely cannot deliver a refusal either.
+# Both errors are true of the same graph; the rule keys on the SOURCE a node
+# runs, not on the manifest id it claims, which is the point of the spoof.
+codes = ["PATH_MANIFEST_MISMATCH", "REFUSAL_UNROUTED"]
 
 # issue #35: path-form source naming no file under the root; the fixture
 # root's schema copies are the real ones (unknown schemes / empty pip

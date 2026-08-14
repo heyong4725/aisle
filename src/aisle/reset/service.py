@@ -83,10 +83,15 @@ def main(clock=None) -> None:
     seq_reply = 0
     seq_forward = 0
     seq_cmd = 0
-    # its OWN sequence (ADR-34): consumers read `reset_done`'s seq as the
-    # episode EPOCH, so a refusal must not advance it — under the old shared
-    # counter a refused request bumped the epoch without a boundary, and nav
-    # refuses goals stamped with a stale one.
+    # its OWN sequence, because TC-2 defines `seq` as PER-TOPIC monotonic
+    # and these are now two topics. Consumers read `reset_done`'s seq as the
+    # episode epoch (nav_action, s1_expert), so keeping the counters joined
+    # would leave gaps in the boundary sequence that ADR-7 §13 says exist to
+    # distinguish drops from normal flow — false gaps, not lost messages.
+    # (An earlier revision of this comment claimed the shared counter caused
+    # epoch DRIFT between consumers. It did not: the refusal was delivered on
+    # `reset_done`, so every consumer read the same seq off the same message.
+    # The reason is TC-2 conformance, not drift — round-2 review.)
     seq_refused = 0
     runtime = None  # BehavioralRuntime, built lazily on first behavioral request
     latest_sim_ns = 0
