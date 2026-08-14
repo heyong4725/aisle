@@ -648,3 +648,39 @@ def test_the_frozen_set_covers_the_mobility_verdicts():
     ):
         assert (REPO_ROOT / rel).is_file(), rel
         assert _is_fenced(rel), f"{rel} decides a safety verdict but is outside the CON-7 fence"
+
+
+def test_the_skill_gate_graphs_are_frozen():
+    """CON-7 / ADR-36 (issue #228): `graphs/eval_*.yaml` are the exam an
+    agent-authored skill sits to enter the registry — `skills/*/eval.yaml`
+    names them, and `harness skill register` rolls out through them before
+    writing a manifest. A skill gate the candidate can edit is not a gate,
+    which is the same argument that put the verifier and reset in the
+    frozen set at M0.
+
+    Their committed ADR-30 turn plans go with them: since #219 those graphs
+    are lockstep participants, and the barrier loads the plan at runtime, so
+    the plan is executable scheduler topology for a measured run.
+
+    `agent_campaign` is deliberately NOT here — it is the agent's own
+    deliverable and freezing it would put CON-7 in conflict with the
+    experiment."""
+    import sys
+
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from env_hash import frozen_files
+
+    frozen = {p.relative_to(REPO_ROOT).as_posix() for p in frozen_files(REPO_ROOT)}
+    gates = sorted(p.name for p in (REPO_ROOT / "graphs").glob("eval_*.yaml"))
+    assert gates, "no eval_* graphs — this test went blind"
+    for name in gates:
+        assert f"graphs/{name}" in frozen, f"{name} is a skill gate but is not frozen"
+        plan = f"graphs/turn_plans/{name.removesuffix('.yaml')}.json"
+        if (REPO_ROOT / plan).is_file():
+            assert plan in frozen, (
+                f"{plan} is executable turn topology for a gate but is not frozen"
+            )
+    assert "graphs/agent_campaign.yaml" not in frozen, (
+        "agent_campaign is the agent's own deliverable; freezing it makes CON-7 fight the "
+        "experiment (ADR-36)"
+    )
