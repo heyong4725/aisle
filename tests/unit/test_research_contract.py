@@ -47,11 +47,17 @@ def test_frozen_set_rule_names_every_frozen_path():
     import sys
 
     sys.path.insert(0, str(REPO_ROOT / "tools"))
-    from env_hash import FROZEN_DIRS, FROZEN_FILES
+    from env_hash import FROZEN_DIRS, FROZEN_FILES, FROZEN_GLOBS
 
     text = _text()
     for path in (*FROZEN_DIRS, *FROZEN_FILES):
         assert path in text, f"frozen path {path!r} missing from the contract"
+    # the GLOBS too (issue #228): they were enumerated by hand here, so
+    # widening one — `graphs/eval_*.yaml` joined the set as the skill gate —
+    # could silently leave the contract under-describing what an agent may
+    # not edit, which is the one thing this test exists to prevent.
+    for pattern in FROZEN_GLOBS:
+        assert pattern in text, f"frozen glob {pattern!r} missing from the contract"
 
 
 def test_failure_glossary_covers_both_taxonomies():
