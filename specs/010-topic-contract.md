@@ -10,7 +10,7 @@ MUST honor it byte-for-byte.
   robot BASE frame unless a topic name says otherwise. Quaternions are (x,y,z,w).
 - TC-2: Every output message MUST carry metadata keys: `sim_time_ns` (int),
   `env_id` (int, 0 in single-env mode), `seq` (per-topic monotonic int). In a
-  BRG-1 lockstep simulation (ADR-30; declarative pre-implementation) every
+  BRG-1 lockstep simulation (ADR-30) every
   message participating in an open control turn additionally carries
   `turn_epoch` (int, incremented per bridge process start — an ADR-23
   relaunch must not alias the prior incarnation's turns) and its monotonic

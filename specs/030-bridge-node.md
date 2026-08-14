@@ -3,13 +3,8 @@
 Status: DRAFT until M0. Module: `src/aisle/nodes/dora_genesis.py`. Implements SPEC 010 against SPEC 020.
 
 - BRG-1: Exactly one bridge node owns the Genesis scene per dataflow.
-  CURRENT (operative until the ADR-30 env-change epoch lands): the bridge is
-  driven by `dora/timer/millis/10` ticks; each tick advances sim by cfg.dt
-  and services pending inputs in arrival order. TARGET (ADR-30; declarative
-  pre-implementation per the SPEC 040 preamble convention — the implementing
-  env-change PR upgrades this block to RFC-2119 MUST together with its citing
-  tests): an attested, acceptance, or campaign simulation uses
-  run-to-quiescence lockstep. The bridge publishes the observations due for
+  An attested, acceptance, or campaign simulation MUST use run-to-quiescence
+  lockstep (ADR-30). The bridge publishes the observations due for
   simulated state `S(k)` and then `sim_turn` (`sim_turn_u64`, UInt64[1]); its
   epoch-scoped monotonic value and every same-turn message's
   `turn_epoch`/`turn_id` metadata identify exactly one open control turn.

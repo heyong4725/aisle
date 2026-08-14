@@ -77,6 +77,357 @@ def _backward_sources(node: dict) -> list[str | None]:
     return sources
 
 
+def _effective_manifest_port(port: str, declared: dict) -> str | None:
+    """Resolve dora's indexed fan-in convention against one manifest map."""
+    if port in declared:
+        return port
+    base, _, suffix = port.rpartition("_")
+    return base if suffix.isdigit() and base in declared else None
+
+
+def _clock_topology(nodes: list[dict], manifests: dict[str, dict]) -> dict:
+    """Return the participant set and edge classifier shared by validation/compiler."""
+    graph_nodes = {str(node.get("id", "")): node for node in nodes}
+    bridge_ids = {
+        node_id
+        for node_id in graph_nodes
+        if "sim_bridge" in ((manifests.get(node_id) or {}).get("provides") or [])
+    }
+    barrier_ids = {
+        node_id
+        for node_id in graph_nodes
+        if "turn_barrier" in ((manifests.get(node_id) or {}).get("provides") or [])
+    }
+
+    def manifest_for(node_id: str) -> dict:
+        manifest = manifests.get(node_id)
+        if manifest is not None:
+            return manifest
+        stamped = re.fullmatch(r"(?P<base>.+)-a\d+", node_id)
+        return manifests.get(stamped.group("base"), {}) if stamped else {}
+
+    def edge_kind(consumer: str, port: str) -> str:
+        declared = manifest_for(consumer).get("inputs", {})
+        effective = _effective_manifest_port(port, declared)
+        return (declared.get(effective, {}) if effective else {}).get("turn_edge", "forward")
+
+    participants: set[str] = set()
+    frontier: list[str] = []
+    for bridge_id in sorted(bridge_ids):
+        bridge = graph_nodes[bridge_id]
+        for port, raw in (bridge.get("inputs") or {}).items():
+            base_port = port.rpartition("_")[0] if port.rpartition("_")[2].isdigit() else port
+            if base_port not in MOTION_SINK_PORTS | {"reset"}:
+                continue
+            source = _input_source(raw)
+            if source and not source.startswith("dora/"):
+                frontier.append(source.partition("/")[0])
+    while frontier:
+        node_id = frontier.pop()
+        if node_id in participants or node_id in bridge_ids or node_id in barrier_ids:
+            continue
+        node = graph_nodes.get(node_id)
+        if node is None:
+            continue
+        participants.add(node_id)
+        for port, raw in (node.get("inputs") or {}).items():
+            declared = manifest_for(node_id).get("inputs", {})
+            effective = _effective_manifest_port(port, declared)
+            if effective and declared[effective].get("is_clock") is True:
+                continue
+            source = _input_source(raw)
+            if source and not source.startswith("dora/"):
+                frontier.append(source.partition("/")[0])
+    return {
+        "graph_nodes": graph_nodes,
+        "bridge_ids": bridge_ids,
+        "barrier_ids": barrier_ids,
+        "participants": participants,
+        "manifest_for": manifest_for,
+        "edge_kind": edge_kind,
+    }
+
+
+def compile_turn_plan(nodes: list[dict], manifests: dict[str, dict]) -> dict:
+    """Compile a validated graph into the terminal barrier's runtime plan."""
+    topology = _clock_topology(nodes, manifests)
+    bridges = sorted(topology["bridge_ids"])
+    barriers = sorted(topology["barrier_ids"])
+    if len(bridges) != 1 or len(barriers) != 1:
+        raise ValueError("a lockstep runtime plan requires one bridge and one turn barrier")
+    graph_nodes = topology["graph_nodes"]
+    participants: dict[str, dict] = {}
+    for node_id in sorted(topology["participants"]):
+        inputs = {}
+        manifest = topology["manifest_for"](node_id)
+        declared = manifest.get("inputs", {})
+        for port, raw in sorted((graph_nodes[node_id].get("inputs") or {}).items()):
+            effective = _effective_manifest_port(port, declared)
+            if effective and declared[effective].get("is_clock") is True:
+                continue
+            source = _input_source(raw)
+            if source is None or source.startswith("dora/"):
+                continue
+            producer, _, output = source.partition("/")
+            if producer not in topology["participants"] | topology["bridge_ids"]:
+                continue
+            inputs[port] = {
+                "source": producer,
+                "output": output,
+                "edge": topology["edge_kind"](node_id, port),
+            }
+        participants[node_id] = {
+            "inputs": inputs,
+            "outputs": sorted(graph_nodes[node_id].get("outputs") or []),
+            "verdict_bearing": node_id == "verifier-realistic",
+        }
+
+    barrier = graph_nodes[barriers[0]]
+    done_ports = {}
+    for port, raw in sorted((barrier.get("inputs") or {}).items()):
+        source = _input_source(raw)
+        producer, _, output = str(source or "").partition("/")
+        if producer in participants and output == "turn_done":
+            done_ports[port] = producer
+    bridge_inputs = {}
+    bridge = graph_nodes[bridges[0]]
+    bridge_manifest = topology["manifest_for"](bridges[0])
+    declared_bridge_inputs = bridge_manifest.get("inputs", {})
+    for port, raw in sorted((bridge.get("inputs") or {}).items()):
+        effective = _effective_manifest_port(port, declared_bridge_inputs)
+        if effective and declared_bridge_inputs[effective].get("is_clock") is True:
+            continue
+        source = _input_source(raw)
+        if source is None or source.startswith("dora/"):
+            continue
+        producer, _, output = source.partition("/")
+        if producer in participants:
+            bridge_inputs[port] = {"source": producer, "output": output}
+    return {
+        "bridge": bridges[0],
+        "bridge_outputs": sorted(graph_nodes[bridges[0]].get("outputs") or []),
+        "bridge_inputs": bridge_inputs,
+        "barrier": barriers[0],
+        "participants": participants,
+        "done_ports": done_ports,
+    }
+
+
+def _clock_errors(nodes: list[dict], manifests: dict[str, dict]) -> list[dict]:
+    """Validate ADR-30 clock participation and stratified topology (VAL-2).
+
+    Clock validation applies to simulation graphs (those containing a
+    ``sim_bridge`` provider).  Registry-only subgraphs remain independently
+    compilable; once connected to a bridge, every causal path to reset or a
+    motion input must join the closed-turn protocol.
+    """
+    errors: list[dict] = []
+    topology = _clock_topology(nodes, manifests)
+    graph_nodes = topology["graph_nodes"]
+    bridge_ids = topology["bridge_ids"]
+    if not bridge_ids:
+        return []
+    barrier_ids = topology["barrier_ids"]
+    manifest_for = topology["manifest_for"]
+    edge_kind = topology["edge_kind"]
+
+    # Participant reachability follows all causal edges (including episodic
+    # back-edges); episodic classification removes those edges only from the
+    # within-turn cycle check.  This keeps client/verifier service loops in
+    # the barrier while measurement taps with no path to bridge actuation stay
+    # exempt by construction.
+    participants = topology["participants"]
+
+    def add(code: str, where: dict, detail: str, hint: str) -> None:
+        errors.append(_entry(code, where, detail, hint))
+
+    # Every declared structural clock is transported honestly and comes from
+    # the one source class allowed at that point in the protocol.
+    done_sources: set[str] = set()
+    for node_id, node in sorted(graph_nodes.items()):
+        manifest = manifest_for(node_id)
+        declared = manifest.get("inputs", {})
+        for port, raw in sorted((node.get("inputs") or {}).items()):
+            effective = _effective_manifest_port(port, declared)
+            spec = declared.get(effective, {}) if effective else {}
+            if spec.get("is_clock") is not True:
+                continue
+            source = _input_source(raw)
+            edge = {"edge": f"{source or '<missing>'} -> {node_id}/{port}"}
+            queue_ok = (
+                isinstance(raw, dict)
+                and isinstance(raw.get("queue_size"), int)
+                and not isinstance(raw.get("queue_size"), bool)
+                and raw["queue_size"] > 0
+                and raw.get("queue_policy") == "backpressure"
+            )
+            if not queue_ok:
+                add(
+                    "CLOCK_DROPPED",
+                    edge,
+                    f"clock input {node_id}/{port} is not an explicit positive backpressure queue",
+                    "set queue_size to a positive integer and queue_policy: backpressure",
+                )
+            producer, _, output = str(source or "").partition("/")
+            valid = False
+            if node_id in participants:
+                valid = producer in barrier_ids and output == "turn"
+            elif node_id in barrier_ids and effective == "sim_turn":
+                valid = producer in bridge_ids and output == "sim_turn"
+            elif node_id in barrier_ids and effective == "done":
+                valid = producer in participants and output == "turn_done"
+                if valid:
+                    done_sources.add(producer)
+            elif node_id in bridge_ids and effective == "turn_commit":
+                valid = producer in barrier_ids and output == "turn_commit"
+            if not valid:
+                add(
+                    "CLOCK_SOURCE_INVALID",
+                    edge,
+                    f"{node_id}/{port} clock source {source!r} is not valid for its "
+                    "ADR-30 protocol role",
+                    "wire participant clocks from turn-barrier/turn, barrier sim_turn "
+                    "from the bridge, done inputs from participant/turn_done, and the "
+                    "bridge commit from turn-barrier/turn_commit",
+                )
+
+    for node_id in sorted(participants):
+        node = graph_nodes[node_id]
+        manifest = manifest_for(node_id)
+        clock_ports = [
+            port
+            for port, spec in (manifest.get("inputs") or {}).items()
+            if isinstance(spec, dict) and spec.get("is_clock") is True
+        ]
+        wired = [port for port in clock_ports if port in (node.get("inputs") or {})]
+        graph_outputs = set(node.get("outputs") or [])
+        manifest_outputs = set(manifest.get("outputs") or {})
+        if (
+            len(wired) != 1
+            or "turn_done" not in graph_outputs
+            or "turn_done" not in manifest_outputs
+        ):
+            add(
+                "CLOCK_PATH_INCOMPLETE",
+                {"node": node_id},
+                f"participant {node_id!r} must wire exactly one is_clock input and "
+                "declare turn_done in both graph and manifest",
+                "wire turn from turn-barrier/turn with backpressure and add turn_done output",
+            )
+        env = node.get("env") or {}
+        configured_outputs = {
+            item for item in str(env.get("AISLE_TURN_OUTPUTS", "")).split(",") if item
+        }
+        configured_node = str(env.get("AISLE_TURN_NODE", ""))
+        lockstep = str(env.get("AISLE_LOCKSTEP", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if not lockstep or configured_node != node_id or configured_outputs != graph_outputs:
+            add(
+                "CLOCK_PATH_INCOMPLETE",
+                {"node": node_id},
+                f"participant {node_id!r} lockstep env must name the node and enumerate "
+                f"exact graph outputs; configured={sorted(configured_outputs)}, "
+                f"graph={sorted(graph_outputs)}",
+                "set AISLE_LOCKSTEP=1, AISLE_TURN_NODE to the node id, and "
+                "AISLE_TURN_OUTPUTS to every graph output",
+            )
+        if node_id not in done_sources:
+            add(
+                "CLOCK_PATH_INCOMPLETE",
+                {"node": node_id},
+                f"participant {node_id!r} has no turn_done edge into the terminal barrier",
+                "wire participant/turn_done to one indexed turn-barrier done input",
+            )
+
+    # The bridge accepts one and only one commit edge.  Indexed aliases count
+    # too, so duplicating the input cannot evade the cardinality check.
+    for bridge_id in sorted(bridge_ids):
+        bridge = graph_nodes[bridge_id]
+        bridge_env = bridge.get("env") or {}
+        bridge_outputs = set(bridge.get("outputs") or [])
+        configured_outputs = {
+            item for item in str(bridge_env.get("AISLE_TURN_OUTPUTS", "")).split(",") if item
+        }
+        if configured_outputs != bridge_outputs:
+            add(
+                "CLOCK_PATH_INCOMPLETE",
+                {"node": bridge_id},
+                f"bridge {bridge_id!r} AISLE_TURN_OUTPUTS must enumerate exact graph "
+                f"outputs; configured={sorted(configured_outputs)}, "
+                f"graph={sorted(bridge_outputs)}",
+                "set AISLE_TURN_OUTPUTS to every bridge graph output",
+            )
+        bridge_inputs = bridge.get("inputs") or {}
+        commits = []
+        for port, raw in bridge_inputs.items():
+            base, _, suffix = port.rpartition("_")
+            if port == "turn_commit" or (base == "turn_commit" and suffix.isdigit()):
+                commits.append(_input_source(raw))
+        valid_commits = [
+            source
+            for source in commits
+            if source
+            and source.partition("/")[0] in barrier_ids
+            and source.partition("/")[2] == "turn_commit"
+        ]
+        if len(commits) != 1 or len(valid_commits) != 1:
+            add(
+                "CLOCK_COMMIT_COUNT",
+                {"node": bridge_id},
+                f"bridge {bridge_id!r} has {len(commits)} commit inputs and "
+                f"{len(valid_commits)} valid terminal sources; expected exactly one",
+                "wire exactly one turn_commit from turn-barrier/turn_commit",
+            )
+
+    # Forward-only causal graph must be acyclic.  Bridge and barrier edges
+    # are turn boundaries, not within-turn dependencies.
+    adjacency: dict[str, set[str]] = {node_id: set() for node_id in participants}
+    for consumer in sorted(participants):
+        for port, raw in (graph_nodes[consumer].get("inputs") or {}).items():
+            if edge_kind(consumer, port) == "episodic":
+                continue
+            declared = manifest_for(consumer).get("inputs", {})
+            effective = _effective_manifest_port(port, declared)
+            if effective and declared[effective].get("is_clock") is True:
+                continue
+            source = _input_source(raw)
+            producer = source.partition("/")[0] if source else ""
+            if producer in participants:
+                adjacency[producer].add(consumer)
+
+    visiting: set[str] = set()
+    visited: set[str] = set()
+    cycle: list[str] | None = None
+
+    def visit(node_id: str, path: list[str]) -> None:
+        nonlocal cycle
+        if cycle is not None or node_id in visited:
+            return
+        if node_id in visiting:
+            start = path.index(node_id)
+            cycle = path[start:] + [node_id]
+            return
+        visiting.add(node_id)
+        for downstream in sorted(adjacency[node_id]):
+            visit(downstream, path + [downstream])
+        visiting.discard(node_id)
+        visited.add(node_id)
+
+    for node_id in sorted(adjacency):
+        visit(node_id, [node_id])
+    if cycle is not None:
+        add(
+            "CLOCK_CYCLE",
+            {"node": cycle[0]},
+            f"forward-edge cycle has no episodic break: {' -> '.join(cycle)}",
+            "declare a reply/verdict/result/violation back-edge turn_edge: episodic",
+        )
+    return errors
+
+
 def _dialogue_blinding_errors(nodes: list[dict]) -> list[dict]:
     """DIALOGUE_GOAL_LEAK (ADR-32 §1): in a T4 graph the policy learns its
     task from dialogue, and the TC-7 goal — which carries the FINAL
@@ -664,6 +1015,14 @@ def validate_nodes(
                 bridge_ids,
             )
     errors += _refusal_routing_errors(nodes)
+    # ADR-30/VAL-2: every otherwise-valid simulator graph must prove its
+    # closed-turn topology. Graphs already refused for another concern do not
+    # get secondary CLOCK noise; once that concern is fixed, CLOCK failures
+    # surface before the graph can validate or run. REFUSAL_UNROUTED is
+    # deliberately ABOVE this: an unroutable refusal is the more specific
+    # diagnosis, and the two would otherwise both fire on the same graph.
+    if not errors:
+        errors.extend(_clock_errors(nodes, manifests))
     return errors, warnings
 
 

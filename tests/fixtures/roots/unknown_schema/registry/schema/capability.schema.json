@@ -58,6 +58,10 @@
             "type": "number",
             "exclusiveMinimum": 0
           },
+          "is_clock": {
+            "type": "boolean",
+            "default": false
+          },
           "turn_edge": {
             "enum": [
               "episodic"

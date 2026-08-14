@@ -4,19 +4,20 @@ provides: [task_sequencing]
 requires: [episode_verification]
 inputs:
   episode_goal: {schema: json_utf8, rate_hz: 1}
-  episode_result: {schema: json_utf8, rate_hz: 1}
-  violation: {schema: json_utf8, rate_hz: 1}
+  episode_result: {schema: json_utf8, rate_hz: 1, turn_edge: episodic}
+  violation: {schema: json_utf8, rate_hz: 1, turn_edge: episodic}
   # 1 Hz feedback cadence (TC-7); wire from dora/timer/millis/1000
   tick: {schema: timer_tick, rate_hz: 1}
   # T2 scan tour (idea I13): candidate positions in, tour dialogue back
-  target_pose: {schema: pose7d_f32, rate_hz: 1}
-  move_done: {schema: json_utf8, rate_hz: 1}
-  read_result: {schema: json_utf8, rate_hz: 1}
+  target_pose: {schema: pose7d_f32, rate_hz: 1, turn_edge: episodic}
+  move_done: {schema: json_utf8, rate_hz: 1, turn_edge: episodic}
+  read_result: {schema: json_utf8, rate_hz: 1, turn_edge: episodic}
   # HAR-3: a finished grasp plan with no verdict arms a retry
-  plan_done: {schema: json_utf8, rate_hz: 1}
+  plan_done: {schema: json_utf8, rate_hz: 1, turn_edge: episodic}
   # T4 dialogue (ADR-32): the task arrives as the human's request —
   # in T4 graphs episode_goal is NOT wired here (DIALOGUE_GOAL_LEAK)
   human_msg: {schema: json_utf8, rate_hz: 1}
+  turn: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
 outputs:
   target_request: {schema: json_utf8, latency_class: best_effort}
   episode_feedback: {schema: json_utf8, latency_class: best_effort}
@@ -27,6 +28,7 @@ outputs:
   grasp_target: {schema: pose7d_f32, latency_class: best_effort}
   # T4 dialogue (ADR-32): confirm/ack back to the human-sim
   robot_msg: {schema: json_utf8, latency_class: best_effort}
+  turn_done: {schema: sim_turn_u64, latency_class: hard_rt}
 params:
   max_retries: {type: int, default: 8, range: [0, 8]}
 embodiment:

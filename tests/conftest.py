@@ -340,10 +340,24 @@ def run_dataflow_until_settled(graph: Path, record_out: Path, deadline_s: float)
             os.killpg(proc.pid, signal.SIGTERM)
         except ProcessLookupError:
             pass  # the whole group is already gone
+        except PermissionError:
+            # A completed dora leader can leave a process-group id that the
+            # managed test sandbox will not signal. Terminate the owned leader
+            # directly; the run-scoped orphan reaper below handles children.
+            try:
+                proc.terminate()
+            except ProcessLookupError:
+                pass
         try:
             _, err = proc.communicate(timeout=15)
         except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
             _, err = proc.communicate()
         stderr_tail = (err or "")[-600:]
         _reap_orphan_nodes(graph.parent)

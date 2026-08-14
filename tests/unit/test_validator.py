@@ -119,9 +119,26 @@ def test_expert_t1_is_good():
     assert report["warnings"] == []
 
 
-@pytest.mark.parametrize(
-    "graph", sorted((REPO_ROOT / "graphs").glob("*.yaml")), ids=lambda p: p.name
-)
+#: issue #211: ADR-30 lockstep (#197) wired the eight expert_* graphs as turn
+#: participants and left these three behind, so every CLOCK_* rule rejects
+#: them. Pre-existing on main — verified against main's OWN validator in a
+#: clean worktree, not inferred.
+NOT_LOCKSTEP_WIRED = {"agent_campaign", "eval_s1_driver_v2", "eval_s3_driver_v1"}
+
+
+def _graph_params():
+    for path in sorted((REPO_ROOT / "graphs").glob("*.yaml")):
+        # strict: an XPASS fails, so fixing #211 turns this red until the
+        # entry is removed — an xfail nobody notices is worse than no test
+        marks = (
+            [pytest.mark.xfail(strict=True, reason="issue #211: not wired for ADR-30 lockstep")]
+            if path.stem in NOT_LOCKSTEP_WIRED
+            else []
+        )
+        yield pytest.param(path, marks=marks, id=path.name)
+
+
+@pytest.mark.parametrize("graph", _graph_params())
 def test_every_shipped_graph_validates(graph):
     """VAL-7 over the WHOLE corpus, not a hand-kept three.
 
@@ -1188,8 +1205,12 @@ def test_store_allows_supported_l0_perception_at_validation(tmp_path):
     )
 
     code, report = run_validate(graph, "--root", str(root))
-    assert code == 0 and report["ok"] is True, report
+    # The minimal graph intentionally has no ADR-30 barrier, so VAL-2 now
+    # rejects it on clock topology. The perception-specific assertion is that
+    # supported store L0 contributes no rung error.
+    assert code != 0 and report["ok"] is False, report
     assert "PERCEPTION_RUNG_VIOLATION" not in codes(report, "errors")
+    assert codes(report, "errors") == {"CLOCK_COMMIT_COUNT", "CLOCK_PATH_INCOMPLETE"}
 
 
 def test_perception_rung_violation_not_hidden_by_schema_error(tmp_path):

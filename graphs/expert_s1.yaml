@@ -10,6 +10,8 @@ nodes:
   - id: dora-genesis
     path: ../src/aisle/nodes/dora_genesis.py
     env:
+      AISLE_LOCKSTEP: '1'
+      AISLE_TURN_OUTPUTS: 'bridge_info,joint_state,gripper_state,oracle_state,poses,reset_done,base_pose,base_scan,frame_info,rgb_overhead,sim_turn'
       AISLE_SCENE: store
       AISLE_SCENARIO: S1
       AISLE_EMBODIMENT: mobile
@@ -27,6 +29,10 @@ nodes:
       reset:
         source: reset/bridge_reset
         queue_size: 100
+      turn_commit:
+        source: turn-barrier/turn_commit
+        queue_size: 4
+        queue_policy: backpressure
     outputs:
       - bridge_info
       - joint_state
@@ -41,9 +47,14 @@ nodes:
       # stream (the bridge renders it either way; undeclared, dora drops it
       # and the public rollout returned videos: [] — PR #21)
       - rgb_overhead
+      - sim_turn
 
   - id: reset
     path: ../src/aisle/reset/service.py
+    env:
+      AISLE_LOCKSTEP: '1'
+      AISLE_TURN_NODE: 'reset'
+      AISLE_TURN_OUTPUTS: 'bridge_reset,reset_done,reset_refused,turn_done'
     inputs:
       reset:
         source: rollout-client/reset
@@ -51,14 +62,23 @@ nodes:
       reset_done:
         source: dora-genesis/reset_done
         queue_size: 100
+      turn:
+        source: turn-barrier/turn
+        queue_size: 4
+        queue_policy: backpressure
     outputs:
       - bridge_reset
       - reset_done
       - reset_refused
+      - turn_done
 
   - id: budget-guard
     path: ../src/aisle/nodes/budget_guard.py
     env:
+      AISLE_LOCKSTEP: '1'
+      AISLE_TURN_NODE: 'budget-guard'
+      AISLE_TURN_OUTPUTS: 'joint_cmd_safe,gripper_cmd_safe,base_cmd_safe,violation,guard_stats,turn_done'
+      AISLE_TURN_WALL_OUTPUTS: 'guard_stats'
       AISLE_EMBODIMENT: mobile
       AISLE_SCENE: store
     inputs:
@@ -86,16 +106,24 @@ nodes:
         # already waits on before starting the next episode.
         source: reset/reset_done
         queue_size: 100
+      turn:
+        source: turn-barrier/turn
+        queue_size: 4
+        queue_policy: backpressure
     outputs:
       - joint_cmd_safe
       - gripper_cmd_safe
       - base_cmd_safe
       - violation
       - guard_stats
+      - turn_done
 
   - id: waypoint-nav
     path: ../src/aisle/nodes/nav_action.py
     env:
+      AISLE_LOCKSTEP: '1'
+      AISLE_TURN_NODE: 'waypoint-nav'
+      AISLE_TURN_OUTPUTS: 'nav_feedback,nav_result,base_cmd,turn_done'
       AISLE_EMBODIMENT: mobile
     inputs:
       nav_goal:
@@ -107,6 +135,10 @@ nodes:
         # shallow enough to bound stale-pose replay under pathological load
         source: dora-genesis/base_pose
         queue_size: 10
+      turn:
+        source: turn-barrier/turn
+        queue_size: 4
+        queue_policy: backpressure
       reset_done:
         # the EPISODE boundary comes from the reset SERVICE, not the bridge
         # (issue #192): a successful BEHAVIORAL reset (RST-2) never reaches
@@ -122,27 +154,50 @@ nodes:
       - nav_feedback
       - nav_result
       - base_cmd
+      - turn_done
 
   - id: order-reader
     path: ../src/aisle/nodes/order_reader.py
+    env:
+      AISLE_LOCKSTEP: '1'
+      AISLE_TURN_NODE: 'order-reader'
+      AISLE_TURN_OUTPUTS: 'order,turn_done'
     inputs:
       episode_goal:
         source: rollout-client/episode_goal
         queue_size: 100
+      turn:
+        source: turn-barrier/turn
+        queue_size: 4
+        queue_policy: backpressure
     outputs:
       - order
+      - turn_done
 
   - id: task-planner
     path: ../src/aisle/nodes/task_planner.py
+    env:
+      AISLE_LOCKSTEP: '1'
+      AISLE_TURN_NODE: 'task-planner'
+      AISLE_TURN_OUTPUTS: 'subtask_plan,turn_done'
     inputs:
       episode_goal:
         source: rollout-client/episode_goal
         queue_size: 100
+      turn:
+        source: turn-barrier/turn
+        queue_size: 4
+        queue_policy: backpressure
     outputs:
       - subtask_plan
+      - turn_done
 
   - id: s1-expert
     path: ../src/aisle/nodes/s1_expert.py
+    env:
+      AISLE_LOCKSTEP: '1'
+      AISLE_TURN_NODE: 's1-expert'
+      AISLE_TURN_OUTPUTS: 'nav_goal,joint_cmd,gripper_cmd,turn_done'
     inputs:
       episode_goal:
         source: rollout-client/episode_goal
@@ -177,13 +232,22 @@ nodes:
         # already waits on before starting the next episode.
         source: reset/reset_done
         queue_size: 100
+      turn:
+        source: turn-barrier/turn
+        queue_size: 4
+        queue_policy: backpressure
     outputs:
       - nav_goal
       - joint_cmd
       - gripper_cmd
+      - turn_done
 
   - id: verifier-retail
     path: ../src/aisle/verifier/retail.py
+    env:
+      AISLE_LOCKSTEP: '1'
+      AISLE_TURN_NODE: 'verifier-retail'
+      AISLE_TURN_OUTPUTS: 'episode_result,turn_done'
     inputs:
       oracle_state:
         source: dora-genesis/oracle_state
@@ -191,12 +255,20 @@ nodes:
       episode_goal:
         source: rollout-client/episode_goal
         queue_size: 100
+      turn:
+        source: turn-barrier/turn
+        queue_size: 4
+        queue_policy: backpressure
     outputs:
       - episode_result
+      - turn_done
 
   - id: rollout-client
     path: ../src/aisle/harness/rollout_client.py
     env:
+      AISLE_LOCKSTEP: '1'
+      AISLE_TURN_NODE: 'rollout-client'
+      AISLE_TURN_OUTPUTS: 'reset,episode_goal,turn_done'
       AISLE_TIER: S1
     inputs:
       tick: dora/timer/millis/1000
@@ -209,6 +281,58 @@ nodes:
       episode_result:
         source: verifier-retail/episode_result
         queue_size: 100
+      turn:
+        source: turn-barrier/turn
+        queue_size: 4
+        queue_policy: backpressure
     outputs:
       - reset
       - episode_goal
+      - turn_done
+  - id: turn-barrier
+    path: ../src/aisle/nodes/turn_barrier.py
+    env:
+      AISLE_TURN_PLAN: 'turn_plans/expert_s1.json'
+      AISLE_TURN_WATCHDOG_S: '10'
+      AISLE_VERDICT_TURN_WATCHDOG_S: '15'
+    inputs:
+      tick: dora/timer/millis/100
+      sim_turn:
+        source: dora-genesis/sim_turn
+        queue_size: 4
+        queue_policy: backpressure
+      done_0:
+        source: budget-guard/turn_done
+        queue_size: 4
+        queue_policy: backpressure
+      done_1:
+        source: order-reader/turn_done
+        queue_size: 4
+        queue_policy: backpressure
+      done_2:
+        source: reset/turn_done
+        queue_size: 4
+        queue_policy: backpressure
+      done_3:
+        source: rollout-client/turn_done
+        queue_size: 4
+        queue_policy: backpressure
+      done_4:
+        source: s1-expert/turn_done
+        queue_size: 4
+        queue_policy: backpressure
+      done_5:
+        source: task-planner/turn_done
+        queue_size: 4
+        queue_policy: backpressure
+      done_6:
+        source: verifier-retail/turn_done
+        queue_size: 4
+        queue_policy: backpressure
+      done_7:
+        source: waypoint-nav/turn_done
+        queue_size: 4
+        queue_policy: backpressure
+    outputs:
+      - turn
+      - turn_commit

@@ -44,6 +44,7 @@ from __future__ import annotations
 
 READ_TIER = "T2"
 DIALOGUE_TIER = "T4"
+TURN_STAMP_KEYS = ("turn_epoch", "turn_id", "sim_time_ns")
 # per candidate: the first read plus this-many-minus-one refusal retries
 # from later ladder entries. ONE by measurement: every correct read in
 # the offline tour landed on the candidate's FIRST tracked entry, while
@@ -274,7 +275,15 @@ class TaskStateMachine:
             (row, [row[0] - (target_sx or 0.0) / 2.0, row[1], row[2]]) for row in rows
         ]
         self.tour_idx = 0
-        self.tour_meta = dict(metadata)
+        # Retain the perception's semantic annotations across the multi-turn
+        # scan tour, but not its transport stamp.  A later matching read
+        # promotes this candidate in the read-result turn; replaying the
+        # original target-pose turn as the grasp output's stamp violates the
+        # lockstep causal boundary (and gives non-lockstep consumers a stale
+        # observation time).
+        self.tour_meta = {
+            key: value for key, value in metadata.items() if key not in TURN_STAMP_KEYS
+        }
         return self._emit_read_move()
 
     def _emit_read_move(self) -> list:
@@ -315,12 +324,18 @@ class TaskStateMachine:
                 request[key] = payload[key]
         return [("read_request", request, {"request_id": request_id})]
 
-    def on_read_result(self, payload: dict, request_id: str) -> list:
+    def on_read_result(
+        self, payload: dict, request_id: str, event_metadata: dict | None = None
+    ) -> list:
         if self.candidates is None or request_id != self.awaiting:
             return []
         if payload.get("label") == self.goal["target_med"]:
             pos, _ = self.candidates[self.tour_idx]
             metadata = dict(self.tour_meta or {})
+            if event_metadata is not None:
+                metadata.update(
+                    {key: event_metadata[key] for key in TURN_STAMP_KEYS if key in event_metadata}
+                )
             metadata["goal_id"] = self.goal_id
             self._reset_tour()
             return [("grasp_target", {"pos": pos}, metadata)]
@@ -342,9 +357,9 @@ def main() -> None:
 
     import numpy as np
     import pyarrow as pa
-    from dora import Node
 
     from aisle.topics import env_accepts, env_pin_from_env, make_sender
+    from aisle.turn_node import Node
 
     tier = os.environ.get("AISLE_TASK_TIER", "T1")
     if tier not in ("T1", READ_TIER, DIALOGUE_TIER):
@@ -383,6 +398,8 @@ def main() -> None:
     machine = TaskStateMachine(
         tier=tier, candidate_bounds=candidate_bounds, max_retries=int(max_retries_raw)
     )
+    lockstep = os.environ.get("AISLE_LOCKSTEP", "0").strip().lower() in ("1", "true", "yes")
+    last_tick_sim_ns = -1
 
     def emit(emissions) -> None:
         for topic, payload, metadata in emissions:
@@ -409,12 +426,21 @@ def main() -> None:
             if not emissions:
                 print(f"goal {metadata.get('goal_id')} refused: episode active", file=sys.stderr)
             emit(emissions)
+            if lockstep:
+                last_tick_sim_ns = int(metadata.get("sim_time_ns", 0))
         elif event["id"] == "episode_result":
             emit(machine.on_result())
         elif event["id"] == "violation":
             machine.on_violation(json.loads(event["value"][0].as_py()))
-        elif event["id"] == "tick":
+        elif event["id"] == "tick" and not lockstep:
             emit(machine.on_tick())
+        elif event["id"] == "turn" and lockstep:
+            sim_time_ns = int(metadata.get("sim_time_ns", 0))
+            if last_tick_sim_ns < 0:
+                last_tick_sim_ns = sim_time_ns
+            while sim_time_ns - last_tick_sim_ns >= 1_000_000_000:
+                last_tick_sim_ns += 1_000_000_000
+                emit(machine.on_tick())
         elif event["id"] == "plan_done":
             machine.on_plan_done()
         elif event["id"] == "target_pose":
@@ -434,7 +460,9 @@ def main() -> None:
         elif event["id"] == "read_result":
             emit(
                 machine.on_read_result(
-                    json.loads(event["value"][0].as_py()), metadata.get("request_id", "")
+                    json.loads(event["value"][0].as_py()),
+                    metadata.get("request_id", ""),
+                    metadata,
                 )
             )
         elif event["id"] == "human_msg":

@@ -439,9 +439,9 @@ def episode_result(goal_id: str, success: bool, failure: str | None, t_end_s: fl
 
 def main() -> None:  # pragma: no cover — dora runtime
     import pyarrow as pa
-    from dora import Node
 
     from aisle.scenes.pharmacy import load_meds, load_physics, wrist_mount_rotation
+    from aisle.turn_node import Node
     from aisle.verifier.calibration import build_calibration_v1
     from aisle.verifier.oracle import build_judge_cfg, load_thresholds
     from aisle.verifier.realistic import judge_frames

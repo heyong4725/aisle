@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 
 # nodes that stay SHARED in a fleet graph; everything else is per-agent
-SHARED_NODES = ("dora-genesis", "budget-guard", "reset")
+SHARED_NODES = ("dora-genesis", "budget-guard", "reset", "turn-barrier")
 # guard inputs that must be re-pointed per agent with suffixed input ids
 GUARD_FANIN = {"joint_cmd": "joint_cmd", "gripper_cmd": "gripper_cmd"}
 
@@ -86,6 +86,8 @@ def fleet_graph(doc: dict, agents: int) -> dict:
             clone["id"] = _agent_id(node_id, agent)
             env = clone.setdefault("env", {})
             env["AISLE_ENV_PIN"] = str(agent)
+            if "AISLE_TURN_NODE" in env:
+                env["AISLE_TURN_NODE"] = clone["id"]
             inputs = {}
             for key, spec in clone.get("inputs", {}).items():
                 if isinstance(spec, str):  # timer shorthand
@@ -97,6 +99,35 @@ def fleet_graph(doc: dict, agents: int) -> dict:
                 inputs[key] = spec
             clone["inputs"] = inputs
             out_nodes.append(clone)
+
+    # One terminal barrier closes the whole batched scene. Replicating it
+    # would leave the bridge's single commit edge dangling and would let
+    # independent agents advance shared physics. Expand each cloned policy's
+    # watermark edge while retaining shared guard/reset closures once.
+    barrier = next(node for node in out_nodes if node["id"] == "turn-barrier")
+    fixed_inputs = {
+        name: spec
+        for name, spec in barrier.get("inputs", {}).items()
+        if not name.startswith("done_")
+    }
+    done_sources: list[str] = []
+    for name, spec in by_id["turn-barrier"].get("inputs", {}).items():
+        if not name.startswith("done_"):
+            continue
+        source_node, _, source_output = spec["source"].partition("/")
+        if source_node in policy_ids:
+            done_sources.extend(
+                f"{_agent_id(source_node, agent)}/{source_output}" for agent in range(agents)
+            )
+        else:
+            done_sources.append(spec["source"])
+    for index, source in enumerate(sorted(done_sources)):
+        fixed_inputs[f"done_{index}"] = {
+            "source": source,
+            "queue_size": 4,
+            "queue_policy": "backpressure",
+        }
+    barrier["inputs"] = fixed_inputs
     return {**doc, "nodes": out_nodes}
 
 
@@ -132,6 +163,7 @@ def run_fleet(
     out_dir: Path,
     timeout_s: float,
     launch,
+    root: Path | None = None,
 ) -> dict:
     """Generate, launch (via the injected `launch(graph_path, env)`),
     wait for every agent's results, aggregate. `launch` returns a poll()
@@ -159,6 +191,21 @@ def run_fleet(
                     AISLE_RESULTS=str(results_paths[agent].resolve()),
                     AISLE_SEEDS=",".join(str(s) for s in lane),
                 )
+    from aisle.harness.registry import load_manifests
+    from aisle.harness.validate import compile_turn_plan
+
+    repo_root = (root or graph.resolve().parent.parent).resolve()
+    manifest_list, manifest_errors = load_manifests(repo_root)
+    if manifest_errors:
+        raise ValueError(f"cannot compile fleet turn plan: {manifest_errors}")
+    manifests = {manifest["id"]: manifest for _, manifest in manifest_list}
+    plan = compile_turn_plan(fleet_doc["nodes"], manifests)
+    plan_path = out_dir / "fleet-turn-plan.json"
+    plan_path.write_text(
+        json.dumps(plan, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
+    )
+    barrier = next(node for node in fleet_doc["nodes"] if node["id"] == "turn-barrier")
+    barrier.setdefault("env", {})["AISLE_TURN_PLAN"] = str(plan_path.resolve())
     graph_path = out_dir / "fleet_graph.yaml"
     graph_path.write_text(yaml.safe_dump(fleet_doc, sort_keys=False))
 

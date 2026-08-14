@@ -26,12 +26,13 @@ the retail verifier.
    under `src/aisle/scenes`, `src/aisle/verifier`, `src/aisle/reset`,
    `src/aisle/mobility`, `assets/so101`, `env`,
    `src/aisle/nodes/budget_guard.py`, `src/aisle/topics.py`,
+   `src/aisle/turn_node.py`, `src/aisle/turns.py`,
    `src/aisle/kinematics.py`, `src/aisle/embodiment.py`,
    `harness/budget.toml`, or
    `graphs/expert_*.yaml`. The rule is the safety VERDICT, not the module
    that hosts the event loop (ADR-33): the guard reads its watchdog
-   verdicts, its stamp trust boundary and its forward kinematics from
-   those other modules, so they are fenced too. `harness rollout` FETCHES the protected
+   verdicts, its stamp and lockstep trust boundaries, and its forward
+   kinematics from those other modules, so they are fenced too. `harness rollout` FETCHES the protected
    `origin/main` head from the remote server at gate time, pins it by
    commit OID, and verifies the frozen tree — and the hash checker
    itself — against that immutable commit (ADR-21): regenerating

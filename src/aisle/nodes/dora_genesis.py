@@ -1,14 +1,13 @@
 """dora-genesis bridge node (SPEC 030, implementing SPEC 010 over SPEC 020).
 
-Exactly one bridge owns the Genesis scene per dataflow (BRG-1). The node is
-driven by dora/timer/millis/10 ticks; each tick after the first reset
-advances sim by cfg.dt, services coalesced commands in arrival order
-(BRG-3), and publishes topics at their contract rates (TC table) —
-rendering only when a camera topic is due (BRG-2). Ticks BEFORE the first
-reset are dropped (CON-5/ADR-25) unless AISLE_STEP_WITHOUT_RESET=1 opts a
-reset-less bring-up graph out. Pure control-plane logic (scheduler,
-coalescer, config, bridge_info) lives at module level, sim-free and
-unit-tested; dora, arrow, and genesis are imported only inside main()
+Exactly one bridge owns the Genesis scene per dataflow (BRG-1). Attesting
+graphs use ADR-30 run-to-quiescence turns: observations open a turn, one
+validated terminal commit applies canonically ordered commands and advances
+physics once, and reset commits advance no physics. The 10 ms dora timer is
+only the explicit non-attesting free-run/bring-up clock. Rendering remains
+rate-limited by the contract scheduler (BRG-2). Pure control-plane logic
+(scheduler, coalescer, config, bridge_info, turns) lives at module level,
+sim-free and unit-tested; dora, Arrow, and Genesis import only inside main()
 (CON-12).
 
 Sim exceptions propagate: there is deliberately no try/except around
@@ -247,6 +246,8 @@ class BridgeConfig:
     # T3 occlusion layout (AISLE_OCCLUSION): blocker parked in front of
     # the seed-designated target; graph-declared and hash-attested
     occlusion: bool = False
+    # ADR-30 attested mode: physics advances only after one exact turn_commit.
+    lockstep: bool = False
 
 
 PERCEPTION_RUNGS = ("L0", "L1", "L2")
@@ -312,6 +313,7 @@ def parse_bridge_config(env: dict) -> BridgeConfig:
         labels=labels_raw in ("1", "true", "yes"),
         shuffle_colors=shuffle_raw in ("1", "true", "yes"),
         occlusion=occlusion_raw in ("1", "true", "yes"),
+        lockstep=str(env.get("AISLE_LOCKSTEP", "0")).strip().lower() in ("1", "true", "yes"),
     )
 
 
@@ -735,7 +737,33 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     require_usable_segmentation_ids(segmentation_ids, cfg.perception)
 
     node = Node()
-    node.send_output(
+    sim_time_ns = 0
+    turn_id = 0
+    try:
+        turn_epoch = int(os.environ.get("AISLE_TURN_EPOCH", "1"))
+    except ValueError as exc:
+        raise ValueError("AISLE_TURN_EPOCH must be a positive integer") from exc
+    if turn_epoch <= 0:
+        raise ValueError("AISLE_TURN_EPOCH must be a positive integer")
+    bridge_outputs = {name for name in os.environ.get("AISLE_TURN_OUTPUTS", "").split(",") if name}
+    seq: dict[tuple[str, int], int] = {}
+    turn_output_counts = {name: 0 for name in bridge_outputs}
+
+    def emit_bridge(topic: str, value, metadata: dict) -> None:
+        nonlocal turn_output_counts
+        if cfg.lockstep:
+            if topic not in turn_output_counts:
+                raise ValueError(f"bridge output {topic!r} omitted from AISLE_TURN_OUTPUTS")
+            turn_output_counts[topic] += 1
+            metadata = {
+                **metadata,
+                "turn_epoch": turn_epoch,
+                "turn_id": turn_id,
+                "sim_time_ns": sim_time_ns,
+            }
+        node.send_output(topic, value, metadata=metadata)
+
+    emit_bridge(
         "bridge_info",
         pa.array(
             [
@@ -753,14 +781,14 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                 )
             ]
         ),
-        metadata=_metadata(0, 0, 0),
+        _metadata(0, 0, 0),
     )
 
     # SPEC 210 MOB-5: the store frame is published ONCE at startup. base
     # topics are (x, y, yaw) of the base origin in the store frame; the arm
     # mounts at the base origin (base frame == store frame at pose 0).
     if cfg.embodiment == "mobile":
-        node.send_output(
+        emit_bridge(
             "frame_info",
             pa.array(
                 [
@@ -774,7 +802,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     )
                 ]
             ),
-            metadata=_metadata(0, 0, 0),
+            _metadata(0, 0, 0),
         )
 
     # SPEC 210 (T11, ADR-13): the mobile embodiment adds the kinematic base
@@ -782,6 +810,14 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     # root is re-based; base_scan is a planar raycast against the scene.
     is_mobile = cfg.embodiment == "mobile"
     topic_rates = rung_topic_rates(cfg.perception, is_mobile)
+    if cfg.lockstep:
+        # A measured graph's declared output set is the executable contract.
+        # Do not render/publish optional sensor ports the graph omitted; their
+        # absence is represented by omission from the bridge's complete
+        # watermark output set, not by an attempted undeclared dora send.
+        topic_rates = {
+            topic: rate for topic, rate in topic_rates.items() if topic in bridge_outputs
+        }
     base_pose = [float(v) for v in profile.get("base_start", [0.0, 0.0, 0.0])]
     base_cmd = [0.0, 0.0]
     if is_store:
@@ -791,9 +827,7 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
 
     scheduler = RateScheduler(topic_rates, dt)
     commands = CommandQueue(cfg.n_envs)
-    seq: dict[tuple[str, int], int] = {}
-    dropped_counts: dict[str, dict[int, int]] = {"joint": {}, "gripper": {}}
-    sim_time_ns = 0
+    dropped_counts: dict[str, dict[int, int]] = {"joint": {}, "gripper": {}, "base": {}}
     # CON-5/ADR-25 (issue #71): the first physics step must not race the
     # first reset request — ticks are dropped until it lands, so episode 0
     # always starts from the seed-injected state at sim step 0. Two attested
@@ -828,10 +862,10 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     def send(topic: str, env_id: int, array: np.ndarray, **extra) -> None:
         key = (topic, env_id)
         seq[key] = seq.get(key, 0) + 1
-        node.send_output(
+        emit_bridge(
             topic,
             pa.array(np.ravel(array)),
-            metadata=_metadata(sim_time_ns, env_id, seq[key], **extra),
+            _metadata(sim_time_ns, env_id, seq[key], **extra),
         )
 
     def env_slice(tensor, env_id: int) -> np.ndarray:
@@ -922,7 +956,12 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                 yaw = float(
                     np.arctan2(2 * (q[0] * q[3] + q[1] * q[2]), 1 - 2 * (q[2] * q[2] + q[3] * q[3]))
                 )
-                send(topic, env_id, np.array([p[0], p[1], yaw], dtype=np.float32))
+                send(
+                    topic,
+                    env_id,
+                    np.array([p[0], p[1], yaw], dtype=np.float32),
+                    dropped=dropped_counts["base"].pop(env_id, 0),
+                )
             elif topic == "base_scan":
                 ranges = base_scan_ranges(
                     base_pose,
@@ -1042,7 +1081,93 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
         if home_hold is not None:
             quarantine.arm(env_id)
 
-    for event in node:
+    def open_turn() -> None:
+        """Publish the complete observation declaration for S(k)."""
+        nonlocal turn_output_counts
+        if not cfg.lockstep:
+            return
+        from aisle.turns import TurnStamp, watermark_metadata
+
+        if "sim_turn" not in turn_output_counts:
+            raise ValueError("AISLE_TURN_OUTPUTS must include sim_turn")
+        stamp_ = TurnStamp(turn_epoch, turn_id, sim_time_ns)
+        declared = {**turn_output_counts, "sim_turn": 1}
+        key = ("sim_turn", 0)
+        seq[key] = seq.get(key, 0) + 1
+        node.send_output(
+            "sim_turn",
+            pa.array([turn_id], type=pa.uint64()),
+            metadata={
+                **watermark_metadata(stamp_, declared),
+                "env_id": 0,
+                "seq": seq[key],
+            },
+        )
+        turn_output_counts = {name: 0 for name in bridge_outputs}
+
+    def bridge_events():
+        """Turn raw dora arrivals into deterministic committed bridge work."""
+        nonlocal turn_id
+        if not cfg.lockstep:
+            yield from node
+            return
+        from aisle.turns import BridgeTurn, ProtocolError, TurnStamp
+
+        current = BridgeTurn(TurnStamp(turn_epoch, turn_id, sim_time_ns), n_envs=cfg.n_envs)
+        pending_shutdown = False
+        open_turn()
+
+        def finish_turn(actions, shutdown: bool):
+            """Apply a count-closed turn, then open its realized successor."""
+            nonlocal current, turn_id
+            reset_turn = bool(actions and actions[0][0] == "reset")
+            if turn_id == 0 and not reset_turn:
+                raise ProtocolError("turn zero committed without the required initial reset")
+            turn_id += 1
+            for _, committed_event in actions:
+                yield committed_event
+            if shutdown:
+                return True
+            if not reset_turn:
+                yield {
+                    "type": "INPUT",
+                    "id": "tick",
+                    "value": pa.array([], type=pa.uint8()),
+                    "metadata": {},
+                }
+            current = BridgeTurn(TurnStamp(turn_epoch, turn_id, sim_time_ns), n_envs=cfg.n_envs)
+            open_turn()
+            return False
+
+        for raw in node:
+            if raw.get("type") != "INPUT":
+                yield raw
+                continue
+            topic = raw.get("id")
+            metadata_ = raw.get("metadata") or {}
+            if topic in ("joint_cmd", "gripper_cmd", "base_cmd", "reset"):
+                current.accept(topic, raw, metadata_)
+                if current.ready_to_commit:
+                    stop = yield from finish_turn(current.finish(), pending_shutdown)
+                    pending_shutdown = False
+                    if stop:
+                        return
+                continue
+            if topic == "tick":
+                # A wall timer remains only as a liveness opportunity.  It
+                # never advances or manufactures a commit in lockstep mode.
+                continue
+            if topic != "turn_commit":
+                raise ProtocolError(f"unexpected bridge input {topic!r} in lockstep mode")
+            pending_shutdown = metadata_.get("shutdown") is True
+            actions = current.commit(metadata_)
+            if actions is not None:
+                stop = yield from finish_turn(actions, pending_shutdown)
+                pending_shutdown = False
+                if stop:
+                    return
+
+    for event in bridge_events():
         if event["type"] != "INPUT":
             continue
         input_id = event["id"]
@@ -1198,6 +1323,10 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     f"joint_cmd must be Float32[{n_dof}], got length {payload.shape[0]} (TC-5)"
                 )
             commands.push("joint", metadata.get("env_id"), payload)
+            env_id = int(metadata.get("env_id", 0))
+            dropped_counts["joint"][env_id] = dropped_counts["joint"].get(env_id, 0) + int(
+                metadata.get("dropped", 0)
+            )
         elif input_id == "gripper_cmd":
             payload = np.asarray(
                 event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
@@ -1207,6 +1336,10 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     f"gripper_cmd must be Float32[1] in [0, 1], got {payload!r} (TC table)"
                 )
             commands.push("gripper", metadata.get("env_id"), payload)
+            env_id = int(metadata.get("env_id", 0))
+            dropped_counts["gripper"][env_id] = dropped_counts["gripper"].get(env_id, 0) + int(
+                metadata.get("dropped", 0)
+            )
         elif input_id == "base_cmd":
             # MOB-1: latest diff-drive command [v, omega]; integrated each
             # tick (the guard has already clamped it, MOB-3)
@@ -1216,6 +1349,10 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
             if payload.shape[0] != 2:
                 raise ValueError(f"base_cmd must be Float32[2] (v, omega), got {payload!r} (MOB-1)")
             base_cmd = [float(payload[0]), float(payload[1])]
+            env_id = int(metadata.get("env_id", 0))
+            dropped_counts["base"][env_id] = dropped_counts["base"].get(env_id, 0) + int(
+                metadata.get("dropped", 0)
+            )
         elif input_id == "reset":
             started = clock()
             payload = np.asarray(event["value"].to_numpy(zero_copy_only=False)).reshape(-1)
@@ -1274,10 +1411,10 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
                     print(f"carry release: {held_item} (reset)", file=sys.stderr)
                     held_item = None
             reply_env = reset_env if reset_env is not None else 0
-            node.send_output(
+            emit_bridge(
                 "reset_done",
                 pa.array(np.array([1], dtype=np.uint32)),
-                metadata=_metadata(
+                _metadata(
                     sim_time_ns,
                     reply_env,
                     seq.update(

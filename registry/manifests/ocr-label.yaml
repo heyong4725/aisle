@@ -21,8 +21,10 @@ inputs:
   read_request: {schema: json_utf8, rate_hz: 1}
   # episode boundary: clears any pending read
   reset_done: {schema: reset_done_u32, rate_hz: 1}
+  turn: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
 outputs:
   read_result: {schema: json_utf8, latency_class: best_effort}
+  turn_done: {schema: sim_turn_u64, latency_class: hard_rt}
 embodiment:
   arm: [franka]
   gripper: any

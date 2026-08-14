@@ -23,6 +23,10 @@ inputs:
   reset:
     schema: reset_request_u32
     rate_hz: 1
+  turn_commit:
+    schema: sim_turn_u64
+    rate_hz: 100
+    is_clock: true
 outputs:
   bridge_info:
     schema: json_utf8
@@ -63,6 +67,9 @@ outputs:
   frame_info:
     schema: json_utf8
     latency_class: best_effort
+  sim_turn:
+    schema: sim_turn_u64
+    latency_class: hard_rt
 embodiment:
   arm:
   - franka

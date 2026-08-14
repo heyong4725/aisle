@@ -76,7 +76,8 @@ def main(clock=None) -> None:
     import time
 
     import pyarrow as pa
-    from dora import Node
+
+    from aisle.turn_node import Node
 
     clock = clock or time.monotonic
     node = Node()

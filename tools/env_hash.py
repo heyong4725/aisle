@@ -53,8 +53,10 @@ FROZEN_DIRS = (
 # env_hash must change if either does. harness/budget.toml carries the
 # campaign ceilings (ADR-21): budgets get the same tamper trust as limits.
 # topics.py is the TC-2/BG-3 stamp trust boundary the guard reads on every
-# message; kinematics.py is the SO-101 forward chain behind the workspace
-# check (fk_ee_pose). Both decide verdicts, neither is a scene artifact.
+# message; turn_node.py and turns.py enforce the ADR-30 input/output closure
+# around every lockstep guard verdict; kinematics.py is the SO-101 forward
+# chain behind the workspace check (fk_ee_pose). These decide verdicts or
+# whether they may be emitted, and none is a scene artifact.
 # embodiment.py holds SO101_ARM_JOINTS, the TC-5 joint order `so101_chain()`
 # refuses to build against a mismatched URDF — one hop behind the workspace
 # check, and found only by following the fence's OWN imports rather than the
@@ -62,6 +64,8 @@ FROZEN_DIRS = (
 FROZEN_FILES = (
     "src/aisle/nodes/budget_guard.py",
     "src/aisle/topics.py",
+    "src/aisle/turn_node.py",
+    "src/aisle/turns.py",
     "src/aisle/kinematics.py",
     "src/aisle/embodiment.py",
     "harness/budget.toml",
@@ -77,6 +81,9 @@ def frozen_files(root: Path) -> list[Path]:
         if base.is_dir():
             files.extend(p for p in base.rglob("*") if p.is_file() and "__pycache__" not in p.parts)
     files.extend(p for p in (root / "graphs").glob("expert_*.yaml") if p.is_file())
+    # ADR-30: these generated plans are executable scheduler topology, not
+    # documentation. Hash them beside the measured graphs they compile from.
+    files.extend(p for p in (root / "graphs" / "turn_plans").glob("expert_*.json") if p.is_file())
     files.extend(root / f for f in FROZEN_FILES if (root / f).is_file())
     return sorted(files, key=lambda p: p.relative_to(root).as_posix())
 

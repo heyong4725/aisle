@@ -292,10 +292,10 @@ def main() -> None:
     import sys
 
     import pyarrow as pa
-    from dora import Node
 
     from aisle.scenes.pharmacy import MED_NAMES, load_meds, load_physics, resolve_layout
     from aisle.topics import env_accepts, env_pin_from_env, make_sender
+    from aisle.turn_node import Node
 
     embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
     physics = load_physics()

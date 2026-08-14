@@ -1,10 +1,8 @@
-# warning-only fixture on a LAUNCHABLE node (PR #34 review: keeping the
-# detector here lost the corpus's only codes=[] entries, killing coverage
-# of "warnings alone still exit 0"): genesis tick declares 100 Hz, a 1 Hz
-# timer is far below the TC-4 band
+# Warning-only fixture on a non-simulator node: task-state-machine declares
+# its feedback tick at 1 Hz, while this 0.1 Hz timer is below the TC-4 band.
 nodes:
-- id: dora-genesis
+- id: task-state-machine
   inputs:
-    tick: dora/timer/millis/1000
+    tick: dora/timer/millis/10000
   outputs:
-  - poses
+  - episode_feedback

@@ -5,22 +5,27 @@ kind: node
 provides: [episode_driving]
 requires: [episode_verification]
 inputs:
-  reset_done: {schema: reset_done_u32, rate_hz: 1}
+  reset_done: {schema: reset_done_u32, rate_hz: 1, turn_edge: episodic}
   # ADR-34: the requester is the ONLY node that hears a refusal, and without
   # this edge a refused reset would leave it waiting on a reply published to
   # nobody. It ENDS the run on one rather than starting an episode on a
-  # scene that was never reset (issue #209)
-  reset_refused: {schema: reset_refused_u32, rate_hz: 1}
-  episode_result: {schema: json_utf8, rate_hz: 1}
+  # scene that was never reset (issue #209). EPISODIC like its sibling
+  # reply (ADR-30 §1.3): it is a service reply closing the same
+  # rollout-client -> reset -> rollout-client cycle reset_done closes, and
+  # a forward-classified back-edge there is a cycle with no episodic break
+  reset_refused: {schema: reset_refused_u32, rate_hz: 1, turn_edge: episodic}
+  episode_result: {schema: json_utf8, rate_hz: 1, turn_edge: episodic}
   # HAR-3: the retry count rides in feedback; the record carries it
-  episode_feedback: {schema: json_utf8, rate_hz: 1}
+  episode_feedback: {schema: json_utf8, rate_hz: 1, turn_edge: episodic}
   tick: {schema: timer_tick, rate_hz: 1}
+  turn: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
 outputs:
   reset: {schema: reset_request_u32, latency_class: best_effort}
   episode_goal: {schema: json_utf8, latency_class: best_effort}
   # T4 (ADR-32): {goal_id, seed} for the human-sim's script — a FORWARD
   # edge carrying no target information beyond what the script derives
   episode_meta: {schema: json_utf8, latency_class: best_effort}
+  turn_done: {schema: sim_turn_u64, latency_class: hard_rt}
 embodiment:
   arm: [franka, so101]
   gripper: any

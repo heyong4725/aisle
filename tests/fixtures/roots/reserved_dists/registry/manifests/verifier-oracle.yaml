@@ -13,10 +13,17 @@ inputs:
   joint_state:
     schema: jointvec_f32
     rate_hz: 100
+  turn:
+    schema: sim_turn_u64
+    rate_hz: 100
+    is_clock: true
 outputs:
   episode_result:
     schema: json_utf8
     latency_class: best_effort
+  turn_done:
+    schema: sim_turn_u64
+    latency_class: hard_rt
 embodiment:
   arm:
   - franka

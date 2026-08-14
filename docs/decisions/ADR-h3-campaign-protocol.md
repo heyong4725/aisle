@@ -38,6 +38,12 @@ L (D6 rationale).
    start; both arms and all six scenario sessions run against it. The
    results record OID, agent CLI version, model id, contract sha256
    (`harness/CLAUDE.research.md`), per-scenario budgets, and argv.
+   A resume or rerun MUST resolve the same OID recorded by every existing
+   `h3_results*.json` aggregate under `--out`; a mismatch, an unreadable or
+   incomplete aggregate, or conflicting recorded pins refuses before any
+   scenario spends budget. A directory with conflicting pins is already
+   cross-environment contaminated, so the runner MUST NOT guess which pin
+   is canonical.
    Mid-campaign human help ONLY via committed CLAUDE.research.md diffs,
    each reported with the results (contract rule §0) — any such diff
    applies to BOTH arms' remaining scenarios or is void. Historical pins
@@ -201,10 +207,17 @@ alter arm-L treatment semantics and the audit surface:
    classes as the arm-W wipe. Rationale: L/S1 left an unregistered
    `skills/s1-driver-v2/` and a working graph; carrying those into S2
    would be untreated cross-scenario state.
-2. **Reruns carry only the tier's ORIGINAL library.** On `--attempt N>1`
-   the guard is limited to the attempt-1 record's `prior_skills`, so a
-   skill registered during a failed attempt cannot ride into its own
-   rerun and read as prior-tier reuse.
+2. **Rerun chains replay an auditable library.** On `--attempt N>1`, a
+   tier with no completed same-attempt predecessor starts from its own
+   attempt-1 record's `prior_skills`, so a skill registered during that
+   failed tier cannot ride into its rerun and read as prior-tier reuse.
+   A later rerun tier instead inherits `skills_after` from the nearest
+   completed same-attempt predecessor. The predecessor is read from its
+   persisted `<tier>-rN/scenario.json`, never inferred from the ambient
+   worktree, so a quota/infra interruption followed by a new invocation
+   has the same treatment as one continuous chained rerun. Missing or
+   malformed history refuses rather than silently preserving every
+   registered skill.
 3. **Occupied scenario slots rotate aside** (`<slot>-supersededN`)
    instead of being reused: `token_samples.jsonl` appends (an aborted
    prefix poisons tokens-to-first-success — observed live on the L/S2

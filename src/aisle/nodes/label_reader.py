@@ -511,10 +511,10 @@ def main() -> None:  # pragma: no cover — dora runtime
     import sys
 
     import pyarrow as pa
-    from dora import Node
 
     from aisle.scenes.pharmacy import load_meds
     from aisle.topics import make_sender
+    from aisle.turn_node import Node
     from aisle.verifier.models import load_pinned
 
     node = Node()
