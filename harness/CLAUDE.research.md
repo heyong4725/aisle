@@ -72,6 +72,7 @@ out, read traces, close the idea:
 ```
 uv run python -m aisle.harness.registry search --provides grasp_planning
 uv run harness validate graphs/agent_x.yaml --embodiment mobile
+uv run harness validate graphs/agent_x.yaml --write-turn-plan
 uv run harness report log --idea "wider pregrasp settle fixes never_grasped" --expect "+10pp pass1"
 uv run harness rollout --graph graphs/agent_x.yaml --tier S1 --embodiment mobile --episodes 8 --seeds 0..7 --reset teleport
 uv run harness traces query --run r_2026_x --topic joint_state --episode 3 --summarize
@@ -83,6 +84,15 @@ uv run harness probe --dataflow <name> --topic dora-genesis/joint_state --for 30
 
 Notes that save you tokens:
 
+- **Edit the topology, regenerate the turn plan.** Under ADR-30 lockstep
+  the turn barrier loads a COMMITTED plan (`graphs/turn_plans/<stem>.json`)
+  that describes which node emits what in each turn. Change your graph's
+  nodes, edges, or outputs and that file is stale: `validate` refuses with
+  `TURN_PLAN_STALE` and `rollout` will not start. One command fixes it —
+  `harness validate <graph> --write-turn-plan` — and it is free, so run it
+  whenever validate names that code. It is refused, not silently degraded,
+  because a stale plan does not fail at the gate: it kills the barrier on
+  the first watermark and every episode wall-clamps instead.
 - `validate` is your compile loop: it prints machine-readable errors and
   hints. Fix ALL of them before rolling out — a rollout on an invalid
   graph refuses at the gate anyway.

@@ -97,7 +97,7 @@ architecture, and contribution guidance remain in the
 | `harness skill register` | `<skill_dir>`, `--root`, `--run-id` |
 | `harness swap` | `--graph`, `--dataflow`, `--replace`, `--with`, `--embodiment`, `--root` |
 | `harness traces query` | `--run`, `--topic`, `--t0`, `--t1`, `--episode`, `--node`, `--format`, `--out`, `--summarize`, `--root` |
-| `harness validate` | `<graph>`, `--root`, `--embodiment`, `--allow-unproven` |
+| `harness validate` | `<graph>`, `--root`, `--embodiment`, `--allow-unproven`, `--write-turn-plan` |
 | `python -m aisle.harness.registry lint` | `--root` |
 | `python -m aisle.harness.registry search` | `--root`, `--provides`, `--embodiment`, `--installed` |
 

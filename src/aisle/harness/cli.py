@@ -45,6 +45,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="downgrade EVAL_MISSING_FOR_MOTION to a warning (never set for agents)",
     )
+    val.add_argument(
+        "--write-turn-plan",
+        action="store_true",
+        help="rewrite the graph's committed ADR-30 turn plan from its topology (issue #227)",
+    )
 
     roll = subparsers.add_parser("rollout", help="run seeded episodes through a graph (HAR-1)")
     roll.add_argument("--graph", type=Path, required=True)
@@ -146,6 +151,18 @@ def main() -> int:
     args = build_parser().parse_args()
 
     if args.command == "validate":
+        if args.write_turn_plan:
+            # issue #227: the barrier loads the COMMITTED plan, so a topology
+            # edit that skips regeneration is refused by TURN_PLAN_STALE and
+            # `harness rollout` will not run. `compile_turn_plan` was
+            # reachable only from Python and the research contract never
+            # mentioned turn plans, so an agent editing its own
+            # `graphs/agent_campaign.yaml` had no documented way out and
+            # burned metered budget rediscovering the rule.
+            from aisle.harness.validate import write_turn_plan
+
+            report = write_turn_plan(args.graph, args.root)
+            return emit_report(report, lambda level, e: f"turn plan {level}: {e['detail']}")
         report = validate(args.graph, args.root, args.embodiment, args.allow_unproven)
         return emit_report(
             report,
