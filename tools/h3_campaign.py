@@ -117,6 +117,85 @@ def scenario_slot(tier: str, attempt: int) -> str:
     return tier if attempt == 1 else f"{tier}-r{attempt}"
 
 
+def resume_pin_error(out: Path, oid: str) -> str | None:
+    """Return why ``out`` cannot resume at ``oid``, or ``None``.
+
+    Every aggregate is part of the audit history, including rotated and
+    rerun records.  Ignoring an unreadable record or choosing one of two
+    conflicting pins would recreate the cross-environment comparison this
+    guard closes, so both conditions fail closed (ADR-h3 §1/§6, CON-8).
+    """
+    commits: dict[str, str] = {}
+    for prior_file in sorted(out.glob("h3_results*.json")) if out.exists() else []:
+        try:
+            payload = json.loads(prior_file.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            return f"unreadable campaign aggregate {prior_file.name}: {exc}"
+        treatment = payload.get("treatment") if isinstance(payload, dict) else None
+        prior_commit = treatment.get("commit") if isinstance(treatment, dict) else None
+        if not isinstance(prior_commit, str) or not re.fullmatch(r"[0-9a-f]{40}", prior_commit):
+            return f"campaign aggregate {prior_file.name} has no treatment commit"
+        commits[prior_file.name] = prior_commit
+    distinct = sorted(set(commits.values()))
+    if len(distinct) > 1:
+        evidence = ", ".join(f"{name}={commit}" for name, commit in commits.items())
+        return (
+            f"conflicting campaign pins in --out ({evidence}); the directory is already "
+            "cross-environment contaminated and no canonical pin can be guessed"
+        )
+    if distinct and distinct[0] != oid:
+        prior_commit = distinct[0]
+        return (
+            f"resume pin mismatch: campaign records commit {prior_commit} but this invocation "
+            f"resolved {oid} — relaunch with --commit {prior_commit} (ADR-h3 §1: one pinned "
+            "OID for both arms and all scenarios; §6: never contrast across environments)"
+        )
+    return None
+
+
+def _recorded_skill_list(path: Path, field: str) -> tuple[list[str] | None, str | None]:
+    """Read one runner-authored skill snapshot without trusting its shape."""
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, f"cannot read rerun history {path}: {exc}"
+    value = payload.get(field) if isinstance(payload, dict) else None
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        return None, f"rerun history {path} has no valid {field} list"
+    return sorted(set(value)), None
+
+
+def rerun_skill_allowlist(
+    out: Path,
+    arm: str,
+    tier: str,
+    attempt: int,
+    suite: tuple[dict, ...],
+) -> tuple[list[str] | None, str | None]:
+    """Resolve the auditable library entering one arm-L scenario.
+
+    The first scenario in a rerun chain replays its own attempt-1 starting
+    library.  Later scenarios inherit ``skills_after`` from the nearest
+    completed same-attempt predecessor.  Because that predecessor is read
+    from the persisted scenario record, a quota/infra interruption followed
+    by a new CLI invocation has exactly the same treatment as one continuous
+    invocation (ADR-h3 resume amendment §2, CON-5).
+    """
+    if attempt <= 1:
+        return None, None
+    ordered = [scenario["tier"] for scenario in suite]
+    if tier not in ordered:
+        return None, f"tier {tier!r} is not in the selected suite"
+    for predecessor in reversed(ordered[: ordered.index(tier)]):
+        record = out / f"arm_{arm}" / scenario_slot(predecessor, attempt) / "scenario.json"
+        if record.exists():
+            return _recorded_skill_list(record, "skills_after")
+    original = out / f"arm_{arm}" / tier / "scenario.json"
+    if not original.exists():
+        return None, f"missing rerun history {original}: cannot reconstruct the starting library"
+    return _recorded_skill_list(original, "prior_skills")
+
+
 def wipe_library(wt: Path, oid: str, keep_ref: str | None = None) -> dict:
     """Arm W between scenarios (ADR amendment): the working tree ends
     byte-exact at the pinned OID (detached HEAD) — including removal of
@@ -226,9 +305,9 @@ def clear_nonlibrary_residue(
     is pinned under keep_ref for audit, like the wipe."""
     registered = registered_skill_ids(wt)
     if keep_skills is not None:
-        # rerun allowlist (PR #61 review): a skill registered DURING a
-        # failed attempt of this tier must not ride into its rerun — the
-        # caller passes the tier's original prior_skills
+        # Rerun allowlist: the caller supplies either the tier's original
+        # prior_skills or a completed same-attempt predecessor's skills_after.
+        # Both are persisted treatment evidence, never ambient worktree state.
         registered &= set(keep_skills)
     kept_skills, skipped_ids = [], []
     for skill_id in sorted(registered, key=str):
@@ -528,6 +607,10 @@ def main() -> int:
     args.out = args.out.resolve()
     args.out.mkdir(parents=True, exist_ok=True)
     oid = resolve_commit(REPO_ROOT, args.commit)
+    pin_error = resume_pin_error(args.out, oid)
+    if pin_error:
+        print(json.dumps({"ok": False, "error": pin_error}))
+        return 1
     treatment = campaign_treatment(agent, model, oid, DEV_SEEDS, HOLDOUT_SEEDS)
     treatment["protocol"] = "ADR-h3-campaign-protocol"
     treatment["suite"] = args.suite
@@ -602,13 +685,17 @@ def main() -> int:
                 else:
                     # PR #60 review: arm L carries ONLY its defined library
                     # forward — stray working residue is untreated state.
-                    # On a rerun, the library is further limited to the
-                    # tier's ORIGINAL prior_skills (PR #61 review)
-                    allow = None
-                    if args.attempt > 1:
-                        prev = args.out / f"arm_{arm}" / scenario["tier"] / "scenario.json"
-                        if prev.exists():
-                            allow = json.loads(prev.read_text()).get("prior_skills", [])
+                    # Rerun treatment comes from persisted evidence, not
+                    # invocation boundaries: the first rerun tier replays its
+                    # original starting library; later tiers inherit the
+                    # nearest completed same-attempt predecessor even after a
+                    # process/quota resume.
+                    allow, allow_error = rerun_skill_allowlist(
+                        args.out, arm, scenario["tier"], args.attempt, suite
+                    )
+                    if allow_error:
+                        print(json.dumps({"ok": False, "error": allow_error}))
+                        return 1
                     wiped = clear_nonlibrary_residue(
                         wt, oid, keep_ref=f"h3/keep-{arm}-pre-{slot}", keep_skills=allow
                     )
