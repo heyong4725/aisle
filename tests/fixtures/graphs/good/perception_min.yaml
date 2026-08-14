@@ -1,14 +1,11 @@
-# minimal L0 perception wiring on LAUNCHABLE nodes (rewritten for VAL-2
-# INSTALL_MISSING: the previous detector-openvocab version was schema-valid
-# but could never launch — exactly the H1-discovered class)
+# Minimal L0 perception wiring on installed non-simulator registry nodes.
+# A sim_bridge is never accepted without ADR-30 clock topology.
 nodes:
-- id: dora-genesis
-  inputs:
-    tick: dora/timer/millis/10
+- id: camera-source
   outputs:
   - poses
 - id: oracle-pose
   inputs:
-    poses: dora-genesis/poses
+    poses: camera-source/poses
   outputs:
   - target_pose

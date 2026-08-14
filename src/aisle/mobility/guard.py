@@ -119,6 +119,26 @@ def base_creep_deadline(
     return now + hold_s if target_changed else prev_deadline
 
 
+def update_arm_motion_window(
+    prev_deadline_ns: int | None,
+    last_stamp_ns: int | None,
+    target_changed: bool,
+    metadata: dict,
+    hold_s: float,
+) -> tuple[int | None, int | None, bool]:
+    """MOB-3 contract-clock mutex update.
+
+    Returns ``(deadline_ns, last_stamp_ns, trusted)``. A changed target with
+    a missing, zero, malformed, or regressing stamp is untrusted and therefore
+    fail-closed at the caller; no wall reading participates in this window.
+    """
+    stamp_ns = parse_sim_stamp(metadata)
+    if stamp_ns is None or (last_stamp_ns is not None and stamp_ns < last_stamp_ns):
+        return prev_deadline_ns, last_stamp_ns, False
+    deadline = stamp_ns + int(hold_s * 1e9) if target_changed else prev_deadline_ns
+    return deadline, stamp_ns, True
+
+
 def sim_clock_is_blind(
     *,
     base_pose_sim_ns: int | None,

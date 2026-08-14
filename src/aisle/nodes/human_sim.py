@@ -115,9 +115,9 @@ def main() -> None:
     import os
 
     import pyarrow as pa
-    from dora import Node
 
     from aisle.topics import env_accepts, env_pin_from_env, make_sender
+    from aisle.turn_node import Node
 
     env_pin = env_pin_from_env(os.environ)
     node = Node()
@@ -130,14 +130,14 @@ def main() -> None:
         metadata = event.get("metadata") or {}
         if not env_accepts(metadata, env_pin):
             continue  # fleet mode (BRG-5): another env's stream
+        if event["id"] not in {"episode_meta", "robot_msg"}:
+            continue  # ADR-30 scheduler/wall inputs carry no dialogue payload
         payload = json.loads(event["value"][0].as_py())
         goal_id = metadata.get("goal_id", "")
         if event["id"] == "episode_meta":
             emissions = human.on_episode_meta(payload, goal_id)
-        elif event["id"] == "robot_msg":
-            emissions = human.on_robot_msg(payload, goal_id)
         else:
-            continue
+            emissions = human.on_robot_msg(payload, goal_id)
         for topic, out_payload, out_metadata in emissions:
             send(topic, pa.array([json.dumps(out_payload)]), out_metadata)
 

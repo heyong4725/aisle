@@ -8,10 +8,17 @@ inputs:
   target_pose:
     schema: pose7d_f32
     rate_hz: 30
+  turn:
+    schema: sim_turn_u64
+    rate_hz: 100
+    is_clock: true
 outputs:
   grasp_pose:
     schema: pose7d_f32
     latency_class: soft_rt
+  turn_done:
+    schema: sim_turn_u64
+    latency_class: hard_rt
 params:
   approach_height_m:
     type: float

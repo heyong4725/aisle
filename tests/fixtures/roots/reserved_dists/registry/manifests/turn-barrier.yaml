@@ -1,0 +1,18 @@
+id: turn-barrier
+kind: node
+provides: [turn_barrier]
+requires: [sim_bridge]
+inputs:
+  sim_turn: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
+  done: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
+  tick: {schema: timer_tick, rate_hz: 10}
+outputs:
+  turn: {schema: sim_turn_u64, latency_class: hard_rt}
+  turn_commit: {schema: sim_turn_u64, latency_class: hard_rt}
+embodiment:
+  arm: [franka, so101]
+  gripper: any
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/nodes/turn_barrier.py

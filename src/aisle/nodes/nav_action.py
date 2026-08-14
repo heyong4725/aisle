@@ -25,7 +25,6 @@ def main() -> None:
 
     import numpy as np
     import pyarrow as pa
-    from dora import Node
 
     from aisle.mobility.guard import load_base_limits, parse_sim_stamp
     from aisle.mobility.nav import (
@@ -39,6 +38,7 @@ def main() -> None:
         resolve_nav_goal,
     )
     from aisle.topics import make_sender
+    from aisle.turn_node import Node
 
     embodiment = os.environ.get("AISLE_EMBODIMENT", "mobile")
     limits = load_base_limits(embodiment)

@@ -229,6 +229,7 @@ def main() -> int:
             out_dir,
             args.timeout_s,
             launch,
+            root=args.root,
         )
         # validate the STAMPED graph and attach the verdict (VAL gates)
         stamped = validate_graph(Path(report["graph"]), args.root, "franka", False)

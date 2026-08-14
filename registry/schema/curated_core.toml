@@ -30,7 +30,9 @@ core = [
   "stock-detector",
   "task-planner",
   "task-state-machine",
+  "turn-barrier",
   "verifier-oracle",
+  "verifier-realistic",
   "verifier-retail",
   "waypoint-nav",
 ]

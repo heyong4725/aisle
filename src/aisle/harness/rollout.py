@@ -472,6 +472,21 @@ def run_gates(
     )
     if not validation["ok"]:
         return {"ok": False, "gate": "validate", "detail": validation["errors"]}
+    if env_baseline != "local":
+        from aisle.harness.registry import load_manifests
+        from aisle.harness.validate import _clock_topology, load_graph
+
+        gate_nodes, _ = load_graph(graph, graph_snapshot)
+        manifest_list, manifest_errors = load_manifests(root)
+        manifests = {manifest["id"]: manifest for _, manifest in manifest_list}
+        topology = _clock_topology(gate_nodes or [], manifests) if not manifest_errors else {}
+        if topology.get("bridge_ids") and not topology.get("barrier_ids"):
+            return {
+                "ok": False,
+                "gate": "lockstep",
+                "detail": "attesting simulation refused: ADR-30 requires a validated "
+                "turn barrier; use --env-baseline local for non-attesting free-run bring-up",
+            }
     gates = {
         **sim_identity,
         "env_hash": env_hash,
@@ -681,6 +696,59 @@ def instrumented_graph(
             src = (node.get("inputs") or {}).get("episode_result", {})
             if isinstance(src, dict) and src.get("source") == "verifier-oracle/episode_result":
                 src["source"] = "verifier-realistic/episode_result"
+        # ADR-30 §1.5: in A7 the live judge is causal — its verdict drives
+        # the next reset — so it joins the closed turn and receives the
+        # longer verdict-bearing watchdog budget.  In `both` it remains a
+        # non-causal measurement tap and deliberately stays asynchronous.
+        realistic = next(n for n in doc["nodes"] if n["id"] == "verifier-realistic")
+        realistic["inputs"]["turn"] = {
+            "source": "turn-barrier/turn",
+            "queue_size": 4,
+            "queue_policy": "backpressure",
+        }
+        realistic["outputs"].append("turn_done")
+        realistic["env"].update(
+            {
+                "AISLE_LOCKSTEP": "1",
+                "AISLE_TURN_NODE": "verifier-realistic",
+                "AISLE_TURN_OUTPUTS": "episode_result,turn_done",
+            }
+        )
+        barrier = next(n for n in doc["nodes"] if n["id"] == "turn-barrier")
+        done_index = 1 + max(
+            [
+                int(port.rpartition("_")[2])
+                for port in barrier["inputs"]
+                if port.startswith("done_") and port.rpartition("_")[2].isdigit()
+            ],
+            default=-1,
+        )
+        barrier["inputs"][f"done_{done_index}"] = {
+            "source": "verifier-realistic/turn_done",
+            "queue_size": 4,
+            "queue_policy": "backpressure",
+        }
+
+        # The oracle remains a held-out scoring tap.  It must continue
+        # processing stamped observations, not buffer forever waiting for a
+        # turn the A7 causal topology no longer schedules for it.
+        oracle = next(n for n in doc["nodes"] if n["id"] == "verifier-oracle")
+        oracle["inputs"].pop("turn", None)
+        oracle_env = oracle.get("env") or {}
+        for key in ("AISLE_LOCKSTEP", "AISLE_TURN_NODE", "AISLE_TURN_OUTPUTS"):
+            oracle_env.pop(key, None)
+        oracle["env"] = oracle_env
+
+        from aisle.harness.validate import compile_turn_plan
+
+        manifests = {m["id"]: m for _, m in manifest_list}
+        plan = compile_turn_plan(doc["nodes"], manifests)
+        plan_path = run_dir / f"{Path(name).stem}-turn-plan.json"
+        plan_path.write_text(
+            json.dumps(plan, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        barrier["env"]["AISLE_TURN_PLAN"] = str(plan_path.resolve())
     out_path = run_dir / name
     out_path.write_text(yaml.safe_dump(doc, sort_keys=False))
     return out_path
@@ -689,6 +757,9 @@ def instrumented_graph(
 # settings that MUST come from the graph (where the graph hash attests them)
 # or from the runner itself, and never from the ambient process environment
 SCRUBBED_ENV = (
+    # ADR-30: bridge incarnations are assigned by this runner.  Ambient
+    # values could alias a dead process after a wall-clamp relaunch.
+    "AISLE_TURN_EPOCH",
     # ADR-23: the runner's own relaunch offset. rollout() sets it AFTER
     # this scrub on a relaunch, so the override still lands; what this
     # closes is the fleet path (cli.py) and tools/h4_iteration.py, which
@@ -1041,6 +1112,7 @@ def rollout(
         {
             **os.environ,
             "AISLE_SEEDS": ",".join(str(s) for s in seeds),
+            "AISLE_TURN_EPOCH": "1",
             # the caller-selected tier propagates to the graph (HAR-1): the
             # rollout client stamps it into every goal, and the SELECTED graph
             # determines its tier-specific wiring
@@ -1164,6 +1236,11 @@ def rollout(
                     **env,
                     "AISLE_SEEDS": ",".join(str(s) for s in remaining),
                     "AISLE_EPISODE_BASE": str(lines + 1),
+                    # ADR-30: a relaunched bridge is a new process epoch.
+                    # Turn ids restart at zero, so the monotonically
+                    # increasing epoch prevents delayed traffic from the
+                    # reaped process aliasing the replacement.
+                    "AISLE_TURN_EPOCH": str(relaunches + 1),
                 }
                 # fresh trace dir + graph per launch: the recorder truncates
                 # on open, and prior evidence must survive (HAR-4)

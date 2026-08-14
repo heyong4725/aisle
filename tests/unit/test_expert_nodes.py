@@ -287,13 +287,19 @@ class TestT2ScanTour:
     def test_matching_read_promotes_candidate_to_grasp_target(self):
         machine, _ = self._touring_machine()
         machine.on_move_done({"ok": True, "range_m": 0.13}, "ep-1/read0.0")
-        out = machine.on_read_result({"label": "metformin", "margin": 0.2}, "ep-1/read0.0")
+        read_stamp = {"turn_epoch": 2, "turn_id": 9, "sim_time_ns": 90}
+        out = machine.on_read_result(
+            {"label": "metformin", "margin": 0.2}, "ep-1/read0.0", read_stamp
+        )
         assert out[0][0] == "grasp_target"
         assert out[0][1] == {"pos": [0.5, 0.1, 0.2]}
         # the perception metadata is relayed so the grasp planner sees
         # the same keys target_pose carries, goal_id restamped (TC-7)
         assert out[0][2]["target_med"] == "metformin"
         assert out[0][2]["goal_id"] == "ep-1"
+        # Transport provenance comes from the read that promoted the
+        # candidate, never the target pose retained several turns earlier.
+        assert {key: out[0][2][key] for key in read_stamp} == read_stamp
 
     def test_default_refusal_advances_one_park_per_candidate(self):
         """MAX_READS_PER_CANDIDATE = 1 by measurement: every correct

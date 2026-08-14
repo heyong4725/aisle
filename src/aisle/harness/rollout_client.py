@@ -58,10 +58,10 @@ def parse_episode_base(environ) -> int:
 
 def main() -> None:
     import pyarrow as pa
-    from dora import Node
 
     from aisle.scenes.pharmacy import MED_NAMES
     from aisle.topics import env_accepts, env_pin_from_env, make_sender
+    from aisle.turn_node import Node
 
     seeds = [int(s) for s in os.environ.get("AISLE_SEEDS", "0").split(",")]
     # parsed BEFORE the targets: the default target list is keyed to the
@@ -117,6 +117,7 @@ def main() -> None:
         raise SystemExit(f"rollout-client config refused: unknown reset mode {reset_mode_name!r}")
     reset_mode = 1 if reset_mode_name == "behavioral" else 0
     results_path = os.environ.get("AISLE_RESULTS", "")
+    lockstep = os.environ.get("AISLE_LOCKSTEP", "0").strip().lower() in ("1", "true", "yes")
 
     env_pin = env_pin_from_env(os.environ)
     node = Node()
@@ -149,7 +150,9 @@ def main() -> None:
             continue
         if not env_accepts(event.get("metadata") or {}, env_pin):
             continue  # fleet mode (BRG-5): another env's stream
-        if event["id"] == "tick":
+        if event["id"] in ("tick", "turn"):
+            if (event["id"] == "tick" and lockstep) or (event["id"] == "turn" and not lockstep):
+                continue
             if phase == "reset_pending" and episode < len(seeds):
                 send(
                     "reset",
@@ -240,7 +243,13 @@ def main() -> None:
                     {"request_id": "reset-cleanup", "sim_time_ns": last_result_sim_ns},
                 )
                 phase = "done"
-                break  # client exits; dataflow teardown is the runner's job
+                # Do not `break` from inside the yielded turn: the wrapper
+                # must first emit turn_done or the terminal barrier hangs.
+                # It closes this turn and then ends iteration naturally.
+                if lockstep:
+                    node.stop_after_turn()
+                else:
+                    break
 
 
 if __name__ == "__main__":

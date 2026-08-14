@@ -17,6 +17,7 @@ inputs:
   # the authoritative episode boundary: restarts the wall timer and
   # re-references velocity/hold state to home (ADR-9)
   reset_done: {schema: reset_done_u32, rate_hz: 1}
+  turn: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
   # BG-5 stats cadence AND the ADR-29 fail-closed wall-net watchdog sweep
   # (mobile: required, and must be a dora timer <= 5000 ms —
   # MOBILE_GUARD_INCOMPLETE); wire from dora/timer/millis/5000 (payload opaque)
@@ -28,6 +29,7 @@ outputs:
   base_cmd_safe: {schema: base_cmd2d_f32, latency_class: hard_rt}
   violation: {schema: json_utf8, latency_class: best_effort}
   guard_stats: {schema: json_utf8, latency_class: best_effort}
+  turn_done: {schema: sim_turn_u64, latency_class: hard_rt}
 embodiment:
   # Both fixed-base arms have official limits/FK in env/limits.toml and the
   # guard; mobile resolves to its Franka arm under MOB-4.

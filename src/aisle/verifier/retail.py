@@ -291,9 +291,9 @@ def main() -> None:
     import sys
 
     import pyarrow as pa
-    from dora import Node
 
     from aisle.scenes.store import load_planogram
+    from aisle.turn_node import Node
     from aisle.verifier.oracle import initial_capture_barrier
 
     plano = load_planogram()

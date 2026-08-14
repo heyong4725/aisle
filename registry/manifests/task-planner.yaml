@@ -6,8 +6,10 @@ provides: [task_planning]
 requires: []
 inputs:
   episode_goal: {schema: json_utf8, rate_hz: 1}
+  turn: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
 outputs:
   subtask_plan: {schema: json_utf8, latency_class: best_effort}
+  turn_done: {schema: sim_turn_u64, latency_class: hard_rt}
 embodiment:
   arm: [franka]
   gripper: any

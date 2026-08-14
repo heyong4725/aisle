@@ -58,6 +58,12 @@ shape = "1"
 arrow = "UInt8"
 shape = "0"
 
+# ADR-30 closed-turn clock/watermark. The UInt64 payload is the turn id;
+# metadata carries turn_epoch and sim_time_ns (CAP-2).
+[sim_turn_u64]
+arrow = "UInt64"
+shape = "1"
+
 # SPEC 210 MOB-1 — mobile base topics (Class C vocabulary; flagged for
 # owner sign-off with the T11 mobility contract). n_scan is the planar
 # range count carried in base_scan metadata {angle_min, angle_max, n}.
