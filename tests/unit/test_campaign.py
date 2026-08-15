@@ -740,6 +740,164 @@ def test_resume_refuses_prior_session_policies(tmp_path):
         assert refusal["ok"] is False and "session_isolation_policy" in refusal["error"]
 
 
+def _campaign_repo(tmp_path):
+    """A pinned repo plus a worktree standing in for a campaign session's,
+    with `runs/` gitignored exactly as CON-6 has it."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    (repo / "graphs").mkdir()
+    (repo / "graphs" / "agent_campaign.yaml").write_text("nodes: []\n")
+    (repo / ".gitignore").write_text("runs/*\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "pin"],
+        cwd=repo,
+        check=True,
+    )
+    oid = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True
+    ).stdout.strip()
+    wt = tmp_path / "out" / "worktree"
+    subprocess.run(["git", "worktree", "add", "-q", "--detach", str(wt), oid], cwd=repo, check=True)
+    return repo, wt, oid
+
+
+def _agent_authors_a_skill(wt):
+    """What a campaign session actually leaves behind: UNCOMMITTED working
+    -tree changes (audit_frozen diffs the working tree, so the protocol
+    never asked the agent to commit), plus fat gitignored run artifacts."""
+    skill = wt / "skills" / "t2-scan-pose"
+    skill.mkdir(parents=True)
+    (skill / "node.py").write_text("# the agent's skill\n")
+    (skill / "skill.yaml").write_text("id: t2-scan-pose\norigin: agent-authored\n")
+    (wt / "graphs" / "agent_campaign.yaml").write_text("nodes: [best-system]\n")
+    traces = wt / "runs" / "r_000"
+    traces.mkdir(parents=True)
+    (traces / "trace.arrow").write_text("x" * 4096)
+
+
+def test_archive_captures_the_agents_uncommitted_deliverable(tmp_path):
+    """CON-6 (#245): a campaign session's work lives as UNCOMMITTED worktree
+    state. Archiving HEAD would capture the pin and nothing the agent did —
+    the archive must snapshot the working tree."""
+    import campaign as c
+
+    repo, wt, oid = _campaign_repo(tmp_path)
+    _agent_authors_a_skill(wt)
+    rec = c.archive_deliverable(wt, oid, "h3-desk-L-T2", now="2026-08-15T00:00:00Z")
+    assert rec["ok"] and rec["ref"] == "refs/campaign/h3-desk-L-T2"
+    listed = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", rec["commit"]],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "skills/t2-scan-pose/node.py" in listed
+    assert (
+        "nodes: [best-system]"
+        in subprocess.run(
+            ["git", "show", f"{rec['commit']}:graphs/agent_campaign.yaml"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        ).stdout
+    )
+
+
+def test_the_archive_outlives_the_worktree(tmp_path):
+    """CON-6 (#245): THE bug. Worktrees live under gitignored runs/, so
+    cleaning runs/ destroyed three agent-authored skills with no branch, no
+    tag, and no copy — unreviewable, which §9.4 review presumes against. A
+    ref makes the objects reachable, so they survive the directory."""
+    import shutil
+
+    import campaign as c
+
+    repo, wt, oid = _campaign_repo(tmp_path)
+    _agent_authors_a_skill(wt)
+    rec = c.archive_deliverable(wt, oid, "doomed", now="2026-08-15T00:00:00Z")
+
+    subprocess.run(["git", "worktree", "remove", "--force", str(wt)], cwd=repo, check=True)
+    shutil.rmtree(tmp_path / "out", ignore_errors=True)
+    assert not wt.exists()
+
+    survived = subprocess.run(
+        ["git", "show", f"{rec['ref']}:skills/t2-scan-pose/node.py"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert survived.returncode == 0 and "the agent's skill" in survived.stdout
+
+
+def test_the_archive_excludes_gitignored_run_artifacts(tmp_path):
+    """CON-6 (#245): a campaign worktree's runs/ holds traces and videos.
+    Archiving them would put gigabytes per session into the object store —
+    the archive follows .gitignore, so it keeps code and drops evidence
+    that already has its own home."""
+    import campaign as c
+
+    repo, wt, oid = _campaign_repo(tmp_path)
+    _agent_authors_a_skill(wt)
+    rec = c.archive_deliverable(wt, oid, "lean", now="2026-08-15T00:00:00Z")
+    listed = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", rec["commit"]],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "skills/t2-scan-pose/node.py" in listed
+    assert "runs/" not in listed
+
+
+def test_archiving_does_not_disturb_the_session_worktree(tmp_path):
+    """CON-6 (#245): retention is an OBSERVER. It must not stage, commit,
+    or check anything out in the worktree — a campaign's frozen-set audit
+    and holdout scoring both read that state after the archive runs."""
+    import campaign as c
+
+    repo, wt, oid = _campaign_repo(tmp_path)
+    _agent_authors_a_skill(wt)
+
+    def worktree_state():
+        return subprocess.run(
+            ["git", "status", "--porcelain"], cwd=wt, capture_output=True, text=True
+        ).stdout
+
+    before_status, before_head = worktree_state(), (wt / ".git").read_text()
+    c.archive_deliverable(wt, oid, "observer", now="2026-08-15T00:00:00Z")
+    assert worktree_state() == before_status
+    assert (wt / ".git").read_text() == before_head
+    assert (
+        subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True, text=True
+        ).stdout.strip()
+        == oid
+    )
+
+
+def test_archive_refuses_cleanly_rather_than_killing_the_campaign(tmp_path):
+    """CON-8 (#245): retention runs at the END of a metered session. A
+    failure there must never discard the campaign record it exists to
+    accompany — it reports {ok: false, error} and the campaign continues."""
+    import campaign as c
+
+    _repo, wt, oid = _campaign_repo(tmp_path)
+    rec = c.archive_deliverable(wt / "nonexistent", oid, "broken", now="2026-08-15T00:00:00Z")
+    assert rec["ok"] is False and rec["error"]
+
+
+def test_the_campaign_cli_makes_no_dead_retention_promise(tmp_path):
+    """#245: `--keep-worktree` was parsed and never read (0 uses) — a flag
+    that reads as a retention guarantee while guaranteeing nothing. Either
+    it works or it is gone; it must not come back as decoration."""
+    import campaign as c
+
+    source = Path(inspect.getfile(c)).read_text()
+    assert "--keep-worktree" not in source, "dead retention flag is back"
+
+
 def test_isolated_home_is_fresh_on_reuse(tmp_path):
     """PR #98 review P2: an aborted attempt's agent_home must not leak
     into the next launch — an occupied home rotates aside (audit

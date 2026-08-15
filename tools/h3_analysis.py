@@ -472,6 +472,11 @@ def cell(rec: dict, commit: str | None = None, runtime_baseline: str | None = No
         "tokens_to_first_success": _tokens_at(rec.get("_token_samples") or [], first),
         "wrong_object_total": rec.get("wrong_object_total"),
         "skills_after": rec.get("skills_after"),
+        # #245: the analysis is the DURABLE copy — the raw record lives under
+        # gitignored runs/. Dropping the archive pointer here is how the H3
+        # skills became unreviewable: `skills_after` named them, and nothing
+        # said where the code was.
+        "deliverable_archive": (rec.get("deliverable_archive") or {}).get("ref"),
         "skill_reuse_in_deliverable": rec.get("skill_reuse_in_deliverable"),
         "flags": flags,
     }
