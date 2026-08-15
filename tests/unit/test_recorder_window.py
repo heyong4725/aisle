@@ -111,3 +111,50 @@ def test_empty_spec_disables_await():
     assert parse_await_spec("") == ("", 0)
     topic, count = parse_await_spec("violation:1")
     assert (topic, count) == ("violation", 1)
+
+
+def test_the_mobile_reset_graph_awaits_both_of_its_resets():
+    """Issue #236: `test_mobile_reset_rehomes_reported_and_physical_base`
+    asserts it saw TWO resets, and the second lands at `base_pose` event 300
+    — six sim-seconds. With a wall-only recorder window its pass condition
+    was "the host sustained rtf above ~0.2", not "resets re-home the base",
+    and under full-suite load it failed as `expected 2 resets, saw 1` —
+    which reads like a reset regression and sends the reader into the reset
+    path rather than at the load on the box.
+
+    `CaptureWindow`'s await fixes that (see
+    test_await_holds_window_past_wall_deadline_until_nth_row above: the
+    window cannot close before the Nth row, however late load makes it).
+    This pins the WIRING, because removing it reverts the graph test to
+    load-sensitivity and nothing fails until a busy machine says so —
+    exactly the silence that made the original failure expensive."""
+    import importlib.util
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[2]
+    spec = importlib.util.spec_from_file_location(
+        "_mobile_bridge_graph", repo / "tests" / "graph" / "test_mobile_bridge.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    import tempfile
+
+    import yaml
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = module._write_reset_graph(Path(tmp), Path(tmp) / "rec.jsonl")
+        nodes = yaml.safe_load(Path(path).read_text())["nodes"]
+
+    recorder = next(n for n in nodes if n["id"] == "rec")
+    env = recorder["env"]
+    assert env.get("RECORDER_AWAIT") == "reset_done:2", (
+        "the reset graph's recorder no longer awaits both resets; its window can close "
+        "before the second one on a slow host (issue #236)"
+    )
+    assert float(env.get("RECORDER_AWAIT_TAIL_S", 0)) > 0, (
+        "no tail after the awaited reset — the test reads base_pose AFTER the last reset"
+    )
+    # the awaited topic must actually reach the recorder, or the window never
+    # closes and the run burns its outer deadline instead of failing clearly
+    assert "reset_done" in recorder["inputs"], recorder["inputs"]
