@@ -22,6 +22,7 @@ pytestmark = pytest.mark.unit
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 from aisle.harness.skill import (  # noqa: E402
+    REGISTRY_MIN_PASS_RATE,
     RegistrationError,
     curated_ids,
     load_skill,
@@ -241,6 +242,43 @@ def test_malformed_eval_fields_are_registration_errors(tmp_path):
     (root / "skills" / "pour-arc3" / "skill.yaml").write_text("{bad: yaml: [")
     with pytest.raises(RegistrationError, match="YAML"):
         register_skill(root / "skills" / "pour-arc3", root, run_rollout=_ok_rollout(), now="x")
+
+
+def test_a_self_declared_floor_below_the_registry_floor_is_refused(tmp_path):
+    """CAP-6 (#243): `min_pass_rate` is the CANDIDATE's number, so without an
+    absolute floor the exam is self-graded — a skill shipping 0.0 registers
+    at pass_rate 0.0 and the gate reports ok. That is how t2-scan-tsm entered
+    a campaign library at 0.0. The refusal lands at load, BEFORE any rollout
+    is spent."""
+    root = _registry(tmp_path)
+    skill_dir = _write_skill(root, eval_extra={"min_pass_rate": 0.0})
+    fake = _ok_rollout()
+    with pytest.raises(RegistrationError, match="below the registry floor"):
+        register_skill(skill_dir, root, run_rollout=fake, now="2026-07-25")
+    assert not fake.calls, "the floor must refuse before spending an eval rollout"
+    assert not (root / "registry" / "manifests" / "pour-arc.yaml").exists()
+
+
+def test_a_stricter_self_declared_floor_still_governs(tmp_path):
+    """CAP-6 (#243): the floor is a MINIMUM, not a replacement — a skill that
+    holds itself to 0.9 is still refused at 0.75. The fix must not quietly
+    loosen any skill's own bar."""
+    root = _registry(tmp_path)
+    skill_dir = _write_skill(root, eval_extra={"min_pass_rate": 0.9})
+    with pytest.raises(RegistrationError, match="0.900"):
+        register_skill(skill_dir, root, run_rollout=_ok_rollout(), now="2026-07-25")
+
+
+def test_every_shipped_skill_meets_the_registry_floor(tmp_path):
+    """CAP-6 (#243): the floor is calibrated against the corpus, not picked in
+    the abstract — every skill already in the library must satisfy it, or the
+    change is a silent de-registration of mainline work."""
+    for eval_path in (REPO_ROOT / "skills").glob("*/eval.yaml"):
+        declared = float(yaml.safe_load(eval_path.read_text())["min_pass_rate"])
+        assert declared >= REGISTRY_MIN_PASS_RATE, (
+            f"{eval_path.parent.name} declares {declared}, below the floor "
+            f"{REGISTRY_MIN_PASS_RATE} — the floor would evict a registered skill"
+        )
 
 
 def test_same_day_retries_get_distinct_run_ids(tmp_path):

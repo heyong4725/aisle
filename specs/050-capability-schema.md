@@ -21,10 +21,13 @@ Status: DRAFT. Files: `registry/schema/capability.schema.json`, `registry/manife
   (deleting a core manifest opens nothing), and every non-curated manifest
   MUST be origin=agent-authored with a non-null evalcard — the registration
   path is the only way past the curated core.
-- CAP-6: `eval` may be null only while origin=hub AND safety_class!=motion... exception: the two sim drivers ship with M0 evalcards generated from TC-A1..A3 runs.
+- CAP-6: `eval` may be null only while origin=hub AND safety_class!=motion... exception: the two sim drivers ship with M0 evalcards generated from TC-A1..A3 runs. A registering skill's shipped `min_pass_rate` (SPEC 070 `eval.yaml`) MUST be at or above the registry floor `REGISTRY_MIN_PASS_RATE` = 0.5 (ADR-37), and registration MUST refuse a sub-floor declaration at LOAD, before the eval rollout is spent. Without the floor the threshold that certifies a skill is chosen by the candidate: `harness skill register` already refuses a measured rate below `min_pass_rate`, so a skill shipping 0.0 registers at pass_rate 0.0 and the gate reports `ok` — observed live, `t2-scan-tsm` entered the desk-H3 L/T2-r2 campaign library at 0.0 (`analysis/h3/desk/desk_analysis.json`). This is #228's argument one layer down: there the exam paper was editable by the candidate, here the passing grade was. The floor is a MINIMUM and not a replacement — a skill declaring a stricter bar is still held to its own — and it is calibrated against the corpus, not chosen in the abstract: both registered skills independently chose 0.5, so no mainline skill is de-registered by it (asserted, not assumed: `::test_every_shipped_skill_meets_the_registry_floor`). Raising the floor later is a further spec-change, and evicts any shipped skill below the new value — which is why that test names the eviction rather than only the rule.
 
 Acceptance: `tests/unit/test_manifests.py::test_all_lint` (CAP-1..3), including
 positive and malformed `is_clock` declarations; `::test_search_cli_json`
 (CAP-4), `::test_registry_completeness` (CAP-5 — the curated list exactly,
 extras must be evalcarded agent-authored skills, curated gap asserted);
-`tests/unit/test_skill_register.py` (the registration path).
+`tests/unit/test_skill_register.py` (the registration path), including
+`::test_a_self_declared_floor_below_the_registry_floor_is_refused`,
+`::test_a_stricter_self_declared_floor_still_governs`, and
+`::test_every_shipped_skill_meets_the_registry_floor` (CAP-6 floor, ADR-37).
