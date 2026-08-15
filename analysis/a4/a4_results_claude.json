@@ -1,0 +1,185 @@
+{
+ "ok": true,
+ "treatment": {
+  "protocol": "ADR-a4-protocol",
+  "suite": "a4",
+  "commit": "cb814e1259394fbc0c278ea7c143472cbcd82cae",
+  "dev_seeds": "0..49",
+  "holdout_seeds": "100..107",
+  "budget_scale": 1.0,
+  "a4_runner_sha256": "854f19fa752aea01f6eacb7b1ab8b7bf3c7bb2daf113c3f6e4106e362c0f13eb",
+  "host_dora_cli": {
+   "path": "/Users/yonghe/.cargo/bin/dora",
+   "sha256": "1fedbc1f87b4eb7a1dc1563715677f5a8a9b581fb56cfa7b88b1e1829cce7596",
+   "version": "dora-cli 1.0.0-rc.4"
+  },
+  "arm_budget": {
+   "tokens": 400000,
+   "episodes": 40,
+   "wall_h": 2.5
+  },
+  "arms": {
+   "claude": "claude-fable-5",
+   "codex": "gpt-5.6-sol"
+  },
+  "contract_sha256": null
+ },
+ "records": [
+  {
+   "agent": "claude",
+   "model": "claude-fable-5",
+   "session": {
+    "stopped": "agent_done",
+    "rc": 0,
+    "tokens": 185789,
+    "wall_s": 2187.6
+   },
+   "session_isolation": {
+    "home": "/Users/yonghe/src/aisle/runs/a4/arm_claude/agent_home",
+    "claude_config_dir": "/Users/yonghe/src/aisle/runs/a4/arm_claude/agent_home/.claude",
+    "codex_home": "/Users/yonghe/src/aisle/runs/a4/arm_claude/agent_home/.codex",
+    "xdg_rebound": true,
+    "env_baseline_oid": "cb814e1259394fbc0c278ea7c143472cbcd82cae",
+    "credentials": {
+     "credential_seed": "claude-campaign login (.credentials.json)"
+    }
+   },
+   "session_start_epoch": 1786758138.312555,
+   "rollouts": [
+    {
+     "run_id": "20260815-014501-47ad50",
+     "mtime": 1786758717.883056,
+     "episodes": 10,
+     "pass1": 1.0,
+     "git_sha": "cb814e1259394fbc0c278ea7c143472cbcd82cae",
+     "env_baseline": "cb814e1259394fbc0c278ea7c143472cbcd82cae",
+     "env_baseline_oid": "cb814e1259394fbc0c278ea7c143472cbcd82cae",
+     "env_attested": true
+    },
+    {
+     "run_id": "20260815-015514-1e5d38",
+     "mtime": 1786760110.096704,
+     "episodes": 40,
+     "pass1": 1.0,
+     "git_sha": "cb814e1259394fbc0c278ea7c143472cbcd82cae",
+     "env_baseline": "cb814e1259394fbc0c278ea7c143472cbcd82cae",
+     "env_baseline_oid": "cb814e1259394fbc0c278ea7c143472cbcd82cae",
+     "env_attested": true
+    }
+   ],
+   "episodes_total": 50,
+   "wrong_object_total": 0,
+   "first_success_wall_s": 579.6,
+   "holdout": {
+    "ok": true,
+    "stalled": false,
+    "run_id": "campaign-holdout-a4-claude",
+    "pass1": 1.0,
+    "pass8": 1.0,
+    "failures": {},
+    "episodes": [
+     {
+      "episode": 0,
+      "seed": 100,
+      "status": "success",
+      "failure": null,
+      "t_end": 21.36,
+      "goal_id": "ep-0000",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 1,
+      "seed": 101,
+      "status": "success",
+      "failure": null,
+      "t_end": 16.03,
+      "goal_id": "ep-0001",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 2,
+      "seed": 102,
+      "status": "success",
+      "failure": null,
+      "t_end": 13.16,
+      "goal_id": "ep-0002",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 3,
+      "seed": 103,
+      "status": "success",
+      "failure": null,
+      "t_end": 20.26,
+      "goal_id": "ep-0003",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 4,
+      "seed": 104,
+      "status": "success",
+      "failure": null,
+      "t_end": 14.83,
+      "goal_id": "ep-0004",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 5,
+      "seed": 105,
+      "status": "success",
+      "failure": null,
+      "t_end": 20.56,
+      "goal_id": "ep-0005",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 6,
+      "seed": 106,
+      "status": "success",
+      "failure": null,
+      "t_end": 16.0,
+      "goal_id": "ep-0006",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 7,
+      "seed": 107,
+      "status": "success",
+      "failure": null,
+      "t_end": 13.3,
+      "goal_id": "ep-0007",
+      "verifier": "oracle",
+      "retries": 0
+     }
+    ],
+    "traces_dir": "runs/campaign-holdout-a4-claude/traces",
+    "videos": [
+     "runs/campaign-holdout-a4-claude/traces/overhead.mp4"
+    ],
+    "durations": {
+     "wall_s": 268.0,
+     "sim_s": 135.5
+    },
+    "budget": {
+     "episodes_left": 1950,
+     "wall_h_left": 99.553,
+     "tokens_ceiling": 5000000
+    }
+   },
+   "swept_processes": []
+  },
+  {
+   "agent": "codex",
+   "model": "gpt-5.6-sol",
+   "infra_error": "PermissionError(1, 'Operation not permitted')",
+   "swept_processes": []
+  }
+ ]
+}
