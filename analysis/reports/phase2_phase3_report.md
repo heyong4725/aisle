@@ -17,7 +17,7 @@ caveats are stated where the measurement earned them.)
 | zero unclamped guard violations | every campaign record | holds across ~40 agent sessions |
 | post-mortems | analysis/postmortems | per-student "strangest thing" entries |
 
-## Phase 3 DoD (§8.4) — complete except one owner item
+## Phase 3 DoD (§8.4) — two items open
 
 | DoD item | artifact | headline |
 |---|---|---|
@@ -25,8 +25,8 @@ caveats are stated where the measurement earned them.)
 | fleet-scaling plots (A5) | analysis/a5 (findings + SVG) | throughput 1.6/4.1/4.3 succ/hr at N=1/4/8 — knee at ~4 lanes/host; token super-linearity +22%/+31%; quality contention-invariant |
 | agent-comparison table (A4) | analysis/a4/a4_findings.md | both agents solve T1 at 1.0/1.0; Claude ~2× cheaper end-to-end; Codex faster to first success then over-iterates (n=1/arm) |
 | cross-embodiment table | SO-101 profile, M0-5 gate, ADR-27 lineage | profile swap ≥0.80; variant nodes documented |
-| skill library ≥5 evalcarded | registry + skills/ | s1-driver-v2, s3-driver-v1, t2-scan-pose, t2-scan-tsm, ik-transfer-v2 (5; more in campaign worktrees pending review) |
-| **agent PRs reviewed with written notes** | **OPEN — owner** | the governance-paper data; the one outstanding DoD item |
+| skill library ≥5 evalcarded | registry + skills/ | **NOT MET: 2 on mainline** (s1-driver-v2, s3-driver-v1). t2-scan-pose, t2-scan-tsm and ik-transfer-v2 registered inside campaign worktrees and their source is GONE (#245) — they cannot be counted, reviewed, or recovered |
+| **agent PRs reviewed with written notes** | **OPEN — owner** | the governance-paper data; PR #242 drafted, awaiting sign-off |
 
 ## The two headline claims, as measured
 
@@ -35,6 +35,24 @@ caveats are stated where the measurement earned them.)
   agent-authored motion code throughout.
 - **H4/substrate:** supported on efficiency at T1 (A3), stress-tested by
   H3's null (the substrate did not make hard tiers easy — honest scope).
+
+## Correction (2026-08-15)
+
+As first published, the skill-library row read "5" and named three skills
+whose code was already unrecoverable. The row is the one place this report
+overclaimed, and the mechanism is worth stating plainly because it is a
+finding in its own right: campaign worktrees live under gitignored `runs/`
+with no archival step, so `skills_after` in a campaign record could name a
+skill long after its source ceased to exist. Searched exhaustively — all 49
+branches, the filesystem, and 51 dangling git objects — the three are gone.
+
+`analysis/h3/desk/desk_analysis.json` still names them in `skills_after`,
+correctly: they WERE registered and they DID ride into later tiers, so the
+H3 reuse mechanism claim stands. What does not stand is counting them toward
+a library DoD that presumes a reviewable, mergeable artifact (§9.4).
+
+#245 fixes the retention hole for future campaigns (`refs/campaign/<name>`);
+it recovers nothing.
 
 ## Known-open ledger (for the next session)
 
