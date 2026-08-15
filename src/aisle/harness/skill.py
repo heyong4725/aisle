@@ -17,6 +17,10 @@ of MANIFEST_MISSING), and only a measured pass rate at or above the
 skill's own `min_pass_rate` finalizes the evalcard. ANY failure rolls
 the registry back to its prior state exactly.
 
+That declared bar is the CANDIDATE's number, so it is floored by
+`REGISTRY_MIN_PASS_RATE` (CAP-6, ADR-37): a skill may hold itself to
+more than the registry demands, never to less.
+
 Governance (§9.4 + CAP-5): curated-core ids are refused from the
 single-sourced `registry/schema/curated_core.toml` REGARDLESS of current
 file state (deleting a core manifest does not open its id); origin must
@@ -42,6 +46,12 @@ from aisle.harness.rollout import parse_seed_range
 
 EVAL_REQUIRED = ("suite", "graph", "tier", "episodes", "seeds", "embodiment", "min_pass_rate")
 CURATED_CORE = "registry/schema/curated_core.toml"
+
+# CAP-6 (ADR-37, #243): the ABSOLUTE floor under every skill's self-declared
+# `min_pass_rate`. Without it the exam is self-graded — a candidate shipping
+# 0.0 registers at 0.0 and the gate reports ok, which is how `t2-scan-tsm`
+# entered a campaign library. A skill MAY hold itself to more; never to less.
+REGISTRY_MIN_PASS_RATE = 0.5
 
 
 class RegistrationError(RuntimeError):
@@ -86,9 +96,17 @@ def load_skill(skill_dir: Path) -> Skill:
     try:
         parse_seed_range(str(eval_cfg["seeds"]))
         int(eval_cfg["episodes"])
-        float(eval_cfg["min_pass_rate"])
+        declared = float(eval_cfg["min_pass_rate"])
     except (ValueError, TypeError) as bad:
         raise RegistrationError(f"eval.yaml field invalid: {bad}") from bad
+    # CAP-6: refuse HERE, before the eval rollout is spent — a candidate that
+    # grades itself below the registry floor cannot be certified by any result.
+    if declared < REGISTRY_MIN_PASS_RATE:
+        raise RegistrationError(
+            f"eval.yaml min_pass_rate {declared:.3f} is below the registry floor "
+            f"{REGISTRY_MIN_PASS_RATE:.3f} (CAP-6) — a skill sets its own bar only "
+            "ABOVE the floor; raise it, or raise the skill"
+        )
     return Skill(path=skill_dir, manifest=manifest, eval_cfg=eval_cfg)
 
 

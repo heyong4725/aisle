@@ -6,10 +6,18 @@ Rollouts happen INSIDE the session through the trusted gate (frozen set,
 idea gate, episode/wall ledger — all harness-enforced); this runner
 enforces only what the harness cannot: the token ceiling (from the agent
 CLI's own stream telemetry, HAR-5) and the campaign wall ceiling. After
-the session it audits the frozen paths, scores the deliverable graph on
-HELD-OUT seeds in the session worktree, and computes the H2 metrics from
-the artifacts the harness already wrote. CON-8: JSON to stdout, logs to
-stderr, exit 0 iff the campaign record was written.
+the session it archives the deliverable (#245), audits the frozen paths,
+scores the deliverable graph on HELD-OUT seeds in the session worktree,
+and computes the H2 metrics from the artifacts the harness already wrote.
+CON-8: JSON to stdout, logs to stderr, exit 0 iff the campaign record was
+written.
+
+Worktrees live under gitignored ``runs/`` and are never torn down, so the
+agent's code used to survive exactly as long as nobody cleaned ``runs/``.
+It did not: three agent-authored skills were lost that way. Each session
+now ends with ``archive_deliverable`` putting its working tree under
+``refs/campaign/<name>``, which is what makes §9.4's "a human merges it"
+possible after the fact.
 """
 
 from __future__ import annotations
@@ -282,6 +290,64 @@ def audit_frozen(wt: Path, oid: str) -> list[str]:
         text=True,
     )
     return [line for line in diff.stdout.splitlines() if line.strip()]
+
+
+def archive_deliverable(wt: Path, oid: str, name: str, now: str) -> dict:
+    """Retention (#245): snapshot the session worktree under
+    ``refs/campaign/<name>`` so the agent's work outlives ``runs/``.
+
+    Campaign worktrees live under gitignored ``runs/`` with no teardown and
+    no archival step, so cleaning ``runs/`` destroyed three agent-authored
+    skills — `t2-scan-pose`, `t2-scan-tsm`, `ik-transfer-v2` — with no
+    branch, no tag, and no copy anywhere (confirmed against all branches,
+    the filesystem, and 51 dangling objects). §9.4 makes a human the trust
+    boundary for agent-authored code; that presumes the code still exists
+    when the human arrives.
+
+    Snapshots the WORKING TREE, not HEAD: the protocol never asked the
+    agent to commit (``audit_frozen`` diffs unstaged state), so HEAD is
+    typically still the pin. A worktree shares the repo's object database,
+    so a ref there makes the objects reachable — surviving both the
+    directory and gc. ``.gitignore`` is honoured, keeping the session's own
+    ``runs/`` traces out of the object store.
+
+    Runs at the end of a metered session, so every failure is reported as
+    {ok: false, error} (CON-8) rather than raised: losing the archive must
+    never also lose the campaign record it accompanies.
+    """
+    ref = f"refs/campaign/{name}"
+    index = wt.parent / f".archive-index-{name}"
+    try:
+        # a private index: `git add` must not touch the agent's staging
+        # area, which audit_frozen and holdout scoring still read after us
+        env = {**os.environ, "GIT_INDEX_FILE": str(index)}
+
+        def git(*args: str, check: bool = True) -> str:
+            proc = subprocess.run(["git", *args], cwd=wt, env=env, capture_output=True, text=True)
+            if check and proc.returncode != 0:
+                raise InfraError(f"git {args[0]}: {proc.stderr.strip()}")
+            return proc.stdout.strip()
+
+        git("add", "-A")
+        tree = git("write-tree")
+        commit = git(
+            "-c",
+            "user.email=campaign@aisle",
+            "-c",
+            "user.name=aisle-campaign",
+            "commit-tree",
+            tree,
+            "-p",
+            oid,
+            "-m",
+            f"campaign deliverable: {name} ({now})",
+        )
+        git("update-ref", ref, commit)
+        return {"ok": True, "ref": ref, "commit": commit, "pin": oid}
+    except (InfraError, OSError) as bad:
+        return {"ok": False, "error": f"deliverable archive failed: {bad}", "ref": ref}
+    finally:
+        index.unlink(missing_ok=True)
 
 
 def resolve_commit(repo: Path, rev: str | None) -> str:
@@ -800,7 +866,6 @@ def main() -> int:
     parser.add_argument("--wall-h", type=float, default=None)
     parser.add_argument("--dev-seeds", default=DEV_SEEDS)
     parser.add_argument("--holdout-seeds", default=HOLDOUT_SEEDS)
-    parser.add_argument("--keep-worktree", action="store_true")
     args = parser.parse_args()
 
     error = validate_seed_ranges(args.dev_seeds, args.holdout_seeds)
@@ -886,6 +951,13 @@ def main() -> int:
     sessions.append(session)
 
     sweep_worktree(wt)  # the session's rollouts may have leaked nodes
+    # retention (#245) BEFORE holdout scoring: archive what the agent
+    # actually delivered, not what the runner's own scoring pass left behind
+    archive = archive_deliverable(
+        wt, oid, f"{args.out.name}-{session_index:02d}", now=str(t0_epoch)
+    )
+    if not archive["ok"]:
+        print(f"[campaign] {archive['error']}", file=sys.stderr)
     drift = audit_frozen(wt, oid)
     holdout = score_holdout(wt, args.holdout_seeds, f"{session_index:02d}", args.tier)
     sweep_worktree(wt)  # ...and so may the holdout rollout
@@ -897,6 +969,7 @@ def main() -> int:
         "tokens_spent": prior_tokens + session["tokens"],
         "wall_spent_s": round(prior_wall_s + session["wall_s"], 1),
         "frozen_drift": drift,
+        "deliverable_archive": archive,  # #245: where the agent's code went
         "holdout": {
             k: holdout.get(k) for k in ("ok", "error", "pass1", "pass8", "failures", "run_id")
         },

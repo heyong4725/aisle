@@ -29,6 +29,7 @@ from campaign import (  # noqa: E402
     DEV_SEEDS,
     HOLDOUT_SEEDS,
     agent_cmd_campaign,
+    archive_deliverable,
     attach_historical_baseline_compat,
     audit_frozen,
     campaign_metrics,
@@ -496,6 +497,11 @@ def run_scenario(
     sweep_worktree(wt)
     rechecks["post_session"] = host_dora_runtime()
     rt_drift = rt_drift or runtime_drift_check(rt_baseline, rechecks["post_session"])
+    # retention (#245): every scenario keeps its own ref — an H3 arm runs
+    # T1..T4 in ONE worktree, so a per-arm archive would keep only the last
+    archive = archive_deliverable(wt, oid, f"h3-{arm}-{tier}-r{attempt}", now=str(t0))
+    if not archive["ok"]:
+        print(f"[h3] {archive['error']}", file=sys.stderr)
     drift = audit_frozen(wt, oid)
     holdout = score_holdout(wt, HOLDOUT_SEEDS, f"{arm}-{slot}", tier)
     sweep_worktree(wt)
@@ -515,6 +521,7 @@ def run_scenario(
         # the scenario's final worktree state, durably recorded (PR #57
         # review: scenario HEADs need recorded hashes, wipe pins the ref)
         "worktree_head": worktree_head,
+        "deliverable_archive": archive,  # #245: where this cell's code went
         "budgets": scenario,
         "session": session,
         "frozen_drift": drift,
