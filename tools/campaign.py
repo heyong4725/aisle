@@ -652,8 +652,8 @@ def run_session(
                 tee_failure.append(repr(exc))
                 try:
                     os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+                except (ProcessLookupError, PermissionError):
+                    proc.kill()
 
         reader = threading.Thread(target=tee, daemon=True)
         reader.start()
@@ -675,8 +675,12 @@ def run_session(
                     stopped = reason
                     try:
                         os.killpg(proc.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
+                    except (ProcessLookupError, PermissionError):
+                        # A4 codex live failure: macOS raises EPERM from
+                        # killpg when the group holds an unsignalable
+                        # member -- the ceiling kill must still take the
+                        # session down, so fall back to the direct child
+                        proc.kill()
                     proc.wait(timeout=30)
                     break
         rc = proc.wait()

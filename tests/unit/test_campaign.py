@@ -980,3 +980,31 @@ def test_the_frozen_audit_covers_every_env_hashed_path():
         assert pattern not in assignment, (
             f"{pattern!r} is hardcoded in audit_frozen; it will drift from env_hash"
         )
+
+
+def test_ceiling_kill_survives_eperm_from_killpg(tmp_path, monkeypatch):
+    """A4 codex live failure: the session finished its work, hung, the
+    wall ceiling fired -- and macOS raised EPERM from killpg (unsignalable
+    group member), which escaped the ProcessLookupError-only guard and
+    turned a budget stop into a bare infra crash. The ceiling kill must
+    fall back to the direct child and still return a session record."""
+    import campaign as c
+
+    def killpg_eperm(pgid, sig):
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(c.os, "killpg", killpg_eperm)
+    monkeypatch.setattr(c, "POLL_S", 0.2)
+    record = c.run_session(
+        "claude",
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        tmp_path,
+        tmp_path,
+        {
+            "prior_tokens": 0,
+            "prior_wall_s": 0.0,
+            "token_ceiling": 10**9,
+            "wall_ceiling_s": 0.5,
+        },
+    )
+    assert record["stopped"] == "wall_budget"
