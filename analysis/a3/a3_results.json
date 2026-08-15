@@ -1,0 +1,353 @@
+{
+ "ok": true,
+ "treatment": {
+  "commit": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+  "agent": "claude",
+  "agent_cli_version": "2.1.229 (Claude Code)",
+  "model": "claude-fable-5",
+  "prompt_template_sha256": "0f7fb5d9ea5d45e771eea1de0db36475787c8ce8b1892393d4cae19b0b985b6d",
+  "dev_seeds": "0..49",
+  "holdout_seeds": "100..107",
+  "holdout_episodes": 8,
+  "claude_max_turns": null,
+  "runner_sha256": "d8ec9f87de68e14f8b785d7b7179b0467eeb72b1e2928654fe4c0fe98e1527a8",
+  "baseline_compat_sha256": "3269d31d1e968f3fd082abeb8ca65b1d5acd0fbd1b0959d33444e2fa5ba0ad06",
+  "session_spawn": {
+   "stdin": "devnull",
+   "confinement": "none (ADR-h2 point 5)"
+  },
+  "session_isolation_policy": "isolated-home-baseline-compat-v2",
+  "protocol": "ADR-a3-protocol",
+  "suite": "a3",
+  "budget_scale": 1.0,
+  "a3_runner_sha256": "62f9390ccc22a216e32596c9e2de038b0c51806f17f07bdddd6a08edbece6efc",
+  "host_dora_cli": {
+   "path": "/Users/yonghe/.cargo/bin/dora",
+   "sha256": "1fedbc1f87b4eb7a1dc1563715677f5a8a9b581fb56cfa7b88b1e1829cce7596",
+   "version": "dora-cli 1.0.0-rc.4"
+  },
+  "arm_budget": {
+   "tokens": 400000,
+   "episodes": 40,
+   "wall_h": 2.5
+  },
+  "params_rule_sha256": "53a9f81be8d752063157a1973c4d73da2aaea43813619b175a0016c4e5ecfe98"
+ },
+ "records": [
+  {
+   "arm": "F",
+   "session": {
+    "stopped": "agent_done",
+    "rc": 0,
+    "tokens": 395676,
+    "wall_s": 5111.0
+   },
+   "session_isolation": {
+    "home": "/Users/yonghe/src/aisle/runs/a3/arm_F/agent_home",
+    "claude_config_dir": "/Users/yonghe/src/aisle/runs/a3/arm_F/agent_home/.claude",
+    "codex_home": "/Users/yonghe/src/aisle/runs/a3/arm_F/agent_home/.codex",
+    "xdg_rebound": true,
+    "env_baseline_oid": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+    "credentials": {
+     "credential_seed": "claude-campaign login (.credentials.json)"
+    }
+   },
+   "session_start_epoch": 1786750954.08241,
+   "rollouts": [
+    {
+     "run_id": "20260814-234426-47e746",
+     "mtime": 1786751780.8883164,
+     "episodes": 20,
+     "pass1": 1.0,
+     "git_sha": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+     "env_baseline": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+     "env_baseline_oid": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+     "env_attested": true
+    },
+    {
+     "run_id": "20260814-235921-b5176c",
+     "mtime": 1786752826.512109,
+     "episodes": 30,
+     "pass1": 0.967,
+     "git_sha": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+     "env_baseline": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+     "env_baseline_oid": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+     "env_attested": true
+    },
+    {
+     "run_id": "skill-ik-transfer-v2-2026-08-14-e9f68a",
+     "mtime": 1786753726.0965488,
+     "episodes": 8,
+     "pass1": 1.0,
+     "git_sha": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+     "env_baseline": "local",
+     "env_baseline_oid": null,
+     "env_attested": true
+    },
+    {
+     "run_id": "20260815-002857-64d73d",
+     "mtime": 1786755216.9650505,
+     "episodes": 50,
+     "pass1": 1.0,
+     "git_sha": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+     "env_baseline": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+     "env_baseline_oid": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+     "env_attested": true
+    }
+   ],
+   "episodes_total": 108,
+   "wrong_object_total": 0,
+   "first_success_wall_s": 826.8,
+   "params_surface_diff": [
+    "skills/ik-transfer-v2/eval.yaml",
+    "skills/ik-transfer-v2/ik_transfer_v2.py",
+    "skills/ik-transfer-v2/skill.yaml"
+   ],
+   "holdout": {
+    "ok": true,
+    "stalled": false,
+    "run_id": "campaign-holdout-a3-F",
+    "pass1": 1.0,
+    "pass8": 1.0,
+    "failures": {},
+    "episodes": [
+     {
+      "episode": 0,
+      "seed": 100,
+      "status": "success",
+      "failure": null,
+      "t_end": 21.96,
+      "goal_id": "ep-0000",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 1,
+      "seed": 101,
+      "status": "success",
+      "failure": null,
+      "t_end": 17.73,
+      "goal_id": "ep-0001",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 2,
+      "seed": 102,
+      "status": "success",
+      "failure": null,
+      "t_end": 13.6,
+      "goal_id": "ep-0002",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 3,
+      "seed": 103,
+      "status": "success",
+      "failure": null,
+      "t_end": 20.86,
+      "goal_id": "ep-0003",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 4,
+      "seed": 104,
+      "status": "success",
+      "failure": null,
+      "t_end": 15.33,
+      "goal_id": "ep-0004",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 5,
+      "seed": 105,
+      "status": "success",
+      "failure": null,
+      "t_end": 21.06,
+      "goal_id": "ep-0005",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 6,
+      "seed": 106,
+      "status": "success",
+      "failure": null,
+      "t_end": 17.63,
+      "goal_id": "ep-0006",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 7,
+      "seed": 107,
+      "status": "success",
+      "failure": null,
+      "t_end": 13.73,
+      "goal_id": "ep-0007",
+      "verifier": "oracle",
+      "retries": 0
+     }
+    ],
+    "traces_dir": "runs/campaign-holdout-a3-F/traces",
+    "videos": [
+     "runs/campaign-holdout-a3-F/traces/overhead.mp4"
+    ],
+    "durations": {
+     "wall_s": 276.0,
+     "sim_s": 141.9
+    },
+    "budget": {
+     "episodes_left": 1900,
+     "wall_h_left": 99.151,
+     "tokens_ceiling": 5000000
+    }
+   },
+   "swept_processes": []
+  },
+  {
+   "arm": "P",
+   "contract_rule_sha256": "53a9f81be8d752063157a1973c4d73da2aaea43813619b175a0016c4e5ecfe98",
+   "session": {
+    "stopped": "agent_done",
+    "rc": 0,
+    "tokens": 200033,
+    "wall_s": 1421.6
+   },
+   "session_isolation": {
+    "home": "/Users/yonghe/src/aisle/runs/a3/arm_P/agent_home",
+    "claude_config_dir": "/Users/yonghe/src/aisle/runs/a3/arm_P/agent_home/.claude",
+    "codex_home": "/Users/yonghe/src/aisle/runs/a3/arm_P/agent_home/.codex",
+    "xdg_rebound": true,
+    "env_baseline_oid": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+    "credentials": {
+     "credential_seed": "claude-campaign login (.credentials.json)"
+    }
+   },
+   "session_start_epoch": 1786756349.507689,
+   "rollouts": [
+    {
+     "run_id": "20260815-011516-d01346",
+     "mtime": 1786756935.2395787,
+     "episodes": 10,
+     "pass1": 1.0,
+     "git_sha": "a1e469931530e19f9a8ef72e4e55e43e58e20fe8",
+     "env_baseline": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+     "env_baseline_oid": "8af9b47a0efea9dc2c9770205331ad107f0d69c6",
+     "env_attested": true
+    }
+   ],
+   "episodes_total": 10,
+   "wrong_object_total": 0,
+   "first_success_wall_s": null,
+   "params_surface_diff": [],
+   "holdout": {
+    "ok": true,
+    "stalled": false,
+    "run_id": "campaign-holdout-a3-P",
+    "pass1": 1.0,
+    "pass8": 1.0,
+    "failures": {},
+    "episodes": [
+     {
+      "episode": 0,
+      "seed": 100,
+      "status": "success",
+      "failure": null,
+      "t_end": 21.46,
+      "goal_id": "ep-0000",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 1,
+      "seed": 101,
+      "status": "success",
+      "failure": null,
+      "t_end": 16.06,
+      "goal_id": "ep-0001",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 2,
+      "seed": 102,
+      "status": "success",
+      "failure": null,
+      "t_end": 13.16,
+      "goal_id": "ep-0002",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 3,
+      "seed": 103,
+      "status": "success",
+      "failure": null,
+      "t_end": 20.23,
+      "goal_id": "ep-0003",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 4,
+      "seed": 104,
+      "status": "success",
+      "failure": null,
+      "t_end": 14.86,
+      "goal_id": "ep-0004",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 5,
+      "seed": 105,
+      "status": "success",
+      "failure": null,
+      "t_end": 20.56,
+      "goal_id": "ep-0005",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 6,
+      "seed": 106,
+      "status": "success",
+      "failure": null,
+      "t_end": 16.0,
+      "goal_id": "ep-0006",
+      "verifier": "oracle",
+      "retries": 0
+     },
+     {
+      "episode": 7,
+      "seed": 107,
+      "status": "success",
+      "failure": null,
+      "t_end": 13.3,
+      "goal_id": "ep-0007",
+      "verifier": "oracle",
+      "retries": 0
+     }
+    ],
+    "traces_dir": "runs/campaign-holdout-a3-P/traces",
+    "videos": [
+     "runs/campaign-holdout-a3-P/traces/overhead.mp4"
+    ],
+    "durations": {
+     "wall_s": 262.1,
+     "sim_s": 135.6
+    },
+    "budget": {
+     "episodes_left": 1950,
+     "wall_h_left": 99.885,
+     "tokens_ceiling": 5000000
+    }
+   },
+   "swept_processes": []
+  }
+ ]
+}
