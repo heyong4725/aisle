@@ -76,6 +76,18 @@ def test_cell_flags_are_derived_from_the_record():
     assert "wipe_leak" not in library_arm["flags"]  # L is SUPPOSED to carry skills
 
 
+def test_the_cell_carries_the_deliverable_archive_pointer():
+    """#245: the analysis file is the DURABLE copy — raw records live under
+    gitignored runs/. `skills_after` naming a skill while nothing records
+    WHERE its code is, is exactly how t2-scan-pose/t2-scan-tsm became
+    unreviewable when runs/ was cleaned."""
+    rec = record("L", "S2")
+    rec["deliverable_archive"] = {"ok": True, "ref": "refs/campaign/h3-L-T2-r1", "commit": "abc"}
+    assert cell(rec)["deliverable_archive"] == "refs/campaign/h3-L-T2-r1"
+    # a pre-#245 record analyses cleanly, with the gap visible rather than crashing
+    assert cell(record("L", "S2"))["deliverable_archive"] is None
+
+
 def test_tokens_to_first_success_from_samples():
     """Design doc §8.4: TOKENS-to-success is a first-class metric — read
     from the session's live token samples at the first-success wall time."""
