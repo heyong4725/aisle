@@ -139,7 +139,21 @@ def _write_reset_graph(tmp: Path, rec_out: Path) -> Path:
                     "base_pose": {"source": "bridge/base_pose", "queue_size": 1000},
                     "reset_done": {"source": "bridge/reset_done", "queue_size": 100},
                 },
-                "env": {"REC_OUT": str(rec_out), "RECORDER_DURATION_S": "30"},
+                "env": {
+                    "REC_OUT": str(rec_out),
+                    "RECORDER_DURATION_S": "30",
+                    # issue #236: a wall-only window made this test's pass
+                    # condition "the host sustained rtf > ~0.2", not
+                    # "resets re-home the base". The second reset lands at
+                    # base_pose event 300 (6 sim-s), so under suite load it
+                    # fell outside 30 s and the count assertion fired as
+                    # `expected 2 resets, saw 1` — which reads like a reset
+                    # regression. The await holds the window open for both
+                    # resets however late load makes them, and the tail
+                    # guarantees the post-reset base_pose this test reads.
+                    "RECORDER_AWAIT": "reset_done:2",
+                    "RECORDER_AWAIT_TAIL_S": "8",
+                },
             },
         ]
     }
@@ -199,7 +213,10 @@ def test_mobile_reset_rehomes_reported_and_physical_base(tmp_path, dataflow):
     rows = dataflow.read(rec_out)
     resets = [r for r in rows if r["id"] == "reset_done"]
     poses = [r for r in rows if r["id"] == "base_pose"]
-    assert len(resets) == 2, f"expected 2 resets, saw {len(resets)}"
+    assert len(resets) == 2, (
+        f"expected 2 resets, saw {len(resets)} in {len(poses)} base_pose rows — if the "
+        "recorder await is wired this is a real reset defect, not a slow host (issue #236)"
+    )
     for done in resets:
         t = done["wall_t"]
         before = [r["value"] for r in poses if r["wall_t"] < t]
