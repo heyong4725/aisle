@@ -1187,16 +1187,31 @@ verdict actively withdrawn by the project's own audit.
 
 Both phases closed on 2026-08-16. Phase 2's eight DoD items are complete. Phase
 3 closed at **five of six**, with the skill-library row recorded as **NOT MET at
-2** against a target of ≥5.
+3** against a target of ≥5.
 
-That row is worth reading precisely, because "2 of 5" invites the wrong
-conclusion. Agents produced five evalcarded skills. Two are in the library. Of
-the remaining three, ADR-37's registry floor refuses two on their own
+That row is worth reading precisely, because a bare "3 of 5" invites the wrong
+conclusion. Agents produced five evalcarded skills. Three are now in the
+library. The other two are refused by ADR-37's registry floor on their own
 evalcards — they measured 0.33 and 0.0, because they were authored against T2,
-which no arm has solved — and the third, a motion-class trajectory fix
-measuring 1.0, is a live registration question rather than a Phase-3
-deliverable. The ceiling was three, not five, and the binding constraint is the
-unsolved tiers, not agent capability.
+which no arm has solved. **Three was the ceiling, and the library reached it.**
+The binding constraint is the unsolved tiers, not agent capability, and not the
+governance path.
+
+The third skill is the one worth dwelling on. `ik-transfer-v2` is a
+`safety_class: motion` node — the governance-critical class, the one §9.4's
+trust tiers exist for. An agent wrote it in response to a trace-cited
+collision at a specific seed, shipped it with its own eval suite over a
+population containing both the discovered failure and its unmodified
+neighbours as a regression guard, and gave it a fallback to the stock
+trajectory on IK failure so the change could never be worse than baseline. It
+measured 1.0. It was then lost to the retention gap below, recovered,
+provenance-verified against the campaign machine, reviewed, and human-merged
+into the registry.
+
+That is the full §9.4 path — author, evaluate, review, merge — exercised end to
+end on the class that matters most. One instance is not a governance result,
+but it is an existence proof that the path closes, which the phase could not
+otherwise claim.
 
 A separate constraint nearly hid all of this: three of the five skills were
 authored inside campaign worktrees that no committed record pointed at, so the
@@ -1704,7 +1719,8 @@ both the retail and desk ladders and reported UNDECIDED with the difficulty
 spacing as the finding; ablations A1, A3, A4, A5 and A6 measured and committed;
 the T1 and T2 tier curves established; the agent-PR governance review completed
 and signed. Phase 3 closed at five of six DoD rows, the skill library falling
-short at 2 of a required 5 — see §9.0 for why the reachable ceiling was 3.
+short at 3 of a required 5 — see §9.0 for why 3 was the ceiling, and why the
+library reaching it is a better result than the number suggests.
 
 **In flight.**
 
@@ -1713,7 +1729,7 @@ short at 2 of a required 5 — see §9.0 for why the reachable ceiling was 3.
 | Deterministic lockstep turns (ADR-30) | **Implemented** across every measured graph; turn plans are committed runtime inputs, frozen with the graphs they compile from, and the validator refuses a stale plan at the gate |
 | T4 dialogue tier | **Implemented** (ADR-32); solved by both H3 arms inside one sub-budget |
 | H3 | **Re-run on the desk ladder and reported.** Not blocked any more — UNDECIDED under strict admissibility, with the instrument, not the hygiene, as the limiting factor this time |
-| `ik-transfer-v2` registration | Motion-class agent-authored skill, evalcard 1.0, recovered and reviewable — an open §9.4 governance decision |
+| Sandbox trust tier | see below — the one governance thread the `ik-transfer-v2` registration did *not* close |
 | Sandbox trust tier | Newly identified gap: ADR-37's floor leaves no legitimate way for an agent to declare a node that merely needs an id to validate. §9.4's `sandbox → reviewed → certified` roadmap names it; it does not exist yet |
 | Retail suite hardening | Ongoing |
 
