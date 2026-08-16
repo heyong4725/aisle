@@ -17,7 +17,7 @@ caveats are stated where the measurement earned them.)
 | zero unclamped guard violations | every campaign record | holds across ~40 agent sessions |
 | post-mortems | analysis/postmortems | per-student "strangest thing" entries |
 
-## Phase 3 DoD (§8.4) — two items open
+## Phase 3 DoD (§8.4) — one item NOT MET, the rest complete
 
 | DoD item | artifact | headline |
 |---|---|---|
@@ -26,7 +26,7 @@ caveats are stated where the measurement earned them.)
 | agent-comparison table (A4) | analysis/a4/a4_findings.md | both agents solve T1 at 1.0/1.0; Claude ~2× cheaper end-to-end; Codex faster to first success then over-iterates (n=1/arm) |
 | cross-embodiment table | SO-101 profile, M0-5 gate, ADR-27 lineage | profile swap ≥0.80; variant nodes documented |
 | skill library ≥5 evalcarded | registry + skills/ | **NOT MET: 2 on mainline** (s1-driver-v2, s3-driver-v1). t2-scan-pose, t2-scan-tsm and ik-transfer-v2 registered inside campaign worktrees and their source is GONE (#245) — they cannot be counted, reviewed, or recovered |
-| **agent PRs reviewed with written notes** | **OPEN — owner** | the governance-paper data; PR #242 drafted, awaiting sign-off |
+| agent PRs reviewed with written notes | analysis/reports/agent_pr_review_notes.md | **DONE** — owner-signed 2026-08-15 (#242). Two of the first pass's three flags did not survive checking: both were harness gaps (#243 eval floor, fixed; #244 detector import, dropped as misattributed), not agent misbehaviour. Review was possible for **2 of 5** skills |
 
 ## The two headline claims, as measured
 
@@ -54,6 +54,34 @@ a library DoD that presumes a reviewable, mergeable artifact (§9.4).
 #245 fixes the retention hole for future campaigns (`refs/campaign/<name>`);
 it recovers nothing.
 
+## What the governance review changed (2026-08-15)
+
+Running the §8.4 review to completion turned up three harness defects,
+all now closed, and none of them agent misbehaviour:
+
+- **#243** the skill eval floor was self-graded — `min_pass_rate` came
+  from the candidate's own `eval.yaml`, so a skill shipping 0.0
+  registered at 0.0 and the gate reported ok. `t2-scan-tsm` is the live
+  case. Fixed: `REGISTRY_MIN_PASS_RATE` (ADR-37).
+- **#245** campaign deliverables were never archived, so three
+  agent-authored skills ceased to exist. Fixed forward:
+  `refs/campaign/<name>`; recovers nothing.
+- **#248** at rung L2 the policy and the realistic judge would share the
+  detector backbone. No reported number is affected — every VER-6
+  measurement ran at L0, where the policy calls no detector — but the
+  next L2 measurement would have read as an independence claim it could
+  not support. `harness fidelity` now labels every report.
+
+**#244** (a validator ban on policy nodes importing the judge's
+detector) was dropped: the curated core does the same thing, so the rule
+would have rejected two frozen expert graphs. The flagged skill copied
+the house style.
+
+The pattern is worth stating for the governance paper: an agent-code
+review that ends up indicting the review machinery three times, and the
+agents zero times, is evidence about where the risk in this loop
+actually sits.
+
 ## Known-open ledger (for the next session)
 
 Analyzer follow-ups: wipe_leak pin-tracked-skill semantics; W/T2
@@ -62,4 +90,6 @@ campaign_metrics ancestry rule for treatment-commit arms (A3 arm-P
 artifact). Infra: sim-lockstep into the rollout path (fleet fidelity);
 codex mid-session token-counter drift. Science: T2/T3 remain unsolved
 by any arm at session budgets — the standing challenge the tiers were
-built to pose.
+built to pose. Governance: the eval's SEED SET and episode count are
+still candidate-chosen (ADR-37) — the same self-grading shape #243
+closed, one field over.
