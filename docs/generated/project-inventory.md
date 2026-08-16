@@ -14,7 +14,7 @@ architecture, and contribution guidance remain in the
 | Graphs | 12 |
 | Capability manifests | 34 |
 | CLI command entries | 12 |
-| ADR files | 47 |
+| ADR files | 48 |
 
 ## Graphs
 
@@ -143,6 +143,7 @@ inference.
 | [docs/decisions/ADR-35.md](../decisions/ADR-35.md) | ADR-35 — a reset reply's `mode` is the mode REQUESTED, on every route | ACCEPTED (issues #205, #194). CON-15 interpretation of TC-6; amends |
 | [docs/decisions/ADR-36.md](../decisions/ADR-36.md) | ADR-36 — the skill gate is part of the environment | ACCEPTED (issue #228). Widens the CON-7 frozen set; human sign-off |
 | [docs/decisions/ADR-37.md](../decisions/ADR-37.md) | ADR-37 — the registry sets the passing grade, not the candidate | ACCEPTED (issue #243, owner decision 2026-08-15 in the PR #242 |
+| [docs/decisions/ADR-38.md](../decisions/ADR-38.md) | ADR-38 — VLA chunk preemption and the SmolVLA bring-up scope | ACCEPTED 2026-08-17 (owner ratified next-phases.md and directed |
 | [docs/decisions/ADR-4.md](../decisions/ADR-4.md) | ADR-4: validator interpretations for T03 (SPEC 060) | ACCEPTED; amended by ADR-5's ratified safety-class boundary. |
 | [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | ACCEPTED (owner-ratified 2026-08-03) |
 | [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |

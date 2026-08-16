@@ -36,12 +36,15 @@ explicit = true
 # sim and cuda are mutually exclusive resolutions of torch: `--extra sim`
 # is the CPU default, `--extra cuda` swaps in the GPU build
 [tool.uv]
-conflicts = [[{ extra = "sim" }, { extra = "cuda" }]]
+conflicts = [[{ extra = "sim" }, { extra = "cuda" }], [{ extra = "vla" }, { extra = "cuda" }]]
 
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cu130", extra = "cuda", marker = "sys_platform == 'linux'" },
     { index = "pytorch-cpu", extra = "sim", marker = "sys_platform == 'linux'" },
+    # vla (lerobot) inference is CPU/MPS at bring-up (ADR-38): same CPU
+    # routing as sim so CON-1's no-CUDA-outside-the-cuda-extra gate holds
+    { index = "pytorch-cpu", extra = "vla", marker = "sys_platform == 'linux'" },
 ]
 # dora main, pinned by rev (PyPI's latest wheel is 0.5.0, 2026-03 — too old;
 # the CLI is cargo-installed from the SAME rev so the pair stays matched).
@@ -69,6 +72,10 @@ cuda = [
     "pyarrow>=25.0.0",
     "torch>=2.13.0",
     "transformers>=4.57.0",
+]
+vla = [
+    "lerobot>=0.2",
+    "torch>=2.13.0",
 ]
 
 [build-system]

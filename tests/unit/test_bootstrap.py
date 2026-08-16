@@ -133,7 +133,12 @@ def test_sim_and_cuda_extras_route_linux_torch_to_disjoint_indexes():
         for source in sources
         if source.get("marker") == "sys_platform == 'linux'"
     }
-    assert linux_bindings == {"sim": "pytorch-cpu", "cuda": "pytorch-cu130"}
+    assert linux_bindings == {
+        "sim": "pytorch-cpu",
+        "cuda": "pytorch-cu130",
+        # ADR-38: vla inference is CPU/MPS at bring-up; cuda conflicts declared
+        "vla": "pytorch-cpu",
+    }
 
     indexes = {i["name"]: i["url"] for i in pyproject["tool"]["uv"].get("index", [])}
     assert indexes[linux_bindings["sim"]].rstrip("/").endswith("/cpu")
