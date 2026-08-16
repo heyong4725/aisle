@@ -11,8 +11,8 @@ architecture, and contribution guidance remain in the
 
 | Surface | Count |
 |---|---:|
-| Graphs | 11 |
-| Capability manifests | 33 |
+| Graphs | 12 |
+| Capability manifests | 34 |
 | CLI command entries | 12 |
 | ADR files | 47 |
 
@@ -21,6 +21,7 @@ architecture, and contribution guidance remain in the
 | Graph | Scene/scenario | Embodiment | Perception | Nodes |
 |---|---|---|---|---:|
 | [graphs/agent_campaign.yaml](../../graphs/agent_campaign.yaml) | store / S3 | mobile | L0 (default) | 8 |
+| [graphs/eval_ik_transfer_v2.yaml](../../graphs/eval_ik_transfer_v2.yaml) | pharmacy (default) / — | franka (default) | L1 | 10 |
 | [graphs/eval_s1_driver_v2.yaml](../../graphs/eval_s1_driver_v2.yaml) | store / S1 | mobile | L0 (default) | 10 |
 | [graphs/eval_s3_driver_v1.yaml](../../graphs/eval_s3_driver_v1.yaml) | store / S3 | mobile | L0 (default) | 8 |
 | [graphs/expert_s1.yaml](../../graphs/expert_s1.yaml) | store / S1 | mobile | L0 (default) | 10 |
@@ -35,6 +36,7 @@ architecture, and contribution guidance remain in the
 ### Graph node membership
 
 - **graphs/agent_campaign.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `s3-driver-v1`, `verifier-retail`, `rollout-client`, `turn-barrier`
+- **graphs/eval_ik_transfer_v2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-transfer-v2`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/eval_s1_driver_v2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `order-reader`, `task-planner`, `s1-driver-v2`, `verifier-retail`, `rollout-client`, `turn-barrier`
 - **graphs/eval_s3_driver_v1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `s3-driver-v1`, `verifier-retail`, `rollout-client`, `turn-barrier`
 - **graphs/expert_s1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `order-reader`, `task-planner`, `s1-expert`, `verifier-retail`, `rollout-client`, `turn-barrier`
@@ -61,6 +63,7 @@ architecture, and contribution guidance remain in the
 | [registry/manifests/gripper-driver-sim.yaml](../../registry/manifests/gripper-driver-sim.yaml) | gripper_actuation | franka, so101 | motion | hub | `src/aisle/nodes/dora_genesis.py` |
 | [registry/manifests/human-sim.yaml](../../registry/manifests/human-sim.yaml) | dialogue_human | franka, so101 | decision | hub | `src/aisle/nodes/human_sim.py` |
 | [registry/manifests/ik-trajectory.yaml](../../registry/manifests/ik-trajectory.yaml) | trajectory_generation | franka, so101 | motion | hub | `src/aisle/nodes/ik_trajectory.py` |
+| [registry/manifests/ik-transfer-v2.yaml](../../registry/manifests/ik-transfer-v2.yaml) | trajectory_generation | franka, so101 | motion | agent-authored | `skills/ik-transfer-v2/ik_transfer_v2.py` |
 | [registry/manifests/misplacement-detector.yaml](../../registry/manifests/misplacement-detector.yaml) | misplacement_detection | franka | perception | hub | `src/aisle/nodes/misplacement_detector.py` |
 | [registry/manifests/nav-action.yaml](../../registry/manifests/nav-action.yaml) | navigation | franka | motion | hub | `src/aisle/nodes/nav_action.py` |
 | [registry/manifests/ocr-label.yaml](../../registry/manifests/ocr-label.yaml) | label_text | franka | perception | hub | `src/aisle/nodes/label_reader.py` |
