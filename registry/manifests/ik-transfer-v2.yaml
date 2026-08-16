@@ -53,6 +53,6 @@ safety_class: motion
 eval:
   suite: t1-l1-routed-transfer
   pass_rate: 1.0
-  last_run: '2026-08-14'
+  last_run: '2026-08-16'
 origin: agent-authored
 source: skills/ik-transfer-v2/ik_transfer_v2.py
