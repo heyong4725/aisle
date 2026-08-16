@@ -3,7 +3,8 @@
 Owner review of every agent-authored skill (design doc §9.4: humans
 merge; the notes are governance-paper data). Facts and mechanical
 observations were assembled by the dev loop; judgments marked [OWNER]
-are Yong's. DRAFT — owner edits and signs before merge.
+are Yong's. **SIGNED OFF by the owner 2026-08-15** (merge of PR #242);
+the standing approvals for skills 1 and 2 carry no added notes.
 
 **Revised 2026-08-15 after the findings were checked against the code.**
 Two of the first draft's three flags did not survive: the detector-import
@@ -25,7 +26,7 @@ itself governance-paper data.
 - **Mechanical review:** no frozen imports beyond public scene config;
   registry-path registration with eval; no privileged topics.
 - **[OWNER] judgment:** APPROVE (standing — merged at #54).
-  Notes: _____
+  Notes: (none added at sign-off)
 
 ## 2. s3-driver-v1 (merged #75, S3-r2)
 
@@ -36,7 +37,7 @@ itself governance-paper data.
 - **Mechanical review:** clean surface; largest agent-authored file —
   above the repo's 800-line guidance by 4 lines (waiver-worthy).
 - **[OWNER] judgment:** APPROVE (standing — merged at #75).
-  Notes: _____
+  Notes: (none added at sign-off)
 
 ## 3. t2-scan-pose (UNREVIEWABLE — source not retained, #245)
 
@@ -64,12 +65,17 @@ itself governance-paper data.
   perception rung L2 the policy and the realistic verifier share the
   detector backbone by design (`verifier/realistic.py:289,346`), so
   fidelity is measured on correlated estimates. Filed as **#248**; the
-  governance rule it was going to become is **#244**, now stalled on
-  this finding.
-- **[OWNER] decision:** not a merge decision — there is nothing to
-  merge (see the retention note below). What remains is #244's scope
-  and #248's re-run. Recorded here as: **reviewed from campaign
-  metadata; source not retained; no fault found in the skill.**
+  governance rule it was going to become is **#244**.
+  **Both resolved 2026-08-15.** #244: VAL-9 dropped — the rule was aimed
+  at a transgression that did not occur. #248: no reported number was
+  affected (every VER-6 measurement to date ran at rung L0, where the
+  policy calls no detector), and `harness fidelity` now labels every
+  report with a `backbone` verdict so the next L2 measurement cannot be
+  read as an independence claim by accident.
+- **[OWNER] decision (2026-08-15):** not a merge decision — there is
+  nothing to merge (see the retention note below). Recorded as:
+  **reviewed from campaign metadata; source not retained; no fault found
+  in the skill.**
 
 ## 4. t2-scan-tsm (UNREVIEWABLE — source not retained, #245)
 
@@ -133,7 +139,7 @@ is corrected to 2 in #249.
 3. **Both "governance edges" the first draft found were really findings
    about the harness, not the agents.** The eval floor was
    candidate-chosen (#243, fixed); the detector sharing is the curated
-   core's own design (#244/#248, open). An agent-code review that ends
+   core's own design (#244 dropped, #248 guarded). An agent-code review that ends
    up indicting the review machinery twice is worth reporting as such:
    the agents behaved, and the fence had two gaps.
 4. Safety record under free motion-code authorship: wrong-medicine 0
