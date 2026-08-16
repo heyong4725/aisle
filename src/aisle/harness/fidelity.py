@@ -58,6 +58,87 @@ class EvidenceError(ValueError):
     """Recorded evidence is missing, malformed, or self-inconsistent."""
 
 
+# #248: rungs at which the POLICY consumes the same pinned identity
+# detector the realistic judge votes with. At L2 the pose/label path is
+# `l2_pose`/`label_reader`, both of which call
+# `verifier.models.load_pinned("identity")` — the exact pair
+# `verifier/realistic.py` judges with. Below L2 the policy uses
+# ground-truth or segmentation poses and shares no weights.
+SHARED_BACKBONE_RUNGS = frozenset({"L2"})
+KNOWN_RUNGS = frozenset({"L0", "L1", "L2"})
+DEFAULT_RUNG = "L0"  # VAL-8: a graph declaring no rung IS L0
+
+
+def backbone_independence(rung: str | None) -> dict:
+    """#248: whether this run's agreement number is an INDEPENDENCE claim.
+
+    Fidelity's value (§4.2) comes from the realistic verifier being an
+    independent estimate of the same event. When the policy and the judge
+    share detector weights their errors correlate: an episode the detector
+    misreads is one where the policy acts wrongly AND the judge fails to
+    notice, so the pair CANCELS into agreement instead of surfacing as
+    disagreement, and the metric cannot observe its own bias.
+
+    This is a label, not a refusal — a shared-backbone number is a
+    legitimate diagnostic, it just is not evidence of portability. What it
+    must never be is silent, because the trap springs the wrong way: an L2
+    run yields a BETTER agreement than L0 and reads as the pipeline
+    improving on a harder rung.
+
+    Fails closed on an unresolved rung (`independent: None`), following the
+    rung reader's own rule (PR #135): a rung we cannot establish is not an
+    independence claim.
+    """
+    if not isinstance(rung, str) or rung.strip().upper() not in KNOWN_RUNGS:
+        return {
+            "rung": None,
+            "independent": None,
+            "detail": (
+                "perception rung unresolved — this run makes NO verifier-independence "
+                "claim either way (#248); score from a run manifest to establish it"
+            ),
+        }
+    resolved = rung.strip().upper()
+    if resolved in SHARED_BACKBONE_RUNGS:
+        return {
+            "rung": resolved,
+            "independent": False,
+            "detail": (
+                f"SHARED BACKBONE at rung {resolved}: the policy path (l2_pose, "
+                'label_reader) and the judge both use models.load_pinned("identity"), '
+                "so their errors correlate and this agreement number OVERSTATES "
+                "independence by an unmeasured amount — a diagnostic, not evidence "
+                "of portability (#248)"
+            ),
+        }
+    return {
+        "rung": resolved,
+        "independent": True,
+        "detail": (
+            f"independent at rung {resolved}: the policy consumes ground-truth or "
+            "segmentation poses and never calls the judge's detector"
+        ),
+    }
+
+
+def _run_rung(run_dir: Path) -> str | None:
+    """The run's declared perception rung, or None if unestablishable.
+
+    Read separately from `expected_goal_ids` because the backbone label is
+    required on the `--no-manifest` diagnostic path too — where it resolves
+    to unknown rather than being silently omitted."""
+    path = Path(run_dir) / "manifest.json"
+    if not path.exists():
+        return None
+    try:
+        manifest = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(manifest, dict):
+        return None
+    return manifest.get("perception", DEFAULT_RUNG)
+
+
 def rate(numerator: int, denominator: int) -> float | None:
     """VER-6: null on an empty denominator — a rate over nothing is not
     zero, and reporting 0.0 would read as evidence of safety."""
@@ -456,6 +537,9 @@ def write_manifest_metrics(run_dir: Path, report: dict) -> None:
         "agreement": report["agreement"],
         "false_success_rate": report["false_success_rate"],
         "false_fail_rate": report["false_fail_rate"],
+        # #248: persisted WITH the rates, so a number quoted from the
+        # manifest cannot be separated from whether it claims independence
+        "backbone": report["backbone"],
     }
     path.write_text(json.dumps(manifest, indent=1) + "\n")
 
@@ -489,6 +573,8 @@ def fidelity_report(
     report["disagreements"] = disagreement_records(records, oracle, realistic, disagreements)
     report["run_dir"] = str(run_dir)
     report["complete_run"] = complete
+    # #248: every report states whether it is an independence claim
+    report["backbone"] = backbone_independence(_run_rung(run_dir))
     if not complete:
         report["scope"] = (
             "DIAGNOSTIC SUBSET — completeness unverified (no manifest, no --expect-episodes); "
