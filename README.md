@@ -58,6 +58,9 @@ for the shorthand every other page uses (`CON-5`, `ADR-30`, `H3`, `A7`,
 `T2`, `L1`, Class C, DoD, the frozen set),
 **[`docs/glossary.md`](docs/glossary.md)**, which expands each identifier
 and names the file that defines it.
+Where this goes next — the model-node tier (VLA policies, VLM verifier,
+world-model environments) and the road to hardware — is the executable
+plan in **[docs/next-phases.md](docs/next-phases.md)** (PROPOSED).
 
 ## Status
 

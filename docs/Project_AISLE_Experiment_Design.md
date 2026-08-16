@@ -3,6 +3,13 @@
 **AISLE** — *Agentic Infrastructure for Safe Learning and Execution* (formerly "Project Apothecary", renamed v0.4 when the retail suite §11 outgrew the pharmacy-desk namesake; widened again in August 2026 when the powder/force bench suite (SPEC 300/310) outgrew "In-Store", and settled on the current expansion the same month: *Infrastructure* because the substrate — typed contract, registry, validator, guard, evidence harness — is the contribution, and *Execution* because operating a running system (H6) is the deployment half of the programme. The word AISLE is unchanged; it still nods to the pharmacy aisle of the first task family.)
 
 **Experiment design — coding agents (Claude Code / Codex) as the brain, dora-rs as the execution layer, Genesis World as the physics loop**
+*Historical design artifact — Phases 0–3 are COMPLETE as of 2026-08-16;
+current status lives in the [README](../README.md), the
+[technical report](AISLE-technical-report.md), and the
+[phase record](../analysis/reports/phase2_phase3_report.md); the
+forward plan is [next-phases.md](next-phases.md). This document is
+kept as-written for provenance.*
+
 *Draft v0.4, July 2026 — renamed Apothecary→AISLE; retail suite added (§11); §8 expanded into a full implementation guide for the student team; §9 resolved to decisions; model-orchestration tier (§7.5); ENPIRE/ASPIRE comparison (§10)*
 
 ---
