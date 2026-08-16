@@ -7,7 +7,7 @@
 # 0.75 tolerates one sim flake in 8 without overclaiming; the evalcard
 # records the measured rate either way.
 suite: t1-l1-routed-transfer
-graph: graphs/agent_eval_ik_transfer_v2.yaml
+graph: graphs/eval_ik_transfer_v2.yaml
 tier: T1
 embodiment: franka
 episodes: 8

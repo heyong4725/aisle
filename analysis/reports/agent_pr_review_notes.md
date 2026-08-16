@@ -145,12 +145,20 @@ against the agents and three against the machinery that reviews them.
   need it (the arm still scored 1.0 without a code advantage).
 - **Mechanical review:** motion class + evalcard = the §9.4 trust-tier
   case working as designed; small, single-purpose, cites its evidence.
-- **[OWNER] decision:** this is the loss that stings — the one
-  motion-class skill, the class §9.4's trust tiers exist for, and the
-  only one whose merge was a genuinely open question. There is nothing
-  to merge. Recorded as: **reviewed from campaign metadata; source not
-  retained.** If T2+ campaigns re-derive it, it arrives under the #245
-  retention path and can be reviewed properly.
+- **[OWNER] decision:** originally recorded as unreviewable ("the loss
+  that stings"). SUPERSEDED by the #252 recovery: source verified
+  byte-identical to the arm-F worktree (mtimes Aug 14, inside the
+  authoring session), and on 2026-08-16 the recovered eval suite was
+  re-run on the campaign machine at the native pin — **8/8, pass@1
+  1.0, including discovered-failure seed 33, zero retries**
+  (run `review-reeval-ik-transfer-v2`), reproducing the original
+  evalcard exactly. **MERGED per owner instruction 2026-08-16** through
+  the registry path: skills/ik-transfer-v2 + evalcarded manifest +
+  `graphs/eval_ik_transfer_v2.yaml` into the frozen eval gate (the
+  ADR-36 Class-C addition, authorized by the same instruction; the one
+  deviation from the verbatim artifact is the eval graph's rename from
+  the agent's `agent_eval_*` name to the frozen-gate convention, with
+  the matching one-line `graph:` pointer patch in eval.yaml).
 
 ## The retention finding (why three of five are unreviewable)
 
