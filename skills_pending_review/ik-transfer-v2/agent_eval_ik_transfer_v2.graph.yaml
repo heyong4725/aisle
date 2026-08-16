@@ -1,0 +1,311 @@
+# A3 Arm F campaign graph (T1 @ L1). Starting point: the expert_t1
+# topology verbatim (segmented-pose at L1, neighbour-aware topdown
+# grasp, ik-trajectory, oracle verifier) with the campaign's own turn
+# plan. Iterated from here per the idea log.
+nodes:
+- id: dora-genesis
+  path: ../src/aisle/nodes/dora_genesis.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_OUTPUTS: 'bridge_info,joint_state,gripper_state,oracle_state,rgb_overhead,rgb_wrist,depth_overhead,seg_overhead,reset_done,sim_turn'
+    AISLE_PERCEPTION: L1
+  inputs:
+    tick: dora/timer/millis/10
+    joint_cmd:
+      source: budget-guard/joint_cmd_safe
+      queue_size: 100
+    gripper_cmd:
+      source: budget-guard/gripper_cmd_safe
+      queue_size: 100
+    reset:
+      source: reset/bridge_reset
+      queue_size: 100
+    turn_commit:
+      source: turn-barrier/turn_commit
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - bridge_info
+  - joint_state
+  - gripper_state
+  - oracle_state
+  - rgb_overhead
+  - rgb_wrist
+  - depth_overhead
+  - seg_overhead
+  - reset_done
+  - sim_turn
+- id: reset
+  path: ../src/aisle/reset/service.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_NODE: 'reset'
+    AISLE_TURN_OUTPUTS: 'bridge_reset,reset_done,reset_refused,turn_done'
+  inputs:
+    reset:
+      source: rollout-client/reset
+      queue_size: 100
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+    turn:
+      source: turn-barrier/turn
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - bridge_reset
+  - reset_done
+  - reset_refused
+  - turn_done
+- id: budget-guard
+  path: ../src/aisle/nodes/budget_guard.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_NODE: 'budget-guard'
+    AISLE_TURN_OUTPUTS: 'joint_cmd_safe,gripper_cmd_safe,violation,guard_stats,turn_done'
+    AISLE_TURN_WALL_OUTPUTS: 'guard_stats'
+  inputs:
+    tick: dora/timer/millis/5000
+    joint_cmd:
+      source: ik-transfer-v2/joint_cmd
+      queue_size: 100
+    gripper_cmd:
+      source: ik-transfer-v2/gripper_cmd
+      queue_size: 100
+    reset_done:
+      # the EPISODE boundary comes from the reset SERVICE, not the bridge
+      # (issue #192): a successful BEHAVIORAL reset (RST-2) never reaches
+      # the bridge, so dora-genesis/reset_done never fires and every
+      # episode-state consumer silently misses the boundary. The service
+      # replies on every route -- teleport (it relays the bridge),
+      # behavioral success, and behavioral exhaustion via fallback -- so it
+      # is the single authority, and it is the same edge rollout-client
+      # already waits on before starting the next episode.
+      source: reset/reset_done
+      queue_size: 100
+    turn:
+      source: turn-barrier/turn
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - joint_cmd_safe
+  - gripper_cmd_safe
+  - violation
+  - guard_stats
+  - turn_done
+- id: segmented-pose
+  path: ../src/aisle/nodes/segmented_pose.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_NODE: 'segmented-pose'
+    AISLE_TURN_OUTPUTS: 'target_pose,turn_done'
+  inputs:
+    bridge_info:
+      source: dora-genesis/bridge_info
+      queue_size: 100
+    seg_overhead:
+      source: dora-genesis/seg_overhead
+      queue_size: 100
+    depth_overhead:
+      source: dora-genesis/depth_overhead
+      queue_size: 100
+    target_request:
+      source: task-state-machine/target_request
+      queue_size: 100
+    reset_done:
+      # the EPISODE boundary comes from the reset SERVICE, not the bridge
+      # (issue #192): a successful BEHAVIORAL reset (RST-2) never reaches
+      # the bridge, so dora-genesis/reset_done never fires and every
+      # episode-state consumer silently misses the boundary. The service
+      # replies on every route -- teleport (it relays the bridge),
+      # behavioral success, and behavioral exhaustion via fallback -- so it
+      # is the single authority, and it is the same edge rollout-client
+      # already waits on before starting the next episode.
+      source: reset/reset_done
+      queue_size: 100
+    turn:
+      source: turn-barrier/turn
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - target_pose
+  - turn_done
+- id: grasp-planner-topdown
+  path: ../src/aisle/nodes/grasp_topdown.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_NODE: 'grasp-planner-topdown'
+    AISLE_TURN_OUTPUTS: 'grasp_pose,turn_done'
+  inputs:
+    target_pose:
+      source: segmented-pose/target_pose
+      queue_size: 100
+    turn:
+      source: turn-barrier/turn
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - grasp_pose
+  - turn_done
+- id: ik-transfer-v2
+  # ik-transfer-v2 (idea I4): shelf-clearing routed transfer; same
+  # interface/executor as the stock ik-trajectory it subclasses
+  path: ../skills/ik-transfer-v2/ik_transfer_v2.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_NODE: 'ik-transfer-v2'
+    AISLE_TURN_OUTPUTS: 'joint_cmd,gripper_cmd,plan_done,turn_done'
+  inputs:
+    grasp_pose:
+      source: grasp-planner-topdown/grasp_pose
+      queue_size: 100
+    joint_state:
+      source: dora-genesis/joint_state
+      queue_size: 1
+    reset_done:
+      # the EPISODE boundary comes from the reset SERVICE, not the bridge
+      # (issue #192): a successful BEHAVIORAL reset (RST-2) never reaches
+      # the bridge, so dora-genesis/reset_done never fires and every
+      # episode-state consumer silently misses the boundary. The service
+      # replies on every route -- teleport (it relays the bridge),
+      # behavioral success, and behavioral exhaustion via fallback -- so it
+      # is the single authority, and it is the same edge rollout-client
+      # already waits on before starting the next episode.
+      source: reset/reset_done
+      queue_size: 100
+    turn:
+      source: turn-barrier/turn
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - joint_cmd
+  - gripper_cmd
+  - plan_done
+  - turn_done
+- id: verifier-oracle
+  path: ../src/aisle/verifier/oracle.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_NODE: 'verifier-oracle'
+    AISLE_TURN_OUTPUTS: 'episode_result,turn_done'
+  inputs:
+    oracle_state:
+      source: dora-genesis/oracle_state
+      queue_size: 100
+    joint_state:
+      source: dora-genesis/joint_state
+      queue_size: 100
+    episode_goal:
+      source: rollout-client/episode_goal
+      queue_size: 100
+    turn:
+      source: turn-barrier/turn
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - episode_result
+  - turn_done
+- id: task-state-machine
+  path: ../src/aisle/nodes/task_state_machine.py
+  inputs:
+    tick: dora/timer/millis/1000
+    episode_goal:
+      source: rollout-client/episode_goal
+      queue_size: 100
+    episode_result:
+      source: verifier-oracle/episode_result
+      queue_size: 100
+    violation:
+      source: budget-guard/violation
+      queue_size: 100
+    plan_done:
+      source: ik-transfer-v2/plan_done
+      queue_size: 100
+    turn:
+      source: turn-barrier/turn
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - target_request
+  - episode_feedback
+  - turn_done
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_NODE: 'task-state-machine'
+    AISLE_TURN_OUTPUTS: 'target_request,episode_feedback,turn_done'
+    AISLE_MAX_RETRIES: '8'
+- id: rollout-client
+  path: ../src/aisle/harness/rollout_client.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_NODE: 'rollout-client'
+    AISLE_TURN_OUTPUTS: 'reset,episode_goal,turn_done'
+  inputs:
+    tick: dora/timer/millis/1000
+    reset_done:
+      source: reset/reset_done
+      queue_size: 100
+    reset_refused:
+      source: reset/reset_refused
+      queue_size: 100
+    episode_result:
+      source: verifier-oracle/episode_result
+      queue_size: 100
+    episode_feedback:
+      source: task-state-machine/episode_feedback
+      queue_size: 100
+    turn:
+      source: turn-barrier/turn
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - reset
+  - episode_goal
+  - turn_done
+- id: turn-barrier
+  path: ../src/aisle/nodes/turn_barrier.py
+  env:
+    AISLE_TURN_PLAN: 'turn_plans/agent_eval_ik_transfer_v2.json'
+    AISLE_TURN_WATCHDOG_S: '10'
+    AISLE_VERDICT_TURN_WATCHDOG_S: '15'
+  inputs:
+    tick: dora/timer/millis/100
+    sim_turn:
+      source: dora-genesis/sim_turn
+      queue_size: 4
+      queue_policy: backpressure
+    done_0:
+      source: budget-guard/turn_done
+      queue_size: 4
+      queue_policy: backpressure
+    done_1:
+      source: grasp-planner-topdown/turn_done
+      queue_size: 4
+      queue_policy: backpressure
+    done_2:
+      source: ik-transfer-v2/turn_done
+      queue_size: 4
+      queue_policy: backpressure
+    done_3:
+      source: reset/turn_done
+      queue_size: 4
+      queue_policy: backpressure
+    done_4:
+      source: rollout-client/turn_done
+      queue_size: 4
+      queue_policy: backpressure
+    done_5:
+      source: segmented-pose/turn_done
+      queue_size: 4
+      queue_policy: backpressure
+    done_6:
+      source: task-state-machine/turn_done
+      queue_size: 4
+      queue_policy: backpressure
+    done_7:
+      source: verifier-oracle/turn_done
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+    - turn
+    - turn_commit

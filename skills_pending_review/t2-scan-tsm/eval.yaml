@@ -1,0 +1,17 @@
+# Shipped eval suite (CAP-6): the candidate runs in the T2 pipeline
+# with the CURATED detected-pose (t2-scan-pose cannot appear in this
+# graph before its own registration; the candidate falls back to the
+# stock positional-neighbours payload). Seeds 1,3 are two of the five
+# episodes the stock pipeline never toured (run 20260813-162725-2be572,
+# never_grasped with zero reads). min_pass_rate 0.0 is PROVISIONAL:
+# this registration exists to attest the launched source under CAP-2
+# validation while the campaign measures the dev-seed pass rate; the
+# evalcard records the measured rate either way, and the human-merged
+# PR (contract rule 4) remains the trust boundary.
+suite: desk-t2-scan
+graph: graphs/eval_t2_scan_tsm.yaml
+tier: T2
+embodiment: franka
+episodes: 2
+seeds: 1,3
+min_pass_rate: 0.0

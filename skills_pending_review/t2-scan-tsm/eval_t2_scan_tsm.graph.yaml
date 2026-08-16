@@ -1,0 +1,196 @@
+# Eval graph for the t2-scan-tsm registration ONLY: the candidate state
+# machine paired with the CURATED detected-pose (the other campaign
+# skill cannot appear here before its own registration). The candidate
+# falls back to the stock positional-neighbours payload when
+# tour_candidates is absent.
+nodes:
+- id: dora-genesis
+  path: ../src/aisle/nodes/dora_genesis.py
+  env:
+    AISLE_PERCEPTION: L2
+    AISLE_LABELS: '1'
+    AISLE_SHUFFLE_COLORS: '1'
+  inputs:
+    tick: dora/timer/millis/10
+    joint_cmd:
+      source: budget-guard/joint_cmd_safe
+      queue_size: 100
+    gripper_cmd:
+      source: budget-guard/gripper_cmd_safe
+      queue_size: 100
+    reset:
+      source: reset/bridge_reset
+      queue_size: 100
+  outputs:
+  - bridge_info
+  - joint_state
+  - gripper_state
+  - oracle_state
+  - rgb_overhead
+  - rgb_wrist
+  - depth_overhead
+  - reset_done
+- id: reset
+  path: ../src/aisle/reset/service.py
+  inputs:
+    reset:
+      source: rollout-client/reset
+      queue_size: 100
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - bridge_reset
+  - reset_done
+- id: budget-guard
+  path: ../src/aisle/nodes/budget_guard.py
+  inputs:
+    tick: dora/timer/millis/5000
+    joint_cmd:
+      source: ik-trajectory/joint_cmd
+      queue_size: 100
+    gripper_cmd:
+      source: ik-trajectory/gripper_cmd
+      queue_size: 100
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - joint_cmd_safe
+  - gripper_cmd_safe
+  - violation
+  - guard_stats
+- id: detected-pose
+  path: ../src/aisle/nodes/l2_pose.py
+  inputs:
+    bridge_info:
+      source: dora-genesis/bridge_info
+      queue_size: 100
+    rgb_overhead:
+      source: dora-genesis/rgb_overhead
+      queue_size: 100
+    depth_overhead:
+      source: dora-genesis/depth_overhead
+      queue_size: 100
+    target_request:
+      source: t2-scan-tsm/target_request
+      queue_size: 100
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - target_pose
+- id: ocr-label
+  path: ../src/aisle/nodes/label_reader.py
+  inputs:
+    bridge_info:
+      source: dora-genesis/bridge_info
+      queue_size: 100
+    rgb_wrist:
+      source: dora-genesis/rgb_wrist
+      queue_size: 1
+    clock:
+      source: dora-genesis/joint_state
+      queue_size: 1
+    read_request:
+      source: t2-scan-tsm/read_request
+      queue_size: 100
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - read_result
+- id: grasp-planner-topdown
+  path: ../src/aisle/nodes/grasp_topdown.py
+  inputs:
+    target_pose:
+      source: t2-scan-tsm/grasp_target
+      queue_size: 100
+  outputs:
+  - grasp_pose
+- id: ik-trajectory
+  path: ../src/aisle/nodes/ik_trajectory.py
+  inputs:
+    grasp_pose:
+      source: grasp-planner-topdown/grasp_pose
+      queue_size: 100
+    read_move:
+      source: t2-scan-tsm/read_move
+      queue_size: 100
+    joint_state:
+      source: dora-genesis/joint_state
+      queue_size: 1
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+  outputs:
+  - joint_cmd
+  - gripper_cmd
+  - move_done
+  - plan_done
+- id: verifier-oracle
+  path: ../src/aisle/verifier/oracle.py
+  inputs:
+    oracle_state:
+      source: dora-genesis/oracle_state
+      queue_size: 100
+    joint_state:
+      source: dora-genesis/joint_state
+      queue_size: 100
+    episode_goal:
+      source: rollout-client/episode_goal
+      queue_size: 100
+  outputs:
+  - episode_result
+- id: t2-scan-tsm
+  # agent skill (campaign arm-L T2): per-candidate z in the tour (boxes
+  # sit on different shelf levels) + board-geometry z snap on promotion
+  path: ../skills/t2-scan-tsm/t2_scan_tsm.py
+  env:
+    AISLE_TASK_TIER: T2
+    AISLE_MAX_RETRIES: '8'
+  inputs:
+    tick: dora/timer/millis/1000
+    episode_goal:
+      source: rollout-client/episode_goal
+      queue_size: 100
+    episode_result:
+      source: verifier-oracle/episode_result
+      queue_size: 100
+    violation:
+      source: budget-guard/violation
+      queue_size: 100
+    target_pose:
+      source: detected-pose/target_pose
+      queue_size: 100
+    move_done:
+      source: ik-trajectory/move_done
+      queue_size: 100
+    read_result:
+      source: ocr-label/read_result
+      queue_size: 100
+    plan_done:
+      source: ik-trajectory/plan_done
+      queue_size: 100
+  outputs:
+  - target_request
+  - episode_feedback
+  - read_move
+  - read_request
+  - grasp_target
+- id: rollout-client
+  path: ../src/aisle/harness/rollout_client.py
+  inputs:
+    tick: dora/timer/millis/1000
+    reset_done:
+      source: reset/reset_done
+      queue_size: 100
+    episode_result:
+      source: verifier-oracle/episode_result
+      queue_size: 100
+    episode_feedback:
+      source: t2-scan-tsm/episode_feedback
+      queue_size: 100
+  outputs:
+  - reset
+  - episode_goal
