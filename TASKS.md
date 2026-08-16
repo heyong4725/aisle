@@ -4,7 +4,9 @@
 > dependency order the build followed and the prompt templates used to
 > drive it. Most tasks below have landed: T01–T10 (M0) are signed off,
 > and the retail suite T11–T15 is implemented. Do **not** read an entry
-> here as outstanding work.
+> here as outstanding work. **Design-doc Phase 2 (§8.3) and Phase 3 (§8.4)
+> both closed on 2026-08-16** — record in
+> [`analysis/reports/phase2_phase3_report.md`](analysis/reports/phase2_phase3_report.md).
 >
 > For what is actually true now, see **[the README status
 > table](README.md#status)** (the single current status page, issue

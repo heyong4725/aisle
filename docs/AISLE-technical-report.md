@@ -2,10 +2,12 @@
 
 **Agentic Infrastructure for Safe Learning and Execution · Technical report · August 2026**
 
-*Status snapshot: 2026-08-12. Measured results cite the
-[README status table](../README.md#status), which is canonical. Forward-looking
-sections are labelled as such and describe committed design direction, not
-shipped capability.*
+*Status snapshot: 2026-08-16, with **Phase 2 and Phase 3 both closed**.
+Measured results cite the [README status table](../README.md#status), which is
+canonical; the phase record is
+[`analysis/reports/phase2_phase3_report.md`](../analysis/reports/phase2_phase3_report.md).
+Forward-looking sections are labelled as such and describe committed design
+direction, not shipped capability.*
 
 ---
 
@@ -1102,8 +1104,63 @@ teaching surface.
 **H2 (iteration) — met on one arm.** The Claude arm reached 1.0 pass@1 held
 out; the Codex arm 0.875 at N=8, with dev-side evidence of a ≥0.9 system.
 
-**H3 (skill reuse) — PENDING.** See §7.4. Both tiers UNDECIDED after the
-admissibility audit.
+**H3 (skill reuse) — UNDECIDED on both suites, and the null is informative.**
+The retail ladder (S1→S3) lost every library-arm cell to drift. The desk ladder
+(T1→T4, the ASPIRE ablation as specified in §8.4.2) then ran to completion:
+`met: null` under strict admissibility, 13 record-derived caveats. On T4 — the
+only tier where both arms produced clean first-success numbers — the ratio is
+**~1.03** (894 s vs 872 s): parity, not the ≤0.5 the hypothesis asks for.
+
+The interpretable result is not "the library does not help". It is that **the
+ladder's difficulty spacing prevented the question from being asked**: T1 and
+T4 are solved by both arms inside one sub-budget, so there is no headroom for a
+speedup to appear in; T2 and T3 are solved by neither, so there is no success
+to accelerate. A transfer curve needs a tier that is hard but reachable, and
+this ladder has none. That is a finding about instrument design, and it
+generalizes past this project — an accumulation benchmark is only measurable in
+the band between "trivial" and "impossible", and that band has to be located
+empirically before the campaign, not assumed from the curriculum's shape.
+
+Skill *reuse* was nevertheless verified live: arm L's T3 deliverable embeds
+`s3-driver-v1` verbatim — a retail→desk cross-suite transfer, which is the
+strongest form the H3 design hoped for. The mechanism works; the outcome delta
+at these budgets was zero.
+
+**A3 (params-only vs params+code) — the constrained arm won.** Denying an agent
+the ability to author code, leaving only parameter edits, produced equal
+held-out quality (1.0/1.0 both arms) at **half the tokens** (200k vs 396k), a
+third of the wall clock, and one dev rollout instead of four. Where the registry
+already covers the task, the schema is a subsidy: the agent does not have to
+rediscover what a working system looks like. n=1 per arm on the easiest tier, so
+this is directional — but it is the sharpest evidence the project has produced
+for the substrate claim (H4), and it points somewhere unintuitive: the win came
+from *removing* an affordance.
+
+**A4 (Claude Code vs Codex) — both solve T1; the difference is style.** Identical
+budgets, prompt, seeds and pin. Both reached 1.0/1.0 held out with zero
+`wrong_object`. Codex reached first verified success sooner (8.1 vs 9.7 min)
+and then kept iterating — five rollouts, 364k tokens, 73 minutes — while Claude
+converged in two rollouts and stopped at 186k tokens and 36 minutes. At equal
+quality one session cost roughly half the other. n=1 per arm at one budget on
+the easiest tier: a lower bound, and reported as one.
+
+**A5 (fleet scaling) — throughput saturates at ~4 lanes.** 1.6 → 4.1 → 4.3
+successes per hour at N = 1, 4, 8 agents. Going from four agents to eight bought
++5% throughput for twice the agents and 2.2× the token burn; per-agent token
+cost rose +22% then +31%, reproducing ENPIRE's super-linearity direction on a
+single laptop-class host rather than a robot fleet. The result worth flagging is
+what did *not* degrade: **holdout quality was contention-invariant at 1.0 on
+every one of 13 lanes**, including a fleet-8 lane that never logged a dev-seed
+success in-session yet scored 1.0 held out. Contention costs latency, not
+correctness. The protocol deviation is recorded rather than buried: lanes shared
+the host with their own simulator instead of one batched bridge.
+
+**A6 (teleport vs behavioral reset) — teleporting hides a task and a cost.**
+Paired 10-episode arms: teleport 1.00 pass@1 in 6.4 minutes; behavioral 0.80 in
+9.6 minutes at +19 s per episode, with 7 successful resets and 3 audited
+fallbacks. The reset is itself a manipulation task that fails sometimes — which
+is precisely the parity with the real-world path that the fast inner loop
+conceals, and the reason the ablation exists.
 
 **H4 (hot swap) — measured at T0.** Phase-randomized, hot-swap median
 iteration latency 32.4 s vs. relaunch 41.8 s (ratio 1.29, n=6 per path, zero
@@ -1113,13 +1170,40 @@ The measurement is explicitly labelled unattested. Note also that the
 registered H4 control is an equal-budget monolithic-script condition, which
 has not yet been run — only hot-swap vs. relaunch has.
 
-**H5 (safety) — holding.** Zero `wrong_object` outcomes in 224/224 episodes
-across three campaign runs. H3's records do not extend that denominator,
-because inadmissible cells cannot contribute to a safety claim either.
+**H5 (safety) — holding, on a denominator that has grown by design.** Zero
+`wrong_object` outcomes in 224/224 episodes across the three H2 campaign runs,
+and zero across every campaign since: the desk H3 ladder, A3's two arms, A4's
+two agent CLIs, A6's two reset arms, and all 13 A5 fleet lanes. Roughly forty
+agent sessions have now authored motion code freely without producing a
+wrong-medicine delivery, including eight running concurrently. Inadmissible H3
+cells still do not contribute — a cell that cannot support a performance claim
+cannot support a safety claim either — but the admissible campaigns above do.
 
-The pattern across all five is the point: thresholds declared in advance,
+The pattern across all of them is the point: thresholds declared in advance,
 results reported with their denominators and their caveats, and at least one
 verdict actively withdrawn by the project's own audit.
+
+### 9.0 Phase 2 and Phase 3, closed
+
+Both phases closed on 2026-08-16. Phase 2's eight DoD items are complete. Phase
+3 closed at **five of six**, with the skill-library row recorded as **NOT MET at
+2** against a target of ≥5.
+
+That row is worth reading precisely, because "2 of 5" invites the wrong
+conclusion. Agents produced five evalcarded skills. Two are in the library. Of
+the remaining three, ADR-37's registry floor refuses two on their own
+evalcards — they measured 0.33 and 0.0, because they were authored against T2,
+which no arm has solved — and the third, a motion-class trajectory fix
+measuring 1.0, is a live registration question rather than a Phase-3
+deliverable. The ceiling was three, not five, and the binding constraint is the
+unsolved tiers, not agent capability.
+
+A separate constraint nearly hid all of this: three of the five skills were
+authored inside campaign worktrees that no committed record pointed at, so the
+first-pass §8.4 review could only cover two of five and this report initially
+recorded the other three as lost. They were not lost; they were undiscoverable
+from any machine but the one that ran the campaign. §9.2 treats that as its own
+finding.
 
 ### 9.1 What the failures taught
 
@@ -1149,11 +1233,62 @@ was hot-swap versus relaunch. Both are interesting, they are not the same
 claim, and the report says so rather than letting the measured number stand in
 for the registered one.
 
-**H5's zero is a denominator, not an absolute.** Zero wrong-object outcomes in
-224 episodes is meaningful and bounded. It is not "the system cannot deliver the
-wrong medicine"; it is "in 224 recorded episodes under these conditions, it did
+**H5's zero is a denominator, not an absolute.** Zero wrong-object outcomes is
+meaningful and bounded. It is not "the system cannot deliver the wrong
+medicine"; it is "in these recorded episodes under these conditions, it did
 not". The safety argument in §11 rests on the guard's structure, and the
 measurement is corroboration rather than proof.
+
+### 9.2 What the governance review found: three harness defects, zero agent faults
+
+Phase 3's final DoD item is a human review of every agent-authored skill, with
+written notes, as governance-paper data. Running it produced a result the
+project did not anticipate and is reporting rather than smoothing.
+
+**Three flags were raised against agent code. All three turned out to be
+findings about the harness.**
+
+1. **The skill eval floor was self-graded.** `harness skill register` refuses a
+   measured pass rate below `min_pass_rate` — but that threshold was read from
+   the candidate's own `eval.yaml`, and only checked for being a float. A skill
+   shipping `min_pass_rate: 0.0` registered at 0.0 and the gate reported
+   success. One campaign skill did exactly that. The agent's reasoning was
+   documented and coherent — it was using registration to *attest* a node's
+   source so its graph would validate, not to claim quality — which makes the
+   defect a conflation in the gate rather than gaming by the agent.
+   Fixed: an absolute floor beneath every self-declared one (ADR-37).
+
+2. **Campaign deliverables were never retained.** Worktrees live under a
+   gitignored directory with no archival step, so a campaign record could name
+   a registered skill that no reviewer could locate. Three of five skills were
+   in this state, and this report initially recorded them as gone. They existed
+   the whole time on the machine that ran the campaigns. Fixed forward: each
+   session now archives its working tree to a ref in the shared object store.
+
+3. **A validator rule proposed in response to flag 1's sibling would have
+   rejected the frozen corpus.** The rule — policy nodes must not import the
+   realistic verifier's detector — was approved before being calibrated. Two
+   curated-core nodes and the frozen reset service import it; enforcing the rule
+   would have rejected two frozen expert graphs. Worse, the skill it was
+   written against never had the alleged import at all. The rule was dropped.
+
+The residue of flag 3 is a real measurement issue rather than a routing one: at
+perception rung L2 the policy and the realistic judge would share a detector
+backbone, so their errors correlate and agreement overstates independence. No
+reported fidelity number is affected — all were measured at rung L0, where the
+policy calls no detector — but the trap springs the wrong way, since an L2 run
+would produce a *better* agreement and read as improvement. Every fidelity
+report now states whether it is an independence claim.
+
+**Why report this at all.** A governance review that finds nothing against the
+subjects it reviews is usually written up as a clean bill of health. Here the
+same exercise found three defects in the reviewing machinery, and the honest
+summary is that the fence had gaps the agents never exploited — one because an
+agent documented its reasoning instead of hiding it, one because nobody
+attacked an unretained artifact, one because a rule was caught before it
+shipped. The first-pass review could only examine two of five skills, and that
+number belongs in any claim this project makes about human-in-the-loop
+governance of agent-authored robot code.
 
 ---
 
@@ -1562,16 +1697,30 @@ oracle and realistic verifiers with a fidelity metric; teleport and behavioral
 reset; the rollout harness with Arrow traces, attestation, a tamper-evident
 budget ledger, per-episode wall clamping and relaunch, and hot-swap; fleet mode
 for batched environments; the layered determinism contract with startup races
-and wall-timer control loops removed; H1, H2, H4, and H5 measured.
+and wall-timer control loops removed.
+
+**Phases 2 and 3 closed (2026-08-16).** H1, H2, H4 and H5 measured; H3 run on
+both the retail and desk ladders and reported UNDECIDED with the difficulty
+spacing as the finding; ablations A1, A3, A4, A5 and A6 measured and committed;
+the T1 and T2 tier curves established; the agent-PR governance review completed
+and signed. Phase 3 closed at five of six DoD rows, the skill library falling
+short at 2 of a required 5 — see §9.0 for why the reachable ceiling was 3.
 
 **In flight.**
 
 | Work | State |
 |---|---|
-| Deterministic lockstep turns | Protocol ratified; implementation epoch pending, requiring one coordinated change across every measured graph |
-| T4 dialogue tier | Contract ratified; implementation next |
-| H3 re-run | Blocked on campaign-hygiene fixes so the audit cannot dissolve it again |
+| Deterministic lockstep turns (ADR-30) | **Implemented** across every measured graph; turn plans are committed runtime inputs, frozen with the graphs they compile from, and the validator refuses a stale plan at the gate |
+| T4 dialogue tier | **Implemented** (ADR-32); solved by both H3 arms inside one sub-budget |
+| H3 | **Re-run on the desk ladder and reported.** Not blocked any more — UNDECIDED under strict admissibility, with the instrument, not the hygiene, as the limiting factor this time |
+| `ik-transfer-v2` registration | Motion-class agent-authored skill, evalcard 1.0, recovered and reviewable — an open §9.4 governance decision |
+| Sandbox trust tier | Newly identified gap: ADR-37's floor leaves no legitimate way for an agent to declare a node that merely needs an id to validate. §9.4's `sandbox → reviewed → certified` roadmap names it; it does not exist yet |
 | Retail suite hardening | Ongoing |
+
+**The standing scientific challenge.** T2 and T3 remain unsolved by any arm at
+session budgets — desk-H3 both arms, A3, A4. Everything above is infrastructure
+around a curriculum whose middle is still open, and closing it is the
+prerequisite for a meaningful accumulation result (§9.1).
 
 **Next, in dependency order.**
 
