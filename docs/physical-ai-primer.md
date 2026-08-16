@@ -261,9 +261,12 @@ plus tamper *evidence* in artifacts, which the audits check.
 classical model-free pipelines; the full L0/L1/L2 perception ladder;
 oracle/planogram verifiers AND the realistic (detector+rules) verifier
 with a measured oracle-fidelity number; teleport and simulated behavioral
-reset; the full
+reset (measured in A6: 0.80 pass@1 at +19 s/episode, with audited
+fallbacks); the full
 agentic outer loop (validate → guard → rollout → verify → traces →
-idea tree) with campaign runners; typed contracts + registry + skill
+idea tree) with campaign runners; **ADR-30 simulated-time lockstep across
+every measured graph**; **concurrent multi-agent fleet runs** (A5 measured
+8 lanes on one host); typed contracts + registry + skill
 registration; Arrow/video traces; the integrity and attestation gates
 of §5.
 
@@ -284,7 +287,10 @@ concepts; it deliberately does not restate experiment results.
    `analysis/h1/` (a clean negative with a single dominant mechanism),
    `analysis/h2/` (a met hypothesis *plus* the contamination lesson),
    `analysis/h3/` (disciplined inconclusiveness: flags, exclusions,
-   budget confounds).
+   budget confounds) — then `analysis/h3/desk/` for the same verdict
+   reached for a better reason: the instrument, not the hygiene.
+   `analysis/reports/phase2_phase3_report.md` closes both phases and
+   states the one DoD row that was not met.
 4. Trace one trust mechanism from spec → test → enforcement (e.g.
    VAL-5 motion gating, or ADR-21's self-verifying checker).
 5. Then read the ENPIRE and ASPIRE papers with the §1 map in hand.
