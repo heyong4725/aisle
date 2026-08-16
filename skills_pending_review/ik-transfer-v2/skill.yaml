@@ -1,0 +1,34 @@
+# Campaign A3 arm F (T1@L1): ik-trajectory with a shelf-clearing routed
+# transfer — rise over the grasp, traverse at constant clear height past
+# the shelf's y-extent, descend only over the tray. Fixes the
+# `collision` class where the stock straight transfer descends while
+# still over the shelf and drags the carried box across a same-level
+# neighbour's top (dev seed 33, run 20260814-235921-b5176c). Interface
+# and execution semantics identical to ik-trajectory (subclass reusing
+# its stages/executor); front grasps and so101 fall through to the stock
+# plan. safety_class motion: emits joint_cmd/gripper_cmd directly.
+id: ik-transfer-v2
+kind: node
+provides: [trajectory_generation]
+requires: [grasp_planning]
+inputs:
+  grasp_pose: {schema: pose7d_f32, rate_hz: 30}
+  read_move: {schema: json_utf8, rate_hz: 1}
+  joint_state: {schema: jointvec_f32, rate_hz: 100}
+  reset_done: {schema: reset_done_u32, rate_hz: 1}
+  turn: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
+outputs:
+  joint_cmd: {schema: jointvec_f32, latency_class: soft_rt}
+  gripper_cmd: {schema: scalar_f32, latency_class: soft_rt}
+  move_done: {schema: json_utf8, latency_class: best_effort}
+  plan_done: {schema: json_utf8, latency_class: best_effort}
+  turn_done: {schema: sim_turn_u64, latency_class: hard_rt}
+params:
+  max_joint_vel_rad_s: {type: float, default: 1.0, range: [0.1, 2.0]}
+embodiment:
+  arm: [franka, so101]
+  gripper: parallel
+safety_class: motion
+eval: null
+origin: agent-authored
+source: skills/ik-transfer-v2/ik_transfer_v2.py

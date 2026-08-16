@@ -1,0 +1,17 @@
+# Shipped eval suite (CAP-6): the candidate runs inside the full T2
+# campaign graph (label-read identification with margin floors — the
+# safety property this node must never weaken is exercised end to end).
+# Seeds 0,2,4 cover the measured failure classes of the stock pipeline
+# this node replaces (run 20260813-162725-2be572: ep0 the lone success,
+# ep2/ep4 blank cross-level reads). min_pass_rate 0.0 is PROVISIONAL:
+# this registration exists to attest the launched source under CAP-2
+# validation while the campaign measures the dev-seed pass rate; the
+# evalcard records the measured rate either way, and the human-merged
+# PR (contract rule 4) remains the trust boundary.
+suite: desk-t2-scan
+graph: graphs/agent_campaign.yaml
+tier: T2
+embodiment: franka
+episodes: 3
+seeds: 0,2,4
+min_pass_rate: 0.0

@@ -1,0 +1,67 @@
+id: t2-scan-tsm
+kind: node
+provides:
+- task_sequencing
+requires:
+- episode_verification
+- label_text
+- scan_candidates
+inputs:
+  episode_goal:
+    schema: json_utf8
+    rate_hz: 1
+  episode_result:
+    schema: json_utf8
+    rate_hz: 1
+  violation:
+    schema: json_utf8
+    rate_hz: 1
+  tick:
+    schema: timer_tick
+    rate_hz: 1
+  target_pose:
+    schema: pose7d_f32
+    rate_hz: 1
+  move_done:
+    schema: json_utf8
+    rate_hz: 1
+  read_result:
+    schema: json_utf8
+    rate_hz: 1
+  plan_done:
+    schema: json_utf8
+    rate_hz: 1
+outputs:
+  target_request:
+    schema: json_utf8
+    latency_class: best_effort
+  episode_feedback:
+    schema: json_utf8
+    latency_class: best_effort
+  read_move:
+    schema: json_utf8
+    latency_class: best_effort
+  read_request:
+    schema: json_utf8
+    latency_class: best_effort
+  grasp_target:
+    schema: pose7d_f32
+    latency_class: best_effort
+params:
+  max_retries:
+    type: int
+    default: 8
+    range:
+    - 0
+    - 8
+embodiment:
+  arm:
+  - franka
+  gripper: any
+safety_class: decision
+eval:
+  suite: desk-t2-scan
+  pass_rate: 0.0
+  last_run: '2026-08-13'
+origin: agent-authored
+source: skills/t2-scan-tsm/t2_scan_tsm.py
