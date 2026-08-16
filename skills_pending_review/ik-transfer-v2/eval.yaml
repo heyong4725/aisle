@@ -1,0 +1,15 @@
+# Shipped eval suite (CAP-6) for ik-transfer-v2. Population: a
+# contiguous T1@L1 dev-seed window containing the discovered failure
+# (seed 33, `collision` under the stock straight transfer, run
+# 20260814-235921-b5176c) plus its unmodified neighbours as regression
+# guard. The graph is the campaign topology with this skill at the
+# trajectory slot; nothing else differs from expert_t1. min_pass_rate
+# 0.75 tolerates one sim flake in 8 without overclaiming; the evalcard
+# records the measured rate either way.
+suite: t1-l1-routed-transfer
+graph: graphs/agent_eval_ik_transfer_v2.yaml
+tier: T1
+embodiment: franka
+episodes: 8
+seeds: 30,31,32,33,34,35,36,37
+min_pass_rate: 0.75

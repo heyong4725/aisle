@@ -1,0 +1,38 @@
+id: t2-scan-pose
+kind: node
+provides:
+- object_pose
+- scan_candidates
+requires: []
+inputs:
+  bridge_info:
+    schema: json_utf8
+    rate_hz: 1
+  rgb_overhead:
+    schema: rgb8_image
+    rate_hz: 30
+  depth_overhead:
+    schema: depth_f32
+    rate_hz: 15
+  target_request:
+    schema: json_utf8
+    rate_hz: 1
+  reset_done:
+    schema: reset_done_u32
+    rate_hz: 1
+outputs:
+  target_pose:
+    schema: pose7d_f32
+    latency_class: best_effort
+embodiment:
+  arm:
+  - franka
+  - so101
+  gripper: any
+safety_class: perception
+eval:
+  suite: desk-t2-scan
+  pass_rate: 0.3333
+  last_run: '2026-08-13'
+origin: agent-authored
+source: skills/t2-scan-pose/t2_scan_pose.py
