@@ -17,7 +17,7 @@ caveats are stated where the measurement earned them.)
 | zero unclamped guard violations | every campaign record | holds across ~40 agent sessions |
 | post-mortems | analysis/postmortems | per-student "strangest thing" entries |
 
-## Phase 3 DoD (§8.4) — one item NOT MET, the rest complete
+## Phase 3 DoD (§8.4) — CLOSED 2026-08-16: five of six met, one NOT MET
 
 | DoD item | artifact | headline |
 |---|---|---|
@@ -25,8 +25,8 @@ caveats are stated where the measurement earned them.)
 | fleet-scaling plots (A5) | analysis/a5 (findings + SVG) | throughput 1.6/4.1/4.3 succ/hr at N=1/4/8 — knee at ~4 lanes/host; token super-linearity +22%/+31%; quality contention-invariant |
 | agent-comparison table (A4) | analysis/a4/a4_findings.md | both agents solve T1 at 1.0/1.0; Claude ~2× cheaper end-to-end; Codex faster to first success then over-iterates (n=1/arm) |
 | cross-embodiment table | SO-101 profile, M0-5 gate, ADR-27 lineage | profile swap ≥0.80; variant nodes documented |
-| skill library ≥5 evalcarded | registry + skills/ | **NOT MET: 2 on mainline** (s1-driver-v2, s3-driver-v1). t2-scan-pose, t2-scan-tsm and ik-transfer-v2 registered inside campaign worktrees and their source is GONE (#245) — they cannot be counted, reviewed, or recovered |
-| agent PRs reviewed with written notes | analysis/reports/agent_pr_review_notes.md | **DONE** — owner-signed 2026-08-15 (#242). Two of the first pass's three flags did not survive checking: both were harness gaps (#243 eval floor, fixed; #244 detector import, dropped as misattributed), not agent misbehaviour. Review was possible for **2 of 5** skills |
+| skill library ≥5 evalcarded | registry + skills/ | **NOT MET — CLOSED 2026-08-16 at 2** (s1-driver-v2, s3-driver-v1). Ceiling is 3 even under the most favourable outcome of the open recovery (PR #252): ADR-37's floor refuses t2-scan-pose at 0.33 and t2-scan-tsm at 0.0 on their own evalcards. See "Closing the skill-library row" below |
+| agent PRs reviewed with written notes | analysis/reports/agent_pr_review_notes.md | **DONE** — owner-signed 2026-08-15 (#242). **All three** of the first pass's flags were harness findings, not agent misbehaviour (#243 eval floor fixed; #244 detector import dropped as misattributed, and #253 showed the alleged import was never in the file; #245 retention). Review was possible for **2 of 5** skills |
 
 ## The two headline claims, as measured
 
@@ -36,15 +36,23 @@ caveats are stated where the measurement earned them.)
 - **H4/substrate:** supported on efficiency at T1 (A3), stress-tested by
   H3's null (the substrate did not make hard tiers easy — honest scope).
 
-## Correction (2026-08-15)
+## Correction (2026-08-15, amended 2026-08-16)
 
 As first published, the skill-library row read "5" and named three skills
-whose code was already unrecoverable. The row is the one place this report
+that could not be produced for review. The row is the one place this report
 overclaimed, and the mechanism is worth stating plainly because it is a
 finding in its own right: campaign worktrees live under gitignored `runs/`
-with no archival step, so `skills_after` in a campaign record could name a
-skill long after its source ceased to exist. Searched exhaustively — all 49
-branches, the filesystem, and 51 dangling git objects — the three are gone.
+with no archival step, so `skills_after` in a campaign record can name a
+skill whose source is nowhere to be found.
+
+The original wording said the three were "gone", on a search of all 49
+branches, the operator filesystem, and 51 dangling git objects. **That was
+scoped too confidently.** The search was exhaustive for the operator
+checkout; it could not see other machines, and PR #252 subsequently staged
+source for all three, claiming campaign worktrees that do not exist in this
+checkout. That claim is UNVERIFIED as of this writing (see PR #252). The
+honest statement is that the sources were not retrievable from the reviewed
+environment — not that they ceased to exist.
 
 `analysis/h3/desk/desk_analysis.json` still names them in `skills_after`,
 correctly: they WERE registered and they DID ride into later tiers, so the
@@ -52,7 +60,48 @@ H3 reuse mechanism claim stands. What does not stand is counting them toward
 a library DoD that presumes a reviewable, mergeable artifact (§9.4).
 
 #245 fixes the retention hole for future campaigns (`refs/campaign/<name>`);
-it recovers nothing.
+it recovers nothing retroactively.
+
+## Closing the skill-library row (2026-08-16)
+
+**Closed NOT MET at 2.** Recorded as a decision rather than left pending,
+because the outcome no longer depends on anything still open.
+
+The library holds `s1-driver-v2` and `s3-driver-v1`, both evalcarded at 1.0
+and both human-merged. The DoD asks for ≥5.
+
+The open recovery (PR #252) cannot change the verdict, only the count, and
+its ceiling is 3:
+
+| candidate | class | evalcard | under ADR-37's floor |
+|---|---|---|---|
+| `t2-scan-pose` | perception | 0.33 | refused (declares 0.0, measures 0.33) |
+| `t2-scan-tsm` | decision | 0.0 | refused twice over |
+| `ik-transfer-v2` | **motion** | **1.0** (min 0.75) | clears — a live candidate |
+
+So even if #252's provenance confirms, its eval graphs are recovered, and
+`ik-transfer-v2` is merged, the library reaches 3. The row is NOT MET on the
+arithmetic, independently of the provenance question.
+
+**What the number means, and what it does not.** It is not evidence that
+agents failed to produce reusable skills — they produced five, and the H3
+campaign shows real cross-suite reuse (`s3-driver-v1` appears verbatim in a
+desk deliverable). Two things kept the library small, and neither is about
+agent capability:
+
+1. **Retention.** Three skills were authored inside campaign worktrees that
+   the protocol never archived (#245). A library DoD counts artifacts that
+   survive to review; the protocol did not make them survive.
+2. **The tiers.** T2 and T3 remain unsolved at session budgets, and the
+   skills authored against them scored 0.33 and 0.0 — they are genuinely
+   unproven, and ADR-37's floor is doing exactly its job by refusing them.
+   A library of 5 would have required solving T2, which no arm did.
+
+Read together with the H3 verdict (UNDECIDED, no measured speedup) the
+result is consistent: **the desk ladder's difficulty spacing, not the
+library mechanism, is what this phase measured.** The mechanism works; there
+were not enough qualifying skills for it to be exercised at the size the DoD
+anticipated.
 
 ## What the governance review changed (2026-08-15)
 
