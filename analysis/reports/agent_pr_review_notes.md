@@ -112,10 +112,28 @@ against the agents and three against the machinery that reviews them.
   claim is checkable against the codebase independently of it:
   `l2_pose.py` genuinely exports the three symbols above.
 - **[OWNER] decision (2026-08-15):** not a merge decision — there is
-  nothing to merge (see the retention note below). Recorded as:
-  **reviewed from campaign metadata; source not retained; no fault found
-  in the skill.** The second correction strengthens the "no fault"
-  half: the one concrete allegation against this skill was mistaken.
+  nothing to merge (superseded — see below).
+- **[UPDATE 2026-08-16, post-#252 recovery]:** source recovered and
+  re-evaluated. Its shipped suite targets `graphs/agent_campaign.yaml`
+  — the mutable campaign DELIVERABLE, which the later T4 session
+  overwrote (a first rerun scored 0/3 against the wrong-era graph; the
+  era-fragility lesson: eval suites must pin graph content, not a
+  path). On the era-correct deliverable (recovered from the
+  `h3/keep-L-pre-T3-r2` audit snapshot): **2/3**, seeds 2 and 4 — the
+  stock pipeline's exact failure classes — succeeding, wrong_object 0.
+  Owner instructed a merge via the #258 pattern; integration to main's
+  lockstep runtime needed a one-line disclosed port
+  (`aisle.turn_node.Node` drop-in). The registration measurement on
+  main's `expert_t2` topology then scored **1/3 — below ADR-37's 0.5
+  floor — and registration REFUSED.** Across three runs (original card
+  1/3, era-correct 2/3, main 1/3 = 4/9 aggregate) every seed has both
+  passed and failed somewhere: the #153 T2 wall-coupled flakiness
+  class dominates the estimate at n=3. **Recorded as: recovered,
+  authentic, re-evaluated; registration refused by the ADR-37 floor on
+  the mainline measurement; PARKED in `skills_pending_review/` with
+  the full record.** A future registration attempt should pre-register
+  a larger-n suite (n≥9) so the estimate outruns the flake class —
+  never rerun-until-pass at n=3.
 
 ## 4. t2-scan-tsm (UNREVIEWABLE — source not retained, #245)
 
@@ -133,8 +151,12 @@ against the agents and three against the machinery that reviews them.
   load before an eval rollout is spent. Both merged skills already chose
   0.5, so nothing was evicted.
 - **[OWNER] decision:** DECLINE stands on the evalcard alone — a 0.0
-  skill cannot enter the hub, and this one no longer exists to enter it.
-  Recorded as: **declined on its evalcard; source not retained.**
+  skill cannot enter the hub. **[UPDATE 2026-08-16]:** source recovered
+  (#252) and its suite re-run with the keep-ref-recovered eval graph:
+  **0/2 (seed 1 collision, seed 3 never_grasped) — the 0.0 evalcard
+  reproduced exactly.** The card was honest; the DECLINE is now
+  affirmed on reproduced evidence, doubly so under ADR-37's floor.
+  Recorded as: **declined; card reproduced; parked as history.**
 
 ## 5. ik-transfer-v2 (UNREVIEWABLE — source not retained, #245)
 
