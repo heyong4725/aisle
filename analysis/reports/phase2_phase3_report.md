@@ -25,7 +25,7 @@ caveats are stated where the measurement earned them.)
 | fleet-scaling plots (A5) | analysis/a5 (findings + SVG) | throughput 1.6/4.1/4.3 succ/hr at N=1/4/8 — knee at ~4 lanes/host; token super-linearity +22%/+31%; quality contention-invariant |
 | agent-comparison table (A4) | analysis/a4/a4_findings.md | both agents solve T1 at 1.0/1.0; Claude ~2× cheaper end-to-end; Codex faster to first success then over-iterates (n=1/arm) |
 | cross-embodiment table | SO-101 profile, M0-5 gate, ADR-27 lineage | profile swap ≥0.80; variant nodes documented |
-| skill library ≥5 evalcarded | registry + skills/ | **NOT MET — CLOSED 2026-08-16 at 2** (s1-driver-v2, s3-driver-v1). Source for the other three is recovered and provenance-verified (#252), and the ceiling is still 3: ADR-37's floor refuses t2-scan-pose at 0.33 and t2-scan-tsm at 0.0 on their own evalcards. See "Closing the skill-library row" below |
+| skill library ≥5 evalcarded | registry + skills/ | **NOT MET — CLOSED 2026-08-16 at 3** (s1-driver-v2, s3-driver-v1, ik-transfer-v2). The library reached its ceiling: source for the recovered three is provenance-verified (#252), the motion-class `ik-transfer-v2` was reviewed and human-merged (#258, evalcard 1.0), and ADR-37's floor refuses t2-scan-pose at 0.33 and t2-scan-tsm at 0.0 on their own evalcards. See "Closing the skill-library row" below |
 | agent PRs reviewed with written notes | analysis/reports/agent_pr_review_notes.md | **DONE** — owner-signed 2026-08-15 (#242). **All three** of the first pass's flags were harness findings, not agent misbehaviour (#243 eval floor fixed; #244 detector import dropped as misattributed, and #253 showed the alleged import was never in the file; #245 retention). Review was possible for **2 of 5** skills |
 
 ## The two headline claims, as measured
@@ -76,27 +76,37 @@ a route a reviewer on another machine could have taken.
 
 ## Closing the skill-library row (2026-08-16)
 
-**Closed NOT MET at 2.** Recorded as a decision rather than left pending,
-because the outcome no longer depends on anything still open.
+**Closed NOT MET at 3** (amended 2026-08-16 after #258). Recorded as a
+decision rather than left pending, because the outcome never depended on
+anything still open.
 
-The library holds `s1-driver-v2` and `s3-driver-v1`, both evalcarded at 1.0
-and both human-merged. The DoD asks for ≥5.
+The library holds `s1-driver-v2`, `s3-driver-v1`, and — since the
+owner-merged registration in #258 — **`ik-transfer-v2`**, the recovered
+motion-class trajectory skill, evalcard **1.0** on the `t1-l1-routed-transfer`
+suite. All three are evalcarded and human-merged. The DoD asks for ≥5.
 
-The recovery (#252, merged; provenance verified on the campaign machine)
-changed the count's ceiling, not the verdict. That ceiling is 3:
+The recovery (#252, provenance verified on the campaign machine) changed the
+count, not the verdict, and it has now been taken to its ceiling of 3:
 
 | candidate | class | evalcard | under ADR-37's floor |
 |---|---|---|---|
 | `t2-scan-pose` | perception | 0.33 | refused (declares 0.0, measures 0.33) |
 | `t2-scan-tsm` | decision | 0.0 | refused twice over |
-| `ik-transfer-v2` | **motion** | **1.0** (min 0.75) | clears — a live candidate |
+| `ik-transfer-v2` | **motion** | **1.0** (min 0.75) | cleared — **registered, #258** |
 
-All three eval graphs are now accounted for — two staged with the sources,
-and `t2-scan-pose`'s eval points at `graphs/agent_campaign.yaml`, which
-exists — so all three are re-evaluable and the reviews §8.4 asks for can be
-done properly. Even so, registering `ik-transfer-v2` takes the library to 3.
-The row is NOT MET on the arithmetic, and was never contingent on the
-recovery.
+All three eval graphs are accounted for — `ik-transfer-v2`'s is now
+`graphs/eval_ik_transfer_v2.yaml`, frozen with its ADR-30 turn plan under
+ADR-36 (`env_hash` 73 → **75 files**); `t2-scan-tsm`'s is staged with its
+source; `t2-scan-pose`'s eval points at `graphs/agent_campaign.yaml`. So all
+three are re-evaluable and the §8.4 reviews can be done properly.
+
+**`ik-transfer-v2` is the §9.4 trust-tier case completing end to end**, and
+it is worth stating as such: an agent authored a `safety_class: motion` node
+in response to a trace-cited collision, shipped it with an eval suite and a
+regression population, measured 1.0, had it lost to a retention gap, had it
+recovered and provenance-verified, reviewed, and then human-merged into the
+registry. That is the full governance path §9.4 specifies, exercised once,
+on the class that matters most.
 
 **The open work this leaves** is a real merge question rather than a DoD
 one: `ik-transfer-v2` is motion-class with a measured 1.0, the trust-tier
