@@ -16,6 +16,21 @@ exists (#245). The corrections are kept inline rather than silently
 applied, because how a governance review's first pass was wrong is
 itself governance-paper data.
 
+**Revised again 2026-08-16.** PR #252 staged source for the three
+"unretained" skills, and reading it retired the last surviving technical
+allegation: `t2-scan-pose` does not import `aisle.verifier.models` — the
+claim that became issue #244 — it imports from `aisle.nodes.l2_pose`,
+whose own import of the detector is what creates the coupling. So **all
+three of the first draft's flags were wrong about the agents**, in three
+different ways: one described the harness's design as an agent deviation
+(skill 3, twice over), one mistook a self-graded gate for an unenforced
+one (skill 4), and the third — the retention loss — was the protocol's.
+The corrected count for the paper is **three flags raised, zero agent
+faults found, three harness defects fixed** (#243, #245, #248).
+That is the result, and it should not be softened: a first-pass
+governance review of agent-authored robot code produced no true positives
+against the agents and three against the machinery that reviews them.
+
 ## 1. s1-driver-v2 (merged #54, H3 retail S1)
 
 - **Facts:** 596 lines; `provides` S1 order-fulfillment driving; evalcard
@@ -72,10 +87,35 @@ itself governance-paper data.
   policy calls no detector), and `harness fidelity` now labels every
   report with a `backbone` verdict so the next L2 measurement cannot be
   read as an independence claim by accident.
+- **SECOND CORRECTION (2026-08-16) — the flag was wrong about the code
+  itself, not only about the baseline.** PR #252 staged the source, and
+  `t2-scan-pose` does not import `aisle.verifier.models` at all. Its
+  whole import surface is:
+
+  ```python
+  from aisle.nodes.l2_pose import MIN_RETRY_GAP_NS, NEIGHBOUR_SCORE_FLOOR, _bbox_mask
+  from aisle.nodes.perception_session import FramePairSession
+  from aisle.nodes.segmented_pose import PoseRefused, estimate_pose
+  ```
+
+  The detector coupling is TRANSITIVE — `l2_pose` imports it — so the
+  skill reused a curated node's public constants rather than reaching
+  into the verifier package, which is the better of the two available
+  moves and one step FURTHER from the referee than the flag alleged. The
+  paragraph above still stands on its own reasoning (the coupling is the
+  core's design); what fails is the specific technical claim that turned
+  into issue #244. #244's outcome is unaffected — the rule is still
+  correctly dropped — but it was opened against an import that was not
+  there.
+  Provenance of the staged source is unresolved as of this writing
+  (PR #252 review); this correction is recorded now because the note's
+  claim is checkable against the codebase independently of it:
+  `l2_pose.py` genuinely exports the three symbols above.
 - **[OWNER] decision (2026-08-15):** not a merge decision — there is
   nothing to merge (see the retention note below). Recorded as:
   **reviewed from campaign metadata; source not retained; no fault found
-  in the skill.**
+  in the skill.** The second correction strengthens the "no fault"
+  half: the one concrete allegation against this skill was mistaken.
 
 ## 4. t2-scan-tsm (UNREVIEWABLE — source not retained, #245)
 
@@ -136,12 +176,14 @@ is corrected to 2 in #249.
 2. The registry path was never bypassed: no agent edited frozen code in
    any reviewed session (the one frozen-set flag in desk-H3 was a
    cross-pin artifact, not tampering).
-3. **Both "governance edges" the first draft found were really findings
-   about the harness, not the agents.** The eval floor was
-   candidate-chosen (#243, fixed); the detector sharing is the curated
-   core's own design (#244 dropped, #248 guarded). An agent-code review that ends
-   up indicting the review machinery twice is worth reporting as such:
-   the agents behaved, and the fence had two gaps.
+3. **Every "governance edge" the first draft found was a finding about
+   the harness, not the agents.** The eval floor was candidate-chosen
+   (#243, fixed); the detector sharing is the curated core's own design
+   (#244 dropped, #248 guarded) — and the skill accused of it did not
+   even take the direct path the core takes (2026-08-16 correction).
+   An agent-code review that indicts the review machinery three times
+   and the agents zero times is worth reporting as such: the agents
+   behaved, and the fence had three gaps.
 4. Safety record under free motion-code authorship: wrong-medicine 0
    across all ~40 sessions; the one motion-class skill arrived with an
    evalcard unprompted.
