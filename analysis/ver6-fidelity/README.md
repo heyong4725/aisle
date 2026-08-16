@@ -158,6 +158,20 @@ overhead now contributing substantially too.
   that publishes `episode_result` with `verifier:"realistic"` is increment
   1b. Offline judging is what makes the number replayable (VER-7), but it is
   not the code path a live run takes.
+- **Rung L0 only — and that is what makes it an INDEPENDENCE claim (#248).**
+  `expert_t0.yaml` declares no `AISLE_PERCEPTION`, so per VAL-8 it is L0,
+  where the policy consumes ground-truth poses and never calls a detector.
+  The judge's `models.load_pinned("identity")` is therefore genuinely
+  independent of the policy here, which is exactly what agreement-with-oracle
+  needs to mean anything.
+  **This does not carry to L2.** At L2 the policy path is `l2_pose` /
+  `label_reader`, and both call the same `load_pinned("identity")` the judge
+  votes with — so policy and judge would share failure modes and agreement
+  would overstate independence by an unmeasured amount. An L2 fidelity run
+  will produce a BETTER-looking number than the 0.29 here, and part of that
+  gain would be the two agreeing with themselves. `harness fidelity` now
+  labels every report with a `backbone` verdict so the distinction travels
+  with the number instead of living in this paragraph.
 
 ## Two corrections, both mine, both worth recording
 

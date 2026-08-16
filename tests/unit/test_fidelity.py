@@ -579,3 +579,61 @@ def test_first_event_must_name_a_camera_that_actually_saw_a_non_target():
     frames contain no non-target makes the sidecar self-inconsistent."""
     with pytest.raises(EvidenceError, match="none of that camera's frames"):
         validate_sidecar_record(_per_camera_latch_record(named="overhead"))
+
+
+def _paired_run(tmp_path, manifest):
+    """One agreeing episode — enough to produce a report; the backbone
+    verdict is what these tests are about."""
+    votes = dict.fromkeys(STAGES, "pass")
+    _write_run(
+        tmp_path,
+        [_oracle("ep-0000", True)],
+        [_record("ep-0000", True, votes=votes)],
+        manifest=manifest,
+    )
+
+
+def test_l2_fidelity_is_labelled_as_a_shared_backbone_measurement(tmp_path):
+    """#248: at rung L2 the policy (l2_pose, label_reader) and the judge
+    (verifier/realistic.py) both call load_pinned("identity"), so their
+    errors correlate and agreement overstates independence. The report
+    must SAY so — the trap is that an L2 run yields a better-looking
+    number than L0 and reads as the pipeline improving."""
+    _paired_run(tmp_path, {"run_id": "r1", "seeds": [0], "perception": "L2"})
+    report = fidelity_report(tmp_path)
+    assert report["backbone"]["independent"] is False
+    assert report["backbone"]["rung"] == "L2"
+    assert "load_pinned" in report["backbone"]["detail"]
+
+    # durable: quoting the number from the manifest carries the caveat too
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    assert manifest["verifier_fidelity"]["backbone"]["independent"] is False
+
+
+def test_l0_and_l1_fidelity_are_independent_measurements(tmp_path):
+    """#248: below L2 the policy consumes ground-truth or segmentation
+    poses and never calls the judge's detector — those runs (every VER-6
+    number reported to date, measured on expert_t0 at the default rung)
+    are genuinely independent and must not be caveated."""
+    for rung in ("L0", "L1", None):
+        manifest = {"run_id": "r1", "seeds": [0]}
+        if rung is not None:
+            manifest["perception"] = rung
+        _paired_run(tmp_path, manifest)
+        report = fidelity_report(tmp_path)
+        assert report["backbone"]["independent"] is True, rung
+        assert report["backbone"]["rung"] == (rung or "L0")
+
+
+def test_an_unknown_rung_is_not_an_independence_claim(tmp_path):
+    """#248 fails CLOSED, following the rung reader's own rule (PR #135):
+    a rung it cannot resolve must not be reported as independent. The
+    diagnostic --no-manifest path has no rung at all, and a garbage value
+    is unknown rather than absent."""
+    _paired_run(tmp_path, None)
+    report = fidelity_report(tmp_path, write_manifest=False, expect_episodes=1)
+    assert report["backbone"]["independent"] is None
+    assert report["backbone"]["rung"] is None
+
+    _paired_run(tmp_path, {"run_id": "r1", "seeds": [0], "perception": "L9"})
+    assert fidelity_report(tmp_path)["backbone"]["independent"] is None
