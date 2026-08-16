@@ -90,15 +90,21 @@ count, not the verdict, and it has now been taken to its ceiling of 3:
 
 | candidate | class | evalcard | under ADR-37's floor |
 |---|---|---|---|
-| `t2-scan-pose` | perception | 0.33 | refused (declares 0.0, measures 0.33) |
+| `t2-scan-pose` | perception | 0.33 | refused — re-measured under #260: era-correct graph 2/3, MAINLINE 1/3 < 0.5 floor; parked (#153 flake class dominates n=3; future path = pre-registered n≥9) |
 | `t2-scan-tsm` | decision | 0.0 | refused twice over |
 | `ik-transfer-v2` | **motion** | **1.0** (min 0.75) | cleared — **registered, #258** |
 
 All three eval graphs are accounted for — `ik-transfer-v2`'s is now
 `graphs/eval_ik_transfer_v2.yaml`, frozen with its ADR-30 turn plan under
 ADR-36 (`env_hash` 73 → **75 files**); `t2-scan-tsm`'s is staged with its
-source; `t2-scan-pose`'s eval points at `graphs/agent_campaign.yaml`. So all
-three are re-evaluable and the §8.4 reviews can be done properly.
+source; `t2-scan-pose`'s eval pointed at `graphs/agent_campaign.yaml` — the mutable
+deliverable path, which the T4 session later overwrote (the era-fragility
+lesson: eval suites must pin graph content). All three §8.4 reviews HAVE now
+been completed on reproduced evidence (#258, #260): ik-transfer-v2 merged,
+t2-scan-tsm's 0.0 card reproduced 0/2 and declined, t2-scan-pose measured on
+main's lockstep runtime at 1/3 and refused by the ADR-37 floor — the floor's
+first live enforcement, against an owner-instructed merge, three days after
+the finding that created it.
 
 **`ik-transfer-v2` is the §9.4 trust-tier case completing end to end**, and
 it is worth stating as such: an agent authored a `safety_class: motion` node
