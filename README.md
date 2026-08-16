@@ -78,16 +78,24 @@ Full record: [`analysis/reports/phase2_phase3_report.md`](analysis/reports/phase
 | Phase 0 — world bring-up | SPEC 090 | signed off (M0) |
 | Phase 1 — registry, validator, harness | validator + 12 manifests + H1 table | complete |
 | **Phase 2** — the full autoresearch loop | 8 items | **complete** — pass@k curves T1/T2, verifier fidelity, iteration latency, A1/A3/A7, zero unclamped guard violations, post-mortems |
-| **Phase 3** — skills, fleet, cross-embodiment | 6 items | **closed: 5 met, 1 NOT MET** — the skill library reached 2 evalcarded skills against a DoD of ≥5 |
+| **Phase 3** — skills, fleet, cross-embodiment | 6 items | **closed: 5 met, 1 NOT MET** — the skill library reached 3 evalcarded skills against a DoD of ≥5 |
 
-The one unmet row is stated plainly rather than rounded: the library holds
-`s1-driver-v2` and `s3-driver-v1`. Three further skills were authored during
-campaigns; source for all three was recovered and provenance-verified
-(#252), but ADR-37's registry floor refuses `t2-scan-pose` (0.33) and
-`t2-scan-tsm` (0.0) on their own evalcards, so the reachable ceiling is 3.
+The one unmet row is stated plainly rather than rounded. The library holds
+`s1-driver-v2`, `s3-driver-v1`, and **`ik-transfer-v2`** — the last a
+`safety_class: motion` trajectory skill an agent authored against a
+trace-cited collision, evalcard 1.0, reviewed and human-merged (#258). Two
+further campaign skills exist and are provenance-verified (#252), but
+ADR-37's registry floor refuses `t2-scan-pose` (0.33) and `t2-scan-tsm` (0.0)
+on their own evalcards, so **3 was the ceiling and the library reached it**.
 **T2/T3 being unsolved at session budgets is why the library is small** — not
 agent capability; the reuse mechanism demonstrably works (`s3-driver-v1`
 appears verbatim in a desk deliverable, a retail→desk cross-suite transfer).
+
+`ik-transfer-v2` is also the §9.4 trust-tier path completing end to end:
+authored by an agent in the governance-critical motion class, shipped with
+its own eval suite and regression population, lost to the retention gap,
+recovered and provenance-verified, reviewed, then human-merged into the
+registry. Exercised once, on the class that matters most.
 
 Exact graph/manifest/CLI/ADR catalogs are generated, never hand-counted:
 [`docs/generated/project-inventory.md`](docs/generated/project-inventory.md).
@@ -181,7 +189,8 @@ analysis/          committed experiment findings: hypotheses (h1..h4),
                    ablations (a1, a3, a4, a5, a6), tiers (t2, t3, t4),
                    ver6-fidelity, s1-determinism, postmortems, transcripts,
                    reports/ (phase2_phase3_report, agent_pr_review_notes)
-skills_pending_review/  campaign-authored skills staged for §9.4 review
+skills_pending_review/  campaign skills recovered but NOT registered
+                   (t2-scan-pose, t2-scan-tsm — both refused by ADR-37's floor)
 docs/              guides, design doc, contributor wiki, decisions/ (ADRs),
                    generated/project-inventory.md (source-derived catalogs)
 runs/              gitignored: traces, videos, run manifests
