@@ -1,7 +1,8 @@
 # Next phases — the model tier and the road to hardware (PROPOSED)
 
-Status: PROPOSED 2026-08-16, drafted at the owner's direction at the
-close of Phases 2–3 (`analysis/reports/phase2_phase3_report.md`). This
+Status: **RATIFIED by the owner 2026-08-17** ("ratify the plan, start
+the SmolVLA bring-up"). Originally PROPOSED 2026-08-16, drafted at the
+owner's direction at the close of Phases 2–3 (`analysis/reports/phase2_phase3_report.md`). This
 is the executable plan behind the technical report's model agenda
 (§10) and roadmap (§14): what gets built, in what order, what each
 step measures, and which decisions are the owner's. Phase numbering
