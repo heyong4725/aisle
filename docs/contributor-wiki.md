@@ -960,10 +960,17 @@ protocols and limitations.
 | M0 expert baseline | T0 expert passed 49/50 (0.98); the milestone replicate independently re-satisfied the acceptance gate. | [`ADR-M0`](decisions/ADR-M0.md) |
 | H1 zero-shot composition | 40/40 first validation, but launch+valid only 15% and 65% by agent arm; target not met. Missing external capabilities dominated. | [`h1_findings.md`](../analysis/h1/h1_findings.md) |
 | H2 iterative improvement | Both independent arms met the ≥0.9 supported-performance target; held-out 1.0 and 0.875. | [`h2_findings.md`](../analysis/h2/h2_findings.md) |
-| H3 skill accumulation | Verdict pending/undecidable: no admissible library cell survived the full drift audit. | [`h3_findings.md`](../analysis/h3/h3_findings.md) |
+| H3 skill accumulation | UNDECIDED on both ladders. Retail: no admissible library cell survived the drift audit. Desk (T1→T4): `met: null`, 13 caveats; T4 ratio ~1.03 (parity), T2/T3 unsolved by either arm. **The finding is the ladder's difficulty spacing, not the library** — no tier sits in the band between trivial and impossible where a speedup could show. Reuse verified live (`s3-driver-v1` embedded verbatim in a desk deliverable). | [`h3_findings.md`](../analysis/h3/h3_findings.md), [`desk_findings.md`](../analysis/h3/desk/desk_findings.md) |
 | H4 iteration latency | T0 hot swap median 32.4 s vs relaunch 41.8 s, n=6 each; development evidence is explicitly unattested. | [`h4_findings.md`](../analysis/h4/h4_findings.md) |
-| H5 delivery precision | No delivery-class held-out failures in selected committed H3 records; placement failures remain and exposure is limited. | H3 finding section above |
+| H5 delivery precision | 0 wrong-object in 224/224 H2 episodes and 0 in every campaign since — desk H3, A3, A4, A6, and all 13 A5 fleet lanes under 8-way concurrent iteration (~40 agent sessions). A denominator, not an absolute. | [`h2_findings.md`](../analysis/h2/h2_findings.md), [`a5_findings.md`](../analysis/a5/a5_findings.md) |
 | A1 composition ablation | Zero-shot composition has a large end-to-end T1 tax; iterative agents close it. S1 comparison is inconclusive. | [`a1_table.md`](../analysis/a1/a1_table.md) |
+| A3 params-only vs params+code | The constrained arm won on efficiency at equal quality: 1.0/1.0 both arms, but 200k vs 396k tokens and 1 vs 4 dev rollouts. Schema-as-subsidy where the registry covers the task. n=1/arm. | [`a3_findings.md`](../analysis/a3/a3_findings.md) |
+| A4 Claude Code vs Codex | Both solve T1 at 1.0/1.0, 0 wrong-object. Codex first-success sooner (8.1 vs 9.7 min) then over-iterates; Claude ~2× cheaper end-to-end (186k vs 364k). Style, not capability. n=1/arm, lower bound. | [`a4_findings.md`](../analysis/a4/a4_findings.md) |
+| A5 fleet scaling | Throughput saturates at ~4 lanes/host: 1.6 → 4.1 → 4.3 succ/hr at N=1/4/8. Quality contention-invariant (holdout 1.0 every lane); token super-linearity +22%/+31%. | [`a5_findings.md`](../analysis/a5/a5_findings.md) |
+| A6 teleport vs behavioral reset | Teleport 1.00 pass@1 / 6.4 min; behavioral 0.80 / 9.6 min at +19 s per episode, 7 success + 3 audited fallbacks. The reset is itself a manipulation task that fails sometimes. | [`a6_findings.md`](../analysis/a6/a6_findings.md) |
+| Tier curves T1/T2 | T1 expert 1.0 per rung; **T2 expert 0.08** (2/25) — the deliberate perception wall. Label reads are accurate when parked (0 wrong reads); tour mechanics dominate the failure budget. | [`t2 findings`](../analysis/t2/t2_curve_findings.md) |
+| Phase 2 / Phase 3 DoD | **Both closed 2026-08-16.** Phase 2 complete (8/8). Phase 3 five of six — skill library NOT MET at 2 of ≥5; reachable ceiling was 3 because ADR-37's floor refuses two T2-authored skills at 0.33 and 0.0. | [`phase2_phase3_report.md`](../analysis/reports/phase2_phase3_report.md) |
+| §8.4 governance review | Three flags raised against agent code; **all three were harness defects** (self-graded eval floor → ADR-37; unretained deliverables → `refs/campaign/`; a validator rule that would have rejected the frozen corpus, dropped). Zero agent faults. First pass could review only 2 of 5 skills. | [`agent_pr_review_notes.md`](../analysis/reports/agent_pr_review_notes.md) |
 | S1 reproducibility | ADR-25 fixed the startup race; ADR-26 makes full-episode outcomes statistical. Wall-coupled command/control timing remains an issue #71 residual. | [`ADR-25`](decisions/ADR-25.md), [`ADR-26`](decisions/ADR-26.md) |
 | Realistic verifier fidelity | Current VER-13 recomputation over the same 31 episodes: agreement 0.45, 0/6 false success, 17/25 false fail. The preserved pre-amendment finding was 0.29 / 0 / 0.88. Still conservative and not operationally useful as sole judge. | [`first finding`](../analysis/ver6-fidelity/README.md), [`VER-13`](../specs/040-verifier-reset.md) |
 
@@ -971,6 +978,17 @@ The most important research lesson so far is that **infrastructure honesty is
 part of agent capability measurement**. Registry truth, treatment isolation,
 runtime identity, reset boundaries, and evidence admissibility changed several
 headline interpretations.
+
+The Phase-3 governance review sharpened that into something more specific.
+Reviewing every agent-authored skill produced **three findings against the
+harness and none against the agents**: a registration gate whose passing grade
+the candidate chose, a campaign protocol that left agent code undiscoverable to
+any reviewer off the campaign machine, and a proposed validator rule that would
+have rejected two frozen expert graphs — aimed at an import the flagged skill
+never had. The agents behaved; the fence had gaps they did not exploit. When
+this project reports on governing agent-authored robot code, that asymmetry —
+and the fact that the first pass could only examine 2 of 5 skills — is part of
+the result, not a footnote to it.
 
 ## 16. Known limitations and open work
 
@@ -994,7 +1012,12 @@ headline interpretations.
 ### Tasks and embodiments
 
 - Retail uses known-map waypoint navigation, not autonomous mapping.
-- Behavioral reset and real-hardware recovery are not implemented.
+- Behavioral reset **is** implemented in simulation and measured (A6: 0.80
+  pass@1, +19 s/episode, 7 success + 3 audited fallbacks). Real-hardware
+  recovery is not implemented.
+- **T2 and T3 are unsolved by any agent arm at session budgets.** This is the
+  single largest open scientific item: it caps the skill library, and it is why
+  H3's accumulation question could not be asked on the desk ladder.
 - Powder transfer remains gated; the target ranges and solver budget cannot be
   filled honestly until the spike decision.
 - Multi-robot, humanoid, dynamic obstacle, liquid, and regulated-workflow

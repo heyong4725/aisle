@@ -1,6 +1,6 @@
 # AISLE research program: agents, evidence, and model orchestration
 
-**Technical framing, August 2026.** Status snapshot: 2026-08-12, commit `2b4b4cc`. Any verdict restated here is a dated summary for context; the [README status table](../README.md#status) is canonical and wins on conflict (issue #142). This report states the research object,
+**Technical framing, August 2026.** Status snapshot: 2026-08-16, commit `0035c45`; design-doc Phases 2 and 3 both closed. Any verdict restated here is a dated summary for context; the [README status table](../README.md#status) is canonical and wins on conflict (issue #142). This report states the research object,
 experimental logic, evidence standard, and model-integration agenda for AISLE.
 It is descriptive rather than normative: the numbered specifications define
 what the implementation must do, the [README](../README.md#status) owns current
@@ -248,7 +248,14 @@ prevented several attractive but unsupported stories:
   campaign worktrees instead of being counted as independent confirmation.
 - [H3](../analysis/h3/h3_findings.md) ended `UNDECIDED`, not “not met,” after
   the integrity audit excluded drifted library-arm cells. This is the intended
-  behavior of a fail-closed evidence system.
+  behavior of a fail-closed evidence system. The
+  [desk re-run](../analysis/h3/desk/desk_findings.md) then reached the same
+  verdict for a different and more interesting reason: not hygiene, but
+  **instrument design**. T1 and T4 were solved by both arms inside one
+  sub-budget and T2/T3 by neither, so no tier sat in the band where an
+  accumulation effect could appear. An accumulation benchmark is only
+  measurable between trivial and impossible, and that band has to be located
+  empirically before the campaign rather than assumed from the curriculum.
 - [H4](../analysis/h4/h4_findings.md) found a lower median hot-swap iteration
   time at T0, but overlapping extremes and a small sample prohibit a broad
   significance, equivalence, or reproducibility claim.
