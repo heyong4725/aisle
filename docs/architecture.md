@@ -37,14 +37,79 @@ producer, embodiment consistency — plus the safety-structural checks
 below. Errors are machine-actionable JSON with hints; this is the
 agent's compile loop.
 
+### Simulated-time lockstep (ADR-30)
+
+Measured graphs do not run on wall time. A `turn-barrier` node opens each
+simulated turn, and every node with a forward-edge path to a bridge command
+or reset input participates: it declares `AISLE_LOCKSTEP` / `AISLE_TURN_NODE`
+/ `AISLE_TURN_OUTPUTS`, and closes turn *k* only after receiving every count
+declared by its forward upstreams for *k* and by episodic producers for
+*k-1*. Cycles are legal exactly through inputs declared `turn_edge: episodic`
+— the request/reply and goal/result loops that TC-6 and TC-7 need.
+
+The barrier loads a **committed turn plan** (`graphs/turn_plans/<stem>.json`)
+at runtime, which makes the plan executable scheduler topology rather than
+documentation. Two consequences follow, and both are enforced: the plans are
+frozen alongside the graphs they compile from, and `harness validate` refuses
+a graph whose plan disagrees with it (`TURN_PLAN_STALE`) — a stale plan does
+not fail at the gate, it kills the barrier on the first watermark and every
+episode wall-clamps. Agents regenerate with
+`harness validate <graph> --write-turn-plan`.
+
+The validator's `CLOCK_*` family enforces all of this structurally:
+participation completeness, queue policy on watermark edges, forward-DAG
+acyclicity, and exactly one terminal commit back to the bridge.
+
+### Fleet mode
+
+Two distinct things share the name, and they are not interchangeable:
+
+- **`src/aisle/harness/fleet.py`** fans one graph out across N environments
+  (`fleet_graph` rewrites node ids per agent) — the batched-envs "virtual
+  robot fleet" of design-doc §5.
+- **`tools/a5_fleet.py`** runs N *independent research-agent sessions*
+  concurrently, each with its own simulator on a shared host. This is what
+  A5 measured, and the ADR records the deviation from §8.4.3: lanes share the
+  host rather than one batched bridge, and peer cross-pollination is deferred.
+
+A5's measured behaviour: throughput saturates near four lanes on a 16-core
+host, per-agent latency degrades gracefully, and **holdout quality is
+contention-invariant** — contention costs latency, not correctness.
+
 ## The frozen set (the no-cheating rule)
 
-The frozen set (CON-7) is `src/aisle/scenes`, `src/aisle/verifier`,
-`src/aisle/reset`, and the expert graphs `graphs/expert_*.yaml` —
-hash-manifested by `tools/env_hash.py`, with changes only via
-human-merged `env-change` PRs. The rollout runner refuses to start if
-hashes drift from the trusted baseline. Agents can read this code;
-they cannot change what judges them.
+The frozen set (CON-7) is hash-manifested by `tools/env_hash.py`, with
+changes only via human-merged `env-change` PRs. The rollout runner refuses
+to start if hashes drift from the trusted baseline. Agents can read this
+code; they cannot change what judges them.
+
+**Read `FROZEN_DIRS` / `FROZEN_FILES` / `FROZEN_GLOBS` in
+`tools/env_hash.py`, not a list in prose** — a second copy of the fence goes
+stale, which is exactly how `src/aisle/mobility` stayed outside it (issue
+#189, ADR-33). As orientation only: the scenes, verifier and reset packages,
+the mobility verdicts, the budget guard, the topic/turn/kinematics modules,
+the SO-101 assets, the budget ledger, and — as the set has widened — the
+expert *and* evaluation graphs together with their committed ADR-30 turn
+plans.
+
+That widening is worth understanding, because each step followed the same
+argument: **the unit of the fence is what a result depends on, not the
+directory it lives in.**
+
+- **ADR-33** pulled in the mobility verdicts after PR #177 changed nav's
+  stall and timeout budgets without moving a hash — two runs with different
+  failure conditions attested as the same environment.
+- **#197** pulled in `graphs/turn_plans/expert_*.json`: the turn barrier
+  loads the committed plan at runtime, so an unfrozen plan lets the
+  scheduler topology of a measured run change silently.
+- **ADR-36** pulled in `graphs/eval_*.yaml` and their plans. Those graphs are
+  the exam an agent-authored skill sits to enter the registry
+  (`harness skill register` scores through them), and they were editable by
+  the candidate. A gate the candidate can edit is not a gate.
+
+`graphs/agent_campaign.yaml` deliberately stays **out**: it is the research
+agent's own deliverable, which the campaign instructs it to keep current, so
+freezing it would put CON-7 in direct conflict with the experiment.
 
 Safety is structural, not behavioral (H5):
 
