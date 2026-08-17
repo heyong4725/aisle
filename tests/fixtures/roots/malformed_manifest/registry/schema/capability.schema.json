@@ -200,6 +200,14 @@
         "agent-authored"
       ]
     },
+    "trust_tier": {
+      "enum": [
+        "sandbox",
+        "reviewed",
+        "certified"
+      ],
+      "description": "§9.4 trust tier (ADR-40, issue #265). Optional: absent means the manifest predates the tier or is curated core. `sandbox` admits an id so graphs referencing it VALIDATE while making no quality claim — eval is null, it never counts as a library skill, and it can never hold safety_class motion (which, with ADR-5's rule that actuation outputs require the motion class, means a sandbox node can never emit actuation commands at all). `reviewed` is written by a registration that passed the measured floor. `certified` is reserved for the hardware promotion criteria and is not yet issued by any code path."
+    },
     "source": {
       "type": "string",
       "pattern": "^(pip:\\s*[^:\\s][^:]*|[^:]+)$",

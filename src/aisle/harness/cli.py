@@ -120,6 +120,13 @@ def build_parser() -> argparse.ArgumentParser:
     skr = sk_sub.add_parser("register", help="validate + eval + evalcard + install")
     skr.add_argument("skill_dir", type=Path, help="skills/<name>/ directory")
     skr.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    skr.add_argument(
+        "--sandbox",
+        action="store_true",
+        help="ADR-40: admit the id for VALIDATION only — no eval, no evalcard, "
+        "no quality claim, never safety_class motion, never counted as a "
+        "library skill. Promote by re-registering without this flag.",
+    )
 
     sw = subparsers.add_parser("swap", help="hot-swap a node on a live dataflow (HAR-10)")
     sw.add_argument("--graph", type=Path, required=True)
@@ -279,6 +286,7 @@ def main() -> int:
                 run_rollout=rollout,
                 now=datetime.date.today().isoformat(),
                 run_id=args.run_id,
+                sandbox=args.sandbox,
             )
         except RegistrationError as refused:
             print(json.dumps({"ok": False, "error": str(refused)}))

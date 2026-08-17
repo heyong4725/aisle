@@ -76,6 +76,17 @@ def _write_skill(
     return d
 
 
+# ADR-5: a node whose outputs are actuation commands MUST be safety_class
+# motion. Composed with §9.4's rule that sandbox may not be motion, that
+# means a sandbox node can never emit actuation at all — so a sandbox
+# fixture has to be a non-actuating shape.
+_PERCEPTION_SHAPE = {
+    "safety_class": "perception",
+    "provides": ["object_pose_estimation"],
+    "outputs": {"object_pose": {"schema": "pose7d_f32", "latency_class": "soft_rt"}},
+}
+
+
 def _registry(root: Path) -> Path:
     """A registry root with the REAL schema files (incl. the curated-core
     list) and one curated manifest."""
@@ -331,3 +342,66 @@ def test_cli_register_json_contract(tmp_path):
     assert proc.returncode == 1
     out = json.loads(proc.stdout)
     assert out["ok"] is False and "invalid" in out["error"]
+
+
+def test_sandbox_registration_admits_an_id_without_claiming_quality(tmp_path):
+    """CAP-6/CAP-7 (#265, ADR-40): ADR-37's floor closed a real hole and
+    removed the only mechanism an agent had for a different, legitimate need
+    — a new node has no manifest, so `validate` refuses the graph with
+    MANIFEST_MISSING, and the only path to a manifest now requires a measured
+    0.5. An agent that wants to RUN a new node must already have one that
+    works.
+
+    Campaign agents hit this and invented a workaround: both recovered T2
+    skills shipped `min_pass_rate: 0.0` with a written rationale, using
+    registration as ATTESTATION rather than certification. §9.4 names the
+    missing tier (`sandbox -> reviewed -> certified`); this is it."""
+    root = _registry(tmp_path)
+    skill_dir = _write_skill(root, manifest_extra=_PERCEPTION_SHAPE)
+    fake = _ok_rollout()
+
+    result = register_skill(skill_dir, root, run_rollout=fake, now="2026-08-17", sandbox=True)
+
+    assert result["ok"] is True and result["trust_tier"] == "sandbox"
+    assert not fake.calls, "a sandbox registration makes no quality claim, so it runs no eval"
+    installed = yaml.safe_load((root / "registry" / "manifests" / "pour-arc.yaml").read_text())
+    assert installed["trust_tier"] == "sandbox"
+    assert installed["eval"] is None, "a sandbox entry must not carry an evalcard"
+
+
+def test_a_sandbox_skill_may_never_hold_the_motion_class(tmp_path):
+    """§9.4 (#265): the trust-tier roadmap's whole point is per-tier
+    safety-class ceilings — an uncertified skill can never command the arm.
+    The default `_write_skill` is motion, so this is the common case, not an
+    edge one."""
+    root = _registry(tmp_path)
+    skill_dir = _write_skill(root)  # safety_class: motion
+    with pytest.raises(RegistrationError, match="sandbox"):
+        register_skill(skill_dir, root, run_rollout=_ok_rollout(), now="2026-08-17", sandbox=True)
+    assert not (root / "registry" / "manifests" / "pour-arc.yaml").exists()
+
+
+def test_sandbox_does_not_bypass_the_floor_for_a_real_registration(tmp_path):
+    """#265 must not become a hole in #243. The default path is unchanged:
+    a sub-floor declaration still refuses, and a sandbox entry cannot be
+    promoted by re-registering without an eval."""
+    root = _registry(tmp_path)
+    skill_dir = _write_skill(root, eval_extra={"min_pass_rate": 0.0})
+    with pytest.raises(RegistrationError, match="below the registry floor"):
+        register_skill(skill_dir, root, run_rollout=_ok_rollout(), now="2026-08-17")
+
+
+def test_promoting_a_sandbox_entry_requires_passing_the_real_gate(tmp_path):
+    """#265: the tier is a ladder, not a parking space. Re-registering the
+    same id WITHOUT --sandbox must run the eval and apply the floor — and on
+    success the entry stops being sandbox."""
+    root = _registry(tmp_path)
+    skill_dir = _write_skill(root, manifest_extra=_PERCEPTION_SHAPE)
+    register_skill(skill_dir, root, run_rollout=_ok_rollout(), now="2026-08-17", sandbox=True)
+
+    fake = _ok_rollout()
+    result = register_skill(skill_dir, root, run_rollout=fake, now="2026-08-18")
+    assert fake.calls, "promotion must actually run the eval"
+    assert result["trust_tier"] == "reviewed"
+    installed = yaml.safe_load((root / "registry" / "manifests" / "pour-arc.yaml").read_text())
+    assert installed["eval"]["pass_rate"] == 0.75 and installed["trust_tier"] == "reviewed"

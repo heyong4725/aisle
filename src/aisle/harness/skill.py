@@ -209,13 +209,38 @@ def run_skill_eval(skill: Skill, root: Path, run_rollout, run_id: str) -> float:
 
 
 def register_skill(
-    skill_dir: Path, root: Path, run_rollout, now: str, run_id: str | None = None
+    skill_dir: Path,
+    root: Path,
+    run_rollout,
+    now: str,
+    run_id: str | None = None,
+    sandbox: bool = False,
 ) -> dict:
     """validate → STAGE → lint → eval → evalcard → final lint (§8.4);
-    every failure rolls the registry back exactly."""
+    every failure rolls the registry back exactly.
+
+    `sandbox=True` (ADR-40, #265) takes the §9.4 lower rung: admit the id so
+    graphs referencing it VALIDATE, while making no quality claim at all — no
+    eval is run, no evalcard is written, and the entry is marked
+    `trust_tier: sandbox`. This exists because ADR-37's floor, correctly,
+    made certification require a measured 0.5 — and left an agent no way to
+    declare a node it is still building, since `validate` refuses an unknown
+    id with MANIFEST_MISSING. Campaign agents met that bind and worked around
+    it by shipping `min_pass_rate: 0.0`, which is the hole ADR-37 closed.
+
+    A sandbox entry can never hold `safety_class: motion` (§9.4's per-tier
+    ceiling), never counts as a library skill, and is promoted only by
+    re-registering WITHOUT this flag, which runs the real gate."""
     root = Path(root)
     skill = load_skill(Path(skill_dir))
     validate_skill(skill, root)
+
+    if sandbox and skill.manifest.get("safety_class") == "motion":
+        raise RegistrationError(
+            "a sandbox registration may not hold safety_class 'motion' (§9.4 per-tier "
+            "ceiling): an unproven node cannot command the arm. Register it for real "
+            "once its eval passes the floor, or lower its safety class"
+        )
 
     installed = root / "registry" / "manifests" / f"{skill.manifest['id']}.yaml"
     prior = installed.read_text() if installed.exists() else None
@@ -236,6 +261,29 @@ def register_skill(
     installed.write_text(yaml.safe_dump(_provisional_manifest(skill, now), sort_keys=False))
     try:
         _lint_or(root, "staged registry fails lint (CAP-2/3)")
+        if sandbox:
+            # no eval, no evalcard, no quality claim (ADR-40). The entry
+            # exists so a graph naming this id validates; everything that
+            # counts capabilities filters on the evalcard, so a null one
+            # keeps it out of the library by construction rather than by
+            # a second rule that could drift.
+            final = {**skill.manifest, "eval": None, "trust_tier": "sandbox"}
+            installed.write_text(yaml.safe_dump(final, sort_keys=False))
+            _lint_or(root, "final registry fails lint (CAP-2/3)")
+            return {
+                "ok": True,
+                "id": final["id"],
+                "trust_tier": "sandbox",
+                "pass_rate": None,
+                "evalcard": None,
+                "installed": str(installed),
+                "eval_run_id": None,
+                "governance": (
+                    "SANDBOX: admitted for validation only, makes no quality claim, "
+                    "cannot be reused or counted. Re-register without --sandbox to "
+                    "run the real gate (§9.4)"
+                ),
+            }
         eval_run_id = run_id or f"skill-{skill.manifest['id']}-{now}-{uuid.uuid4().hex[:6]}"
         pass_rate = run_skill_eval(skill, root, run_rollout, eval_run_id)
         minimum = float(skill.eval_cfg["min_pass_rate"])
@@ -250,6 +298,9 @@ def register_skill(
             "pass_rate": round(pass_rate, 4),
             "last_run": now,
         }
+        # ADR-40: passing the real gate promotes off the sandbox rung — an
+        # entry must never keep a `sandbox` marker it has outgrown
+        final["trust_tier"] = "reviewed"
         installed.write_text(yaml.safe_dump(final, sort_keys=False))
         _lint_or(root, "final registry fails lint (CAP-2/3)")
     except BaseException:
@@ -258,6 +309,7 @@ def register_skill(
     return {
         "ok": True,
         "id": final["id"],
+        "trust_tier": "reviewed",
         "pass_rate": pass_rate,
         "evalcard": final["eval"],
         "installed": str(installed),
