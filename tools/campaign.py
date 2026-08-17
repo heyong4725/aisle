@@ -40,6 +40,7 @@ from h1_protocol import DEFAULT_MODELS, InfraError, make_worktree  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DELIVERABLE = "graphs/agent_campaign.yaml"
+IDEAS_DIR = "runs/ideas"  # HAR-7 idea trees; archived with the campaign (#266)
 HOLDOUT_EPISODES = 8
 POLL_S = 5.0
 DEV_SEEDS = "0..49"
@@ -329,6 +330,15 @@ def archive_deliverable(wt: Path, oid: str, name: str, now: str) -> dict:
             return proc.stdout.strip()
 
         git("add", "-A")
+        # #266: the idea tree lives under gitignored runs/, so `add -A` drops
+        # it — and it is the artifact that makes a finding falsifiable, since
+        # it carries the expectation registered BEFORE the run. Force-add just
+        # that path: JSONL of tens of lines, not the traces beside it.
+        # check=False — a session may legitimately have logged no ideas
+        # (machinery runs, --no-idea-gate), and a missing pathspec must not
+        # turn a good archive into a refusal.
+        if (wt / IDEAS_DIR).is_dir():
+            git("add", "-f", IDEAS_DIR, check=False)
         tree = git("write-tree")
         commit = git(
             "-c",

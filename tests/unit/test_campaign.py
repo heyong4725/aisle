@@ -775,6 +775,14 @@ def _agent_authors_a_skill(wt):
     traces = wt / "runs" / "r_000"
     traces.mkdir(parents=True)
     (traces / "trace.arrow").write_text("x" * 4096)
+    ideas = wt / "runs" / "ideas"
+    ideas.mkdir(parents=True)
+    (ideas / "main.jsonl").write_text(
+        '{"id": "I16", "idea": "teleport vs behavioral reset", '
+        '"expect": "reset is itself a manipulation task", "status": "open"}\n'
+        '{"id": "I16", "observed": "drift, not reset failure", '
+        '"verdict": "flat", "status": "closed"}\n'
+    )
 
 
 def test_archive_captures_the_agents_uncommitted_deliverable(tmp_path):
@@ -835,7 +843,13 @@ def test_the_archive_excludes_gitignored_run_artifacts(tmp_path):
     """CON-6 (#245): a campaign worktree's runs/ holds traces and videos.
     Archiving them would put gigabytes per session into the object store —
     the archive follows .gitignore, so it keeps code and drops evidence
-    that already has its own home."""
+    that already has its own home.
+
+    NARROWED by #266: `runs/ideas/` is now force-added, because the idea tree
+    is evidence rather than bulk. The assertion below therefore names the
+    trace explicitly instead of excluding all of runs/ — the original
+    blanket check would have passed for the wrong reason once ideas were
+    deliberately included."""
     import campaign as c
 
     repo, wt, oid = _campaign_repo(tmp_path)
@@ -848,7 +862,60 @@ def test_the_archive_excludes_gitignored_run_artifacts(tmp_path):
         text=True,
     ).stdout
     assert "skills/t2-scan-pose/node.py" in listed
-    assert "runs/" not in listed
+    assert "runs/r_000/trace.arrow" not in listed
+    assert "trace.arrow" not in listed  # no path anywhere carries the bulk artifact
+
+
+def test_the_archive_keeps_the_idea_tree_but_not_the_traces(tmp_path):
+    """#266: the idea tree is the artifact that makes a finding falsifiable —
+    it carries the expectation registered BEFORE the run. It lives under
+    gitignored runs/ alongside gigabytes of traces, so #245's archive (which
+    honours .gitignore, deliberately) dropped it. Findings survived; the
+    pre-registrations that make them evidence did not."""
+    import campaign as c
+
+    repo, wt, oid = _campaign_repo(tmp_path)
+    _agent_authors_a_skill(wt)
+    rec = c.archive_deliverable(wt, oid, "keeps-ideas", now="2026-08-17T00:00:00Z")
+    assert rec["ok"], rec
+    listed = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", rec["commit"]],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "runs/ideas/main.jsonl" in listed, "the idea tree must survive the campaign"
+    assert "runs/r_000/trace.arrow" not in listed, "traces must still be excluded"
+
+    # and the content is intact, not a truncated placeholder
+    body = subprocess.run(
+        ["git", "show", f"{rec['ref']}:runs/ideas/main.jsonl"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert '"expect": "reset is itself a manipulation task"' in body
+    assert '"verdict": "flat"' in body
+
+
+def test_archive_succeeds_when_the_session_logged_no_ideas(tmp_path):
+    """#266: a session may legitimately have no idea tree (machinery runs,
+    --no-idea-gate). A force-add of a path that does not exist must not turn
+    a good archive into a refusal."""
+    import campaign as c
+
+    repo, wt, oid = _campaign_repo(tmp_path)
+    (wt / "skills").mkdir()
+    (wt / "skills" / "x.py").write_text("# work\n")
+    rec = c.archive_deliverable(wt, oid, "no-ideas", now="2026-08-17T00:00:00Z")
+    assert rec["ok"], rec
+    listed = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", rec["commit"]],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "skills/x.py" in listed
 
 
 def test_archiving_does_not_disturb_the_session_worktree(tmp_path):
