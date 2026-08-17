@@ -3,6 +3,22 @@
 Status: DRAFT. Files: `registry/schema/capability.schema.json`, `registry/manifests/*.yaml`.
 
 - CAP-1: Manifest fields (all required unless noted): id, kind(node|subgraph), provides[], requires[], inputs{name:{schema, rate_hz, is_clock?, turn_edge?}}, outputs{name:{schema, latency_class}}, params{name:{type,default,range?}} (optional), embodiment{arm[],gripper}, safety_class(perception|decision|motion), eval{suite,pass_rate,last_run}|null, origin(hub|agent-authored), source(path or pip ref). `is_clock` is boolean and defaults false; `turn_edge` is `forward` (default) or `episodic` (ADR-30 §1.3: reply/verdict/result/violation back-edges consumed at the receiver's NEXT turn opening — the declaration that lets TC-6/TC-7 request-reply and action cycles terminate under the turn barrier). `is_clock: true` declares a simulated-turn watermark input (ADR-30), not an ordinary state sample: the graph MUST wire it with a positive explicit `queue_size` and `queue_policy: backpressure`; the source MUST be the bridge simulation clock or a validated clock participant; and the node MUST preserve the turn stamp when it closes its causal work. Note the transport honesty caveat (ADR-30 §2, verified at the pinned dora rev): `backpressure` widens the effective cap 10x and then DROPS OLDEST — the barrier hang plus watchdog abort is the protocol's enforcement, not the queue itself. A latest-wins/drop-oldest state topic MAY drive a control cadence but MUST NOT serve as the structural turn barrier. Each watermark's parallel metadata lists `closed_outputs: list[str]` and `emitted_counts: list[int]` MUST enumerate EVERY output port of the node — equal length, lexical port order, unique names, nonnegative counts, count 0 ordinary, omission malformed — and a participant closes turn k only after receiving every count declared by forward upstreams for turn k and by episodic producers for turn k-1.
+- CAP-1b: (ADR-41, issue #264) Two OPTIONAL applicability fields, because an
+  evalcard says a skill WORKED on a suite and never says when reaching for it
+  is appropriate — with two entries under one capability at the same headline
+  `pass_rate`, an agent has no basis to choose, so a growing library makes
+  selection harder rather than easier. `specializes: <id>` is the
+  machine-checkable half and MUST name an existing manifest that shares at
+  least one `provides` entry and is not the manifest itself; lint errors
+  otherwise, because a field the validator cannot check is documentation
+  (that being the exact failure #264 warns about). `applies_when: <string>`
+  is one sentence, length-capped at 280, and DELIBERATELY UNVERIFIABLE — no
+  validator can check prose against behaviour, and it is advisory precisely
+  so it is not mistaken for a guarantee. `harness registry search` MUST
+  return both keys on every match, explicitly null when unset: the gap was
+  never that the data could not be stored, it was that nothing put it in
+  front of the moment of choosing, and a key that vanishes when empty is a
+  key readers stop looking for.
 - CAP-2: `schema` values come from a closed vocabulary in `registry/schema/schemas.toml` mapping name → Arrow type + shape (e.g. pose7d_f32 → Float32[7]). `sim_turn_u64` is UInt64[1]: its value is ADR-30's globally monotonic `turn_id`, while metadata carries the turn's `sim_time_ns`. Adding a schema name is a Class C change.
 - CAP-3: JSON Schema validation: `harness/registry.py lint` validates every manifest; CI runs it (marker unit).
 - CAP-4: `harness/registry.py search --provides grasp_planning [--embodiment franka] [--installed]` returns matching manifests as JSON (CON-8). Every match carries `launchable` — pip sources installed, path sources a regular file contained by the root (issue #39: search advertised uninstalled `pip:` nodes with no flag, the H1 discovery-surface gap; `analysis/h1/h1_findings.md`) — and `--installed` narrows to launchable matches; the validator's MANIFEST_MISSING hint recommends it. Graph-context checks (arm/base/evalcard) remain the validator's (VAL-2).

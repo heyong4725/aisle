@@ -185,7 +185,12 @@ def test_schema_required_set_matches_cap1():
     recorded", which is the truth for them."""
     schema = json.loads((REPO_ROOT / "registry" / "schema" / "capability.schema.json").read_text())
     assert set(schema["required"]) == set(CAP1_REQUIRED)
-    assert set(schema["properties"]) - set(schema["required"]) == {"params", "trust_tier"}
+    assert set(schema["properties"]) - set(schema["required"]) == {
+        "params",
+        "trust_tier",
+        "specializes",
+        "applies_when",
+    }
 
 
 @pytest.mark.parametrize("field", CAP1_REQUIRED)
@@ -633,3 +638,59 @@ def test_a_sandbox_entry_is_never_counted_as_a_library_skill():
         # the converse: anything WITH an evalcard is at least reviewed
         if m["id"] not in curated and m.get("eval") is not None:
             assert m.get("trust_tier", "reviewed") != "sandbox"
+
+
+def test_specializes_must_name_a_real_capability_sibling(tmp_path):
+    """CAP-1 as amended by ADR-41 (#264): an evalcard says a skill WORKED on
+    a suite; it never says when reaching for it is appropriate. With two
+    entries under one capability at the same headline pass_rate, an agent has
+    no basis to choose, and the accumulation benefit inverts as the library
+    grows.
+
+    `specializes` is the part of that gap a machine can check: it must name
+    an EXISTING manifest that shares a capability. A dangling or unrelated
+    reference is an error, not documentation — a field the validator cannot
+    check is the failure mode #264 warns about."""
+    root = make_root(tmp_path)
+    write_manifest(root, valid_manifest(id="base-cap", provides=["nav"]))
+    write_manifest(root, valid_manifest(id="refined", provides=["nav"], specializes="base-cap"))
+    report = json.loads(run_module("aisle.harness.registry", "lint", "--root", str(root)).stdout)
+    assert report["ok"] is True, report["errors"]
+
+    write_manifest(root, valid_manifest(id="dangling", provides=["nav"], specializes="nope"))
+    report = json.loads(run_module("aisle.harness.registry", "lint", "--root", str(root)).stdout)
+    # the DANGLING branch specifically: "nope" alone would also match the
+    # shares-no-capability message, so a mutation deleting this branch
+    # survived until the assertion named the reason (mutation-caught)
+    assert any("not a registered manifest id" in e["message"] for e in report["errors"]), report
+
+
+def test_specializes_must_share_a_capability_and_not_be_self_referential(tmp_path):
+    """ADR-41 (#264): 'specializes' means "a narrower way to do the SAME
+    thing". Pointing at an unrelated capability makes search's hierarchy
+    meaningless, and pointing at yourself makes it a cycle of one."""
+    root = make_root(tmp_path)
+    write_manifest(root, valid_manifest(id="unrelated", provides=["grasping"]))
+    write_manifest(root, valid_manifest(id="crosswired", provides=["nav"], specializes="unrelated"))
+    report = json.loads(run_module("aisle.harness.registry", "lint", "--root", str(root)).stdout)
+    assert any("capability" in e["message"] for e in report["errors"]), report
+
+    root2 = make_root(tmp_path / "b")
+    write_manifest(root2, valid_manifest(id="selfref", provides=["nav"], specializes="selfref"))
+    report = json.loads(run_module("aisle.harness.registry", "lint", "--root", str(root2)).stdout)
+    assert any("itself" in e["message"] for e in report["errors"]), report
+
+
+def test_search_surfaces_what_an_agent_needs_to_choose():
+    """CAP-4 (#264): the fields exist to be READ at the moment of choosing.
+    Search returns whole manifests, so `specializes` and `applies_when` ride
+    along — but this asserts it, because the gap was never that the data
+    could not be stored, it was that nothing put it in front of the
+    decision."""
+    code, report = run_registry("search", "--provides", "trajectory_generation")
+    assert code == 0
+    ids = {m["id"] for m in report["matches"]}
+    assert {"ik-trajectory", "ik-transfer-v2"} <= ids, ids
+    # every match carries the choice-relevant keys, present or explicitly null
+    for m in report["matches"]:
+        assert "applies_when" in m and "specializes" in m, m["id"]
