@@ -20,7 +20,21 @@ Status: DRAFT. Files: `registry/schema/capability.schema.json`, `registry/manife
   any id on the curated list regardless of current registry file state
   (deleting a core manifest opens nothing), and every non-curated manifest
   MUST be origin=agent-authored with a non-null evalcard — the registration
-  path is the only way past the curated core.
+  path is the only way past the curated core. AMENDED by ADR-40 (issue #265):
+  a manifest carrying `trust_tier: sandbox` is the single exception and MUST
+  have a null evalcard, because it admits an id for VALIDATION while making
+  no quality claim. A sandbox entry MUST NOT hold `safety_class: motion`
+  (§9.4's per-tier ceiling) — which, composed with ADR-5's rule that
+  actuation outputs require the motion class, means a sandbox node can never
+  emit actuation commands at all. It MUST NOT count as a library skill for
+  any purpose (the DoD count, reuse measurement, or "beyond the curated core
+  only registered skills"), and the filter for that is the EVALCARD rather
+  than a second rule that could drift: everything counting skills already
+  requires a non-null one. Promotion off the rung is re-registration WITHOUT
+  the sandbox flag, which runs the eval and applies the CAP-6 floor; a
+  registration that passes writes `trust_tier: reviewed`, so an entry cannot
+  keep a marker it has outgrown. `certified` is reserved for the hardware
+  promotion criteria and is issued by no code path yet.
 - CAP-6: `eval` may be null only while origin=hub AND safety_class!=motion... exception: the two sim drivers ship with M0 evalcards generated from TC-A1..A3 runs. A registering skill's shipped `min_pass_rate` (SPEC 070 `eval.yaml`) MUST be at or above the registry floor `REGISTRY_MIN_PASS_RATE` = 0.5 (ADR-37), and registration MUST refuse a sub-floor declaration at LOAD, before the eval rollout is spent. Without the floor the threshold that certifies a skill is chosen by the candidate: `harness skill register` already refuses a measured rate below `min_pass_rate`, so a skill shipping 0.0 registers at pass_rate 0.0 and the gate reports `ok` — observed live, `t2-scan-tsm` entered the desk-H3 L/T2-r2 campaign library at 0.0 (`analysis/h3/desk/desk_analysis.json`). This is #228's argument one layer down: there the exam paper was editable by the candidate, here the passing grade was. The floor is a MINIMUM and not a replacement — a skill declaring a stricter bar is still held to its own — and it is calibrated against the corpus, not chosen in the abstract: both registered skills independently chose 0.5, so no mainline skill is de-registered by it (asserted, not assumed: `::test_every_shipped_skill_meets_the_registry_floor`). Raising the floor later is a further spec-change, and evicts any shipped skill below the new value — which is why that test names the eviction rather than only the rule.
 
 Acceptance: `tests/unit/test_manifests.py::test_all_lint` (CAP-1..3), including

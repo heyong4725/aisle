@@ -175,11 +175,17 @@ CAP1_REQUIRED = [
 
 
 def test_schema_required_set_matches_cap1():
-    """CAP-1: the JSON Schema requires exactly the CAP-1 field set, with
-    params as the sole optional top-level field."""
+    """CAP-1: the JSON Schema requires exactly the CAP-1 field set. Optional
+    top-level fields are `params` and — since ADR-40 (#265) — `trust_tier`.
+
+    `trust_tier` is deliberately OPTIONAL rather than required with a
+    default: every curated-core and pre-ADR-40 manifest predates it, and
+    making it required would force a mechanical edit to the frozen registry
+    to express something those entries do not claim. Absent means "no tier
+    recorded", which is the truth for them."""
     schema = json.loads((REPO_ROOT / "registry" / "schema" / "capability.schema.json").read_text())
     assert set(schema["required"]) == set(CAP1_REQUIRED)
-    assert set(schema["properties"]) - set(schema["required"]) == {"params"}
+    assert set(schema["properties"]) - set(schema["required"]) == {"params", "trust_tier"}
 
 
 @pytest.mark.parametrize("field", CAP1_REQUIRED)
@@ -602,3 +608,28 @@ def test_a_registered_skill_and_its_manifest_have_not_drifted():
         )
         checked.append(skill_dir.name)
     assert checked, "no registered skill has a skill.yaml — this test went blind"
+
+
+def test_a_sandbox_entry_is_never_counted_as_a_library_skill():
+    """CAP-5/CAP-7 as amended by ADR-40 (#265): a sandbox entry exists so a
+    graph naming its id VALIDATES. It must never satisfy anything that counts
+    capabilities — the DoD skill count, reuse measurement, or the registry's
+    "beyond the curated core, only registered skills" rule.
+
+    The filter is the EVALCARD, not a second rule that could drift: a sandbox
+    entry has `eval: null` by construction, and everything that counts skills
+    already requires a non-null evalcard."""
+    import tomllib
+
+    curated = set(
+        tomllib.loads((REPO_ROOT / "registry" / "schema" / "curated_core.toml").read_text())["core"]
+    )
+    manifests = [yaml.safe_load(f.read_text()) for f in sorted(MANIFESTS_DIR.glob("*.yaml"))]
+    for m in manifests:
+        if m.get("trust_tier") == "sandbox":
+            assert m["eval"] is None, f"{m['id']}: a sandbox entry may not carry an evalcard"
+            assert m["safety_class"] != "motion", f"{m['id']}: §9.4 per-tier ceiling"
+            assert m["id"] not in curated, f"{m['id']}: the curated core is not sandboxable"
+        # the converse: anything WITH an evalcard is at least reviewed
+        if m["id"] not in curated and m.get("eval") is not None:
+            assert m.get("trust_tier", "reviewed") != "sandbox"

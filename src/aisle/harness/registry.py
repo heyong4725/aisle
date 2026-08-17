@@ -192,6 +192,14 @@ def lint(root: Path) -> dict:
             )
         if "eval" in manifest and manifest["eval"] is None:
             origin_hub = manifest.get("origin") == "hub"
+            # CAP-6 as amended by ADR-40 (#265): a `trust_tier: sandbox` entry
+            # is REQUIRED to have a null evalcard — that is the whole point,
+            # since it admits an id for validation while claiming nothing. It
+            # can never be motion class (§9.4 ceiling), which the register
+            # path enforces and this rule re-checks rather than assumes.
+            sandbox = manifest.get("trust_tier") == "sandbox"
+            if sandbox and manifest.get("safety_class") != "motion":
+                continue
             if not origin_hub or manifest.get("safety_class") == "motion":
                 pending = origin_hub and manifest.get("id") in PENDING_M0_EVALCARDS
                 suffix = " — pending M0 evalcard (ADR-3)" if pending else ""
