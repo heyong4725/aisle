@@ -208,6 +208,16 @@
       ],
       "description": "§9.4 trust tier (ADR-40, issue #265). Optional: absent means the manifest predates the tier or is curated core. `sandbox` admits an id so graphs referencing it VALIDATE while making no quality claim — eval is null, it never counts as a library skill, and it can never hold safety_class motion (which, with ADR-5's rule that actuation outputs require the motion class, means a sandbox node can never emit actuation commands at all). `reviewed` is written by a registration that passed the measured floor. `certified` is reserved for the hardware promotion criteria and is not yet issued by any code path."
     },
+    "specializes": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "ADR-41 (issue #264): the id of a capability sibling this entry is a NARROWER way of doing. Checked by lint: the target must exist, must share at least one `provides` entry, and must not be the manifest itself. This is the machine-checkable half of applicability — it lets search present a hierarchy instead of a flat list of same-capability entries with identical headline pass rates."
+    },
+    "applies_when": {
+      "type": "string",
+      "maxLength": 280,
+      "description": "ADR-41 (issue #264): one sentence on the situation this entry is FOR — e.g. 'the transfer path sweeps a shelf at the carried box's level'. DELIBERATELY UNVERIFIABLE: no validator can check that prose matches behaviour, and the field is length-capped and advisory precisely so it is not mistaken for a guarantee. It exists because the alternative was leaving the reader with nothing."
+    },
     "source": {
       "type": "string",
       "pattern": "^(pip:\\s*[^:\\s][^:]*|[^:]+)$",

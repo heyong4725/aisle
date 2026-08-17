@@ -30,5 +30,10 @@ embodiment:
   gripper: parallel
 safety_class: motion
 eval: null
+specializes: ik-trajectory
+applies_when: >-
+  the transfer path sweeps over shelf-level obstacles — the carried box's
+  bottom crosses a same-level neighbour's top. Outside that geometry this is
+  the stock straight transfer plus routing overhead.
 origin: agent-authored
 source: skills/ik-transfer-v2/ik_transfer_v2.py
