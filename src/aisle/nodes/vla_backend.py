@@ -21,13 +21,30 @@ def load_smolvla():
     return policy
 
 
-def select_chunk(policy, frames: dict, joint_state: np.ndarray, instruction: str) -> list | None:
+def select_chunk(
+    policy, frames: dict, joint_state: np.ndarray, instruction: str, seed: int | None = None
+) -> list | None:
     """One inference -> a CHUNK of [q.., grip] rows (ADR-38). Returns
     None when the backend cannot produce actions for this embodiment
-    (recorded, never raised mid-episode)."""
+    (recorded, never raised mid-episode).
+
+    `seed` closes the CON-5 hole for the inference layer (#268). A policy
+    of this class may sample during action selection, and an unseeded
+    sampler makes the SAME graph, seed and environment produce different
+    trajectories — the one thing CON-5 forbids, arriving through a source
+    no determinism layer currently names. The node passes the observation's
+    SIM stamp, which is reproducible under ADR-30 lockstep; a wall-clock or
+    absent seed would not be.
+
+    Seeding here does not make inference bit-reproducible across devices —
+    MPS reductions are not, which is why the verifier pins its own model
+    inference to CPU. It removes the sampler as a source of divergence on
+    one device, which is what a replay on that device needs."""
     import torch
 
     try:
+        if seed is not None:
+            torch.manual_seed(int(seed) & 0x7FFFFFFF)
         wrist, wmeta = frames["wrist"]
         h, w = int(wmeta.get("h", 240)), int(wmeta.get("w", 320))
         image = torch.from_numpy(wrist.reshape(h, w, 3)).permute(2, 0, 1).float() / 255.0
