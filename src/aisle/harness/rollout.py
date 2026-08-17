@@ -922,6 +922,20 @@ def _terminate(proc: subprocess.Popen) -> None:
             pass
 
 
+def _guard_divergence_or_none(run_dir: Path) -> dict | None:
+    """#267: the proposed-vs-executed summary for this run, or None.
+
+    Best-effort by construction. The statistic informs a fine-tuning label
+    decision; it is not part of the run's verdict, so no failure here may cost
+    the manifest that carries the verdict."""
+    try:
+        from aisle.harness.guard_divergence import summary_for_run
+
+        return summary_for_run(run_dir)
+    except Exception:  # noqa: BLE001 — evidence extra, never fatal to the run
+        return None
+
+
 def _graph_hash(graph: Path) -> str:
     return hashlib.sha256(graph.read_bytes()).hexdigest()
 
@@ -1407,6 +1421,13 @@ def rollout(
         # many relaunches carried the remaining seeds
         "wall_clamped": clamped_seeds,
         "relaunches": relaunches,
+        # #267: how often the EXECUTED action differed from the PROPOSED one.
+        # Persisted rather than left recomputable: the traces it derives from
+        # live under gitignored runs/, so a statistic that is only "available
+        # in principle" is the #245/#266 failure one artifact over. Never
+        # fatal — a missing or truncated trace loses the statistic, not the
+        # run record it accompanies.
+        "guard_divergence": _guard_divergence_or_none(run_dir),
     }
     (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=1))
     return {
