@@ -14,7 +14,7 @@ architecture, and contribution guidance remain in the
 | Graphs | 12 |
 | Capability manifests | 34 |
 | CLI command entries | 12 |
-| ADR files | 49 |
+| ADR files | 51 |
 
 ## Graphs
 
@@ -147,6 +147,7 @@ inference.
 | [docs/decisions/ADR-39.md](../decisions/ADR-39.md) | ADR-39 — the determinism layer for learned-policy inference | ACCEPTED 2026-08-17 (issue #268). Extends the CON-5 determinism |
 | [docs/decisions/ADR-4.md](../decisions/ADR-4.md) | ADR-4: validator interpretations for T03 (SPEC 060) | ACCEPTED; amended by ADR-5's ratified safety-class boundary. |
 | [docs/decisions/ADR-40.md](../decisions/ADR-40.md) | ADR-40 — the sandbox trust tier | ACCEPTED 2026-08-17 (issue #265). Amends CAP-6/CAP-7 (`spec-change`). |
+| [docs/decisions/ADR-41.md](../decisions/ADR-41.md) | ADR-41 — skill applicability: what a machine can check, and what it cannot | ACCEPTED 2026-08-17 (issue #264). Adds CAP-1b (`spec-change`). |
 | [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | ACCEPTED (owner-ratified 2026-08-03) |
 | [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |
 | [docs/decisions/ADR-7.md](../decisions/ADR-7.md) | ADR-7: T05 bridge interpretations and measured performance (SPEC 030) | ACCEPTED |

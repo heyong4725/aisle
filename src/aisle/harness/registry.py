@@ -153,6 +153,38 @@ def lint(root: Path) -> dict:
                 }
             )
     warnings: list[dict] = []
+    # ADR-41 (#264): `specializes` is the machine-checkable half of
+    # applicability, so it is checked rather than trusted — a dangling or
+    # unrelated reference would make search's hierarchy meaningless, which is
+    # the failure the field exists to prevent.
+    by_id = {m.get("id"): m for _, m in manifests if isinstance(m.get("id"), str)}
+    for path, manifest in manifests:
+        target = manifest.get("specializes")
+        if not isinstance(target, str):
+            continue
+        mine = manifest.get("id")
+        if target == mine:
+            errors.append({"manifest": path.name, "message": "specializes names itself (ADR-41)"})
+            continue
+        sibling = by_id.get(target)
+        if sibling is None:
+            errors.append(
+                {
+                    "manifest": path.name,
+                    "message": f"specializes {target!r}, which is not a registered "
+                    "manifest id (ADR-41)",
+                }
+            )
+            continue
+        shared = set(manifest.get("provides") or []) & set(sibling.get("provides") or [])
+        if not shared:
+            errors.append(
+                {
+                    "manifest": path.name,
+                    "message": f"specializes {target!r} but shares no capability with it "
+                    "— 'specializes' means a NARROWER way of doing the same thing (ADR-41)",
+                }
+            )
     for path, manifest in manifests:
         for message in manifest_schema_errors(schema, manifest):
             errors.append({"manifest": path.name, "message": message})
@@ -250,8 +282,17 @@ def search(root: Path, provides: str, embodiment: str | None, installed_only: bo
     # uninstalled pip: nodes with no flag — the exact discovery-surface
     # gap analysis/h1/h1_findings.md documents; validate only catches it
     # one compile later); --installed narrows to what can actually launch
+    # ADR-41 (#264): applicability keys are ALWAYS present, explicitly null
+    # when unset. The gap was never that the data could not be stored — it
+    # was that nothing put it in front of the moment of choosing, and a key
+    # that vanishes when empty is a key a reader stops looking for.
     annotated = [
-        {**manifest, "launchable": _source_launchable(manifest, root)}
+        {
+            "applies_when": manifest.get("applies_when"),
+            "specializes": manifest.get("specializes"),
+            **manifest,
+            "launchable": _source_launchable(manifest, root),
+        }
         for _, manifest in manifests
         if matches(manifest)
     ]
