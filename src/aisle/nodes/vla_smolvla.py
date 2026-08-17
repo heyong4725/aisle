@@ -87,7 +87,10 @@ def main() -> None:  # pragma: no cover — exercised by graph tests
             policy = load_smolvla()
         from aisle.nodes.vla_backend import select_chunk
 
-        return select_chunk(policy, frames, joint_state, instruction)
+        # CON-5 (#268): the sampler is seeded from the observation's SIM
+        # stamp — reproducible under ADR-30 lockstep, unlike wall time and
+        # unlike leaving it unseeded.
+        return select_chunk(policy, frames, joint_state, instruction, seed=obs_ns)
 
     for event in node:
         if event["type"] != "INPUT":
@@ -111,11 +114,21 @@ def main() -> None:  # pragma: no cover — exercised by graph tests
             joint_state = np.asarray(
                 event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
             )
+            # ADR-38 rule 4 (#268): the staleness delta is (current turn -
+            # observed frame). Both stamps are SIM time, so the drop decision
+            # is reproducible; deriving `now` from wall time would make a
+            # loaded host execute a different trajectory with every seed
+            # identical. Passing obs_ns for both made the delta identically
+            # zero and the rule unreachable — correct under synchronous
+            # lockstep inference, and silently unprotected the moment
+            # observation and emission are separated, which is what chunks
+            # are for.
+            now_ns = int(metadata.get("sim_time_ns", obs_ns))
             # action boundary: one queued action per joint_state tick
             step = queue.pop()
             if step is None and instruction is not None:
                 chunk = infer()
-                if chunk is not None and queue.offer(chunk, obs_ns, obs_ns):
+                if chunk is not None and queue.offer(chunk, obs_ns, now_ns):
                     step = queue.pop()
             if step is not None:
                 q, grip = step[:-1], step[-1]
