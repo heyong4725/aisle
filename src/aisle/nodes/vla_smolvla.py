@@ -12,6 +12,13 @@ budget guard (safety_class: motion).
 The model (lerobot smolvla_base, `vla` extra) is LAZY-loaded at the
 first inference so import and unit tests never touch torch (CON-12);
 weights identity is pinned by HF revision in the manifest.
+
+Inference runs on a WORKER THREAD (the lockstep-starvation finding,
+analysis/m1): the event loop — and therefore turn_done — never waits
+on the model. A finished inference LANDS through ChunkQueue.offer,
+where the ADR-38 staleness floor decides whether a slow result still
+acts; at most one inference is in flight (rule 1 upstream of the
+queue).
 """
 
 from __future__ import annotations
@@ -49,6 +56,32 @@ class ChunkQueue:
         self.obs_ns = None
 
 
+class AsyncInference:
+    """Single-worker inference gate (pure, thread injected): at most one
+    in-flight request; results land via a callback that must be
+    thread-safe (ChunkQueue.offer is a list swap under the GIL)."""
+
+    def __init__(self, submit) -> None:
+        self.submit = submit  # callable(fn) -> runs fn on a worker
+        self.pending = False
+
+    def request(self, fn, on_done) -> bool:
+        """Run fn() on the worker unless one is already in flight."""
+        if self.pending:
+            return False
+        self.pending = True
+
+        def run():
+            try:
+                result = fn()
+            finally:
+                self.pending = False
+            on_done(result)
+
+        self.submit(run)
+        return True
+
+
 def instruction_from_request(payload: dict) -> str:
     """The task text the policy conditions on — derived from the SAME
     target_request every classical pipeline consumes (no extra
@@ -60,6 +93,7 @@ def instruction_from_request(payload: dict) -> str:
 def main() -> None:  # pragma: no cover — exercised by graph tests
     import json
     import os
+    from concurrent.futures import ThreadPoolExecutor
 
     import numpy as np
     import pyarrow as pa
@@ -71,6 +105,9 @@ def main() -> None:  # pragma: no cover — exercised by graph tests
     send = make_sender(node)
     env_pin = env_pin_from_env(os.environ)
     queue = ChunkQueue()
+    pool = ThreadPoolExecutor(max_workers=1)
+    gate = AsyncInference(pool.submit)
+    landed: list = [None]  # (chunk, obs_ns) slot filled by the worker
     policy = None  # lazy (ADR-38 bring-up scope)
     frames: dict = {}
     joint_state = None
@@ -124,12 +161,21 @@ def main() -> None:  # pragma: no cover — exercised by graph tests
             # observation and emission are separated, which is what chunks
             # are for.
             now_ns = int(metadata.get("sim_time_ns", obs_ns))
-            # action boundary: one queued action per joint_state tick
+            # action boundary: one queued action per joint_state tick;
+            # the queue drains while the worker infers — turn_done never
+            # waits on the model (analysis/m1 lockstep-starvation fix).
+            # Results LAND here, on the event thread, with the CURRENT
+            # now_ns — offering from the worker with its own snapshot
+            # made the ADR-38 staleness floor unreachable (test-pinned)
+            if landed[0] is not None:
+                chunk, chunk_obs_ns = landed[0]
+                landed[0] = None
+                if chunk is not None:
+                    obs_ns = chunk_obs_ns
+                    queue.offer(chunk, obs_ns, now_ns)
             step = queue.pop()
             if step is None and instruction is not None:
-                chunk = infer()
-                if chunk is not None and queue.offer(chunk, obs_ns, now_ns):
-                    step = queue.pop()
+                gate.request(infer, lambda c, snap=obs_ns: landed.__setitem__(0, (c, snap)))
             if step is not None:
                 q, grip = step[:-1], step[-1]
                 send("joint_cmd", pa.array(np.asarray(q, dtype=np.float32)), metadata)
