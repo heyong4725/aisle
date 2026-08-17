@@ -1,0 +1,8 @@
+{"episode": 0, "seed": 30, "target_med": "", "oracle_status": "success", "vlm_status": "fail"}
+{"episode": 1, "seed": 31, "target_med": "", "oracle_status": "success", "vlm_status": "fail"}
+{"episode": 2, "seed": 32, "target_med": "", "oracle_status": "success", "vlm_status": "success"}
+{"episode": 3, "seed": 33, "target_med": "", "oracle_status": "success", "vlm_status": "fail"}
+{"episode": 4, "seed": 34, "target_med": "", "oracle_status": "success", "vlm_status": "fail"}
+{"episode": 5, "seed": 35, "target_med": "", "oracle_status": "success", "vlm_status": "success"}
+{"episode": 6, "seed": 36, "target_med": "", "oracle_status": "success", "vlm_status": "fail"}
+{"episode": 7, "seed": 37, "target_med": "", "oracle_status": "success", "vlm_status": "success"}
