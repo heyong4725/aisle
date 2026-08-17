@@ -5,6 +5,15 @@ New contributor? Start with the
 project overview, architecture, use cases, extension guide, code map, research
 status, and known limitations.
 
+**Student, or here for a hackathon?** The
+**[technical report](docs/AISLE-technical-report.md)** doubles as the course
+text (~50 pages). It assumes no background in dataflow runtimes, robot
+learning, or experiment methodology. Start at §0, which gives three reading
+paths; §5.5 dissects a real skill, §7.5 explains the three units of
+measurement that people most often get wrong, and **Appendix C** is a graded
+set of exercises and hackathon tracks — several of which are genuinely open
+problems (**Appendix D** lists them with issue numbers).
+
 *AISLE is an **environment** in the reinforcement-learning sense — a simulated
 world with tasks, dynamics, and a frozen scorer that agents act in — and the
 **infrastructure** around it: the typed contract, registry, validator, safety

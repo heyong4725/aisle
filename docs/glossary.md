@@ -10,6 +10,44 @@ also nods to the pharmacy aisle of the first task family. Earlier expansions —
 outgrown as the scope widened; the lineage is recorded in
 [`Project_AISLE_Experiment_Design.md`](Project_AISLE_Experiment_Design.md).
 
+### "Learning", defined (issue #269)
+
+The word misleads newcomers, so it is worth stating exactly. **There is no
+training code in this repository** — no `.backward()`, no optimizer, no
+`def train(` anywhere in `src/` or `tools/`. Four distinct things wear the
+word, and only the last is the conventional one:
+
+1. **Outer-loop search by the coding agent** — the primary sense. Compose,
+   validate, roll out, read traces, revise. The search operator is an LLM
+   editing YAML and Python; the signal is the validator's error messages, which
+   this repository twice calls "the research agent's learning signal".
+2. **Accumulation** — the evalcarded skill library that outlives a session
+   (H3).
+3. **The reinforcement-learning sense** — AISLE as the *environment* a learner
+   acts in: episode boundaries, seeded resets, a frozen scorer. AISLE does not
+   learn here; it is what you learn against. The verifier emits a status enum
+   plus a failure class, **never a scalar reward**.
+4. **Learned models** — VLA/VLM/world-model nodes (design doc §7.5). Live since
+   the SmolVLA bring-up, and inference-only: weights pinned by revision hash,
+   loaded under `torch.no_grad()`.
+
+**"Safe" is structural, not aspirational.** Whatever is learning, the things
+that judge and constrain it are frozen and unbypassable: the verifier and reset
+(CON-7), oracle isolation (VAL-6), motion gating (VAL-5), the registry floor
+(ADR-37), and held-out seeds. The last two encode a rule specific to learning —
+*a learner may not self-certify what it accumulates.*
+
+The operating definition:
+
+> **Learning in AISLE is a change to the system that is recorded,
+> attributable, and re-runnable.** An improvement that leaves no such artifact
+> does not count as learning here, because it is indistinguishable from a lucky
+> seed.
+
+Long version with worked examples: technical report
+[§3.5](AISLE-technical-report.md#35-what-learning-means-in-aisle) and
+[§7.6](AISLE-technical-report.md#76-the-scorer-is-not-a-reward-function).
+
 Every identifier this repository uses, expanded, with the file that defines
 it normatively. If a definition here ever disagrees with the spec it cites,
 **the spec is right and this page is stale** — same rule the README's status

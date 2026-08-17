@@ -13,15 +13,24 @@ direction, not shipped capability.*
 
 ## Contents
 
+0. [How to read this report](#0-how-to-read-this-report)
 1. [Executive summary](#1-executive-summary)
 2. [The problem: why "the demo worked" is not evidence](#2-the-problem-why-the-demo-worked-is-not-evidence)
 3. [The research question](#3-the-research-question)
+   - [3.5 What "learning" means in AISLE](#35-what-learning-means-in-aisle)
 4. [The architectural bet: typed dataflow](#4-the-architectural-bet-typed-dataflow)
 5. [System architecture](#5-system-architecture)
+   - [5.5 Anatomy of a skill](#55-anatomy-of-a-skill)
+   - [5.6 What actually happens when you run a rollout](#56-what-actually-happens-when-you-run-a-rollout)
 6. [Determinism as an engineered property](#6-determinism-as-an-engineered-property)
 7. [The evidence architecture](#7-the-evidence-architecture)
+   - [7.5 Units of measurement: episode, rollout, attempt](#75-units-of-measurement-episode-rollout-attempt)
+   - [7.6 The scorer is not a reward function](#76-the-scorer-is-not-a-reward-function)
 8. [The experimental program](#8-the-experimental-program)
+   - [8.5 The idea loop, worked end to end](#85-the-idea-loop-worked-end-to-end)
+   - [8.6 Running an autonomous campaign with integrity](#86-running-an-autonomous-campaign-with-integrity)
 9. [What has been measured](#9-what-has-been-measured)
+   - [9.05 How to read the evidence](#905-how-to-read-the-evidence-a-skill-worth-acquiring)
 10. [The model agenda: VLA, world models, and WAMs](#10-the-model-agenda-vla-world-models-and-wams)
 11. [Safety under learned policies](#11-safety-under-learned-policies)
 12. [Threats to validity](#12-threats-to-validity)
@@ -30,6 +39,57 @@ direction, not shipped capability.*
 15. [Why this matters](#15-why-this-matters)
 16. [Appendix A: notation](#appendix-a-notation)
 17. [Appendix B: reading path](#appendix-b-reading-path)
+18. [Appendix C: exercises and hackathon tracks](#appendix-c-exercises-and-hackathon-tracks)
+19. [Appendix D: open gaps, with issue numbers](#appendix-d-open-gaps-with-issue-numbers)
+20. [Appendix E: common misconceptions](#appendix-e-common-misconceptions)
+21. [Appendix F: recurring design patterns](#appendix-f-recurring-design-patterns)
+22. [Appendix G: the failure taxonomy, and how to diagnose each class](#appendix-g-the-failure-taxonomy-and-how-to-diagnose-each-class)
+
+---
+
+## 0. How to read this report
+
+This report doubles as the project's teaching text. It assumes you can read
+Python and have seen a robot arm in a simulator, and it assumes **nothing**
+about dataflow runtimes, robot learning, or experiment methodology. Where a
+term is load-bearing it is defined at first use, and
+[`docs/glossary.md`](glossary.md) expands every identifier (`CON-5`, `VAL-6`,
+`H3`, `T2`, `L1`) and names the file that defines it.
+
+### Three reading paths
+
+**If you are new and want to understand the system** (≈2 hours): §1 → §2 →
+§3.5 (what "learning" means here, which is not what the name suggests) → §4 →
+§5 → §5.5 (a skill, concretely) → §9. Skip §6 and §7 on a first pass; come
+back when something surprises you.
+
+**If you are here for a hackathon and want to build** (≈45 minutes, then
+code): §1 → §5 → §5.5 → §7.5 (the three units — get this wrong and your
+measurement means nothing) → Appendix C for tracks, Appendix D for open gaps
+you could close.
+
+**If you are reviewing the science**: §7 → §7.5 → §7.6 → §8 → §8.5 → §9 →
+§12. The claim discipline is the contribution; the robot task is the
+instrument.
+
+### The one idea to carry through
+
+Everything here follows from a single refusal: **a working demo is not
+evidence.** A robot that completes a task tells you almost nothing, because
+you cannot tell from the outcome whether the system is good, the seed was
+kind, the scorer was lenient, or the code changed underneath the measurement.
+Every mechanism in this report — the frozen scorer, the typed graph, the
+attestation hash, the idea gate, the held-out seeds — exists to make one
+specific alternative explanation impossible. When a mechanism seems fussy,
+ask which alternative explanation it kills; that is always the answer.
+
+### A note on how the results read
+
+Several headline numbers here are negative, undecided, or withdrawn. That is
+not modesty. A project whose stated contribution is evidence discipline has to
+demonstrate the discipline on its own results first, and the most instructive
+sections of this report (§9.1, §9.2) are the ones where the project's own
+audit dissolved a verdict it wanted.
 
 ---
 
@@ -122,6 +182,101 @@ autonomous process running unattended.
 
 ---
 
+### 2.5 Six alternative explanations, and the mechanism that kills each
+
+§0 promised that every mechanism in this system exists to make one specific
+alternative explanation impossible. This section makes that concrete, and it
+is the fastest way to hold the whole architecture in your head at once.
+
+Suppose an agent reports: *"I improved the system from 40% to 90% success."*
+Before believing the claim, list the ways it could be true-sounding and wrong.
+
+---
+
+**Explanation 1 — "The seeds were kind."** The agent tuned until it happened to
+work on the episodes it could see.
+
+> **Killed by:** the dev/held-out split. Seeds `0..49` are the agent's; seeds
+> `100..107` are scored by the runner *after* the session ends, on the system
+> as left. The ranges are validated disjoint before the campaign starts, and
+> "dev-set numbers never headline" is enforced editorially. §7.6.
+
+---
+
+**Explanation 2 — "The scorer got easier."** The agent adjusted, directly or
+indirectly, what counts as success.
+
+> **Killed by:** the frozen set. The verifier, reset, scene, guard, and the
+> measured graphs are hash-manifested, and the rollout runner refuses to start
+> if the hash differs from the trusted baseline. The agent can *read* the code
+> that judges it and cannot change it. §4, §5.6.
+
+---
+
+**Explanation 3 — "The environment drifted."** Something changed underneath —
+a dependency, a physics parameter, the runtime — and the improvement is an
+artifact of the change.
+
+> **Killed by:** attestation. Every run records an environment fingerprint and
+> hash covering the frozen set *and* the selected simulator extra; campaigns
+> additionally record the content identity of the dora CLI, because a version
+> mismatch once invalidated a scenario and neither `--version` nor a committed
+> hash could see it. Runs that cannot attest are labelled UNATTESTED and make
+> no reproducibility claim. §6, §9.05.
+
+---
+
+**Explanation 4 — "The agent cheated."** It read privileged state, bypassed the
+safety guard, or ran code the registry never vetted.
+
+> **Killed by:** structural checks rather than trust. `oracle_state` cannot be
+> routed to a non-verifier node (VAL-6). Every motion path must traverse the
+> guard (VAL-5). A graph node whose `path` does not resolve to its manifest's
+> `source` is refused, because dora launches the path — a real incident, caught
+> live. These are compile-time properties of the graph, not behavioural
+> expectations of the agent. §4.
+
+---
+
+**Explanation 5 — "It was more compute, not a better idea."** The improvement
+came from spending more, and would have arrived anyway.
+
+> **Killed by:** budgets enforced from outside and recorded per idea. Token
+> ceilings are counted from the live stream by the runner, not from a log the
+> session could rewrite; wall ceilings likewise. Every campaign record carries
+> tokens-to-first-success alongside the outcome, so "better" and "more
+> expensive" are separable — which is exactly what let A3 report that the
+> *constrained* arm won at half the tokens. §8.6.
+
+---
+
+**Explanation 6 — "The story was written after the data."** The hypothesis was
+chosen to fit what happened.
+
+> **Killed by:** the idea gate. A rollout refuses to run unless the branch has
+> an open idea, and the idea carries its expected effect and a `git_sha`
+> stamped at open time. A6's whole value is that the pre-registered mechanism
+> and the observed mechanism *differed*, which is only visible because the
+> expectation was recorded first. §8.5.
+
+---
+
+#### What this framing buys you
+
+Two things. First, when a mechanism seems fussy, you can now ask the diagnostic
+question — *which explanation does this kill?* — and if there is no answer, the
+mechanism is probably ceremony.
+
+Second, it tells you where the system is still weak. There is a seventh
+explanation this architecture does **not** kill:
+
+**Explanation 7 — "A capable agent deliberately gamed the controls."** Every
+mechanism above is designed against carelessness, ambiguity, and drift. §12
+states plainly that the controls are untested against an agent actively trying
+to pass, and Appendix C invites you to attack them. Three defects were found by
+ordinary review in a single governance pass (§9.2); nobody has yet tried in
+earnest.
+
 ## 3. The research question
 
 > **Can AI coding agents autonomously build, diagnose, improve, reuse, and
@@ -185,6 +340,97 @@ the inner loop. Whether the agent can *decide to reach for* a VLA, evaluate it
 honestly, and reuse it later is an outer-loop question. A system that only
 measured the inner loop would report "the VLA is better" and miss the actual
 research question.
+
+---
+
+### 3.5 What "learning" means in AISLE
+
+The project is *Agentic Infrastructure for **Safe Learning** and Execution*,
+and this is the word most likely to mislead you. If you arrive expecting a
+training loop, you will look for it and not find one. There is **no training
+code in the repository** — no `.backward()`, no optimizer, no `def train(`
+anywhere in `src/` or `tools/`.
+
+That is not an omission. Four different things wear the word here, and only
+the last is the conventional one.
+
+#### Sense 1 — learning as outer-loop search (the primary one)
+
+A coding agent improves the system by composing a graph, validating it,
+running episodes, reading traces, and revising. No gradients are involved; the
+search operator is an LLM editing YAML and Python.
+
+What makes this *learning* rather than flailing is that the environment
+supplies a signal shaped for a reader. The repository names it in exactly
+those words, twice: the validator exists *"because its error messages are the
+research agent's learning signal."*
+
+The paradigm case is H1 (§9). Agents produced schema-valid graphs on 40 of 40
+attempts, but only 15% (Claude) and 65% (Codex) launched. The cause was
+uniform — manifests advertising nodes whose packages were not installed — and
+**the agent had no way to know.** The fix was not a better prompt. It was
+`INSTALL_MISSING`: make the environment legible, and the same agent stops
+failing. A large fraction of apparent agent incompetence is of this kind, and
+it is an *interface* property, not a model property.
+
+> **For students:** this is the most transferable idea in the project. When an
+> agent fails at your task, the first question is not "which model is
+> smarter?" but "could any agent have known that from what I showed it?"
+
+#### Sense 2 — learning as accumulation
+
+Skills that outlive the session that produced them: the evalcarded library
+(§5.5), and hypothesis H3. This is where "learning" means *compounding*, and
+it is the sense AISLE tried hardest to measure and could not decide (§9).
+
+#### Sense 3 — learning in the reinforcement-learning sense
+
+The README calls AISLE *"an environment in the reinforcement-learning
+sense."* Read that as a statement about **shape**, not activity: episode
+boundaries, seeded resets, dynamics, and a scorer the actor cannot edit. It is
+an environment a learner could be plugged into. AISLE does not learn here —
+it is the thing you learn *against*. §7.6 works through why the frozen
+verifier is not a reward function, which is a distinction worth having
+crisply.
+
+#### Sense 4 — learned models
+
+VLA policies, VLM verifiers, world-model environments (§10). Live since the
+SmolVLA bring-up, and **inference-only** so far: a pretrained checkpoint
+loaded under `torch.no_grad()`, weights pinned by revision hash. The learning
+that produced those weights happened elsewhere.
+
+#### What "Safe" modifies
+
+Not an aspiration that learning be conducted carefully. It is structural:
+whatever is learning — agent, library, or policy — **the things that judge and
+constrain it are frozen and unbypassable.**
+
+| mechanism | what it denies the learner |
+|---|---|
+| frozen verifier + reset (CON-7) | editing its own scorer |
+| oracle isolation (VAL-6) | seeing privileged state |
+| motion gating (VAL-5) | commanding the arm unclamped |
+| registry floor (ADR-37) | setting its own passing grade |
+| held-out seeds | tuning on the test set |
+
+The last two are learning-specific in a way the others are not. ADR-37 in
+particular encodes a rule worth stating on its own: **a learner may not
+self-certify what it accumulates.** Every governance defect this project found
+(§9.2) was a failure of that rule rather than a failure of the learning.
+
+#### The operating definition
+
+> **Learning in AISLE is a change to the system that is recorded,
+> attributable, and re-runnable.**
+
+The corollary is the sharp part. An improvement that leaves no such artifact
+**does not count as learning here**, because it is indistinguishable from a
+lucky seed. This is why learning is externalized into artifacts — a diff on a
+typed graph, an evalcarded skill, an idea-tree entry — rather than held in
+weights or in a context window. It is also why agent sessions start fresh:
+anything that survives a session had to become an artifact to do so, which is
+precisely what makes H3's wiped-versus-library comparison meaningful.
 
 ---
 
@@ -613,6 +859,216 @@ parameters, and the code of non-frozen nodes.
 
 ---
 
+### 5.5 Anatomy of a skill
+
+A "skill" is the unit of accumulated learning (§3.5, sense 2). It is worth
+dissecting a real one, because the design is almost entirely about *what the
+author is not allowed to say*.
+
+`ik-transfer-v2` is a trajectory node an agent wrote during the A3 campaign
+after a measured collision. On disk:
+
+```
+skills/ik-transfer-v2/
+├── skill.yaml          # the manifest, agent-authored, eval: null
+├── ik_transfer_v2.py   # the node code
+└── eval.yaml           # the skill SHIPS ITS OWN EXAM
+registry/manifests/ik-transfer-v2.yaml   # written by registration
+```
+
+#### The manifest: a typed interface, not a description
+
+The registry manifest is what a *later* agent reads to decide whether it can
+wire this node without opening the code:
+
+```yaml
+id: ik-transfer-v2
+provides: [trajectory_generation]        # the discovery key
+requires: [grasp_planning]
+inputs:
+  grasp_pose:  {schema: pose7d_f32, rate_hz: 30}
+  joint_state: {schema: jointvec_f32, rate_hz: 100}
+  turn:        {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
+outputs:
+  joint_cmd:   {schema: jointvec_f32, latency_class: soft_rt}
+  turn_done:   {schema: sim_turn_u64, latency_class: hard_rt}
+params:
+  max_joint_vel_rad_s: {type: float, default: 1.0, range: [0.1, 2.0]}
+embodiment: {arm: [franka, so101], gripper: parallel}
+safety_class: motion
+eval: {suite: t1-l1-routed-transfer, pass_rate: 1.0, last_run: '2026-08-16'}
+origin: agent-authored
+source: skills/ik-transfer-v2/ik_transfer_v2.py
+```
+
+Every field earns its place by enabling a machine check:
+
+- **`provides` / `requires`** drive discovery (`registry search --provides`).
+- **`inputs` / `outputs` schemas** let the validator type-check every edge
+  before anything runs. `pose7d_f32` is a closed vocabulary entry (CAP-2)
+  mapping to a concrete Arrow type and shape.
+- **`is_clock: true`** declares participation in the ADR-30 simulated-time
+  turn, so the scheduler can verify the graph closes each turn.
+- **`params` with ranges** bound what an agent may tune without editing code —
+  and A3 showed that this axis alone is often enough (§9).
+- **`safety_class: motion`** gates what it may command; motion nodes without
+  an evalcard are refused outright.
+- **`source`** is checked against the graph node's `path`
+  (`PATH_MANIFEST_MISMATCH`), so approved code cannot be swapped under a
+  vetted id — a real incident, observed live in an H3 campaign.
+
+#### The five lines that are the whole governance model
+
+Diff what the agent ships against what the registry installs:
+
+```diff
+-  "eval": null,
++  "eval": {"suite": "t1-l1-routed-transfer", "pass_rate": 1.0, "last_run": "2026-08-16"},
+```
+
+That is the *entire* difference. The agent declares everything about its
+skill **except how well it works**. The evalcard is the one field it cannot
+write: `harness skill register` runs the shipped `eval.yaml`, measures the
+rate, and either fills the field in or rolls the registry back byte-for-byte.
+
+Registration is a staged transaction, and the ordering matters:
+
+1. install the candidate manifest with a clearly-labelled *provisional*
+   evalcard — so the skill's own eval graph can discover it instead of failing
+   `MANIFEST_MISSING`
+2. lint the whole registry
+3. run the shipped eval against the staged candidate
+4. compare to the floor, then write the real evalcard
+5. any failure at any step → exact rollback
+
+#### The exam ships with the candidate — and is frozen
+
+`eval.yaml` names the graph, tier, seeds, episode count, and threshold:
+
+```yaml
+suite: t1-l1-routed-transfer
+graph: graphs/eval_ik_transfer_v2.yaml
+seeds: 30,31,32,33,34,35,36,37
+episodes: 8
+min_pass_rate: 0.75
+```
+
+Note the seed population. Seed 33 is where the agent *found* the collision;
+30–32 and 34–37 are its unmodified neighbours, included as a regression guard.
+An agent choosing a population that could catch its own fix breaking something
+else is the behaviour the idea discipline is meant to produce.
+
+Two protections apply here and both were added after failures:
+
+- The eval **graph** is frozen (ADR-36). It used to be editable by the
+  candidate — a gate the examinee can rewrite is not a gate.
+- The eval **threshold** is floored (ADR-37). It used to be whatever the
+  candidate declared — a skill shipping `min_pass_rate: 0.0` registered at 0.0
+  and the gate reported success.
+
+Same failure shape, one layer apart: first the exam paper, then the passing
+grade. §9.2 tells that story.
+
+#### How reuse actually happens
+
+A later agent searching for the capability sees this:
+
+```
+ik-trajectory    origin=hub             eval.pass_rate=1.0   launchable=True
+ik-transfer-v2   origin=agent-authored  eval.pass_rate=1.0   launchable=True
+```
+
+The library grows by adding *competing entries under the same capability key*.
+Reuse is therefore a search result, not an instruction — and `launchable` is
+present because H1's dominant failure was advertising nodes that could not
+start.
+
+Reuse is then **measured, not self-reported**. The campaign runner intersects
+the scored deliverable's node ids with skills registered in an earlier
+scenario:
+
+```python
+return sorted(node_ids & prior_skill_ids)
+```
+
+That is how the one solid transfer datum was established: an H3 desk
+deliverable contained `s3-driver-v1`, a skill registered during the *retail*
+suite — a cross-suite transfer the H3 design hoped for and got.
+
+#### The honest limit (open gap #264)
+
+The evalcard says a skill *worked on a suite*. Nothing in the schema says
+**when reaching for it is appropriate**. The search result above gives an
+agent two entries, same capability, same headline number, and no basis to
+choose. Nothing records that `ik-transfer-v2` matters only when the transfer
+path sweeps a shelf at the carried box's level.
+
+As a library grows, undifferentiated same-capability entries make selection
+*harder*, so the accumulation benefit can invert. Candidate fields
+(`applies_when`, `eval.population`, `specializes`, `known_limits`) are
+discussed in issue #264; each has the problem that agent-authored free text is
+unverifiable, and a field the validator cannot check is documentation.
+
+### 5.6 What actually happens when you run a rollout
+
+The gates described across §4–§7 are abstractions until you watch them fire in
+order. This is the real sequence in `run_gates`, and the ordering is deliberate
+throughout: **each gate is placed so that the cheapest refusal happens first,
+and so that no gate can be satisfied by something a later gate would reject.**
+
+```
+uv run harness rollout --graph graphs/expert_t0.yaml --tier T0 \
+    --episodes 2 --seeds 0..1
+```
+
+**1. Baseline selector is well-formed.** `--env-baseline` must be
+`origin/main`, `local`, or a 40-hex commit. A typo here would otherwise
+silently produce an unattested run that *looks* attested.
+
+**2. Simulator identity resolves.** Which sim extra is selected, and is it
+installed? Declared explicitly so the attestation covers *this* environment
+shape rather than a nominal one.
+
+**3. Environment hash check.** `tools/env_hash.py --check` recomputes the hash
+over the frozen set and compares it to the trusted baseline. **This is the
+no-cheating gate.** If the scene, verifier, reset, guard, or a frozen graph has
+drifted from the baseline commit, the rollout refuses to start. Note it runs
+*before* anything expensive: you cannot burn an hour of episodes and then
+discover the environment moved.
+
+**4. Budget ledger.** How many episodes and how much wall time remain? The
+ledger is tamper-evident and enforced from outside the agent's reach.
+
+**5. Validation — against the embodiment that will actually run.** The comment
+in the source explains the placement better than prose could: *"a graph whose
+nodes do not support it must refuse HERE, not crash hours into the rollout."*
+This is where `SCHEMA_MISMATCH`, `ORACLE_LEAK`, `MOTION_UNGATED`,
+`INSTALL_MISSING`, `CLOCK_*` and the rest fire.
+
+**6. The idea gate.** Does the current branch have an open idea? If not, refuse
+(§8.5). `--no-idea-gate` skips it and is recorded in the run manifest, so the
+opt-out leaves a trace.
+
+Only then does an episode start. Inside each episode:
+
+```
+reset (seeded) → episode_goal published → the graph runs under
+ADR-30 simulated-time turns → verifier judges → episode_result
+```
+
+and every topic is recorded to Arrow, with the run manifest capturing the
+graph hash, environment hash and fingerprint, seeds, tier, perception rung,
+verifier choice, reset mode, budget reservation, and the post-run audit.
+
+> **Why this ordering repays study.** Notice that validation comes *after* the
+> hash check. If it came first, an agent could pass validation with an edited
+> verifier and only then be told the environment drifted — which is a worse
+> error message and a worse audit trail. Nearly every gate ordering in this
+> system has a similar argument behind it, and reconstructing those arguments
+> is the fastest way to understand the design.
+
+---
+
 ## 6. Determinism as an engineered property
 
 Reproducibility is not assumed here; it is built, measured, and where it cannot
@@ -967,6 +1423,117 @@ you have not understood is how correctness is lost.
 
 ---
 
+### 7.5 Units of measurement: episode, rollout, attempt
+
+This is the single most common source of confusion about the results, and
+getting it wrong invalidates a measurement without producing any error. Three
+units are nested, and they answer different questions:
+
+| unit | what it is | what MORE of it buys you |
+|---|---|---|
+| **episode** | one seeded run of one graph, from reset to `episode_result` | a tighter estimate of *that graph's* task performance |
+| **rollout** | N episodes of one graph over a seed list | a pass@1 for that graph |
+| **attempt** | one *fresh agent session* | an estimate of *the agent's ability to produce a working graph* |
+
+The rule the project enforces on itself:
+
+> Many episodes from one graph estimate that graph's task performance. They
+> are **not** independent replications of a research agent's ability to
+> discover the graph. Independent agent sessions are the research-process
+> replicates.
+
+#### Worked example: why H1 ran 40 attempts and only 8 episodes each
+
+A natural objection to H1 goes: *the dominant failure was an uninstalled
+package — that is deterministic infrastructure, so a couple of runs should
+settle it.* The instinct is right about episodes and wrong about the unit.
+
+H1 ran **20 attempts per agent** (two agents, 40 total), **8 episodes each**,
+and the agent was explicitly forbidden from rolling out at all — the H1 prompt
+says *"Do NOT run rollouts."* The runner scores whatever graph the attempt
+produced. So the episodes are not measuring the agent; 8 is enough because
+scoring a fixed graph is the easy part.
+
+The 40 attempts are doing three things episodes cannot:
+
+1. **The estimand is a rate against a pre-registered threshold.** H1 asks
+   whether ≥80% of attempts produce a valid, launching dataflow zero-shot. A
+   rate needs a denominator, and the result — 15% versus 65% between arms — is
+   a between-agent contrast that three attempts cannot separate.
+2. **The concentration is the finding.** One attempt shows you *a* failure. It
+   cannot show that **24 of 40** attempts died on the same mechanism, and that
+   number is what justified the fix: it said surfacing `INSTALL_MISSING`
+   converts most of the loss rather than a few percent of it.
+3. **The variance lives in the agent.** Each individual failure is
+   deterministic — the package is installed or it is not. But *which graph you
+   get* is stochastic: same prompt, different composition every session. The
+   object under study is stochastic even though every constituent failure is
+   deterministic and diagnosable at a glance.
+
+> **The analogy:** you are measuring a compiler's error messages by how often
+> programmers reach a working build. Each compile error is deterministic. You
+> still need many programmers to learn *which* error dominates — and that is
+> the only number that tells you what to fix.
+
+#### The honest counterpart
+
+Most later ablations did **not** get 20 attempts. A3, A4 and A5 are **n=1 per
+arm**, and every one is labelled a lower bound rather than a comparison. When
+you read "params-only won on efficiency", the correct mental footnote is *one
+session versus one session*. That is a real weakness of the results, and it is
+the same weakness this section explains how to detect.
+
+### 7.6 The scorer is not a reward function
+
+Because AISLE is described as an environment in the RL sense, readers reach
+for RL intuitions. Most of them do not apply, and the differences are
+instructive.
+
+#### What the verifier actually emits
+
+Not a scalar. `episode_result` carries a **status enum** — `success`, `fail`,
+`running` — plus a **failure class** from a closed taxonomy: `wrong_object`,
+`never_grasped`, `dropped`, `collision`, `timeout`. TC-8 makes the oracle's
+`status == "success"` the ground truth.
+
+That is a **label with a diagnosis attached**, not a return to maximize.
+Nothing optimizes against it: no gradients, no value function, no policy
+parameters anywhere in the loop.
+
+The clearest tell is the asymmetric penalty. The task definition says a wrong
+medicine is **10× worse** than a failure to deliver — and that 10× lives in
+the goal text handed to the agent *as English*, not as a coefficient in a
+scoring function. In an RL system it would be a weight. Here it is an
+instruction to a reader.
+
+#### The better analogy: held-out model selection
+
+Dev seeds `0..49` are the agent's to probe. Seeds `100..107` are withheld and
+scored by the runner **after** the session ends, with the system as the agent
+left it. That is a train/test split with a frozen grader, and "dev-set numbers
+never headline" is the rule that enforces it.
+
+So the closest classical framing is not reinforcement learning at all — it is
+**model selection on a held-out set, where the search operator happens to be a
+language model.**
+
+#### Why a taxonomy instead of a scalar
+
+A scalar return would be *worse* for this loop. `never_grasped` and
+`wrong_object` earn the same reward — failure — and mean entirely different
+things: one says the grasp stack is broken, the other says the safety property
+was violated. The signal is shaped for a consumer that can act on the
+distinction, which is exactly what an LLM is and what a gradient is not.
+
+This reframes ablation A7. "Does the portable verifier's noise break
+learning?" is really **does label noise break outer-loop search** — and the
+noise model matters: the realistic verifier measures 0.00 false-success and
+0.68 false-fail. A grader that almost never wrongly passes but often wrongly
+fails is a very different problem from symmetric reward noise, and a
+conservative grader mostly costs you *time*, not *safety*.
+
+---
+
 ## 8. The experimental program
 
 ### 8.1 Task tiers
@@ -1085,6 +1652,97 @@ that occurred during execution.
 inform the agent; held-out runs decide the verdict. A campaign whose held-out
 scoring is incomplete cannot produce a verdict regardless of how good its
 development numbers look.
+
+---
+
+### 8.5 The idea loop, worked end to end
+
+The "idea tree" is easy to mistake for a lab notebook. It is a gated artifact,
+and the gate is what makes it work. This section follows one real idea —
+**A6, `I16`** — from open to verdict.
+
+#### Step 1: open the idea, stating the expectation first
+
+```json
+{"id": "I16", "ts": "...", "git_sha": "caf70e5e9",
+ "idea": "teleport vs behavioral reset",
+ "parent": null,
+ "expect": "<pre-registered effect>",
+ "status": "open"}
+```
+
+Two details carry the weight. The `git_sha` is stamped **at open time**, so
+the claim is bound to the code that will be measured rather than to whatever
+the tree looks like at write-up. And `expect` is filled in **before** any
+episode runs — four expectations were registered for I16.
+
+#### Step 2: the gate
+
+`harness rollout` refuses to start if the branch has no open idea. You cannot
+gather evidence first and decide what it meant afterwards. (`--no-idea-gate`
+exists, is recorded in the run manifest, and is for machinery runs only — an
+opt-out that leaves a trace is very different from an opt-out that does not.)
+
+#### Step 3: run the matched arms
+
+Paired 10-episode T1 arms, seeds 0..9, oracle verifier, idle machine, trusted
+`--env-baseline origin/main`:
+
+| arm | graph | pass@1 | wall | reset outcomes |
+|---|---|---|---|---|
+| teleport | `expert_t1.yaml` | 1.00 (10/10) | 6.4 min | 10 teleport |
+| behavioral | `expert_t1_behavioral.yaml` | 0.80 (8/10) | 9.6 min | 7 success / 3 audited `fallback: true` |
+
+#### Step 4: close it with a verdict
+
+```json
+{"id": "I16", "observed": "...", "verdict": "flat", "status": "closed"}
+```
+
+**`flat`** — 3 of 4 expectations met. Not `up`. The ablation did not confirm
+what it set out to, and the record says so.
+
+#### Why this is the example worth studying
+
+The *miss* is the result.
+
+The expected finding was the one from the literature: that the reset is itself
+a manipulation task. That was confirmed — 30% of behavioral attempts could not
+return the box and fell back to teleport. But the two failed **episodes** were
+not caused by reset failure at all. They failed on **scene drift**: only the
+delivered box returns, to a *sampled* slot, while every other box stays where
+the previous episode left it. Episodes therefore run on progressively
+non-canonical layouts, and 2/10 failed honestly on geometry that seeded curves
+never see.
+
+Teleport hides this entirely — same-seed teleport episodes always start from
+the canonical layout.
+
+Now consider what happens without pre-registration. You see 1.00 versus 0.80
+and write: *"behavioral reset is harder, costs 20% success and +19 s per
+episode."* Every word is true, and the finding is missed. The pre-registration
+is what forced the gap between *expected mechanism* and *observed mechanism*
+to become visible, and that gap is the publishable line:
+
+> Curve numbers measured under teleport resets are an upper bound; a physical
+> desk pays both the reset time **and the drift tax**.
+
+The same pattern appears in T2's ideas, where two expectations were tracked
+separately — `I14` closed **`down` on the success expectation with the safety
+expectation met** — so a safety win could not paper over a performance miss.
+
+#### The gap this section has to admit (open gap #266)
+
+The raw `I16` entry is **not retained**. Idea trees are branch-scoped, live
+under gitignored `runs/`, and the campaign directories are gone. What survives
+on mainline is machinery smokes plus the findings files that quote the
+research ideas.
+
+So the sentence "3/4 pre-registered expectations met" is, right now, an
+unverifiable claim in prose — exactly the thing the idea tree exists to
+prevent. It is the same retention failure as the lost skills (§9.2), one
+artifact over, and it undercuts a claim the project makes about auditability.
+Issue #266 tracks it.
 
 ---
 
@@ -1219,6 +1877,118 @@ first-pass §8.4 review could only cover two of five and this report initially
 recorded the other three as lost. They were not lost; they were undiscoverable
 from any machine but the one that ran the campaign. §9.2 treats that as its own
 finding.
+
+### 8.6 Running an autonomous campaign with integrity
+
+A "campaign" is one research agent, one pinned worktree, one budget, one
+scored deliverable. The machinery around it exists because the alternative —
+"we ran an agent and it got better" — is an anecdote. Each control below was
+added after a specific failure, which is the best way to learn them.
+
+**Pinned worktree.** The agent works in a git worktree pinned to a recorded
+commit, not in the live tree. Without this, the code changes underneath the
+measurement and the result belongs to no particular version of the system.
+
+**Replication arms must predate the analysis they replicate.** An early
+replication arm read the first arm's committed findings *from inside its own
+worktree* and "replicated" them. That run is kept, labelled contaminated, as
+the cautionary tale. The rule now: a replication pins a commit that predates
+any committed analysis of the same experiment.
+
+> **This is the failure mode most likely to bite a hackathon team.** Your
+> repository contains your results. An agent with repository access can read
+> them. Independence is a property of what the agent could see, not of your
+> intent.
+
+**Session isolation.** Each session gets a fresh home directory; credentials
+are seeded before and scrubbed after, in a `finally` block so a token cannot
+outlive the session even on an unexpected exception. An occupied home is
+rotated aside rather than reused, so an aborted attempt's state cannot leak
+into the next launch.
+
+**Budgets enforced from outside.** Token ceilings are counted from the live
+API stream by the runner — not from a log the session could rewrite — using
+new-token semantics (input + cache-creation + output, cache reads excluded).
+Wall ceilings likewise. The agent cannot opt out of the ledger.
+
+**Held-out scoring after the session ends.** Dev seeds are the agent's; the
+held-out seeds are scored by the *runner*, after the agent's turn is over, with
+the graph and library exactly as the agent left them. Dev numbers never
+headline.
+
+**Frozen-set audit after the fact.** Even though the rollout gate would have
+refused a drifted environment, the campaign diffs the frozen paths against the
+pin afterwards, so tampering is visible even for work that never triggered a
+rollout.
+
+**Everything recorded.** Stop reason, token and wall spend, rollout trajectory,
+held-out result with failure taxonomy, frozen-set audit, skill-library state
+before and after, and the runtime identity of the dora CLI — the last because
+a version mismatch invalidated a scenario once, and neither `--version` nor a
+committed hash could see it.
+
+#### What the campaign machinery still cannot do
+
+It cannot make a badly-designed ladder measurable (§9's H3 finding). It cannot
+retain artifacts it was never told to keep — three skills and every research
+idea tree were lost that way (§9.2, issue #266). And its controls are strong
+against careless optimization and **untested against a capable agent
+deliberately trying to pass**, which §12 states as an open threat rather than a
+solved problem.
+
+### 9.05 How to read the evidence (a skill worth acquiring)
+
+Every number in §9 comes from a committed findings file, and those files are
+written to be quotable *including their own caveats*. Learning to read them is
+the transferable skill this project teaches, so here is the method.
+
+**Start with the denominator, not the number.** "0 wrong-object" means nothing
+until you know it is 0 in 224 episodes across three campaign runs, and that
+inadmissible cells were excluded from that count rather than quietly included.
+A rate without its denominator is a slogan.
+
+**Find the unit.** Is this per-episode, per-rollout, or per-attempt (§7.5)? A
+"1.0 pass@1" from one session and a "1.0 pass@1" across twenty attempts are
+different claims wearing the same notation.
+
+**Look for the flags.** Campaign cells carry machine-derived flags —
+`wipe_leak`, `frozen_drift`, `treatment_drift`, `holdout_partial`. The rule is
+that flagged cells stay in the table as history but never enter a verdict. When
+a findings file reports `met: null` with thirteen caveats, that is the system
+working, not the analysis being evasive.
+
+**Check whether it is attested.** ADR-24 introduced an environment fingerprint.
+Measurements taken before it, or from a live tree rather than a pinned
+worktree, are labelled **UNATTESTED** and make no reproducibility claim. H4 is
+the standing example: a real measurement, honestly labelled, that you may not
+cite as reproducible.
+
+**Ask what the number is an estimate *of*.** This catches the most common
+mistake. A pass@1 from many episodes of one graph estimates *that graph*. It
+does not estimate the agent that produced the graph, and it certainly does not
+estimate agents in general.
+
+**Read the "what this does NOT establish" section.** Most findings files have
+one. `analysis/a1/a1_table.md` has an explicit one; the VER-6 fidelity README
+lists four separate limits including the one that turned out to matter most —
+that it was measured at rung L0.
+
+#### A worked example of a number that changed meaning
+
+The verifier-fidelity headline was first reported as agreement **0.29** over 31
+episodes, with 0.00 false-success and 0.88 false-fail. After the VER-13 fusion
+amendment it was recomputed over *the same recorded episodes* as **0.45** /
+0.00 / 0.68.
+
+Both numbers are in the repository. The first is preserved as the
+pre-amendment measurement rather than overwritten, because the honest record is
+that a change to the fusion rule moved the metric — and a reader needs to know
+that the scorer itself has a version. The rule the project applies to itself
+here is worth memorizing:
+
+> Preserve committed findings as dated evidence. When a verdict changes, update
+> the overview that points at the finding — **never edit the finding to match
+> the new story.**
 
 ### 9.1 What the failures taught
 
@@ -1529,6 +2299,131 @@ full loop this project exists to test.
 
 ---
 
+### 10.11 Where SmolVLA actually sits: base training, SFT, or RL?
+
+The first learned policy landed as a node in August 2026, and the honest
+answer to "which ML stage is this?" is **none of them**.
+
+| stage | done by whom | where |
+|---|---|---|
+| **base training** | LeRobot upstream — `smolvla_base`, ~450M params, on SO-100/SO-101 tabletop data | not in this repository |
+| **supervised fine-tuning** | not done | named as the follow-on |
+| **reinforcement learning** | not done | structurally awkward here; see below |
+
+What the repository does is **zero-shot evaluation of a frozen checkpoint**.
+`vla_backend.py` loads the policy, calls `.eval()`, and runs inference under
+`torch.no_grad()`. No weights change. Model identity is pinned by Hugging Face
+revision hash in the manifest — the environment-hash discipline extended to
+weights, so swapping a checkpoint moves the attested identity exactly as a
+scene edit would.
+
+#### What the bring-up deliberately does not claim
+
+The ADR governing it is unusually direct, and students should read it as a
+model of how to register an expectation you expect to lose:
+
+> Zero-shot on the Genesis pharmacy scene — even the SO-101 profile — is
+> **EXPECTED to score at or near 0**: the bring-up deliverable is the typed
+> integration (node, manifest, eval graph, preemption rule, dependency extra)
+> plus the honest zero-shot baseline as the first data point, **NOT a working
+> policy.**
+
+The interesting wrinkle is that `smolvla_base` was trained on SO-100/**SO-101**
+data and AISLE ships an SO-101 embodiment profile. This is therefore close to
+the *best* case for zero-shot transfer, and it is still expected to fail — which
+makes it a meaningful floor rather than a strawman. Registering a 0.0 as a real
+data point rather than waiting for a flattering number is the same discipline as
+closing an idea `flat`.
+
+#### The one new safety rule the integration required
+
+A VLA emits **action chunks** — a bounded sequence of joint targets from one
+inference — which classical nodes do not. That creates a failure mode the
+architecture had not needed a rule for: two inferences, or two policies,
+fighting over the arm. ADR-38 fixes it before the first motion inference runs:
+
+1. **One in-flight chunk.** A new result *replaces* the queued remainder at the
+   next action boundary; chunks never interleave.
+2. **The guard is unchanged.** Every chunk element still traverses budget-guard
+   clamping. Preemption is a queueing rule, not a safety mechanism — an
+   important distinction, because it means the safety argument does not depend
+   on the preemption logic being correct.
+3. **Reset flushes** any queued chunk.
+4. **Staleness floor.** A chunk computed against observations older than
+   `VLA_STALE_NS` is dropped rather than executed — a slow inference must never
+   act on a world that has moved on.
+
+#### The obstacle to fine-tuning that nobody expects (open gap #267)
+
+The demonstration data already exists: expert graphs run at 0.98–1.0 pass@1 and
+every episode is recorded as Arrow traces. So SFT looks like a small step. It
+is not, because of one question with no obviously right answer:
+
+**Which signal is the demonstration label?**
+
+Every motion command traverses the budget guard, which does not merely veto —
+it **clamps**. Both signals appear in the trace:
+
+- `joint_cmd` — what the policy *proposed*
+- `joint_cmd_safe` — what the arm *executed*
+
+They differ exactly when the proposal was out of bounds, which is exactly the
+interesting part of the distribution.
+
+*Train on proposals* and the model learns the expert's intent including
+corrections it never sees, so it will reproduce out-of-bounds behaviour and
+depend on a guard being downstream — fine in this harness, dangerous as a
+portability claim, and it means the policy's safety record is really the
+guard's.
+
+*Train on executed actions* and every label is legal, but the labels are a
+mixture of two processes — the policy's output and the guard's correction — so
+the model imitates an intervention whose trigger it cannot observe. That is a
+hidden-confounder setup, and the classic off-policy correction problem
+introduced here by a *safety mechanism* rather than by exploration.
+
+There is a genuine tension in the architecture here, and it is worth naming
+plainly for students: **structural safety and clean credit assignment pull
+against each other.** The guard is what makes free agent authorship safe (H5);
+it is also what muddies the supervision signal. The good news is that the trace
+records both signals, so the divergence rate is measurable — and that statistic
+is itself a finding, because it quantifies how much of the expert graph's
+competence is actually the guard's.
+
+#### Why RL is a poor fit for this scorer
+
+Beyond the absence of a reward (§7.6), three properties make RL unattractive
+here without changes:
+
+1. **Sparse terminal binary signal** over episodes of tens of seconds.
+2. **Non-reproducible physics** — ADR-26 makes full-episode outcomes
+   statistical under Metal, so the same policy and seed need not produce the
+   same return.
+3. **The clamping problem above**, in its more severe form: the executed action
+   differs from the proposed action, and nothing models the correction.
+
+None of this says RL is impossible here. It says the environment as built is
+shaped for a reader, and turning it into something shaped for an optimizer is a
+design project rather than a configuration change.
+
+#### The determinism layer nobody has written (open gap #268)
+
+The determinism contract (§6) layers nondeterminism sources and states what
+each promises. A learned policy adds one no layer names: sampling, batching,
+and non-deterministic kernels. The report has posed this as an open question —
+*what should layer (e) say?* — and as of the bring-up it is live rather than
+hypothetical.
+
+The subtle one is not kernels but timing. ADR-38's staleness floor is expressed
+in **sim** time while inference latency is **wall** time, so on a loaded host a
+different set of chunks is dropped and the executed trajectory changes **with
+every recorded seed identical**. That is the wall-versus-sim coupling class
+that has already bitten this project once in a graph test, reappearing in the
+policy path — and it means a zero-shot baseline could fail to replay before it
+has even been used as a baseline.
+
+---
+
 ## 11. Safety under learned policies
 
 Introducing learned policies sharpens the safety question rather than changing
@@ -1825,3 +2720,311 @@ Full expansions in [`glossary.md`](glossary.md). Quick reference:
 | Decision history | [`decisions/`](decisions/) |
 | Experiment protocols and evidence | [`experiments.md`](experiments.md) |
 | Getting it running | [`getting-started.md`](getting-started.md) |
+
+---
+
+## Appendix C: exercises and hackathon tracks
+
+These are graded by how much of the system you must understand, not by lines
+of code. Each names the sections to read first and what "done" looks like.
+Every one is a real gap or a real mechanism — none is a toy.
+
+### Warm-up (30–90 minutes each)
+
+**C1. Break the validator on purpose.** Read §4. Take `graphs/expert_t0.yaml`,
+copy it, and introduce one fault: a schema mismatch, a missing producer, an
+`oracle_state` edge into a policy node, a motion path that bypasses the guard.
+Run `harness validate` on each. *Done when* you can predict the error code
+before running, and you can explain which alternative explanation each check
+kills. Add your best one to the bad-graph corpus (VAL-7 requires every
+agent-discovered failure class to enter it).
+
+**C2. Read one episode end to end.** Run the T0 expert graph for two episodes
+and follow one from `episode_goal` to `episode_result` using
+`harness traces query`. *Done when* you can state, from the trace alone, why
+that episode passed or failed and which node you would suspect first.
+
+**C3. Find the guard clamping.** Using the traces from C2, compare `joint_cmd`
+with `joint_cmd_safe`. *Done when* you can say how often they differ and by how
+much. This is a real open question (§10.11, issue #267) — the divergence rate
+on the expert corpus is not currently recorded anywhere, and it quantifies how
+much of the expert graph's competence belongs to the guard rather than the
+policy.
+
+### Intermediate (a day)
+
+**C4. Write a skill and register it.** Read §5.5. Author a node providing an
+existing capability, ship it with a `skill.yaml` and an `eval.yaml`, and run
+`harness skill register`. *Done when* the registry holds an evalcard your code
+did not write. Try to register a failing skill and read the refusal; try to set
+`min_pass_rate: 0.0` and read that one too (ADR-37).
+
+**C5. Reproduce a measurement, then break its reproducibility.** Pick a
+committed finding in `analysis/`. Re-run it. *Done when* you either reproduce
+the number or can say precisely why not — and can name which attestation gate
+would have caught the difference.
+
+**C6. Design an idea properly.** Read §8.5. Open an idea with a
+pre-registered expectation, run the matched arms, and close it honestly. *Done
+when* you have closed one `down` or `flat`. An idea tree of all `up` verdicts
+is the signature of a contaminated arm, not a good researcher.
+
+### Hard, and genuinely open (a weekend or more)
+
+**C7. Close the applicability gap (#264).** Design the schema extension that
+tells a later agent *when* to reach for a skill, not just that it worked. The
+hard part is not the field — it is making it something the validator can check,
+because a field nothing enforces is documentation. Bring an ADR.
+
+**C8. Build the sandbox trust tier (#265).** ADR-37's floor closed a real hole
+and removed the only way an agent could declare a node that merely needs an id
+to validate. §9.4 names `sandbox → reviewed → certified`; only the middle
+exists. *Done when* an unproven node can be admitted for validation while being
+structurally unable to count toward the DoD, be reused by another agent, or
+hold `safety_class: motion`.
+
+**C9. Solve T2.** The label-reading tier sits at **0.08** expert pass@1 and no
+agent arm has solved it within a session budget. The reads themselves are
+accurate when the arm is parked — the failure budget is dominated by tour
+mechanics: reachability of read poses, transit safety, refusal cascades. This
+is the single largest open scientific item in the project, and it is what caps
+the skill library and prevented H3's accumulation question from being asked
+(§9). It is also a completely fair fight: the expert graph is committed and its
+failure taxonomy is published.
+
+**C10. Make the fidelity measurement mean something at L2 (#248 lineage).**
+Verifier fidelity has only ever been measured at rung L0, where the policy uses
+ground-truth poses. At L2 the policy and the judge would share a detector
+backbone, so agreement overstates independence. Design and run the comparison —
+shared backbone versus an independent judge — and report both. The gap between
+those two numbers *is* the correlation bias, currently unquantified.
+
+**C11. Decide the SFT label question (#267), then fine-tune.** Read §10.11.
+Settle `joint_cmd` versus `joint_cmd_safe` with an ADR *before* training, then
+fine-tune SmolVLA on expert-graph demonstrations and measure against the
+zero-shot baseline on identical seeds and scorer. This is the largest piece of
+genuine ML work currently available in the project.
+
+### For the reviewer-minded
+
+**C12. Try to fool the evidence system.** The threat model in §12 is explicit
+that the controls are strong against careless optimization and **untested
+against deliberate circumvention**. Attempt a run that looks admissible and is
+not. Every successful attack is a contribution; the project has already had
+three found by ordinary review (§9.2).
+
+---
+
+## Appendix D: open gaps, with issue numbers
+
+A contributor-facing register of what is known-missing. These are not bugs —
+they are places where the design is incomplete and the incompleteness is
+understood.
+
+| # | Gap | Why it matters | Section |
+|---|---|---|---|
+| [#264](https://github.com/heyong4725/aisle/issues/264) | Skill manifests record evidence but not **applicability** | As the library grows, undifferentiated same-capability entries make selection harder — the accumulation benefit can invert | §5.5 |
+| [#265](https://github.com/heyong4725/aisle/issues/265) | No **sandbox trust tier** | ADR-37's floor leaves an agent no legitimate way to declare an unproven node so its graph validates | §5.5 |
+| [#266](https://github.com/heyong4725/aisle/issues/266) | **Idea trees are not retained** | The pre-registrations that make findings falsifiable are gone; "3/4 expectations met" is currently unverifiable prose | §8.5 |
+| [#267](https://github.com/heyong4725/aisle/issues/267) | **SFT label undecided**: `joint_cmd` vs `joint_cmd_safe` | Structural safety and clean credit assignment pull against each other; must be settled before any fine-tune | §10.11 |
+| [#268](https://github.com/heyong4725/aisle/issues/268) | **No determinism layer for inference** | The staleness floor couples sim time to wall time, so a loaded host can change the trajectory with every seed identical | §10.11 |
+| [#269](https://github.com/heyong4725/aisle/issues/269) | **"Safe Learning" is undefined** in the project's own naming gloss | Students reasonably expect a training loop and find none | §3.5 |
+
+Two further threads are open and owner-facing rather than contributor-facing:
+the eval's **seed set and episode count remain candidate-chosen** (the same
+self-grading shape ADR-37 closed, one field over), and **T2/T3 remain unsolved**
+at session budgets, which is the scientific prerequisite for a meaningful
+accumulation result.
+
+---
+
+## Appendix E: common misconceptions
+
+Fast answers to the questions that come up every time someone new reads this
+report. Each links to where the long version lives.
+
+**"AISLE trains robot policies."** No. There is no training code in the
+repository — no `.backward()`, no optimizer, no `def train(`. The one learned
+policy present runs inference under `torch.no_grad()` with weights pinned by
+revision hash. See §3.5 and §10.11.
+
+**"It's an RL environment, so there's a reward function."** The verifier emits
+a status enum plus a failure class, never a scalar. The asymmetric penalty
+("wrong medicine is 10× worse") is English in the goal text, not a coefficient.
+The closest classical framing is held-out model selection, not RL. See §7.6.
+
+**"More episodes would make the results stronger."** For a fixed graph, yes.
+For claims about *agents*, no — episodes and attempts answer different
+questions, and this is the most common analytical error made about the results.
+See §7.5.
+
+**"The agent's memory is what accumulates."** No. Sessions start fresh.
+Anything that survives had to become an artifact — a registered skill, a graph
+diff, an idea-tree entry. That is what makes the wiped-versus-library
+comparison meaningful. See §3.5.
+
+**"H3 failed, so skill reuse doesn't work."** H3 is UNDECIDED, which is not
+"not met". Reuse demonstrably occurred — a retail-registered skill appears
+verbatim in a desk deliverable. What the campaign could not do is *measure a
+speedup*, because no tier sat between trivial and impossible. The finding is
+about the instrument. See §9.
+
+**"The skill library only reached 3 of 5 because the agents underperformed."**
+Three was the ceiling. Two further skills exist and are refused by the registry
+floor because they measure 0.33 and 0.0 — they were authored against T2, which
+no arm has solved. The binding constraint is the unsolved tier. See §9.0.
+
+**"The safety record proves the system is safe."** It proves that in the
+recorded episodes under these conditions, no wrong medicine was delivered. The
+safety *argument* is structural (§11); the measurement corroborates it. A zero
+is always a denominator claim.
+
+**"The guard means learned policies are safe to deploy."** The guard clamps
+proposals, so a policy's measured safety record is partly the guard's. That is
+precisely the ambiguity issue #267 has to resolve before fine-tuning, and it is
+a genuine tension rather than an oversight. See §10.11.
+
+**"The frozen set is just the `env/` directory."** It has widened three times,
+each time on the same argument: the unit of the fence is *what a result depends
+on*, not the directory it lives in. Read the constants in `tools/env_hash.py`,
+never a list in prose — a second copy of the fence is exactly how one component
+stayed outside it. See §4 and `docs/architecture.md`.
+
+**"These docs are the source of truth for status."** Only the README status
+table is. Everything else stamps a date and defers to it on conflict — because
+five orientation pages once answered the same question differently, which is
+the failure that produced the rule.
+
+---
+
+## Appendix F: recurring design patterns
+
+The same handful of moves appear throughout this system. They are worth
+extracting, because they transfer to any project where an autonomous process
+produces artifacts someone later has to trust.
+
+### F1. Fail closed, and make the refusal informative
+
+Whenever the system cannot establish something, it refuses rather than
+assuming. The environment hash cannot be verified → the rollout does not
+start. The perception rung cannot be resolved → assume the strictest rung and
+report. Fidelity cannot establish which rung a run used → report
+`independent: null`, never `true`.
+
+The pairing matters: fail-closed alone produces a system that says "no" a lot.
+Fail-closed *with a machine-actionable message naming the fix* produces a
+system an agent can learn from — which is the entire H1 lesson.
+
+### F2. The unit of the fence is what a result depends on
+
+Not the directory it lives in. This argument widened the frozen set three
+separate times — mobility verdicts, ADR-30 turn plans, skill-gate eval graphs
+— and each widening followed a near-miss where something load-bearing changed
+without moving a hash.
+
+Corollary: **never hand-maintain a second copy of the fence.** A prose list of
+frozen paths goes stale silently, and that is precisely how one component
+stayed outside it while everyone believed otherwise.
+
+### F3. An opt-out that leaves a trace is not an opt-out
+
+`--no-idea-gate` skips the idea requirement and is recorded in the run
+manifest. `--env-baseline local` permits an unattested run and stamps the
+result as making no reproducibility claim. `allow-unproven` exists and is never
+set for agents.
+
+The pattern: do not remove escape hatches, because people need them. Make the
+hatch *self-reporting*, so a result produced through it cannot later be quoted
+as though it were not.
+
+### F4. Specify the rule before the thing it governs runs
+
+ADR-38 fixed the VLA chunk-preemption rule *before* the first motion inference.
+ADR-37's floor was written before the next campaign, not after the skill that
+exposed the hole. The verifier's toppled-but-correct question is decided in the
+spec rather than improvised when it first occurs.
+
+The failure this prevents is subtle: a rule written after seeing the data is
+indistinguishable — to a reader, and often to its author — from a rule chosen
+because of the data.
+
+### F5. The candidate does not grade the exam
+
+Two variants of the same defect appeared one layer apart: the skill's eval
+*graph* was editable by the candidate (fixed by freezing it), and the eval's
+*threshold* was declared by the candidate (fixed by an absolute floor). The
+general form:
+
+> Any artifact that certifies a learner must be outside the learner's reach —
+> including the artifact that defines what "passing" means.
+
+The still-open instance of this pattern is the eval's seed set and episode
+count, which remain candidate-chosen.
+
+### F6. Test that the rule is used, not just that it works
+
+A recurring near-miss: a rule is implemented and unit-tested, and nothing tests
+that the system *invokes* it. A tamper audit re-listed frozen paths by hand, so
+when the frozen set widened the audit did not follow — the rule was correct and
+uninvoked. When you add a check, add a test that removing the *call* fails,
+not only one that the check computes correctly.
+
+### F7. Preserve the wrong answer
+
+Superseded measurements stay in the repository with their dates: the
+pre-amendment fidelity number, the contaminated campaign arm, the invalid
+attested cell. The rule is to update the *overview* that points at a finding
+and never edit the finding to match a newer story.
+
+This costs almost nothing and buys the ability to answer "when did we know
+that?", which is the question that separates a research record from a
+marketing page.
+
+### F8. State the control you registered, not the one you ran
+
+H4's registered comparison was against an equal-budget monolithic-script
+condition. What was measured was hot-swap versus relaunch. Both are
+interesting; they are not the same claim, and the report says so rather than
+letting the measured number stand in for the registered one.
+
+### F9. A null result is about the instrument as often as the subject
+
+H3 measured no accumulation speedup. The reason was not that libraries do not
+help — it was that no tier sat in the band between "both arms solve it
+trivially" and "neither arm solves it at all". An accumulation benchmark is
+only measurable in that band, and the band has to be located empirically
+*before* the campaign.
+
+When an experiment returns null, the first question is whether the instrument
+could have detected the effect had it been there.
+
+---
+
+## Appendix G: the failure taxonomy, and how to diagnose each class
+
+`episode_result.failure` comes from a closed vocabulary. Class attribution
+belongs to the oracle verifier; the realistic verifier's failure field is
+informative and never compared class-wise. This table is the diagnostic
+starting point when you read a run.
+
+| Class | What it means | First thing to check |
+|---|---|---|
+| `wrong_object` | A non-target item entered the tray region | **Stop and investigate.** This is the safety-critical class the whole asymmetric-penalty design exists around; it has never occurred in a recorded episode |
+| `never_grasped` | The episode ended with the target never acquired | Perception first — did the pose/identity estimate resolve? Then reachability: was a valid grasp pose ever produced? |
+| `dropped` | Grasped, then lost before delivery | Gripper command timing and contact parameters; thin-box grasping is contact-parameter sensitive by construction |
+| `collision` | Contact that ended the episode | Transit geometry. This dominates T2's failure budget and is what motivated the routed-transfer skill |
+| `timeout` | The episode budget expired with no terminal verdict | Distinguish "slow but working" from "stuck": check whether the arm was still issuing commands, and whether the run was wall-clamped |
+| `misplaced`, `misaligned`, `overhang` | Retail placement-quality failures | The planogram placement criteria — position, yaw, front-face, overhang, neighbour alignment — each reported separately so you know which one failed |
+
+Two reading notes that save time:
+
+**A refusal is an honest failure.** Several nodes refuse rather than guessing —
+a pose estimator that cannot establish identity declines to publish. A refusal
+cascade shows up as `never_grasped` or `timeout`, not as a wrong action, and
+that is by design: the asymmetric penalty makes not-acting strictly better than
+acting wrongly.
+
+**The fallback flag matters.** A behavioral reset that exhausts its attempts
+falls back to teleport and records `fallback: true`. An ablation that ignores
+that flag is measuring a mixture of two reset regimes and will report a number
+that belongs to neither.
