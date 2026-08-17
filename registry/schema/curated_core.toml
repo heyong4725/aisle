@@ -32,6 +32,7 @@ core = [
   "task-state-machine",
   "turn-barrier",
   "verifier-oracle",
+  "vla-policy-smolvla",
   "verifier-realistic",
   "verifier-retail",
   "waypoint-nav",

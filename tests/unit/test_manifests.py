@@ -29,6 +29,7 @@ EXPECTED_IDS = {
     "task-state-machine",
     "turn-barrier",  # ADR-30 terminal run-to-quiescence coordinator
     "verifier-oracle",
+    "vla-policy-smolvla",
     "verifier-realistic",  # A7's ADR-30 verdict-bearing participant
     "reset",
     "budget-guard",  # SPEC 080 BG-1 (T07)
