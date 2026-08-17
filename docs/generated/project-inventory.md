@@ -14,7 +14,7 @@ architecture, and contribution guidance remain in the
 | Graphs | 12 |
 | Capability manifests | 34 |
 | CLI command entries | 12 |
-| ADR files | 48 |
+| ADR files | 49 |
 
 ## Graphs
 
@@ -97,7 +97,7 @@ architecture, and contribution guidance remain in the
 | `harness report close` | `--id`, `--observed`, `--verdict`, `--root` |
 | `harness report log` | `--idea`, `--parent`, `--expect`, `--root` |
 | `harness rollout` | `--graph`, `--tier`, `--embodiment`, `--episodes`, `--seeds`, `--reset`, `--verifier`, `--sim-extra`, `--root`, `--no-idea-gate`, `--perception`, `--run-id`, `--env-baseline`, `--timeout-s` |
-| `harness skill register` | `<skill_dir>`, `--root`, `--run-id` |
+| `harness skill register` | `<skill_dir>`, `--root`, `--sandbox`, `--run-id` |
 | `harness swap` | `--graph`, `--dataflow`, `--replace`, `--with`, `--embodiment`, `--root` |
 | `harness traces query` | `--run`, `--topic`, `--t0`, `--t1`, `--episode`, `--node`, `--format`, `--out`, `--summarize`, `--root` |
 | `harness validate` | `<graph>`, `--root`, `--embodiment`, `--allow-unproven`, `--write-turn-plan` |
@@ -145,6 +145,7 @@ inference.
 | [docs/decisions/ADR-37.md](../decisions/ADR-37.md) | ADR-37 — the registry sets the passing grade, not the candidate | ACCEPTED (issue #243, owner decision 2026-08-15 in the PR #242 |
 | [docs/decisions/ADR-38.md](../decisions/ADR-38.md) | ADR-38 — VLA chunk preemption and the SmolVLA bring-up scope | ACCEPTED 2026-08-17 (owner ratified next-phases.md and directed |
 | [docs/decisions/ADR-4.md](../decisions/ADR-4.md) | ADR-4: validator interpretations for T03 (SPEC 060) | ACCEPTED; amended by ADR-5's ratified safety-class boundary. |
+| [docs/decisions/ADR-40.md](../decisions/ADR-40.md) | ADR-40 — the sandbox trust tier | ACCEPTED 2026-08-17 (issue #265). Amends CAP-6/CAP-7 (`spec-change`). |
 | [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | ACCEPTED (owner-ratified 2026-08-03) |
 | [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |
 | [docs/decisions/ADR-7.md](../decisions/ADR-7.md) | ADR-7: T05 bridge interpretations and measured performance (SPEC 030) | ACCEPTED |
