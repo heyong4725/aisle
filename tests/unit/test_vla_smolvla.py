@@ -43,3 +43,52 @@ def test_instruction_derives_from_the_standard_target_request():
     text = instruction_from_request({"target_med": "cetirizine"})
     assert "cetirizine" in text and "tray" in text
     assert "item" in instruction_from_request({})
+
+
+def test_the_staleness_floor_is_reachable_from_the_node(tmp_path):
+    """ADR-38 rule 4 (#268): the queue's staleness check is unit-tested with
+    explicit stamps, but the NODE called `offer(chunk, obs_ns, obs_ns)` — so
+    `now_ns - obs_ns` was identically zero and the rule could never fire.
+
+    A rule that is correct and uninvoked is the pattern this project keeps
+    rediscovering (report appendix F6). Under ADR-30 lockstep with synchronous
+    inference the delta is legitimately zero, which is exactly why the defect
+    was invisible: the moment observation and emission are separated — the
+    reason action chunks exist at all — the protection silently would not be
+    there.
+
+    The stamps must come from different sources: `obs_ns` from the frame that
+    was seen, `now_ns` from the current turn. Both are SIM time, so the
+    decision stays reproducible (no wall-clock coupling, #268's other half).
+    """
+    import inspect
+
+    from aisle.nodes import vla_smolvla
+
+    source = inspect.getsource(vla_smolvla.main)
+    assert "queue.offer(chunk, obs_ns, obs_ns)" not in source, (
+        "the staleness floor is unreachable: now_ns must not be obs_ns"
+    )
+    assert "queue.offer(chunk, obs_ns, now_ns)" in source
+    # and `now_ns` must be derived from the CURRENT event, not aliased
+    assert "now_ns = int(metadata.get(" in source
+
+
+def test_inference_is_seeded_from_a_reproducible_stamp():
+    """CON-5 (#268): a policy of this class may SAMPLE during action
+    selection. Unseeded, the same graph, seed and environment can produce
+    different trajectories — precisely what CON-5 forbids, arriving through
+    a source the determinism contract does not yet name.
+
+    The seed must come from SIM time (reproducible under ADR-30 lockstep),
+    never wall time, and never be omitted."""
+    import inspect
+
+    from aisle.nodes import vla_backend, vla_smolvla
+
+    node_src = inspect.getsource(vla_smolvla.main)
+    assert "seed=obs_ns" in node_src, "inference must be seeded from the sim stamp"
+    assert "time.time" not in node_src and "perf_counter" not in node_src
+
+    backend_src = inspect.getsource(vla_backend.select_chunk)
+    assert "torch.manual_seed" in backend_src
