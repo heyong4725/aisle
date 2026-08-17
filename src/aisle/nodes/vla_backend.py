@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 
 MODEL_ID = "lerobot/smolvla_base"
-PINNED_REVISION = "main"  # bring-up: pin to a commit hash before any measured claim
+PINNED_REVISION = "c83c3163b8ca9b7e67c509fffd9121e66cb96205"  # smolvla_base, pinned 2026-08-17
 CHUNK_LEN = 10
 
 
