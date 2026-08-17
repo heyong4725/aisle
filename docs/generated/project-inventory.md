@@ -11,8 +11,8 @@ architecture, and contribution guidance remain in the
 
 | Surface | Count |
 |---|---:|
-| Graphs | 12 |
-| Capability manifests | 34 |
+| Graphs | 13 |
+| Capability manifests | 35 |
 | CLI command entries | 12 |
 | ADR files | 48 |
 
@@ -24,6 +24,7 @@ architecture, and contribution guidance remain in the
 | [graphs/eval_ik_transfer_v2.yaml](../../graphs/eval_ik_transfer_v2.yaml) | pharmacy (default) / — | franka (default) | L1 | 10 |
 | [graphs/eval_s1_driver_v2.yaml](../../graphs/eval_s1_driver_v2.yaml) | store / S1 | mobile | L0 (default) | 10 |
 | [graphs/eval_s3_driver_v1.yaml](../../graphs/eval_s3_driver_v1.yaml) | store / S3 | mobile | L0 (default) | 8 |
+| [graphs/eval_vla_smolvla_t1.yaml](../../graphs/eval_vla_smolvla_t1.yaml) | pharmacy (default) / — | franka (default) | L1 | 8 |
 | [graphs/expert_s1.yaml](../../graphs/expert_s1.yaml) | store / S1 | mobile | L0 (default) | 10 |
 | [graphs/expert_t0.yaml](../../graphs/expert_t0.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 10 |
 | [graphs/expert_t1.yaml](../../graphs/expert_t1.yaml) | pharmacy (default) / — | franka (default) | L1 | 10 |
@@ -39,6 +40,7 @@ architecture, and contribution guidance remain in the
 - **graphs/eval_ik_transfer_v2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-transfer-v2`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/eval_s1_driver_v2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `order-reader`, `task-planner`, `s1-driver-v2`, `verifier-retail`, `rollout-client`, `turn-barrier`
 - **graphs/eval_s3_driver_v1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `s3-driver-v1`, `verifier-retail`, `rollout-client`, `turn-barrier`
+- **graphs/eval_vla_smolvla_t1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`, `vla-policy-smolvla`
 - **graphs/expert_s1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `order-reader`, `task-planner`, `s1-expert`, `verifier-retail`, `rollout-client`, `turn-barrier`
 - **graphs/expert_t0.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/expert_t1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
@@ -85,6 +87,7 @@ architecture, and contribution guidance remain in the
 | [registry/manifests/verifier-oracle.yaml](../../registry/manifests/verifier-oracle.yaml) | episode_verification | franka, so101 | decision | hub | `src/aisle/verifier/oracle.py` |
 | [registry/manifests/verifier-realistic.yaml](../../registry/manifests/verifier-realistic.yaml) | episode_verification_realistic | franka, so101 | decision | hub | `src/aisle/nodes/verifier_realistic.py` |
 | [registry/manifests/verifier-retail.yaml](../../registry/manifests/verifier-retail.yaml) | retail_verification | franka | decision | hub | `src/aisle/verifier/retail.py` |
+| [registry/manifests/vla-policy-smolvla.yaml](../../registry/manifests/vla-policy-smolvla.yaml) | manipulation_policy | franka, so101 | motion | hub | `src/aisle/nodes/vla_smolvla.py` |
 | [registry/manifests/waypoint-nav.yaml](../../registry/manifests/waypoint-nav.yaml) | waypoint_navigation | franka | motion | hub | `src/aisle/nodes/nav_action.py` |
 
 ## CLI commands
