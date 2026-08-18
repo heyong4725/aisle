@@ -25,8 +25,11 @@ from pathlib import Path
 
 import yaml
 
-import aisle
-from aisle.harness.cli import build_parser as build_harness_parser
+sys.path.insert(0, str(Path(__file__).parent))
+from env_hash import FROZEN_DIRS, FROZEN_FILES, FROZEN_GLOBS  # noqa: E402
+
+import aisle  # noqa: E402
+from aisle.harness.cli import build_parser as build_harness_parser  # noqa: E402
 from aisle.harness.registry import build_parser as build_registry_parser
 from aisle.harness.validate import load_graph
 
@@ -265,6 +268,58 @@ def _test_inventory(root: Path, tracked: set[str] | None) -> tuple[list[str], li
     return suites, markers
 
 
+# What each top-level directory is FOR. Roles are editorial and change
+# rarely; the tree itself and the frozen marking are both derived, so this
+# map cannot drift into claiming a directory that does not exist.
+_DIR_ROLES = {
+    "analysis": "committed experiment findings and reports",
+    "assets": "robot/scene assets (so101 URDF)",
+    "docs": "guides, design doc, ADRs, this generated appendix",
+    "env": "topic CONTRACT.md and guard limits (config, not code)",
+    "graphs": "dataflow YAMLs + committed ADR-30 turn plans",
+    "harness": "the research-agent contract and budget ledger",
+    "registry": "capability schema and typed node manifests",
+    "runs": "gitignored: traces, videos, run manifests",
+    "skills": "registered agent-authored skills",
+    "skills_pending_review": "recovered campaign skills, not registered",
+    "specs": "numbered specs with MUST ids (000 = constitution)",
+    "src": "the aisle package: scenes, bridge, verifier, reset, harness, nodes",
+    "templates": "scaffolding for new artifacts",
+    "tests": "unit / sim / graph suites",
+    "tools": "CI, env_hash, trace_check, campaign runners",
+}
+
+
+def _frozen_prefixes() -> list[str]:
+    """Frozen paths, READ from env_hash's constants (ADR-33: never
+    hand-maintain a second copy of the fence — that is exactly how
+    src/aisle/mobility stayed outside it)."""
+    return sorted({*FROZEN_DIRS, *FROZEN_FILES, *FROZEN_GLOBS})
+
+
+def _layout_inventory(root: Path) -> list[dict]:
+    """Top-level directories, their role, and which frozen paths each holds.
+
+    The design doc's §8.0 tree is superseded: it put the bridge, scenes,
+    verifier and reset under `env/` and made "frozen" a directory property.
+    Both moved. This map is generated so it cannot go stale the way that one
+    did, and it surfaces the fence per directory — the legibility §8.0's
+    `env/` gave and the current layout lost."""
+    frozen = _frozen_prefixes()
+    rows = []
+    for path in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")):
+        name = path.name
+        held = [f for f in frozen if f == name or f.startswith(f"{name}/")]
+        rows.append(
+            {
+                "dir": f"{name}/",
+                "role": _DIR_ROLES.get(name, ""),
+                "frozen": ", ".join(f"`{f}`" for f in held) if held else "—",
+            }
+        )
+    return rows
+
+
 def render_inventory(root: Path) -> tuple[str, dict[str, int]]:
     tracked = _tracked_paths(root)
     graphs = _graph_inventory(root, tracked)
@@ -283,6 +338,26 @@ def render_inventory(root: Path) -> tuple[str, dict[str, int]]:
         "This appendix is intentionally factual and source-derived. Qualitative maturity,",
         "architecture, and contribution guidance remain in the",
         "[contributor wiki](../contributor-wiki.md).",
+        "",
+        "## Repository layout",
+        "",
+        "The design doc's §8.0 tree is SUPERSEDED — it placed the bridge, scenes,",
+        "verifier and reset under `env/` and made *frozen* a property of that",
+        "directory. Packaging moved the code to `src/aisle/`, and ADR-33 moved the",
+        "fence from a directory to a content set: the unit of the fence is what a",
+        "result depends on, not where it lives.",
+        "",
+        "The frozen column is read from `tools/env_hash.py`'s constants, never",
+        "restated here, so a widening appears automatically (ADR-33: a",
+        "hand-maintained second copy of the fence is how `src/aisle/mobility`",
+        "stayed outside it).",
+        "",
+        "| Directory | Role | Frozen paths it holds (CON-7) |",
+        "|---|---|---|",
+        *(
+            f"| `{row['dir']}` | {row['role']} | {row['frozen']} |"
+            for row in _layout_inventory(root)
+        ),
         "",
         "## Snapshot counts",
         "",
