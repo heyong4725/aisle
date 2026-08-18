@@ -32,3 +32,18 @@ prompt styles, reported side by side.
   classical pipeline judged here; it is NOT independent of
   vla-policy-smolvla runs (same vision family) — recorded so no future
   fidelity table silently claims independence it lacks (#248/#250).
+
+## The judge bench (ENPIRE follow-up 3 — 2026-08-18)
+
+`tools/judge_bench.py`: the labeled corpus (13 episodes: 8 dev from the
+prompt-calibration run — dev forever — and 5 holdout with real failure
+mix) plus the promotion gate: **agreement ≥ 0.8 on holdout AND
+false_success == 0**. Judge proposals (model, prompt, fusion) iterate
+against it offline at zero sim cost; a passing judge still enters live
+verification only through the §9.4 evalcarded human-merge path.
+
+Recorded baseline (calibrated prompt, SmolVLM-500M @ a7da5b98):
+holdout agreement **0.2**, false_success **4/5**, `passes: false` —
+worse on fresh holdout than on dev, confirming both the disqualification
+and the necessity of the split. This is the number the 2B+ model,
+label-rendered frames, or fine-tuned judge must beat.
