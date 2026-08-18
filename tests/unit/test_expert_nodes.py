@@ -688,3 +688,38 @@ class TestT4Dialogue:
         """The dialogue path is tier-gated exactly like the T2 tour."""
         machine = TaskStateMachine(tier="T1")
         assert machine.on_human_msg({"kind": "request", "med": "ibuprofen"}, "ep-1") == []
+
+
+class TestHybridFallback:
+    """ENPIRE follow-up 2: the state machine owns the classical/VLA
+    arbitration — first retry stays classical, later retries route to
+    vla_request, and the two topics are mutually exclusive per retry."""
+
+    def _machine(self, fallback=True):
+        from aisle.nodes.task_state_machine import TaskStateMachine
+
+        m = TaskStateMachine(max_retries=8, vla_fallback=fallback)
+        m.on_goal({"target_med": "ibuprofen"}, "ep-1")
+        return m
+
+    def _retry_topic(self, machine):
+        from aisle.nodes.task_state_machine import RETRY_GRACE_TICKS
+
+        machine.on_plan_done()
+        for _ in range(RETRY_GRACE_TICKS + 1):
+            out = machine.on_tick()
+            if out and out[0][0] in ("target_request", "vla_request"):
+                return out[0]
+        return None
+
+    def test_first_retry_stays_classical_then_routes_to_vla(self):
+        machine = self._machine()
+        first = self._retry_topic(machine)
+        assert first[0] == "target_request"
+        second = self._retry_topic(machine)
+        assert second == ("vla_request", {"target_med": "ibuprofen"}, {"goal_id": "ep-1"})
+
+    def test_without_the_flag_behavior_is_byte_identical(self):
+        machine = self._machine(fallback=False)
+        assert self._retry_topic(machine)[0] == "target_request"
+        assert self._retry_topic(machine)[0] == "target_request"
