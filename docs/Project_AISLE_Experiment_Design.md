@@ -274,6 +274,23 @@ aisle/
 └── analysis/                  # notebooks, plots
 ```
 
+> **SUPERSEDED as built (noted 2026-08-18).** This tree is the design-time
+> intent and is kept as the historical record; it is **not** the repository
+> layout. Two things moved it. *Packaging:* CON-8 makes every tool a CLI, and
+> a console script needs an installable package, so the code lives under
+> `src/aisle/` — `env/` now holds only `CONTRACT.md` and `limits.toml`, and
+> `harness/` only the research contract and budget ledger. *The fence:*
+> ADR-33 replaced "everything under `env/` is frozen" with a content set,
+> after nav's stall/timeout budgets changed in `src/aisle/mobility` without
+> moving a hash — the unit of the fence is what a result depends on, not the
+> directory it lives in. Spec-driven development additionally added `specs/`,
+> `tools/`, `tests/` and `docs/decisions/`, which this tree never anticipated.
+> The current layout, with the frozen paths each directory holds, is
+> **generated** at
+> [`docs/generated/project-inventory.md`](generated/project-inventory.md#repository-layout)
+> and CI fails when it drifts — re-typing it here would recreate exactly the
+> staleness this note is correcting.
+
 **Ground rules (these are the experiment's integrity):**
 1. Everything under `env/` is hash-manifested at Phase 0 sign-off; the rollout runner refuses to start if hashes differ (this is the ENPIRE "no cheating" rule, enforced, not requested).
 2. Every tool the agent uses is a CLI that prints JSON to stdout. Claude Code's native tool is the shell — if your tool needs a bespoke integration, you built the wrong thing.

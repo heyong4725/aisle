@@ -83,6 +83,12 @@ changes only via human-merged `env-change` PRs. The rollout runner refuses
 to start if hashes drift from the trusted baseline. Agents can read this
 code; they cannot change what judges them.
 
+A per-directory map of which frozen paths live where is **generated** at
+[`docs/generated/project-inventory.md`](generated/project-inventory.md#repository-layout)
+— derived from the constants below, so it cannot disagree with what is
+actually attested. (The design doc's §8.0 tree predates all of this and is
+marked superseded there.)
+
 **Read `FROZEN_DIRS` / `FROZEN_FILES` / `FROZEN_GLOBS` in
 `tools/env_hash.py`, not a list in prose** — a second copy of the fence goes
 stale, which is exactly how `src/aisle/mobility` stayed outside it (issue
