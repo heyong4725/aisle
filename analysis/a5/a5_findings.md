@@ -49,3 +49,32 @@ agent-authored iteration).
   registrations — `git worktree prune` before relaunch.
 - The credential re-exporter (Keychain → campaign file on rotation) ran
   for the whole campaign: zero 401s across 13 sessions.
+
+## MRU decomposition (retroactive, ENPIRE follow-up 1 — 2026-08-18)
+
+`tools/mru_report.py` over the recorded lanes (rollout wall reconstructed
+from run-dir file mtimes clipped to session windows; full data in
+`mru_report.json`):
+
+| fleet N | MRU-analogue (mean sim utilization) | per-lane spread | MTU (mean tokens) |
+|---|---|---|---|
+| 1 | 0.862 | — | 191k |
+| 4 | 0.862 | 0.845–0.878 | 233k |
+| 8 | 0.858 | 0.771–0.915 | 252k |
+
+**The contrast with ENPIRE:** their MRU *declines* with fleet size
+(robots idle while agents read logs and wait on the model). Ours is
+FLAT at ~0.86 — every lane keeps its sim occupied at every scale, and
+the degradation we measured (median first-success 10.5→18.0 min) shows
+up as slower sim seconds, not idle sim seconds. The bottleneck is in a
+different place: theirs was agent think-time against real robots that
+wait; ours is host physics throughput that stretches under contention.
+
+**Honest caveat on the ratio:** a contended sim runs slower, and wall
+spent inside a slow rollout counts as "utilized" — so flat utilization
+under load partly reflects stretched sim wall, not constant useful
+work per second. The per-lane spread at N=8 (0.77–0.92) is the
+contention signature. Distinguishing busy-and-fast from busy-and-slow
+needs sim-time-per-wall-second inside rollouts — available in
+manifests going forward (`durations` now recorded), so the next fleet
+campaign gets the clean version of this metric for free.
