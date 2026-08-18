@@ -45,7 +45,7 @@ stayed outside it).
 | Graphs | 13 |
 | Capability manifests | 35 |
 | CLI command entries | 12 |
-| ADR files | 52 |
+| ADR files | 53 |
 
 ## Graphs
 
@@ -182,6 +182,7 @@ inference.
 | [docs/decisions/ADR-4.md](../decisions/ADR-4.md) | ADR-4: validator interpretations for T03 (SPEC 060) | ACCEPTED; amended by ADR-5's ratified safety-class boundary. |
 | [docs/decisions/ADR-40.md](../decisions/ADR-40.md) | ADR-40 — the sandbox trust tier | ACCEPTED 2026-08-17 (issue #265). Amends CAP-6/CAP-7 (`spec-change`). |
 | [docs/decisions/ADR-41.md](../decisions/ADR-41.md) | ADR-41 — skill applicability: what a machine can check, and what it cannot | ACCEPTED 2026-08-17 (issue #264). Adds CAP-1b (`spec-change`). |
+| [docs/decisions/ADR-42.md](../decisions/ADR-42.md) | ADR-42 — Nexus feasibility: NO-GO for the desk/retail families, candidate for the bench | ACCEPTED 2026-08-18 (issue #281, the gating spike). Desk/retail |
 | [docs/decisions/ADR-43.md](../decisions/ADR-43.md) | ADR-43 — the budget unit for non-API agents | ACCEPTED 2026-08-18 (issue #282, the gate for the alternative-agent |
 | [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | ACCEPTED (owner-ratified 2026-08-03) |
 | [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |
