@@ -42,7 +42,7 @@ stayed outside it).
 
 | Surface | Count |
 |---|---:|
-| Graphs | 13 |
+| Graphs | 14 |
 | Capability manifests | 35 |
 | CLI command entries | 12 |
 | ADR files | 53 |
@@ -52,6 +52,7 @@ stayed outside it).
 | Graph | Scene/scenario | Embodiment | Perception | Nodes |
 |---|---|---|---|---:|
 | [graphs/agent_campaign.yaml](../../graphs/agent_campaign.yaml) | store / S3 | mobile | L0 (default) | 8 |
+| [graphs/eval_hybrid_t1.yaml](../../graphs/eval_hybrid_t1.yaml) | pharmacy (default) / — | franka (default) | L1 | 11 |
 | [graphs/eval_ik_transfer_v2.yaml](../../graphs/eval_ik_transfer_v2.yaml) | pharmacy (default) / — | franka (default) | L1 | 10 |
 | [graphs/eval_s1_driver_v2.yaml](../../graphs/eval_s1_driver_v2.yaml) | store / S1 | mobile | L0 (default) | 10 |
 | [graphs/eval_s3_driver_v1.yaml](../../graphs/eval_s3_driver_v1.yaml) | store / S3 | mobile | L0 (default) | 8 |
@@ -68,6 +69,7 @@ stayed outside it).
 ### Graph node membership
 
 - **graphs/agent_campaign.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `s3-driver-v1`, `verifier-retail`, `rollout-client`, `turn-barrier`
+- **graphs/eval_hybrid_t1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`, `vla-policy-smolvla`
 - **graphs/eval_ik_transfer_v2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-transfer-v2`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/eval_s1_driver_v2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `order-reader`, `task-planner`, `s1-driver-v2`, `verifier-retail`, `rollout-client`, `turn-barrier`
 - **graphs/eval_s3_driver_v1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `s3-driver-v1`, `verifier-retail`, `rollout-client`, `turn-barrier`

@@ -69,9 +69,11 @@ class TaskStateMachine:
         tier: str = "T1",
         candidate_bounds: dict | None = None,
         max_retries: int = 0,
+        vla_fallback: bool = False,
     ) -> None:
         self.tier = tier
         self.max_retries = max_retries
+        self.vla_fallback = vla_fallback
         self.retries = 0
         self.retry_due_tick: int | None = None  # armed by plan_done
         # T2: {x: (lo, hi), y: (lo, hi), z: (lo, hi)} — a candidate row
@@ -132,9 +134,16 @@ class TaskStateMachine:
             self.retries += 1
             self._reset_tour()
             self.toured = False  # T2: a fresh estimate starts a fresh tour
+            # Hybrid fallback (ENPIRE follow-up 2, graph-attested via
+            # AISLE_VLA_FALLBACK): the FIRST retry stays classical; from
+            # the second failure on, the machine routes the task to the
+            # VLA branch instead — the arbitration lives HERE, in the
+            # decision node, so the two policies are mutually exclusive
+            # by construction (never two writers to the arm).
+            topic = "vla_request" if (self.vla_fallback and self.retries >= 2) else "target_request"
             emissions.append(
                 (
-                    "target_request",
+                    topic,
                     {"target_med": self.goal["target_med"]},
                     {"goal_id": self.goal_id},
                 )
@@ -395,8 +404,12 @@ def main() -> None:
     max_retries_raw = os.environ.get("AISLE_MAX_RETRIES", "0").strip()
     if not max_retries_raw.isdigit() or not 0 <= int(max_retries_raw) <= 8:
         raise ValueError(f"AISLE_MAX_RETRIES must be an int in [0, 8], got {max_retries_raw!r}")
+    vla_fallback = os.environ.get("AISLE_VLA_FALLBACK", "").strip() in ("1", "true")
     machine = TaskStateMachine(
-        tier=tier, candidate_bounds=candidate_bounds, max_retries=int(max_retries_raw)
+        tier=tier,
+        candidate_bounds=candidate_bounds,
+        max_retries=int(max_retries_raw),
+        vla_fallback=vla_fallback,
     )
     lockstep = os.environ.get("AISLE_LOCKSTEP", "0").strip().lower() in ("1", "true", "yes")
     last_tick_sim_ns = -1
