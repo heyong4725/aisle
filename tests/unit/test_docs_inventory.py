@@ -352,3 +352,41 @@ def test_cli_section_refuses_a_root_it_cannot_introspect(tmp_path: Path):
     assert proc.returncode != 0
     assert report["ok"] is False
     assert "outside --root" in report["error"]
+
+
+def test_layout_section_marks_which_paths_are_frozen():
+    """The design doc's §8.0 tree said `env/` holds the bridge, scenes,
+    verifier and reset, and that everything under it is frozen. Neither half
+    is true any more: the code lives under `src/aisle/`, and the fence is
+    `FROZEN_DIRS + FROZEN_FILES + FROZEN_GLOBS`, not a directory.
+
+    Re-typing the real tree into prose would recreate the failure — a
+    hand-maintained second copy of the fence is exactly how `src/aisle/mobility`
+    stayed outside it (#189, ADR-33). So the layout is GENERATED, and the
+    frozen marking is derived from `env_hash`'s constants rather than
+    restated, so it cannot disagree with what is actually attested."""
+    from docs_inventory import render_inventory
+
+    text, _ = render_inventory(REPO_ROOT)
+    assert "## Repository layout" in text
+    # the fence is visible in the map, which is the property §8.0's `env/`
+    # gave and the current structure lost
+    assert "src/aisle/verifier" in text
+    assert "frozen" in text.lower()
+
+
+def test_layout_is_derived_from_env_hash_not_restated():
+    """ADR-33's rule: never hand-maintain a second copy of the fence. Asserted
+    BEHAVIOURALLY — every frozen path env_hash knows about must appear in the
+    map, so a widening shows up automatically instead of needing a second edit
+    someone forgets.
+
+    (A source-inspection version of this test passed against a mutation that
+    replaced the derivation with a hardcoded list, because the import line
+    alone satisfied it. Set equality does not have that hole.)"""
+    from docs_inventory import _layout_inventory
+    from env_hash import FROZEN_DIRS, FROZEN_FILES, FROZEN_GLOBS
+
+    rendered = " ".join(row["frozen"] for row in _layout_inventory(REPO_ROOT))
+    for path in (*FROZEN_DIRS, *FROZEN_FILES, *FROZEN_GLOBS):
+        assert f"`{path}`" in rendered, f"{path} is attested but missing from the layout map"

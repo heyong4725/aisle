@@ -7,6 +7,37 @@ This appendix is intentionally factual and source-derived. Qualitative maturity,
 architecture, and contribution guidance remain in the
 [contributor wiki](../contributor-wiki.md).
 
+## Repository layout
+
+The design doc's §8.0 tree is SUPERSEDED — it placed the bridge, scenes,
+verifier and reset under `env/` and made *frozen* a property of that
+directory. Packaging moved the code to `src/aisle/`, and ADR-33 moved the
+fence from a directory to a content set: the unit of the fence is what a
+result depends on, not where it lives.
+
+The frozen column is read from `tools/env_hash.py`'s constants, never
+restated here, so a widening appears automatically (ADR-33: a
+hand-maintained second copy of the fence is how `src/aisle/mobility`
+stayed outside it).
+
+| Directory | Role | Frozen paths it holds (CON-7) |
+|---|---|---|
+| `analysis/` | committed experiment findings and reports | — |
+| `assets/` | robot/scene assets (so101 URDF) | `assets/so101` |
+| `docs/` | guides, design doc, ADRs, this generated appendix | — |
+| `env/` | topic CONTRACT.md and guard limits (config, not code) | `env` |
+| `graphs/` | dataflow YAMLs + committed ADR-30 turn plans | `graphs/eval_*.yaml`, `graphs/expert_*.yaml`, `graphs/turn_plans/eval_*.json`, `graphs/turn_plans/expert_*.json` |
+| `harness/` | the research-agent contract and budget ledger | `harness/budget.toml` |
+| `registry/` | capability schema and typed node manifests | — |
+| `runs/` | gitignored: traces, videos, run manifests | — |
+| `skills/` | registered agent-authored skills | — |
+| `skills_pending_review/` | recovered campaign skills, not registered | — |
+| `specs/` | numbered specs with MUST ids (000 = constitution) | — |
+| `src/` | the aisle package: scenes, bridge, verifier, reset, harness, nodes | `src/aisle/embodiment.py`, `src/aisle/kinematics.py`, `src/aisle/mobility`, `src/aisle/nodes/budget_guard.py`, `src/aisle/reset`, `src/aisle/scenes`, `src/aisle/topics.py`, `src/aisle/turn_node.py`, `src/aisle/turns.py`, `src/aisle/verifier` |
+| `templates/` | scaffolding for new artifacts | — |
+| `tests/` | unit / sim / graph suites | — |
+| `tools/` | CI, env_hash, trace_check, campaign runners | — |
+
 ## Snapshot counts
 
 | Surface | Count |
