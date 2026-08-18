@@ -1233,3 +1233,100 @@ def test_ceiling_kill_survives_eperm_from_killpg(tmp_path, monkeypatch):
         },
     )
     assert record["stopped"] == "wall_budget"
+
+
+def test_generated_tokens_are_output_only_for_both_api_agents():
+    """ADR-43 (#282/#285): `tokens_new` is API-pricing-shaped — two of its
+    three terms describe a vendor's caching product, not work performed. A
+    local model has no cache-read discount, so cross-arm comparisons need a
+    unit that means the same thing everywhere.
+
+    `tokens_generated` is that unit: output only. Insensitive to prompt
+    caching, to context re-sending, and to whether a vendor bills prefix
+    reuse."""
+    from campaign import parse_generated_claude, parse_generated_codex
+
+    claude_lines = [
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "usage": {
+                        "input_tokens": 2,
+                        "cache_creation_input_tokens": 16670,
+                        "cache_read_input_tokens": 15105,
+                        "output_tokens": 7,
+                    }
+                },
+            }
+        ),
+        json.dumps(
+            {"type": "assistant", "message": {"usage": {"input_tokens": 230, "output_tokens": 11}}}
+        ),
+    ]
+    # 7 + 11 — none of the input, cache-creation or cache-read terms
+    assert parse_generated_claude(claude_lines) == 18
+
+    codex_lines = [
+        json.dumps(
+            {
+                "type": "turn.completed",
+                "usage": {"input_tokens": 500, "cached_input_tokens": 300, "output_tokens": 20},
+            }
+        ),
+        json.dumps({"type": "turn.completed", "usage": {"input_tokens": 800, "output_tokens": 5}}),
+    ]
+    assert parse_generated_codex(codex_lines) == 25
+
+
+def test_generated_is_never_derived_from_new_tokens():
+    """ADR-43 rejected a conversion factor outright: the ratio depends on
+    prompt length, cache-hit rate and turn count, so a constant would make
+    incomparable numbers LOOK comparable — the failure the ADR exists to
+    prevent. The two counts are parsed independently from the same stream."""
+    from campaign import parse_generated_claude, parse_usage_claude
+
+    lines = [
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "usage": {
+                        "input_tokens": 1000,
+                        "cache_creation_input_tokens": 5000,
+                        "cache_read_input_tokens": 90000,
+                        "output_tokens": 10,
+                    },
+                },
+            }
+        )
+    ]
+    new, generated = parse_usage_claude(lines), parse_generated_claude(lines)
+    assert new == 6010 and generated == 10
+    # a 601:1 ratio on one turn — no constant relates these
+    assert new != generated
+
+
+def test_the_session_record_carries_both_units(tmp_path, monkeypatch):
+    """ADR-43: every campaign record carries BOTH, never summed. An ADR whose
+    rule nothing records is documentation — and a cross-arm claim citing
+    tokens_new is only checkable if tokens_generated is actually there."""
+    import campaign as c
+
+    script = tmp_path / "fake_agent.py"
+    script.write_text(
+        "import json\n"
+        "print(json.dumps({'type': 'assistant', 'message': {'usage': "
+        "{'input_tokens': 100, 'output_tokens': 7}}}), flush=True)\n"
+    )
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    record = c.run_session(
+        "claude",
+        [sys.executable, str(script)],
+        tmp_path,
+        session_dir,
+        {"prior_tokens": 0, "prior_wall_s": 0.0, "token_ceiling": 10_000, "wall_ceiling_s": 60.0},
+    )
+    assert record["tokens"] == 107  # new-token semantics, unchanged
+    assert record["tokens_generated"] == 7  # ADR-43 cross-arm unit

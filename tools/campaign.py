@@ -108,7 +108,45 @@ def parse_usage_codex(lines: list[str]) -> int:
     return total
 
 
+def parse_generated_claude(lines: list[str]) -> int:
+    """OUTPUT tokens only (ADR-43): the cross-arm comparison unit."""
+    total = 0
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "assistant":
+            continue
+        total += _tok((event.get("message") or {}).get("usage") or {}, "output_tokens")
+    return total
+
+
+def parse_generated_codex(lines: list[str]) -> int:
+    """OUTPUT tokens only (ADR-43); turn.completed events, mirroring the
+    new-token parser's event selection."""
+    total = 0
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "turn.completed":
+            continue
+        total += _tok(event.get("usage") or {}, "output_tokens")
+    return total
+
+
 PARSE_USAGE = {"claude": parse_usage_claude, "codex": parse_usage_codex}
+# ADR-43 (#282): `tokens_new` is API-pricing-shaped — two of its three terms
+# describe a vendor's caching product rather than work performed, so it does
+# not mean the same thing for a locally-hosted model. `tokens_generated` is
+# output only: the one quantity that is comparable across arms. Parsed
+# INDEPENDENTLY from the same stream, never derived — the ADR rejected a
+# conversion factor outright, because the ratio depends on prompt length,
+# cache-hit rate and turn count, and a fabricated constant would make
+# incomparable numbers look comparable.
+PARSE_GENERATED = {"claude": parse_generated_claude, "codex": parse_generated_codex}
 
 
 class UsageCounter:
@@ -119,10 +157,13 @@ class UsageCounter:
 
     def __init__(self, agent: str):
         self._parse = PARSE_USAGE[agent]
+        self._parse_generated = PARSE_GENERATED[agent]
         self.total = 0
+        self.generated = 0  # ADR-43 cross-arm unit, counted alongside
 
     def feed(self, line: str) -> None:
         self.total += self._parse([line])
+        self.generated += self._parse_generated([line])
 
 
 def budget_stop(
@@ -781,6 +822,10 @@ def run_session(
         "stopped": stopped,
         "rc": rc,
         "tokens": total,
+        # ADR-43: recorded beside `tokens`, never summed with it. A cross-arm
+        # claim citing `tokens` is invalid once a non-API arm exists; this is
+        # the unit such a claim must use.
+        "tokens_generated": counter.generated,
         "wall_s": round(time.monotonic() - t0, 1),
     }
 
