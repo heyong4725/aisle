@@ -102,3 +102,32 @@ def test_summary_collection_reads_the_distilled_note(tmp_path):
     (tmp_path / "notes").mkdir()
     (tmp_path / "notes" / "summary.md").write_text("BC-reg helped")
     assert collect_summary(tmp_path) == "BC-reg helped"
+
+
+def test_multiple_concurrent_codex_lanes_refuse():
+    """The T2 attempt-1 lesson (2026-08-18): codex rotates single-use
+    refresh tokens — two lanes from one auth.json burn the campaign
+    login. More than one concurrent codex lane refuses (CON-8)."""
+    import subprocess as sp
+
+    head = sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True
+    ).stdout.strip()
+    proc = sp.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "tools" / "a5_fleet.py"),
+            "--commit",
+            head,
+            "--fleets",
+            "4",
+            "--lane-agents",
+            "claude,codex",
+            "--expect-dora-sha256",
+            "0" * 64,
+        ],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    assert proc.returncode != 0 and "codex lanes" in proc.stdout

@@ -92,14 +92,20 @@ def a5_runner_identity() -> str:
 
 
 def run_agent(
-    k: int, n: int, oid: str, config_dir: Path, budget_scale: float, tier: str = "T1"
+    k: int,
+    n: int,
+    oid: str,
+    config_dir: Path,
+    budget_scale: float,
+    tier: str = "T1",
+    agent: str = "claude",
 ) -> dict:
     """One agent's full lane: worktree, isolated session, metrics.
     Infra errors are the AGENT's record, never the config's (ADR-a5)."""
-    agent, model = "claude", DEFAULT_MODELS["claude"]
+    model = DEFAULT_MODELS[agent]
     out_k = config_dir / f"agent_{k}"
     wt = config_dir / f"worktree_{k}"
-    record: dict = {"agent_index": k, "fleet": n}
+    record: dict = {"agent_index": k, "fleet": n, "agent": agent}
     try:
         out_k.mkdir(parents=True, exist_ok=True)
         if not wt.exists():
@@ -171,6 +177,12 @@ def main() -> int:
     parser.add_argument(
         "--tier", default="T1", help="task tier for every lane (T2 = the breakthrough campaign)"
     )
+    parser.add_argument(
+        "--lane-agents",
+        default="claude",
+        help="comma list cycled across lanes (e.g. claude,codex for the "
+        "mixed-ensemble T2 campaign — ENPIRE's diversity lesson)",
+    )
     parser.add_argument("--budget-scale", type=float, default=1.0)
     parser.add_argument("--expect-dora-sha256", required=False, default=None)
     args = parser.parse_args()
@@ -193,6 +205,31 @@ def main() -> int:
     if not fleets or any(f < 1 or f > 16 for f in fleets):
         print(json.dumps({"ok": False, "error": f"bad --fleets selection {args.fleets!r}"}))
         return 1
+    lane_agents = [a.strip() for a in args.lane_agents.split(",") if a.strip()]
+    if set(lane_agents) - set(DEFAULT_MODELS):
+        print(json.dumps({"ok": False, "error": f"unknown lane agents {lane_agents!r}"}))
+        return 1
+    # Codex OAuth rotates single-use refresh tokens: two lanes seeded
+    # from one auth.json race the refresh, the first rotation invalidates
+    # every other copy AND the master login (measured: the T2 attempt-1
+    # cross-kill, 2026-08-18 -- both codex lanes died and the campaign
+    # login burned, needing an owner re-login). Until per-lane logins
+    # exist, more than one CONCURRENT codex lane per config refuses.
+    n_codex = max(
+        sum(1 for k in range(n) if lane_agents[k % len(lane_agents)] == "codex") for n in fleets
+    )
+    if n_codex > 1:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"{n_codex} concurrent codex lanes share one rotating "
+                    "refresh token (single-use): the first refresh burns the "
+                    "campaign login. Use at most one codex lane per config.",
+                }
+            )
+        )
+        return 1
     runtime = host_dora_runtime()
     if runtime.get("sha256") != args.expect_dora_sha256:
         print(
@@ -204,7 +241,9 @@ def main() -> int:
     oid = resolve_commit(REPO_ROOT, args.commit)
     args.out = args.out.resolve()
     args.out.mkdir(parents=True, exist_ok=True)
-    agent, model = "claude", DEFAULT_MODELS["claude"]
+    # treatment identity: the LANE list is the agent identity (mixed
+    # fleets); campaign_treatment's single-agent fields carry lane 0
+    agent, model = lane_agents[0], DEFAULT_MODELS[lane_agents[0]]
     treatment = campaign_treatment(agent, model, oid, DEV_SEEDS, HOLDOUT_SEEDS)
     treatment |= {
         "protocol": "ADR-a5-protocol",
@@ -214,17 +253,21 @@ def main() -> int:
         "host_dora_cli": runtime,
         "agent_budget": AGENT_BUDGET,
         "tier": args.tier,
+        "lane_agents": lane_agents,
     }
     # fail-closed auth probe (issue #96) once, before any config spends
-    probe_dir = args.out / "auth_probe"
-    probe_dir.mkdir(exist_ok=True)
-    env, _ = isolated_session_env(probe_dir, env_baseline_oid=oid)
-    _, cred_error = seed_session_credentials(agent, env)
-    error = cred_error or probe_agent_auth(agent, model, env, REPO_ROOT)
-    scrub_session_credentials(probe_dir)
-    if error:
-        print(json.dumps({"ok": False, "error": error}))
-        return 1
+    for probe_agent in sorted(set(lane_agents)):
+        probe_dir = args.out / f"auth_probe_{probe_agent}"
+        probe_dir.mkdir(exist_ok=True)
+        env, _ = isolated_session_env(probe_dir, env_baseline_oid=oid)
+        _, cred_error = seed_session_credentials(probe_agent, env)
+        error = cred_error or probe_agent_auth(
+            probe_agent, DEFAULT_MODELS[probe_agent], env, REPO_ROOT
+        )
+        scrub_session_credentials(probe_dir)
+        if error:
+            print(json.dumps({"ok": False, "error": f"{probe_agent}: {error}"}))
+            return 1
 
     configs = []
     for n in fleets:
@@ -241,7 +284,13 @@ def main() -> int:
             records = list(
                 pool.map(
                     lambda k, n=n, d=config_dir: run_agent(
-                        k, n, oid, d, args.budget_scale, args.tier
+                        k,
+                        n,
+                        oid,
+                        d,
+                        args.budget_scale,
+                        args.tier,
+                        lane_agents[k % len(lane_agents)],
                     ),
                     range(n),
                 )
