@@ -343,3 +343,49 @@ def test_initial_capture_barrier_waits_for_the_teleport():
 
     # no reset stamp (reset_sim_ns == 0): fall back to arrival order
     assert initial_capture_barrier(500, 0) == 500
+
+
+class TestExpectsReturn:
+    """VER-1/VER-3 amendment (T4 increment two, ADR-32 §3 epoch): the
+    goal-start tray set exempts recovery subjects from the wrong_object
+    entry trigger and the collision proxy; success and timeout both
+    require no goal-start occupant REMAINING (not_returned)."""
+
+    def _in_tray(self, cfg=None):
+        return list(IN_TRAY)  # the module's resting-inside fixture
+
+    def test_goal_start_occupant_does_not_trigger_wrong_object(self):
+        state = make_state(positions=moved(list(SHELF), 1, self._in_tray()))
+        assert judge(state, 0, 1.0, make_cfg())[1] == "wrong_object"  # unscoped: fires
+        verdict = judge(state, 0, 1.0, make_cfg(), tray_at_start=frozenset({1}))
+        assert verdict == ("ongoing", None)  # scoped: the recovery subject
+
+    def test_new_entry_still_triggers_immediately(self):
+        positions = moved(moved(list(SHELF), 1, self._in_tray()), 2, self._in_tray())
+        state = make_state(positions=positions)
+        verdict = judge(state, 0, 1.0, make_cfg(), tray_at_start=frozenset({1}))
+        assert verdict == ("fail", "wrong_object")  # box 2 is a NEW entry
+
+    def test_success_requires_the_occupant_gone(self):
+        cfg = make_cfg(home_check_enabled=False)
+        positions = moved(moved(list(SHELF), 1, self._in_tray()), 0, self._in_tray())
+        state = make_state(positions=positions)
+        verdict = judge(state, 0, 1.0, cfg, tray_at_start=frozenset({1}))
+        assert verdict == ("fail", "not_returned")  # B delivered, A still there
+        gone = make_state(positions=moved(list(SHELF), 0, self._in_tray()))
+        assert judge(gone, 0, 1.0, cfg, tray_at_start=frozenset({1})) == ("success", None)
+
+    def test_timeout_with_occupant_remaining_is_not_returned(self):
+        cfg = make_cfg()
+        state = make_state(positions=moved(list(SHELF), 1, self._in_tray()))
+        verdict = judge(state, 0, cfg.timeout_s + 1, cfg, tray_at_start=frozenset({1}))
+        assert verdict == ("fail", "not_returned")
+
+    def test_occupant_movement_is_not_collision(self):
+        """Returning the occupant MOVES it — the displacement proxy must
+        not fire on the recovery subject."""
+        cfg = make_cfg()
+        # occupant started in tray (per tray_at_start), now displaced onto a shelf slot
+        state = make_state(positions=moved(list(SHELF), 1, [0.62, 0.1, 0.6]))
+        verdict = judge(state, 0, 1.0, cfg, tray_at_start=frozenset({1}))
+        assert verdict == ("ongoing", None)
