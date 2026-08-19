@@ -130,7 +130,11 @@ env-change epoch (CON-7 human sign-off) that:
   falls back to TELEPORT, all of which are wrong mid-episode.
 
 Ratifying this ADR ratifies the increment-two SHAPE; its VER wording lands
-with that epoch's own review.
+with that epoch's own review. EPOCH OPENED 2026-08-18 by owner direction
+("1, 2, 3 to continue the loop", item 3): the VER-1/VER-3 amendments land
+in SPEC 040 via the spec-change PR of this same date; `not_returned` joins
+the taxonomy scoped to `expects_return` goals; implementation follows as
+its own PR with citing tests (HAR-9).
 
 ## Consequences
 
