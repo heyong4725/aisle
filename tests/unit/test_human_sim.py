@@ -133,3 +133,27 @@ class TestHumanSim:
 
         for seed in (0, 1, 4, 7):
             assert trace(seed) == trace(seed)
+
+
+class TestRecoveryScript:
+    """T4 inc-2 (VER-3 amendment, ADR-32 §3 epoch): the recovery meta
+    scripts step 3 — the human names the wrong med for RETURN and
+    requests the correction, then the normal confirm flow proceeds."""
+
+    def test_recovery_meta_requests_correction_and_return(self):
+        human = HumanSim()
+        out = human.on_episode_meta(
+            {"goal_id": "ep-0000r", "seed": 4, "recovery": True}, "ep-0000r"
+        )
+        ((topic, payload, metadata),) = out
+        assert topic == "human_msg" and payload["kind"] == "request"
+        assert payload["med"] == corrected_med(4)
+        assert payload["return_med"] == requested_med(4)
+        assert "wrong one" in payload["text"]
+        assert metadata == {"goal_id": "ep-0000r"}
+
+    def test_recovery_confirm_flow_is_the_normal_exchange(self):
+        human = HumanSim()
+        human.on_episode_meta({"goal_id": "g", "seed": 4, "recovery": True}, "g")
+        out = human.on_robot_msg({"kind": "confirm", "med": corrected_med(4)}, "g")
+        assert out[0][1]["kind"] == "confirm_reply"
