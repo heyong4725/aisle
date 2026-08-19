@@ -79,3 +79,26 @@ def test_agent_lane_passes_the_full_ceilings_contract(tmp_path, monkeypatch):
     record = a5.run_agent(0, 1, "oid", tmp_path, 1.0)
     assert "infra_error" not in record, record
     assert set(seen) >= {"prior_tokens", "prior_wall_s", "token_ceiling", "wall_ceiling_s"}
+
+
+def test_peer_links_are_readonly_views_of_other_lanes_ideas(tmp_path):
+    """ENPIRE follow-up 4: each lane sees every OTHER lane's idea tree
+    via symlink (live, append-only), never its own."""
+    from a5_fleet import link_peers
+
+    for k in range(3):
+        (tmp_path / f"worktree_{k}" / "runs" / "ideas").mkdir(parents=True)
+    (tmp_path / "worktree_1" / "runs" / "ideas" / "i.jsonl").write_text('{"id":"I1"}\n')
+    link_peers(tmp_path, 3)
+    view = tmp_path / "worktree_0" / "peers" / "agent_1" / "ideas"
+    assert view.is_symlink() and (view / "i.jsonl").read_text() == '{"id":"I1"}\n'
+    assert not (tmp_path / "worktree_0" / "peers" / "agent_0").exists()
+
+
+def test_summary_collection_reads_the_distilled_note(tmp_path):
+    from a5_fleet import collect_summary
+
+    assert collect_summary(tmp_path) is None
+    (tmp_path / "notes").mkdir()
+    (tmp_path / "notes" / "summary.md").write_text("BC-reg helped")
+    assert collect_summary(tmp_path) == "BC-reg helped"

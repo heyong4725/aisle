@@ -50,11 +50,50 @@ NOTE = (
 )
 
 
+PEER_NOTE = (
+    "Peers: {n_peers} other agent(s) work the same task concurrently. "
+    "Their idea trees are LIVE at peers/agent_<k>/ideas/ (read-only "
+    "symlinks) — reading a peer's logged hypotheses and verdicts before "
+    "spending a rollout is cheap; duplicating a peer's failed idea is "
+    "not. Before your session ends, write what you learned (what worked, "
+    "what failed and why, what you would try next) to notes/summary.md — "
+    "the next campaign's agents receive it."
+)
+
+
+def link_peers(config_dir, n: int) -> None:
+    """ENPIRE follow-up 4 (owner-approved): live cross-lane visibility.
+    Each worktree gets read-only peers/agent_<k>/ideas symlinks to every
+    OTHER lane's idea-tree dir — the ADR-h3 'peer summaries' analogue,
+    live because idea logs are append-only JSONL (HAR-8): a reader sees
+    exactly the hypotheses+verdicts a peer has committed to, nothing
+    in-flight."""
+    for k in range(n):
+        wt = config_dir / f"worktree_{k}"
+        for j in range(n):
+            if j == k:
+                continue
+            dst = wt / "peers" / f"agent_{j}" / "ideas"
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src = config_dir / f"worktree_{j}" / "runs" / "ideas"
+            if not dst.exists():
+                dst.symlink_to(src)
+
+
+def collect_summary(wt) -> str | None:
+    """The end-of-session distilled summary (ENPIRE's task-transition
+    pattern: written knowledge persists, raw state does not)."""
+    p = wt / "notes" / "summary.md"
+    return p.read_text() if p.exists() else None
+
+
 def a5_runner_identity() -> str:
     return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
-def run_agent(k: int, n: int, oid: str, config_dir: Path, budget_scale: float) -> dict:
+def run_agent(
+    k: int, n: int, oid: str, config_dir: Path, budget_scale: float, tier: str = "T1"
+) -> dict:
     """One agent's full lane: worktree, isolated session, metrics.
     Infra errors are the AGENT's record, never the config's (ADR-a5)."""
     agent, model = "claude", DEFAULT_MODELS["claude"]
@@ -72,7 +111,10 @@ def run_agent(k: int, n: int, oid: str, config_dir: Path, budget_scale: float) -
         if cred_error:
             raise RuntimeError(cred_error)
         isolation["credentials"] = cred
-        prompt = campaign_prompt("T1", tokens, wall_h, DEV_SEEDS, note=NOTE.format(k=k, n=n))
+        note = NOTE.format(k=k, n=n)
+        if n > 1:
+            note += "\n" + PEER_NOTE.format(n_peers=n - 1)
+        prompt = campaign_prompt(tier, tokens, wall_h, DEV_SEEDS, note=note)
         cmd = agent_cmd_campaign(agent, model, prompt)
         t0 = time.time()
         session = run_session(
@@ -94,6 +136,7 @@ def run_agent(k: int, n: int, oid: str, config_dir: Path, budget_scale: float) -
             "session_start_epoch": t0,
             **campaign_metrics(wt, t0, pin=oid),
         }
+        record["summary"] = collect_summary(wt)
     except Exception as exc:  # noqa: BLE001 — the record IS the outcome
         record["infra_error"] = repr(exc)
     finally:
@@ -125,6 +168,9 @@ def main() -> int:
     parser.add_argument("--commit", required=True, help="the campaign pin OID (ADR-a5)")
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "runs" / "a5")
     parser.add_argument("--fleets", default="1,4,8")
+    parser.add_argument(
+        "--tier", default="T1", help="task tier for every lane (T2 = the breakthrough campaign)"
+    )
     parser.add_argument("--budget-scale", type=float, default=1.0)
     parser.add_argument("--expect-dora-sha256", required=False, default=None)
     args = parser.parse_args()
@@ -167,6 +213,7 @@ def main() -> int:
         "a5_runner_sha256": a5_runner_identity(),
         "host_dora_cli": runtime,
         "agent_budget": AGENT_BUDGET,
+        "tier": args.tier,
     }
     # fail-closed auth probe (issue #96) once, before any config spends
     probe_dir = args.out / "auth_probe"
@@ -183,12 +230,19 @@ def main() -> int:
     for n in fleets:
         config_dir = args.out / f"fleet_{n}"
         config_dir.mkdir(exist_ok=True)
+        for k in range(n):
+            wt_k = config_dir / f"worktree_{k}"
+            if not wt_k.exists():
+                make_worktree(oid, wt_k)
+        link_peers(config_dir, n)
         print(f"[a5] fleet {n}: launching {n} concurrent agent(s)", file=sys.stderr)
         t0 = time.time()
         with ThreadPoolExecutor(max_workers=n) as pool:
             records = list(
                 pool.map(
-                    lambda k, n=n, d=config_dir: run_agent(k, n, oid, d, args.budget_scale),
+                    lambda k, n=n, d=config_dir: run_agent(
+                        k, n, oid, d, args.budget_scale, args.tier
+                    ),
                     range(n),
                 )
             )
@@ -199,7 +253,7 @@ def main() -> int:
             k = record["agent_index"]
             wt = config_dir / f"worktree_{k}"
             record["holdout"] = (
-                score_holdout(wt, HOLDOUT_SEEDS, f"a5-f{n}-a{k}", "T1")
+                score_holdout(wt, HOLDOUT_SEEDS, f"a5-f{n}-a{k}", args.tier)
                 if wt.exists() and not record.get("infra_error")
                 else None
             )
