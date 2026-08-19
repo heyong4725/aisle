@@ -21,6 +21,8 @@ import numpy as np
 _VERIFIER_DIR = Path(__file__).parent
 
 FAILURE_CLASSES = ("wrong_object", "dropped", "timeout", "never_grasped", "collision")
+# T4 increment two (VER-3 amendment): scoped to expects_return goals only
+RETURN_FAILURE_CLASS = "not_returned"
 
 
 def load_thresholds() -> dict:
@@ -127,21 +129,47 @@ def _center_inside_tray(pos: np.ndarray, cfg: JudgeCfg) -> bool:
     return all(cfg.tray_min[i] <= pos[i] <= cfg.tray_max[i] for i in range(3))
 
 
+def _unreturned(state: np.ndarray, exempt: frozenset, cfg: JudgeCfg) -> bool:
+    """expects_return: any goal-start occupant still inside the tray."""
+    for idx in exempt:
+        pos, _ = _box_pose(state, idx)
+        if _center_inside_tray(pos, cfg):
+            return True
+    return False
+
+
 def judge(
-    oracle_state: np.ndarray, target_idx: int, t: float, cfg: JudgeCfg
+    oracle_state: np.ndarray,
+    target_idx: int,
+    t: float,
+    cfg: JudgeCfg,
+    tray_at_start: frozenset[int] | None = None,
 ) -> tuple[str, str | None]:
     """VER-1: pure verdict for one oracle sample.
 
     Returns ("success", None), ("fail", <VER-3 class>), or
     ("ongoing", None). Ordering encodes VER-3's safety asymmetry:
     wrong_object fires immediately, before any success or timeout
-    consideration."""
+    consideration.
+
+    T4 increment two (VER-1/VER-3 amendment, ADR-32 §3 epoch):
+    `tray_at_start` non-None marks an `expects_return` goal — the box
+    indices already inside the tray at goal start. Those boxes are
+    EXEMPT from the wrong_object entry trigger (they are the recovery
+    task's subject, not a delivery; any NEW non-target entry triggers
+    immediately as before), exempt from the collision displacement
+    proxy (returning them is the task), and success additionally
+    requires that no non-target box REMAINS in the tray — else
+    ("fail", "not_returned") at what would have been success or
+    timeout."""
     state = np.asarray(oracle_state, dtype=np.float32).reshape(-1)
     n_boxes = len(cfg.box_half_extents)
 
-    # VER-3: the moment ANY non-target box enters the tray
+    exempt = tray_at_start or frozenset()
+    # VER-3: the moment ANY non-target box enters the tray — goal-start
+    # occupants exempted under expects_return (scoped amendment)
     for idx in range(n_boxes):
-        if idx == target_idx:
+        if idx == target_idx or idx in exempt:
             continue
         pos, _ = _box_pose(state, idx)
         if _center_inside_tray(pos, cfg):
@@ -156,7 +184,7 @@ def judge(
     # collision: a non-target box was knocked away from its start pose
     # (oracle proxy — poses are the only contact evidence available, ADR-8)
     for idx in range(n_boxes):
-        if idx == target_idx:
+        if idx == target_idx or idx in exempt:
             continue
         pos, _ = _box_pose(state, idx)
         displacement = float(
@@ -173,6 +201,8 @@ def judge(
                 target_pos - np.asarray(cfg.initial_positions[target_idx], dtype=np.float32)
             )
         )
+        if _unreturned(state, exempt, cfg):
+            return "fail", "not_returned"
         if moved <= cfg.move_epsilon_m:
             return "fail", "never_grasped"
         return "fail", "timeout"
@@ -185,6 +215,8 @@ def judge(
         cfg.robot_home_error_rad is not None
         and cfg.robot_home_error_rad <= cfg.robot_home_tolerance_rad
     )
+    if in_tray and upright and robot_home and _unreturned(state, exempt, cfg):
+        return "fail", "not_returned"
     if in_tray and upright and robot_home:
         return "success", None
 
