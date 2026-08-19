@@ -209,6 +209,27 @@ def main() -> int:
     if set(lane_agents) - set(DEFAULT_MODELS):
         print(json.dumps({"ok": False, "error": f"unknown lane agents {lane_agents!r}"}))
         return 1
+    # Codex OAuth rotates single-use refresh tokens: two lanes seeded
+    # from one auth.json race the refresh, the first rotation invalidates
+    # every other copy AND the master login (measured: the T2 attempt-1
+    # cross-kill, 2026-08-18 -- both codex lanes died and the campaign
+    # login burned, needing an owner re-login). Until per-lane logins
+    # exist, more than one CONCURRENT codex lane per config refuses.
+    n_codex = max(
+        sum(1 for k in range(n) if lane_agents[k % len(lane_agents)] == "codex") for n in fleets
+    )
+    if n_codex > 1:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"{n_codex} concurrent codex lanes share one rotating "
+                    "refresh token (single-use): the first refresh burns the "
+                    "campaign login. Use at most one codex lane per config.",
+                }
+            )
+        )
+        return 1
     runtime = host_dora_runtime()
     if runtime.get("sha256") != args.expect_dora_sha256:
         print(
