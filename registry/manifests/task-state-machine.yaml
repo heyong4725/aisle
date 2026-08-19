@@ -28,6 +28,8 @@ outputs:
   grasp_target: {schema: pose7d_f32, latency_class: best_effort}
   # T4 dialogue (ADR-32): confirm/ack back to the human-sim
   robot_msg: {schema: json_utf8, latency_class: best_effort}
+  # T4 inc-2: the med to take BACK, serialized ahead of the delivery
+  return_request: {schema: json_utf8, latency_class: best_effort}
   # hybrid fallback (AISLE_VLA_FALLBACK): the task re-routed to the VLA
   # branch after repeated classical failure -- decision-node arbitration
   vla_request: {schema: json_utf8, latency_class: best_effort}

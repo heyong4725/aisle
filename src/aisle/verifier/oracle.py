@@ -332,6 +332,7 @@ def main() -> None:
             target_idx = MED_NAMES.index(goal["target_med"])
             goal_id = metadata.get("goal_id", "")
             goal_t0_ns = None
+            tray_at_start = None
             # freshness barrier: seed the episode's initial poses only from
             # an oracle sample at or after the RESET that opened it (its
             # teleport sim_time rides in the goal). latest_oracle_ns alone
@@ -361,10 +362,22 @@ def main() -> None:
                 cfg = build_judge_cfg(
                     physics, meds, embodiment, float(goal["timeout_s"]), initial, home_error
                 )
+                # T4 inc-2 (VER-1 amendment): an expects_return goal
+                # captures the tray occupancy AT THE SAME baseline
+                # moment as initial poses — the same barrier keeps a
+                # pre-reset frame from ever seeding it
+                tray_at_start = None
+                if goal.get("expects_return"):
+                    tray_at_start = frozenset(
+                        i
+                        for i in range(len(MED_NAMES))
+                        if i != target_idx
+                        and _center_inside_tray(np.asarray(initial[i], dtype=np.float32), cfg)
+                    )
             if home is not None and home_error != cfg.robot_home_error_rad:
                 cfg = replace(cfg, robot_home_error_rad=home_error)
             t = (sim_time_ns - goal_t0_ns) / 1e9
-            status, failure = judge(state, target_idx, t, cfg)
+            status, failure = judge(state, target_idx, t, cfg, tray_at_start)
             if status in ("success", "fail"):
                 result = {
                     "status": status,
