@@ -70,12 +70,17 @@ def main() -> None:
     tier = os.environ.get("AISLE_TIER", "T0")
     retail = tier in ("S1", "S2", "S3")  # RS-6: rollout gains --tier
     meds_env = os.environ.get("AISLE_TARGET_MEDS", "")
+    inc2 = os.environ.get("AISLE_T4_INCREMENT_TWO", "").strip() in ("1", "true")
     if tier == "T4":
         # T4 (ADR-32 §1): the goal's target_med is the FINAL corrected
         # target — B on corrected seeds, else A — derived from the same
         # script the human-sim runs, so human and verifier can never
         # disagree. An AISLE_TARGET_MEDS override would desync the goal
         # from the script: refused, not ignored.
+        # Increment two (ADR-32 §3 epoch): on corrected seeds goal 1 is
+        # the MISDELIVERY (A — the human corrects only after receiving
+        # it) and goal 2 is the recovery: deliver B with
+        # expects_return=true (A sits in the tray at goal-2 start).
         from aisle.nodes.human_sim import final_target
 
         if meds_env:
@@ -83,7 +88,12 @@ def main() -> None:
                 "rollout-client config refused: AISLE_TARGET_MEDS is incompatible "
                 "with tier T4 — targets are script-derived (ADR-32)"
             )
-        targets = [final_target(s) for s in seeds]
+        if inc2:
+            from aisle.nodes.human_sim import is_corrected, requested_med
+
+            targets = [requested_med(s) for s in seeds]  # goal 1 delivers A
+        else:
+            targets = [final_target(s) for s in seeds]
     elif tier == "T3" and not meds_env:
         # T3: the scene occludes med (seed % n) — the episode targets
         # exactly that med (aisle.scenes.pharmacy.occluded_target rule)
@@ -133,6 +143,9 @@ def main() -> None:
     phase = "reset_pending"  # -> awaiting_reset -> running -> (next)
     retries_seen: dict[str, int] = {}  # goal_id -> latest feedback retries (HAR-3)
     corrections_seen: dict[str, int] = {}  # goal_id -> dialogue_corrections (ADR-32)
+    recovery_active = False  # T4 inc-2: one recovery goal per episode
+    if inc2:
+        from aisle.nodes.human_sim import is_corrected  # noqa: F401 — used in the loop
     # the sim stamp of the episode_result that ended the last episode: rides
     # every reset request (TC-2), so the realistic verifier can bound the
     # ended episode's frame window BEFORE any reset motion enters the scene
@@ -269,6 +282,34 @@ def main() -> None:
             print(f"episode {episode_base + episode} result: {record}", file=sys.stderr)
             if out:
                 out.write(json.dumps(record) + "\n")
+            # T4 inc-2 (ADR-32 §3): on a corrected seed, goal 1's result
+            # (A delivered) opens the RECOVERY goal — deliver B with
+            # expects_return, NO reset in between (the tray still holds
+            # A; that is the task). One recovery per episode.
+            if inc2 and not recovery_active and is_corrected(seeds[episode]):
+                from aisle.nodes.human_sim import corrected_med
+
+                recovery_active = True
+                goal_id = f"ep-{episode_base + episode:04d}r"
+                goal = {
+                    "target_med": corrected_med(seeds[episode]),
+                    "tier": tier,
+                    "timeout_s": timeout_s,
+                    "seed": seeds[episode],
+                    "expects_return": True,
+                    "reset_sim_ns": last_result_sim_ns,
+                }
+                send("episode_goal", pa.array([json.dumps(goal)]), {"goal_id": goal_id})
+                send(
+                    "episode_meta",
+                    pa.array(
+                        [json.dumps({"goal_id": goal_id, "seed": seeds[episode], "recovery": True})]
+                    ),
+                    {"goal_id": goal_id},
+                )
+                print(f"recovery goal sent: {goal_id} {goal['target_med']}", file=sys.stderr)
+                continue  # stay in `running` for the recovery verdict
+            recovery_active = False
             episode += 1
             phase = "reset_pending"
             if episode >= len(seeds):

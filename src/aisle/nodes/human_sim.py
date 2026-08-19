@@ -55,13 +55,38 @@ class HumanSim:
         self.seed: int | None = None
         self.phase = "idle"  # -> awaiting_confirm -> (awaiting_reconfirm) -> done
         self.expected: str | None = None  # the med the next confirm must name
+        self.recovery = False  # T4 inc-2: the correction already happened
 
     def on_episode_meta(self, payload: dict, goal_id: str) -> list:
-        """A new episode: reset the script and speak the request."""
+        """A new episode: reset the script and speak the request. A
+        RECOVERY meta (T4 inc-2) scripts step 3: the human has received
+        the wrong med (ground truth via the episodic episode_result
+        edge) and asks for the correction plus the return."""
         seed = int(payload["seed"])
         self.goal_id, self.seed = goal_id, seed
+        if payload.get("recovery"):
+            med = corrected_med(seed)
+            self.phase, self.expected = "awaiting_confirm", med
+            self.recovery = True
+            wrong = requested_med(seed)
+            return [
+                (
+                    "human_msg",
+                    {
+                        "kind": "request",
+                        "med": med,
+                        "text": (
+                            f"that's the wrong one — this is {wrong}. "
+                            f"please take it back and bring me the {med}"
+                        ),
+                        "return_med": wrong,
+                    },
+                    {"goal_id": goal_id},
+                )
+            ]
         med = requested_med(seed)
         self.phase, self.expected = "awaiting_confirm", med
+        self.recovery = False
         return [
             (
                 "human_msg",
@@ -80,7 +105,7 @@ class HumanSim:
             return []
         if self.phase == "awaiting_confirm":
             assert self.seed is not None
-            if is_corrected(self.seed):
+            if is_corrected(self.seed) and not self.recovery:
                 med_b = corrected_med(self.seed)
                 self.phase, self.expected = "awaiting_reconfirm", med_b
                 return [

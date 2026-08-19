@@ -99,6 +99,7 @@ class TaskStateMachine:
         # exchange completes; corrections are counted, never retries
         self.confirmed = False
         self.dialogue_corrections = 0
+        self.return_med = None  # T4 inc-2: med to take back first
 
     def _reset_tour(self) -> None:
         self.candidates = None
@@ -186,6 +187,7 @@ class TaskStateMachine:
         self.toured = False
         self.confirmed = False
         self.dialogue_corrections = 0
+        self.return_med = None
         return []
 
     # -- T4 dialogue (ADR-32) -------------------------------------------
@@ -203,6 +205,7 @@ class TaskStateMachine:
                 return []
             med = payload["med"]
             self.goal, self.goal_id, self.violations = {"target_med": med}, goal_id, {}
+            self.return_med = payload.get("return_med")
             self.ticks = 0
             self.retries = 0
             self.retry_due_tick = None
@@ -232,13 +235,29 @@ class TaskStateMachine:
             ]
         if kind == "confirm_reply" and not self.confirmed:
             self.confirmed = True
-            return [
+            emissions = []
+            if self.return_med:
+                # T4 inc-2: the recovery request names the med to take
+                # BACK. return_item rides the same grasp stack as a
+                # normal pick with the TRAY as source and the shelf
+                # return slot as destination; the executor's
+                # one-plan-at-a-time rule serializes it ahead of the
+                # delivery that follows.
+                emissions.append(
+                    (
+                        "return_request",
+                        {"return_med": self.return_med},
+                        {"goal_id": goal_id},
+                    )
+                )
+            emissions.append(
                 (
                     "target_request",
                     {"target_med": self.goal["target_med"]},
                     {"goal_id": goal_id},
                 )
-            ]
+            )
+            return emissions
         return []
 
     def on_violation(self, violation: dict) -> None:

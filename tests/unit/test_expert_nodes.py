@@ -723,3 +723,26 @@ class TestHybridFallback:
         machine = self._machine(fallback=False)
         assert self._retry_topic(machine)[0] == "target_request"
         assert self._retry_topic(machine)[0] == "target_request"
+
+
+class TestReturnItemFlow:
+    """T4 inc-2: a request carrying return_med makes the confirmed
+    machine emit return_request BEFORE target_request — the executor's
+    one-plan-at-a-time rule serializes the return ahead of delivery."""
+
+    def test_confirm_reply_emits_return_then_delivery(self):
+        machine = TaskStateMachine(tier="T4")
+        machine.on_human_msg(
+            {"kind": "request", "med": "amoxicillin", "return_med": "metformin"}, "g"
+        )
+        out = machine.on_human_msg({"kind": "confirm_reply", "med": "amoxicillin"}, "g")
+        assert [(e[0], e[1]) for e in out] == [
+            ("return_request", {"return_med": "metformin"}),
+            ("target_request", {"target_med": "amoxicillin"}),
+        ]
+
+    def test_plain_requests_emit_no_return(self):
+        machine = TaskStateMachine(tier="T4")
+        machine.on_human_msg({"kind": "request", "med": "amoxicillin"}, "g")
+        out = machine.on_human_msg({"kind": "confirm_reply", "med": "amoxicillin"}, "g")
+        assert [e[0] for e in out] == ["target_request"]
