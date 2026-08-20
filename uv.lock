@@ -45,6 +45,25 @@ wheels = [
 ]
 
 [[package]]
+name = "accelerate"
+version = "1.14.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "huggingface-hub" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "psutil" },
+    { name = "pyyaml" },
+    { name = "safetensors" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'linux' and extra != 'extra-5-aisle-cuda') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'linux' and extra != 'extra-5-aisle-cuda') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8d/75/94cd5d389649578aca399e5aa822637eec18319a1dadc400ffe2f9a7493f/accelerate-1.14.0.tar.gz", hash = "sha256:41b9c4377a54e0b460a959b0defa1b736e4ca0a2373252d9a539964c2afe3c8d", size = 412167, upload-time = "2026-06-11T13:45:52.326Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/db/253133d7e7cb40d3af384bb2f5c0b4a2b7fdcffbc95c688cc67a20a3c103/accelerate-1.14.0-py3-none-any.whl", hash = "sha256:e94390c2863b873be18f623f9df48a0d8fe5eff13ea7f1a00092b0a7904888c6", size = 389246, upload-time = "2026-06-11T13:45:50.477Z" },
+]
+
+[[package]]
 name = "aiohappyeyeballs"
 version = "2.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -215,6 +234,8 @@ sim = [
 ]
 vla = [
     { name = "lerobot" },
+    { name = "num2words" },
+    { name = "peft" },
     { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'linux' and extra != 'extra-5-aisle-cuda') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
     { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'linux' and extra != 'extra-5-aisle-cuda') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
 ]
@@ -233,7 +254,9 @@ requires-dist = [
     { name = "genesis-world", marker = "extra == 'sim'", specifier = ">=1.2.3" },
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "lerobot", marker = "extra == 'vla'", specifier = ">=0.2" },
+    { name = "num2words", marker = "extra == 'vla'", specifier = ">=0.5.14" },
     { name = "numpy", specifier = ">=2.4.6" },
+    { name = "peft", marker = "extra == 'vla'", specifier = ">=0.20.0" },
     { name = "pillow", specifier = ">=11.3.0" },
     { name = "pyarrow", specifier = ">=17.0" },
     { name = "pyarrow", marker = "extra == 'cuda'", specifier = ">=25.0.0" },
@@ -280,7 +303,7 @@ version = "4.14.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "idna" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/61/cc/a381afa6efea9f496eff839d4a6a1aed3bfafc7b3ab4b0d1b243a12573dd/anyio-4.14.2.tar.gz", hash = "sha256:cfa139f3ed1a23ee8f88a145ddb5ac7605b8bbfd8592baacd7ce3d8bb4313c7f", size = 260176, upload-time = "2026-07-12T20:29:07.082Z" }
 wheels = [
@@ -590,7 +613,7 @@ name = "click"
 version = "8.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/76/d4/81420972a676e8ffea40450d8c8c92943e7218a78fe9b64359836cc9876b/click-8.4.2.tar.gz", hash = "sha256:9a6cea6e60b17ebe0a44c5cc636d94f09bd66142c1cd7d8b4cd731c4917a15f6", size = 338000, upload-time = "2026-06-24T17:45:15.148Z" }
 wheels = [
@@ -926,6 +949,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/17/4d/ac7ffa80c69ea1df3
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c9/7a/cef76fd8438a42f96db64ddaa85280485a9c395e7df3db8158cfec1eee34/dill-0.3.8-py3-none-any.whl", hash = "sha256:c36ca9ffb54365bdd2f8eb3eff7d2a21237f8452b57ace88b1ac615b7e815bd7", size = 116252, upload-time = "2024-01-27T23:42:14.239Z" },
 ]
+
+[[package]]
+name = "docopt"
+version = "0.6.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a2/55/8f8cab2afd404cf578136ef2cc5dfb50baa1761b68c9da1fb1e4eed343c9/docopt-0.6.2.tar.gz", hash = "sha256:49b3a825280bd66b3aa83585ef59c4a8c82f2c8a522dbe754a8bc8d08c85c491", size = 25901, upload-time = "2014-06-16T11:18:57.406Z" }
 
 [[package]]
 name = "dora-rs"
@@ -1413,7 +1442,7 @@ dependencies = [
     { name = "click" },
     { name = "filelock" },
     { name = "fsspec" },
-    { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64' or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
+    { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'" },
     { name = "httpx" },
     { name = "packaging" },
     { name = "pyyaml" },
@@ -2145,6 +2174,18 @@ wheels = [
 ]
 
 [[package]]
+name = "num2words"
+version = "0.5.14"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "docopt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f6/58/ad645bd38b4b648eb2fc2ba1b909398e54eb0cbb6a7dbd2b4953e38c9621/num2words-0.5.14.tar.gz", hash = "sha256:b066ec18e56b6616a3b38086b5747daafbaa8868b226a36127e0451c0cf379c6", size = 218213, upload-time = "2024-12-17T20:17:10.191Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d6/5b/545e9267a1cc080c8a1be2746113a063e34bcdd0f5173fd665a5c13cb234/num2words-0.5.14-py3-none-any.whl", hash = "sha256:1c8e5b00142fc2966fd8d685001e36c4a9911e070d1b120e1beb721fa1edb33d", size = 163525, upload-time = "2024-12-17T20:17:06.074Z" },
+]
+
+[[package]]
 name = "numba"
 version = "0.66.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2574,6 +2615,28 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fe/be/d448af7d657d82e1888dd8551f79c6d6fb161080b5b9752d84d910ec2319/pandas-3.0.5-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:b58b1b39d46a5862e3fb18f50d1a201398619d16a0f9f73f57eea5583cf0e63c", size = 11925105, upload-time = "2026-07-22T22:19:21.515Z" },
     { url = "https://files.pythonhosted.org/packages/29/c1/ccb4238212c8c4f496c584f3044d94e0c030ed8e1d68999db46c91c2242f/pandas-3.0.5-cp314-cp314t-win_amd64.whl", hash = "sha256:1c10461f6eeb35d8f05b6184c65c8b9991663b66c46b1d559b682cb34ae7c6ea", size = 10387612, upload-time = "2026-07-22T22:19:24.257Z" },
     { url = "https://files.pythonhosted.org/packages/d2/cf/6a51b2c38980e04c279fd2fa908a1b0982064e860444acfca4ec2e2c8359/pandas-3.0.5-cp314-cp314t-win_arm64.whl", hash = "sha256:3c5015fd1730fbf883647e88068176c839c102cea883ba1769a6f4593bfc1f8c", size = 9509776, upload-time = "2026-07-22T22:19:26.694Z" },
+]
+
+[[package]]
+name = "peft"
+version = "0.20.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "accelerate" },
+    { name = "huggingface-hub" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "psutil" },
+    { name = "pyyaml" },
+    { name = "safetensors" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'linux' and extra != 'extra-5-aisle-cuda') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'linux' and extra != 'extra-5-aisle-cuda') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
+    { name = "tqdm" },
+    { name = "transformers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b4/08/02541a2c29be7c78698f73d438bc0e733b214f3f35ec5db79fca8da8fc61/peft-0.20.0.tar.gz", hash = "sha256:4769c8093a4ca145fd6fb3fd4dd50449675f5fe46434ad1e98b285a132d4b1d0", size = 880503, upload-time = "2026-07-28T13:46:01.85Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/28/79/13bcabb8048126422d5c4b880575d40886c726f354db88cfeed4325525bb/peft-0.20.0-py3-none-any.whl", hash = "sha256:0fbba16ffebfad3de96e06f2da6860fd860292324b85b6141909fa1e26ea9233", size = 775777, upload-time = "2026-07-28T13:45:59.809Z" },
 ]
 
 [[package]]
@@ -3157,10 +3220,10 @@ name = "pyobjc-framework-applicationservices"
 version = "12.2.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyobjc-core", marker = "sys_platform != 'linux'" },
-    { name = "pyobjc-framework-cocoa", marker = "sys_platform != 'linux'" },
-    { name = "pyobjc-framework-coretext", marker = "sys_platform != 'linux'" },
-    { name = "pyobjc-framework-quartz", marker = "sys_platform != 'linux'" },
+    { name = "pyobjc-core", marker = "sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "pyobjc-framework-cocoa", marker = "sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "pyobjc-framework-coretext", marker = "sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "pyobjc-framework-quartz", marker = "sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/29/40/b792ecc88a9fa639318509c127f0b153cd334bd27b47df373f4b7362a36d/pyobjc_framework_applicationservices-12.2.2.tar.gz", hash = "sha256:0bcc09531d5854598fd74706d999e4ae3b7c503204d318910d02eba30e8eecef", size = 109668, upload-time = "2026-08-11T19:43:45.347Z" }
 wheels = [
@@ -3179,7 +3242,7 @@ name = "pyobjc-framework-cocoa"
 version = "12.2.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyobjc-core", marker = "sys_platform != 'linux'" },
+    { name = "pyobjc-core", marker = "sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/75/76/49c6da2c6a831020b4854ba20079d5a1030474bffc776b7b73c2eeff8c15/pyobjc_framework_cocoa-12.2.2.tar.gz", hash = "sha256:c96c0ef69a71afbbb0e6a7d594b455c5fe47d62e0db376ee7a2b4b828c16ace9", size = 3132831, upload-time = "2026-08-11T19:44:02.288Z" }
 wheels = [
@@ -3198,9 +3261,9 @@ name = "pyobjc-framework-coretext"
 version = "12.2.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyobjc-core", marker = "sys_platform != 'linux'" },
-    { name = "pyobjc-framework-cocoa", marker = "sys_platform != 'linux'" },
-    { name = "pyobjc-framework-quartz", marker = "sys_platform != 'linux'" },
+    { name = "pyobjc-core", marker = "sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "pyobjc-framework-cocoa", marker = "sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "pyobjc-framework-quartz", marker = "sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/6d/66/405006d3502ffcd3bc69e0b7249ab7c05a5b43a07fa3959ce6b2a84f3278/pyobjc_framework_coretext-12.2.2.tar.gz", hash = "sha256:64ddc02303217028e32e22c7cc00b5112d84e9d9a67c37d00c2e54f9172284ab", size = 97658, upload-time = "2026-08-11T19:44:17.207Z" }
 wheels = [
@@ -3219,8 +3282,8 @@ name = "pyobjc-framework-quartz"
 version = "12.2.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyobjc-core", marker = "sys_platform != 'linux'" },
-    { name = "pyobjc-framework-cocoa", marker = "sys_platform != 'linux'" },
+    { name = "pyobjc-core", marker = "sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "pyobjc-framework-cocoa", marker = "sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/35/b1/426a37c7ae37280b3ffca2571fb48f211946aee2f4ca31a603ed1943c4a7/pyobjc_framework_quartz-12.2.2.tar.gz", hash = "sha256:810f97b210cfd93704d240860286dfd6df09f9f1c52525fc5c2166723aea3f9e", size = 3218295, upload-time = "2026-08-11T19:45:15.189Z" }
 wheels = [
@@ -4185,13 +4248,13 @@ resolution-markers = [
     "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32' and extra != 'extra-5-aisle-cuda' and extra != 'extra-5-aisle-sim'",
 ]
 dependencies = [
-    { name = "filelock", marker = "sys_platform != 'linux' or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
-    { name = "fsspec", marker = "sys_platform != 'linux' or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
-    { name = "jinja2", marker = "sys_platform != 'linux' or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
-    { name = "networkx", marker = "sys_platform != 'linux' or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
-    { name = "setuptools", marker = "sys_platform != 'linux' or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
-    { name = "sympy", marker = "sys_platform != 'linux' or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
-    { name = "typing-extensions", marker = "sys_platform != 'linux' or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
+    { name = "filelock", marker = "sys_platform != 'linux'" },
+    { name = "fsspec", marker = "sys_platform != 'linux'" },
+    { name = "jinja2", marker = "sys_platform != 'linux'" },
+    { name = "networkx", marker = "sys_platform != 'linux'" },
+    { name = "setuptools", marker = "sys_platform != 'linux'" },
+    { name = "sympy", marker = "sys_platform != 'linux'" },
+    { name = "typing-extensions", marker = "sys_platform != 'linux'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5b/fe/cba54dc58523434919b66f13a667e36e436deddd77ca519e96553617d4ec/torch-2.13.0-cp311-cp311-macosx_14_0_arm64.whl", hash = "sha256:e76f9bcecc52b8ff711239a2f7547d5353df95878ab232f0773c1d95928b92f8", size = 111187938, upload-time = "2026-07-08T16:05:17.065Z" },
@@ -4228,13 +4291,13 @@ resolution-markers = [
     "python_full_version < '3.14' and sys_platform == 'linux' and extra != 'extra-5-aisle-cuda' and extra != 'extra-5-aisle-sim'",
 ]
 dependencies = [
-    { name = "filelock", marker = "(sys_platform == 'linux' and extra != 'extra-5-aisle-cuda') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
-    { name = "fsspec", marker = "(sys_platform == 'linux' and extra != 'extra-5-aisle-cuda') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
-    { name = "jinja2", marker = "(sys_platform == 'linux' and extra != 'extra-5-aisle-cuda') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
-    { name = "networkx", marker = "(sys_platform == 'linux' and extra != 'extra-5-aisle-cuda') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
-    { name = "setuptools", marker = "(sys_platform == 'linux' and extra != 'extra-5-aisle-cuda') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
-    { name = "sympy", marker = "(sys_platform == 'linux' and extra != 'extra-5-aisle-cuda') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
-    { name = "typing-extensions", marker = "(sys_platform == 'linux' and extra != 'extra-5-aisle-cuda') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
+    { name = "filelock", marker = "sys_platform == 'linux'" },
+    { name = "fsspec", marker = "sys_platform == 'linux'" },
+    { name = "jinja2", marker = "sys_platform == 'linux'" },
+    { name = "networkx", marker = "sys_platform == 'linux'" },
+    { name = "setuptools", marker = "sys_platform == 'linux'" },
+    { name = "sympy", marker = "sys_platform == 'linux'" },
+    { name = "typing-extensions", marker = "sys_platform == 'linux'" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp311-cp311-linux_s390x.whl", hash = "sha256:6e9817dbdf5ea76789babd46e457eac5bf14ff566cf85f8addbfdff2d56601ce", upload-time = "2026-07-08T19:27:52Z" },
@@ -4376,7 +4439,7 @@ name = "tqdm"
 version = "4.69.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-sim') or (extra == 'extra-5-aisle-cuda' and extra == 'extra-5-aisle-vla')" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/8c/69/40407dfc835517f058b603dbf37a6df094d8582b015a51eddc988febbcb7/tqdm-4.69.0.tar.gz", hash = "sha256:700c5e85dcd5f009dd6222588a29180a193a748247a5d855b4d67db93d79a53b", size = 792569, upload-time = "2026-07-17T18:09:06.2Z" }
 wheels = [

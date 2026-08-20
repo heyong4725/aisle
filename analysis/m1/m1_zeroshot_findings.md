@@ -57,3 +57,37 @@ wrong_object) bypass the retry path entirely — the fallback only ever
 sees in-flight failures (`never_grasped` class). The value contrast
 (M1 hybrid vs classical where classical FAILS) awaits a VLA worth
 falling back to: the compute-gated fine-tune.
+
+## CORRECTION (2026-08-20): the 0/4 measured a crashed node, not the model
+
+The fine-tune debug traced two load failures and invalidated this
+file's mechanism claim. In the recorded zero-shot run the vla node's
+first inference attempt died on `ImportError: num2words` (node log,
+run 01a00bf7…), so **no SmolVLA inference ever executed in the sim** —
+"typed integration proven end-to-end" was wrong; frames→chunks→guard
+was proven only up to the (dead) inference call. Separately, lerobot's
+default MPS device placement crashes natively at weight loading
+(silent kill, leaked semaphore); CPU loads the same 450M cleanly. Both
+fixed (num2words pinned in the vla extra; CPU-device load in
+vla_backend). The honest baseline number requires a RERUN with a live
+policy; until it lands, "zero-shot performance" is UNMEASURED and the
+registry evalcard's 0.0 describes an inert node. The rerun supersedes
+this section's table when recorded below.
+
+## CORRECTION 2 (2026-08-20): zero-shot is structurally impossible for smolvla_base
+
+The debug's final layer: with the load fixed (MPS crash fenced, hub
+config loaded) and the batch built to the real schema
+(camera1..3 @ 256², 6-dim SO-100 state), inference refuses with
+"`mean` is infinity … initialize with `stats`": **the base checkpoint
+ships uninitialized normalization statistics by design** — it is a
+pre-training artifact meant to be fine-tuned, which supplies stats
+from the tuning dataset. So the M1 "zero-shot" row is structurally 0
+for ANY scene, and the fine-tune (protocol as pre-registered, stats
+computed from our 86k demonstration tuples) is not an improvement
+path but the ONLY path to a live SmolVLA in this loop. Three load/run
+bugs fixed en route, each previously masked by a silent-failure
+pattern this project has now fenced three times: num2words import
+(node died silently → the 0/4 measured an inert node), lerobot MPS
+placement (native crash at weight load → CPU fence), empty default
+config schema (select_action refuses → hub config required).
