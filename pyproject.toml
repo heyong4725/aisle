@@ -75,6 +75,8 @@ cuda = [
 ]
 vla = [
     "lerobot>=0.2",
+    "num2words>=0.5.14",
+    "peft>=0.20.0",
     "torch>=2.13.0",
 ]
 
