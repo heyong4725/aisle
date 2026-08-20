@@ -1,0 +1,526 @@
+{
+ "ok": true,
+ "treatment": {
+  "commit": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+  "agent": "claude",
+  "agent_cli_version": "2.1.234 (Claude Code)",
+  "model": "claude-fable-5",
+  "prompt_template_sha256": "0f7fb5d9ea5d45e771eea1de0db36475787c8ce8b1892393d4cae19b0b985b6d",
+  "dev_seeds": "0..49",
+  "holdout_seeds": "100..107",
+  "holdout_episodes": 8,
+  "claude_max_turns": null,
+  "runner_sha256": "97bf9fa7d199772e97cf3e8761f658380554a55f75915462a5980366c9ed6e65",
+  "baseline_compat_sha256": "3269d31d1e968f3fd082abeb8ca65b1d5acd0fbd1b0959d33444e2fa5ba0ad06",
+  "session_spawn": {
+   "stdin": "devnull",
+   "confinement": "none (ADR-h2 point 5)"
+  },
+  "session_isolation_policy": "isolated-home-baseline-compat-v2",
+  "protocol": "ADR-a5-protocol",
+  "suite": "a5-fleet",
+  "budget_scale": 1.0,
+  "a5_runner_sha256": "ad9e6c70c2766395dfdd6529b523cb11d3b77ae798ba3bef039bfb4d67193c21",
+  "host_dora_cli": {
+   "path": "/Users/yonghe/.cargo/bin/dora",
+   "sha256": "1fedbc1f87b4eb7a1dc1563715677f5a8a9b581fb56cfa7b88b1e1829cce7596",
+   "version": "dora-cli 1.0.0-rc.4"
+  },
+  "agent_budget": {
+   "tokens": 400000,
+   "episodes": 40,
+   "wall_h": 2.5
+  },
+  "tier": "T2",
+  "lane_agents": [
+   "claude"
+  ]
+ },
+ "configs": [
+  {
+   "fleet": 4,
+   "config_wall_s": 5962.4,
+   "agents": [
+    {
+     "agent_index": 0,
+     "fleet": 4,
+     "agent": "claude",
+     "session": {
+      "stopped": "token_budget",
+      "rc": -9,
+      "tokens": 403395,
+      "tokens_generated": 1112,
+      "wall_s": 4495.3
+     },
+     "session_isolation": {
+      "home": "/Users/yonghe/src/aisle/runs/t2_breakthrough_r3/fleet_4/agent_0/agent_home",
+      "claude_config_dir": "/Users/yonghe/src/aisle/runs/t2_breakthrough_r3/fleet_4/agent_0/agent_home/.claude",
+      "codex_home": "/Users/yonghe/src/aisle/runs/t2_breakthrough_r3/fleet_4/agent_0/agent_home/.codex",
+      "xdg_rebound": true,
+      "env_baseline_oid": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+      "credentials": {
+       "credential_seed": "claude-campaign login (.credentials.json)"
+      }
+     },
+     "session_start_epoch": 1787177036.262423,
+     "rollouts": [
+      {
+       "run_id": "20260819-220925-5becb9",
+       "mtime": 1787179053.879829,
+       "episodes": 8,
+       "pass1": 0.5,
+       "git_sha": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_baseline": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_baseline_oid": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_attested": true
+      },
+      {
+       "run_id": "20260819-224058-ef93df",
+       "mtime": 1787180279.8215742,
+       "episodes": 8,
+       "pass1": 0.625,
+       "git_sha": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_baseline": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_baseline_oid": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_attested": true
+      },
+      {
+       "run_id": "20260819-230116-228562",
+       "mtime": 1787181349.0508378,
+       "episodes": 8,
+       "pass1": 0.625,
+       "git_sha": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_baseline": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_baseline_oid": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_attested": true
+      }
+     ],
+     "episodes_total": 24,
+     "wrong_object_total": 0,
+     "first_success_wall_s": 2017.6,
+     "summary": "# T2 campaign notes \u2014 r3, agent 0 (fleet_4, worktree_0)\n\nStatus: IN PROGRESS (update before session end)\n\n## What I did\n\n1. **Ported the r2-wt1 stack verbatim** (it passed the gate there and scored a\n   smoke success): `skills/t2-scan-pose` + `skills/t2-scan-tsm` +\n   `skills/t2-read-ladder` docs dir, `registry/manifests/*.yaml`, the r2-wt1\n   `graphs/agent_campaign.yaml` (expert_t2 topology + skill path swaps,\n   watchdogs 60/90 for fleet load), and the FAR-FIRST read-ladder diff in\n   `src/aisle/nodes/ik_trajectory.py`. Turn plan regenerated. NOTE: this diff\n   makes `tests/unit/test_read_pose.py::test_far_side_faces_lead_with_pitched_entries`\n   fail (the reordered ladder's entry set differs from stock) \u2014 pre-existing\n   from the r2 port, does not block the rollout gate.\n2. **I1 rollout** (seeds 0..7): see Results.\n3. **I2 bundle \u2014 refusal-cascade rescue** (`skills/t2-scan-tsm/t2_scan_tsm.py`\n   + a 4-line `flat_only` filter in ik_trajectory's read_move handler):\n   - **ELIMINATION fallback**: cross-tour, position-keyed ledger of confident\n     non-target reads; on tour exhaustion, if all 4 non-targets are labeled at\n     4 distinct boxes and exactly ONE distinct candidate is unlabeled, promote\n     it (one box per med). Refuses on any ambiguity (duplicate labels, 2+\n     unlabeled). Never trusts a refused read.\n   - **Flat retry**: a PITCHED refusal with margin >= 0.05 re-reads via\n     `flat_only` read_move (executor walks only flat rungs). Rationale: the\n     pitched floor is 0.15 because wrong pitched reads measure up to 0.14; the\n     flat floor 0.04 is trustworthy (wrong flat reads <= 0.036). NEVER lower\n     the pitched floor \u2014 route around it.\n   - **Flat re-confirm**: seed-4 pattern \u2014 target matches at margin < 0.10,\n     the pitched confirm read refuses, candidate abandoned every tour. Now one\n     flat re-confirm before abandoning.\n   - 10 synthetic unit cases in /tmp/test_elim.py all pass (promote,\n     elimination, ambiguity/duplicate refusal, cross-tour accumulation,\n     flat-retry, re-confirm agree/disagree/single-shot).\n\n## Failure anatomy (from I1 traces, deterministic across r2/r3)\n\n- Expert T2 baseline pass@1 = 0.08 (tech report C9); ported stack I1 = see\n  Results. ALL failures are `never_grasped` read-resolution cascades \u2014 zero\n  wrong_object, zero collision (far-first ladder holds).\n- seed 0 (amoxicillin): candidate c1 [0.365,-0.012,0.107] has NO solvable\n  read park (instant move_done !ok every tour); another candidate refuses\n  pitched at margins 0.09-0.135 (< 0.15 pitched floor). 3 tours, timeout.\n- seed 1 (ibuprofen): multiple blank-ish refusals (margins 0.003-0.046).\n  Hardest class; flat retry may not rescue.\n- seed 4 (metformin): TWO boxes match the target at low margin; pitched\n  confirm refuses on both; candidates abandoned every tour.\n- seed 5 (amoxicillin): refusal-retry cascade like seed 0.\n\n## Rejected idea (do not retry naively)\n\n- Two-view agreement on sub-floor pitched reads (two refused pitched reads\n  agreeing on argmax \u2192 accept): UNSAFE. Wrong pitched reads measure up to\n  0.14 margin and rung-adjacent views can slide onto the same neighbour\n  label; a misread target box feeding elimination delivers a WRONG box (10x).\n\n## Results\n\n- I1 (ported r2 stack, seeds 0..7, run 20260819-220925-5becb9):\n  **pass@1 0.50** (2,3,6,7 pass; 0,1,4,5 never_grasped), 0 wrong_object,\n  0 collision.\n- I2 bundle (elimination + flat retry + flat re-confirm; seeds\n  0,1,4,5,8..11, run 20260819-224058-ef93df): **pass@1 0.625**.\n  Converted 0 (61s), 4 (55s), 5 (25s). Elimination fired correctly on\n  seed 8 (sole unresolved promoted = target) but the grasp knocked a\n  neighbour \u2192 collision; was a timeout before, so no pass1 loss.\n  Combined distinct seeds 0..11: **9/12 = 0.75** (vs expert 0.08).\n- Peer cross-check (agent_2, stock close-first ladder, same TSM): 0.50\n  on 0..9 with 2 COLLISIONS (seeds 1,7) \u2014 close reads get margins but\n  knock boxes; far-first + flat-retry gets the reads without the knocks.\n\n## Remaining failure classes (seeds 1, 9)\n\n- seed 1: TRANSIT TIME pathology \u2014 4 reads in 150s; one park-to-park hop\n  took 66 SIM-seconds; all reads blank (margins 0.003-0.046). Fixing\n  needs motion work (agent_1 is trying lifted waypoints). Also: one\n  0.046-margin pitched refusal sits just under FLAT_RETRY_MARGIN=0.05;\n  lowering to 0.04 might label one more box but won't fix the clock.\n- seed 8-class: elimination-promoted boxes sit where no read park\n  solves, i.e. cramped spots; grasp approach knocked a neighbour. A\n  gentler approach (higher pre-grasp, slower descent) for\n  elimination-promoted targets might convert these.\n\n## What I would try next\n\n1. Transit-time fix for seed-1 class (lifted waypoints / fewer bails \u2014\n   watch agent_1's I3 verdict before re-deriving).\n2. Careful-approach mode for elimination-promoted grasps (seed 8).\n3. FLAT_RETRY_MARGIN 0.05 -> 0.04 (one observed near-miss at 0.046).\n",
+     "swept_processes": [],
+     "holdout": {
+      "ok": true,
+      "stalled": false,
+      "run_id": "campaign-holdout-a5-f4-a0",
+      "pass1": 0.375,
+      "pass8": 0.375,
+      "failures": {
+       "never_grasped": 1,
+       "collision": 4
+      },
+      "episodes": [
+       {
+        "episode": 0,
+        "seed": 100,
+        "status": "fail",
+        "failure": "never_grasped",
+        "t_end": 150.0,
+        "goal_id": "ep-0000",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 1,
+        "seed": 101,
+        "status": "fail",
+        "failure": "collision",
+        "t_end": 29.9,
+        "goal_id": "ep-0001",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 2,
+        "seed": 102,
+        "status": "success",
+        "failure": null,
+        "t_end": 18.83,
+        "goal_id": "ep-0002",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 3,
+        "seed": 103,
+        "status": "success",
+        "failure": null,
+        "t_end": 32.5,
+        "goal_id": "ep-0003",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 4,
+        "seed": 104,
+        "status": "fail",
+        "failure": "collision",
+        "t_end": 41.03,
+        "goal_id": "ep-0004",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 5,
+        "seed": 105,
+        "status": "fail",
+        "failure": "collision",
+        "t_end": 44.5,
+        "goal_id": "ep-0005",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 6,
+        "seed": 106,
+        "status": "fail",
+        "failure": "collision",
+        "t_end": 49.76,
+        "goal_id": "ep-0006",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 7,
+        "seed": 107,
+        "status": "success",
+        "failure": null,
+        "t_end": 19.2,
+        "goal_id": "ep-0007",
+        "verifier": "oracle",
+        "retries": 0
+       }
+      ],
+      "traces_dir": "runs/campaign-holdout-a5-f4-a0/traces",
+      "videos": [
+       "runs/campaign-holdout-a5-f4-a0/traces/overhead.mp4"
+      ],
+      "durations": {
+       "wall_s": 647.6,
+       "sim_s": 385.7
+      },
+      "budget": {
+       "episodes_left": 1976,
+       "wall_h_left": 99.006,
+       "tokens_ceiling": 5000000
+      }
+     }
+    },
+    {
+     "agent_index": 1,
+     "fleet": 4,
+     "agent": "claude",
+     "session": {
+      "stopped": "token_budget",
+      "rc": -9,
+      "tokens": 400175,
+      "tokens_generated": 1575,
+      "wall_s": 5962.4
+     },
+     "session_isolation": {
+      "home": "/Users/yonghe/src/aisle/runs/t2_breakthrough_r3/fleet_4/agent_1/agent_home",
+      "claude_config_dir": "/Users/yonghe/src/aisle/runs/t2_breakthrough_r3/fleet_4/agent_1/agent_home/.claude",
+      "codex_home": "/Users/yonghe/src/aisle/runs/t2_breakthrough_r3/fleet_4/agent_1/agent_home/.codex",
+      "xdg_rebound": true,
+      "env_baseline_oid": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+      "credentials": {
+       "credential_seed": "claude-campaign login (.credentials.json)"
+      }
+     },
+     "session_start_epoch": 1787177036.2623758,
+     "rollouts": [
+      {
+       "run_id": "20260819-222102-f4f361",
+       "mtime": 1787178152.2725239,
+       "episodes": 2,
+       "pass1": 0.0,
+       "git_sha": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_baseline": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_baseline_oid": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_attested": true
+      }
+     ],
+     "episodes_total": 2,
+     "wrong_object_total": 0,
+     "first_success_wall_s": null,
+     "summary": "# T2 breakthrough r3 \u2014 agent 1 campaign notes (in progress)\n\n## What I inherited\n- Expert T2 baseline: pass1 0.08 (run 20260811-173916), 15/25 never_grasped\n  (tour starvation), 7 collision, 1 dropped, 0 wrong_object ever.\n- r2 (arm L) skills staged in skills_pending_review/: t2-scan-pose (candidate\n  positions WITHOUT l2_pose's identity gate \u2014 at T2 identity is color noise by\n  design; fixes 5/10 episodes that never toured) and t2-scan-tsm (per-candidate\n  z for cross-level candidates, board-snap z on promotion, planner neighbour\n  re-aim, confirm-margin 0.10, tour restarts).\n\n## What I did (chronological)\n1. **Ported r2 skills to ADR-30 lockstep** (they predate it): swap\n   `from dora import Node` \u2192 `from aisle.turn_node import Node` in both; in\n   t2_scan_tsm main add the stock TSM's turn-based 1 Hz tick synthesis\n   (`event[\"id\"] == \"turn\"` \u2192 sim-time-driven on_tick) and gate the timer tick\n   on `not lockstep`. The turn_node wrapper handles turn_done automatically.\n2. **Registration**: `harness skill register <dir> --sandbox` (ADR-40) is the\n   campaign-iteration path \u2014 no eval run needed, but eval.yaml min_pass_rate\n   must be \u22650.5 (registry floor) and the eval graph must contain a node whose\n   id EQUALS the skill id. So agent_campaign.yaml uses node ids t2-scan-pose /\n   t2-scan-tsm. Manifests need lockstep ports: input\n   `turn: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}`, output\n   `turn_done: {schema: sim_turn_u64, latency_class: hard_rt}`, and\n   `turn_edge: episodic` on reply/verdict back-edges (violation, target_pose,\n   move_done, read_result, plan_done) or validate fails CLOCK_CYCLE.\n3. **Probe rollout (I1, run 20260819-222102, seeds 0-1)**: 0/2, both\n   `collision`. Diagnosis from oracle_state displacement analysis:\n   - r2's tour-starvation fix WORKS (tours start, reads are healthy: correct\n     mismatch read at margin +0.40).\n   - Bug: tsm's PITCHED_LADDER_OFFSET=3 indexes the SOLVABLE-solutions list,\n     not the ladder \u2014 for low faces the pitched rungs are often dropped (no\n     staged-pose IK), so offset 3 lands on flat 0.24 (jam, err ~1.0-1.2 rad)\n     or exhausts a <4-entry list instantly. 4 candidates lost this way in 2 eps.\n   - Collision cause both eps: the 0.16 m pitch-0.35 park on a +y face knocks\n     the box ~1.5 s into the park (mid home\u2192read-stage hop, elbow/forearm\n     sweep at shelf height). Jam PRESSES displaced nothing (contrary to r1\n     fears); TRANSITS are the collision source.\n4. **Fix bundle (I3)**, in editable code (ik_trajectory.py is NOT frozen):\n   - read_move payload flag `pitched_first` (content-based reorder of the\n     solvable list, pitched rungs first) replaces the index offset.\n   - _PITCHED_FIRST_LADDER prefers 0.20 m pitched over 0.16 m.\n   - Pitched entries get a transit waypoint: far pose lifted +0.12 m\n     (READ_HIGH_LIFT_M), IK'd best-effort, prepended to the read-stage path.\n\n## Operational lessons (read these first, they cost me ~40 min)\n- Bash tool calls are hard-capped at 10 min wall regardless of requested\n  timeout. Run `harness rollout` with run_in_background + TaskOutput\n  block-polling (600 s per call) instead of one synchronous call.\n- The harness stall detector (PRE_DATA_STALL_S=600) kills a launch whose sim\n  produces no trace data within 10 min. With 2+ concurrent peer sims on this\n  machine, Genesis startup can exceed that. A stalled run settles 0 episodes\n  (reservation returned); the wall time is the real loss. Retry when fewer\n  peer dataflows are running (`pgrep -fl \"dora run\"`).\n- First-ever rollout downloads HF model weights (~1 min) \u2014 budget for it.\n\n## Results\n- (pending) I3 rollout seeds 0..5, run 20260819-225754-8156ca.\n\n## Next ideas (untested)\n- Shorten STAGE_BAIL_S (4 s) presses during read stages only \u2014 jams burn\n  ~8-12 s per failed attempt against the 150 s episode budget.\n- Tour-order: read cheapest/safest faces first (flat -y faces), +y faces last\n  (already partially true via y-sort within a level).\n- If pitched 0.20 parks still knock: raise READ_HIGH_LIFT_M, or add an\n  azimuth-offset descent for +y faces.\n",
+     "swept_processes": [
+      56668
+     ],
+     "holdout": {
+      "ok": true,
+      "stalled": false,
+      "run_id": "campaign-holdout-a5-f4-a1",
+      "pass1": 0.0,
+      "pass8": 0.0,
+      "failures": {
+       "never_grasped": 1,
+       "wall_clamp": 5,
+       "collision": 2
+      },
+      "episodes": [
+       {
+        "episode": 0,
+        "seed": 100,
+        "status": "fail",
+        "failure": "never_grasped",
+        "t_end": 150.0,
+        "goal_id": "ep-0000",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 1,
+        "seed": 101,
+        "goal_id": "ep-0001",
+        "status": "fail",
+        "failure": "wall_clamp",
+        "success": false,
+        "synthetic": true,
+        "verifier": "oracle"
+       },
+       {
+        "episode": 2,
+        "seed": 102,
+        "goal_id": "ep-0002",
+        "status": "fail",
+        "failure": "wall_clamp",
+        "success": false,
+        "synthetic": true,
+        "verifier": "oracle"
+       },
+       {
+        "episode": 3,
+        "seed": 103,
+        "goal_id": "ep-0003",
+        "status": "fail",
+        "failure": "wall_clamp",
+        "success": false,
+        "synthetic": true,
+        "verifier": "oracle"
+       },
+       {
+        "episode": 4,
+        "seed": 104,
+        "status": "fail",
+        "failure": "collision",
+        "t_end": 61.76,
+        "goal_id": "ep-0004",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 5,
+        "seed": 105,
+        "status": "fail",
+        "failure": "collision",
+        "t_end": 26.5,
+        "goal_id": "ep-0005",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 6,
+        "seed": 106,
+        "goal_id": "ep-0006",
+        "status": "fail",
+        "failure": "wall_clamp",
+        "success": false,
+        "synthetic": true,
+        "verifier": "oracle"
+       },
+       {
+        "episode": 7,
+        "seed": 107,
+        "goal_id": "ep-0007",
+        "status": "fail",
+        "failure": "wall_clamp",
+        "success": false,
+        "synthetic": true,
+        "verifier": "oracle"
+       }
+      ],
+      "traces_dir": "runs/campaign-holdout-a5-f4-a1/traces",
+      "videos": [
+       "runs/campaign-holdout-a5-f4-a1/traces/overhead.mp4",
+       "runs/campaign-holdout-a5-f4-a1/traces/relaunch-1/overhead.mp4",
+       "runs/campaign-holdout-a5-f4-a1/traces/relaunch-2/overhead.mp4",
+       "runs/campaign-holdout-a5-f4-a1/traces/relaunch-3/overhead.mp4",
+       "runs/campaign-holdout-a5-f4-a1/traces/relaunch-4/overhead.mp4"
+      ],
+      "durations": {
+       "wall_s": 3722.9,
+       "sim_s": 238.3
+      },
+      "budget": {
+       "episodes_left": 1978,
+       "wall_h_left": 99.808,
+       "tokens_ceiling": 5000000
+      }
+     }
+    },
+    {
+     "agent_index": 2,
+     "fleet": 4,
+     "agent": "claude",
+     "infra_error": "InfraError('claude CLI exited rc=1 (not an agent outcome)')",
+     "swept_processes": [],
+     "holdout": null
+    },
+    {
+     "agent_index": 3,
+     "fleet": 4,
+     "agent": "claude",
+     "session": {
+      "stopped": "token_budget",
+      "rc": -9,
+      "tokens": 401629,
+      "tokens_generated": 1105,
+      "wall_s": 2843.3
+     },
+     "session_isolation": {
+      "home": "/Users/yonghe/src/aisle/runs/t2_breakthrough_r3/fleet_4/agent_3/agent_home",
+      "claude_config_dir": "/Users/yonghe/src/aisle/runs/t2_breakthrough_r3/fleet_4/agent_3/agent_home/.claude",
+      "codex_home": "/Users/yonghe/src/aisle/runs/t2_breakthrough_r3/fleet_4/agent_3/agent_home/.codex",
+      "xdg_rebound": true,
+      "env_baseline_oid": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+      "credentials": {
+       "credential_seed": "claude-campaign login (.credentials.json)"
+      }
+     },
+     "session_start_epoch": 1787177036.2623072,
+     "rollouts": [
+      {
+       "run_id": "20260819-223448-b7595a",
+       "mtime": 1787179544.1630988,
+       "episodes": 8,
+       "pass1": 0.375,
+       "git_sha": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_baseline": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_baseline_oid": "fd2b763d14da4851b1fd89bffa2764519d181e88",
+       "env_attested": true
+      }
+     ],
+     "episodes_total": 8,
+     "wrong_object_total": 0,
+     "first_success_wall_s": 2507.9,
+     "summary": "# T2 breakthrough r3 \u2014 agent 3 (fleet 4) campaign notes\n\nStatus: IN PROGRESS (will be finalized before session end).\n\n## What this campaign inherited\n\n- Stock expert_t2: pass@1 0.08 (2/25), 0 wrong_object ever. Failures:\n  never_grasped (tour starvation from l2_pose identity gate) > collision\n  (transit sweeps) > dropped. See analysis/t2/t2_curve_findings.md.\n- r2 skills `t2-scan-pose` (positions without identity gate,\n  tour_candidates with per-candidate z) + `t2-scan-tsm` (per-candidate z\n  tour, board-snap grasp z, planner slot re-aim, confirm-margin 0.10\n  double read, 2 tour restarts, pitched-first low faces). Sources were\n  staged in skills_pending_review/ (provenance verified) but NOT in the\n  registry \u2014 the ADR-37 0.5 floor closed r2's min_pass_rate:0.0 hole.\n\n## Key mechanics learned this round (read this before touching anything)\n\n1. **Unregistered node ids cannot roll out** (MANIFEST_MISSING /\n   PATH_MANIFEST_MISMATCH). The escape hatch is **ADR-40 sandbox\n   registration**: `harness skill register skills/<x> --sandbox` admits\n   the id for validation with no eval run \u2014 allowed for non-motion\n   safety classes. eval.yaml still needs min_pass_rate >= 0.5 declared.\n2. **The r2 skill mains predate ADR-30 lockstep.** They used\n   `from dora import Node` \u2192 the turn barrier watchdogs out.\n   Port = import `aisle.turn_node.Node` + declare `turn` input /\n   `turn_done` output in skill.yaml + mark tsm feedback inputs\n   `turn_edge: episodic` (else CLOCK_CYCLE) + **never emit from wall\n   `tick` events**: derive the 1 Hz feedback from `turn` sim time\n   exactly like the stock task_state_machine main does (emitting from a\n   wall handler raises ProtocolError and kills the node \u2014 cost us one\n   8-episode reservation to learn).\n   Second pitfall: r2's ScanTourMachine.on_target_pose stored the FULL\n   target_pose metadata (turn stamps included) in tour_meta and replayed\n   it on the promoted grasp_target many turns later \u2192\n   \"supplied an unrelated turn stamp\" ProtocolError, node death,\n   barrier watchdog. Fix: strip TURN_STAMP_KEYS from tour_meta (stock\n   task_state_machine already does this; the wrapper stamps the\n   emitting turn itself).\n3. Node id in graph must equal skill id; regenerate\n   `graphs/turn_plans/agent_campaign.json` via\n   `harness validate <graph> --write-turn-plan` after any topology edit.\n\n## Idea log (see runs/ideas for verdicts)\n\n- I1: lockstep port of r2 skills + sandbox registration, baseline on\n  seeds 0..7. (pending)\n\n## What I'd try next (updated as results come in)\n\n- pending baseline failure taxonomy.\n",
+     "swept_processes": [
+      43157,
+      43170,
+      45538,
+      45551
+     ],
+     "holdout": {
+      "ok": true,
+      "stalled": false,
+      "run_id": "campaign-holdout-a5-f4-a3",
+      "pass1": 0.375,
+      "pass8": 0.375,
+      "failures": {
+       "never_grasped": 1,
+       "collision": 3,
+       "dropped": 1
+      },
+      "episodes": [
+       {
+        "episode": 0,
+        "seed": 100,
+        "status": "fail",
+        "failure": "never_grasped",
+        "t_end": 150.0,
+        "goal_id": "ep-0000",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 1,
+        "seed": 101,
+        "status": "fail",
+        "failure": "collision",
+        "t_end": 9.7,
+        "goal_id": "ep-0001",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 2,
+        "seed": 102,
+        "status": "success",
+        "failure": null,
+        "t_end": 18.86,
+        "goal_id": "ep-0002",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 3,
+        "seed": 103,
+        "status": "fail",
+        "failure": "dropped",
+        "t_end": 31.7,
+        "goal_id": "ep-0003",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 4,
+        "seed": 104,
+        "status": "fail",
+        "failure": "collision",
+        "t_end": 10.46,
+        "goal_id": "ep-0004",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 5,
+        "seed": 105,
+        "status": "fail",
+        "failure": "collision",
+        "t_end": 28.7,
+        "goal_id": "ep-0005",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 6,
+        "seed": 106,
+        "status": "success",
+        "failure": null,
+        "t_end": 60.8,
+        "goal_id": "ep-0006",
+        "verifier": "oracle",
+        "retries": 0
+       },
+       {
+        "episode": 7,
+        "seed": 107,
+        "status": "success",
+        "failure": null,
+        "t_end": 19.16,
+        "goal_id": "ep-0007",
+        "verifier": "oracle",
+        "retries": 0
+       }
+      ],
+      "traces_dir": "runs/campaign-holdout-a5-f4-a3/traces",
+      "videos": [
+       "runs/campaign-holdout-a5-f4-a3/traces/overhead.mp4"
+      ],
+      "durations": {
+       "wall_s": 579.5,
+       "sim_s": 329.4
+      },
+      "budget": {
+       "episodes_left": 1976,
+       "wall_h_left": 99.818,
+       "tokens_ceiling": 5000000
+      }
+     }
+    }
+   ]
+  }
+ ]
+}
