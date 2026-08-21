@@ -26,6 +26,33 @@ def load_smolvla():
     from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
     policy = SmolVLAPolicy.from_pretrained(MODEL_ID, revision=PINNED_REVISION)
+    # AISLE_VLA_ADAPTER: a LoRA adapter dir (with stats.json beside it or
+    # in the dataset dir named by its training_record) makes this a LIVE
+    # policy -- stats are injected from the adapter bundle; without an
+    # adapter the base refuses at inference (uninitialized normalizers,
+    # by design -- see analysis/m1 correction 2)
+    import json as _json
+    import os as _os
+    from pathlib import Path as _Path
+
+    adapter = _os.environ.get("AISLE_VLA_ADAPTER", "").strip()
+    if adapter:
+        import torch as _torch
+        from peft import PeftModel
+
+        stats_path = _Path(adapter) / "stats.json"
+        stats = _json.loads(stats_path.read_text())
+        mods = dict(policy.named_modules())
+        with _torch.no_grad():
+            si = mods["normalize_inputs.buffer_observation_state"]
+            si.mean.copy_(_torch.tensor(stats["state_mean"]))
+            si.std.copy_(_torch.tensor(stats["state_std"]))
+            for name in ("normalize_targets.buffer_action", "unnormalize_outputs.buffer_action"):
+                am = mods[name]
+                am.mean.copy_(_torch.tensor(stats["action_mean"]))
+                am.std.copy_(_torch.tensor(stats["action_std"]))
+        policy = PeftModel.from_pretrained(policy, adapter)
+        policy = policy.merge_and_unload()
     policy.eval()
     return policy
 
