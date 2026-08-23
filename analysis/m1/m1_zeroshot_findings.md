@@ -91,3 +91,31 @@ pattern this project has now fenced three times: num2words import
 (node died silently → the 0/4 measured an inert node), lerobot MPS
 placement (native crash at weight load → CPU fence), empty default
 config schema (select_action refuses → hub config required).
+
+## The fine-tuned SO-101 eval: first LIVE policy episodes — 0/8, mechanisms named (2026-08-22)
+
+Training (owner-amended protocol): 800 LoRA steps on 4000 of the 135k
+SO-101 demo tuples, CPU, loss 0.041 → 0.0066; adapter + dataset stats
+saved (runs/smolvla_lora_so101_v1; ~33 h wall — the per-step mp4 seek
+is the bottleneck, pre-decode + checkpointing are the recorded tool
+fixes). Eval: graphs/eval_vla_smolvla_so101.yaml, T0/so101, seeds
+30..37, adapter + stats live via AISLE_VLA_ADAPTER.
+
+**Result: pass@1 0/8** — 5 never_grasped at full budget, 3 wall_clamp
+(episodes at ~5–9 min wall for 60 sim-s). **Liveness PROVEN this
+time**: model loaded, zero `[vla-backend] inference refused` lines —
+the first episodes in this project where a learned policy actually
+inferred in the loop. wrong_object 0; M5 did not halt.
+
+The mechanism is computation speed, not integration: at CPU inference
+latency (tens of sim-seconds per chunk in free-run), ADR-38's
+staleness floor — working exactly as designed — discards chunks
+computed against a world that has moved on, so the arm receives
+sparse, mostly-refused actuation. The safety rule and the honest
+result are the same fact. Paths forward, in cost order: (a) GPU-peer
+inference (the next-phases §5.1 placement — latency to ~100 ms makes
+chunks live); (b) lockstep with inference-aware turn budgeting (the
+async gate keeps turn_done flowing but the sim still outruns the
+model); (c) smaller/distilled policies. The fine-tune itself is
+validated as a PIPELINE (loss learned, adapter loads, policy lives);
+its task value is unmeasurable until inference fits the control rate.
