@@ -1,0 +1,22 @@
+# T4 increment two (ADR-32 §3, VER-3 amendment): the `return_item`
+# behavior — return_request -> a standard guard-gated grasp plan picking
+# the named med FROM the tray and placing at a free shelf slot
+# (place_xy metadata redirects the plan's destination; nothing else
+# differs from a pick). Deliberately NOT the reset service.
+id: return-planner
+kind: node
+provides: [return_item]
+requires: [task_sequencing]
+inputs:
+  turn: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
+  return_request: {schema: json_utf8, rate_hz: 1}
+outputs:
+  turn_done: {schema: sim_turn_u64, latency_class: hard_rt}
+  grasp_pose: {schema: pose7d_f32, latency_class: best_effort}
+embodiment:
+  arm: [franka, so101]
+  gripper: parallel
+safety_class: decision
+eval: null
+origin: hub
+source: src/aisle/nodes/return_planner.py
