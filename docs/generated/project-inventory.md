@@ -42,8 +42,8 @@ stayed outside it).
 
 | Surface | Count |
 |---|---:|
-| Graphs | 15 |
-| Capability manifests | 35 |
+| Graphs | 16 |
+| Capability manifests | 36 |
 | CLI command entries | 12 |
 | ADR files | 53 |
 
@@ -66,6 +66,7 @@ stayed outside it).
 | [graphs/expert_t2.yaml](../../graphs/expert_t2.yaml) | pharmacy (default) / — | franka (default) | L2 | 11 |
 | [graphs/expert_t3.yaml](../../graphs/expert_t3.yaml) | pharmacy (default) / — | franka (default) | L1 | 10 |
 | [graphs/expert_t4.yaml](../../graphs/expert_t4.yaml) | pharmacy (default) / — | franka (default) | L1 | 11 |
+| [graphs/expert_t4_inc2.yaml](../../graphs/expert_t4_inc2.yaml) | pharmacy (default) / — | franka (default) | L1 | 12 |
 
 ### Graph node membership
 
@@ -84,6 +85,7 @@ stayed outside it).
 - **graphs/expert_t2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `detected-pose`, `ocr-label`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/expert_t3.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/expert_t4.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `human-sim`, `task-state-machine`, `rollout-client`, `turn-barrier`
+- **graphs/expert_t4_inc2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `human-sim`, `task-state-machine`, `rollout-client`, `turn-barrier`, `return-planner`
 
 ## Capability manifests
 
@@ -110,6 +112,7 @@ stayed outside it).
 | [registry/manifests/placement-controller.yaml](../../registry/manifests/placement-controller.yaml) | fine_placement | franka | decision | hub | `src/aisle/nodes/placement_controller.py` |
 | [registry/manifests/pose-estimator.yaml](../../registry/manifests/pose-estimator.yaml) | object_pose | franka, so101 | perception | hub | `pip:dora-pose` |
 | [registry/manifests/reset.yaml](../../registry/manifests/reset.yaml) | episode_reset | franka, so101 | decision | hub | `src/aisle/reset/service.py` |
+| [registry/manifests/return-planner.yaml](../../registry/manifests/return-planner.yaml) | return_item | franka, so101 | decision | hub | `src/aisle/nodes/return_planner.py` |
 | [registry/manifests/rollout-client.yaml](../../registry/manifests/rollout-client.yaml) | episode_driving | franka, so101 | decision | hub | `src/aisle/harness/rollout_client.py` |
 | [registry/manifests/s1-driver-v2.yaml](../../registry/manifests/s1-driver-v2.yaml) | s1_expert_driving | franka | motion | agent-authored | `skills/s1-driver-v2/s1_driver_v2.py` |
 | [registry/manifests/s1-expert.yaml](../../registry/manifests/s1-expert.yaml) | s1_expert_driving | franka | motion | hub | `src/aisle/nodes/s1_expert.py` |
