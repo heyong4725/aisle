@@ -42,7 +42,7 @@ stayed outside it).
 
 | Surface | Count |
 |---|---:|
-| Graphs | 14 |
+| Graphs | 15 |
 | Capability manifests | 35 |
 | CLI command entries | 12 |
 | ADR files | 53 |
@@ -56,6 +56,7 @@ stayed outside it).
 | [graphs/eval_ik_transfer_v2.yaml](../../graphs/eval_ik_transfer_v2.yaml) | pharmacy (default) / — | franka (default) | L1 | 10 |
 | [graphs/eval_s1_driver_v2.yaml](../../graphs/eval_s1_driver_v2.yaml) | store / S1 | mobile | L0 (default) | 10 |
 | [graphs/eval_s3_driver_v1.yaml](../../graphs/eval_s3_driver_v1.yaml) | store / S3 | mobile | L0 (default) | 8 |
+| [graphs/eval_vla_smolvla_so101.yaml](../../graphs/eval_vla_smolvla_so101.yaml) | pharmacy (default) / — | so101 | L1 | 8 |
 | [graphs/eval_vla_smolvla_t1.yaml](../../graphs/eval_vla_smolvla_t1.yaml) | pharmacy (default) / — | franka (default) | L1 | 8 |
 | [graphs/expert_s1.yaml](../../graphs/expert_s1.yaml) | store / S1 | mobile | L0 (default) | 10 |
 | [graphs/expert_t0.yaml](../../graphs/expert_t0.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 10 |
@@ -73,6 +74,7 @@ stayed outside it).
 - **graphs/eval_ik_transfer_v2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-transfer-v2`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/eval_s1_driver_v2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `order-reader`, `task-planner`, `s1-driver-v2`, `verifier-retail`, `rollout-client`, `turn-barrier`
 - **graphs/eval_s3_driver_v1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `s3-driver-v1`, `verifier-retail`, `rollout-client`, `turn-barrier`
+- **graphs/eval_vla_smolvla_so101.yaml:** `dora-genesis`, `reset`, `budget-guard`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`, `vla-policy-smolvla`
 - **graphs/eval_vla_smolvla_t1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`, `vla-policy-smolvla`
 - **graphs/expert_s1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `order-reader`, `task-planner`, `s1-expert`, `verifier-retail`, `rollout-client`, `turn-barrier`
 - **graphs/expert_t0.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`

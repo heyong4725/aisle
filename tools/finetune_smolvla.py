@@ -40,6 +40,8 @@ def load_tuples(dataset: Path, run_dir: Path, stride: int, limit: int | None):
         cmds = query(run_dir, "joint_cmd_safe", episode=int(rec["episode"]))
         grips = query(run_dir, "gripper_cmd_safe", episode=int(rec["episode"]))
         grip_ts = grips["sim_time_ns"]
+        states = query(run_dir, "joint_state", episode=int(rec["episode"]))
+        sts, sdata = states["sim_time_ns"], states["data"]
         for i in range(0, rec["n_actions"], stride):
             ts = rec["action_ts"][i]
             gi = max((j for j, g in enumerate(grip_ts) if g <= ts), default=None)
@@ -48,7 +50,16 @@ def load_tuples(dataset: Path, run_dir: Path, stride: int, limit: int | None):
             out.append(
                 {
                     "frame_idx": rec["frame_indices"][i],
-                    "action": list(cmds["data"][i]) + [float(grips["data"][gi][0])],
+                    "state6": [
+                        float(x)
+                        for x in (
+                            (
+                                sdata[max((j for j, s in enumerate(sts) if s <= ts), default=0)]
+                                or [0.0] * 6
+                            )[:6]
+                        )
+                    ],
+                    "action": list(cmds["data"][i])[:5] + [float(grips["data"][gi][0])],
                     "task": f"pick the {rec.get('target_med', 'requested')} box "
                     "from the shelf and place it in the tray",
                 }
@@ -76,10 +87,29 @@ def main() -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
     from aisle.nodes.vla_backend import MODEL_ID, PINNED_REVISION, load_smolvla
 
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    device = "cpu"  # MPS crashes at load (backend fence); CPU fallback per protocol
     print(f"[finetune] device={device}", file=sys.stderr)
     policy = load_smolvla()
-    lora = LoraConfig(r=16, lora_alpha=32, target_modules="all-linear", lora_dropout=0.05)
+    stats = json.loads((args.dataset / "stats.json").read_text())
+    mods = dict(policy.named_modules())
+    with torch.no_grad():
+        si = mods["normalize_inputs.buffer_observation_state"]
+        si.mean.copy_(torch.tensor(stats["state_mean"]))
+        si.std.copy_(torch.tensor(stats["state_std"]))
+        for name in ("normalize_targets.buffer_action", "unnormalize_outputs.buffer_action"):
+            am = mods[name]
+            am.mean.copy_(torch.tensor(stats["action_mean"]))
+            am.std.copy_(torch.tensor(stats["action_std"]))
+    print("[finetune] stats injected", file=sys.stderr)
+    lora = LoraConfig(
+        r=16,
+        lora_alpha=32,
+        target_modules=[
+            n for n, m in policy.named_modules() if type(m).__name__ == "Linear" and "expert" in n
+        ]
+        or "all-linear",
+        lora_dropout=0.05,
+    )
     model = get_peft_model(policy, lora)
     model.to(device)
     model.train()
@@ -101,22 +131,25 @@ def main() -> int:
         frame = frame_for(args.run, row["frame_idx"], cap_cache)
         if frame is None:
             continue
+        import torch.nn.functional as F
+
+        img = torch.from_numpy(frame.copy()).permute(2, 0, 1).float().unsqueeze(0) / 255.0
+        img = F.interpolate(img, size=(256, 256), mode="bilinear", align_corners=False)
+        width = len(row["action"])
+        chunk = torch.tensor([row["action"]], device=device).unsqueeze(1)
+        chunk = chunk.expand(1, getattr(model.config, "chunk_size", 50), width)
         batch = {
-            "observation.state": torch.zeros(1, len(row["action"]) - 1, device=device),
-            "observation.image": torch.from_numpy(frame.copy())
-            .permute(2, 0, 1)
-            .float()
-            .unsqueeze(0)
-            .to(device)
-            / 255.0,
-            "action": torch.tensor([row["action"]], device=device),
+            "observation.state": torch.tensor([row["state6"]], device=device),
+            "observation.images.camera1": img.to(device),
+            "observation.images.camera2": torch.zeros(1, 3, 256, 256, device=device),
+            "observation.images.camera3": torch.zeros(1, 3, 256, 256, device=device),
+            "action": chunk.contiguous(),
             "task": [row["task"]],
         }
-        loss = model.forward(batch)[0] if hasattr(model, "forward") else None
+        out = model.forward(batch)
+        loss = out.get("loss") if isinstance(out, dict) else out[0]
         if not torch.is_tensor(loss):
-            loss = loss.get("loss") if isinstance(loss, dict) else None
-        if loss is None:
-            print(json.dumps({"ok": False, "error": "policy forward returned no loss"}))
+            print(json.dumps({"ok": False, "error": f"no loss in forward output {type(out)}"}))
             return 1
         opt.zero_grad()
         loss.backward()

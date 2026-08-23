@@ -25,3 +25,17 @@ below runs until then.
   borderline; the honest ask is a CUDA host (the `cuda` extra exists)
   or a small cloud budget. SmolVLA LoRA on MPS is the fallback
   experiment if no GPU materializes.
+
+## AMENDMENT (2026-08-21, owner-approved): SO-101 embodiment
+
+The stats-injection probe surfaced an architectural fact the
+pre-registration missed: smolvla_base's state/action normalizer
+buffers are (6,)-dim — SO-100/101 native (5 arm + gripper). Franka's
+8-wide actions cannot map honestly (a 6-dim policy cannot control
+joints 6–7). Owner-approved amendment: demonstrations recollect on the
+SO-101 profile (the measured M0-5 embodiment, swap gate ≥0.80),
+6-dim stats computed from those, evaluation on the SO-101 eval graph
+— same seeds (30..37), same single-config rule, same M5 halt. This
+also makes the fine-tune the project's first cross-embodiment model
+result. The franka demo set (86k tuples) remains recorded for any
+future franka-native policy.
