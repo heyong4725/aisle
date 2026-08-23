@@ -32,6 +32,7 @@ EXPECTED_IDS = {
     "vla-policy-smolvla",
     "verifier-realistic",  # A7's ADR-30 verdict-bearing participant
     "reset",
+    "return-planner",
     "budget-guard",  # SPEC 080 BG-1 (T07)
     "dora-genesis",  # executable bridge identity (T08)
     "rollout-client",  # episode driver for runnable graphs (T08)

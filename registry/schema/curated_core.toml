@@ -24,6 +24,7 @@ core = [
   "placement-controller",
   "pose-estimator",
   "reset",
+  "return-planner",
   "rollout-client",
   "s1-expert",
   "segmented-pose",

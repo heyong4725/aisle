@@ -1098,9 +1098,17 @@ def main() -> None:
         elif event["id"] == "grasp_pose":
             if streamer is not None and not streamer.done:
                 continue  # one plan at a time; re-plan only after home
+            # T4 inc-2 (return_item): a plan whose metadata carries
+            # place_xy delivers to THAT destination instead of the tray
+            # -- the return executor sends tray-pick plans placing at a
+            # shelf slot; everything else about the plan is identical
+            dest_xy = tray_xy
+            if metadata.get("place_xy") is not None:
+                px, py = metadata["place_xy"]
+                dest_xy = (float(px), float(py))
             candidate = StagedPlan(
                 event["value"].to_numpy(zero_copy_only=False),
-                tray_xy,
+                dest_xy,
                 float(metadata.get("approach_m", 0.15)),
                 home,
                 place_z=float(metadata.get("place_tcp_z", PLACE_TCP_Z)),
