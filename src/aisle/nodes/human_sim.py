@@ -86,7 +86,10 @@ class HumanSim:
             ]
         med = requested_med(seed)
         self.phase, self.expected = "awaiting_confirm", med
-        self.recovery = False
+        # inc-2 goal 1 (ADR-32 §3): the misdelivery IS the episode — the
+        # human does not catch the error until AFTER delivery, so the
+        # inc-1 mid-dialogue correction is suppressed
+        self.recovery = bool(payload.get("inc2_goal1"))
         return [
             (
                 "human_msg",

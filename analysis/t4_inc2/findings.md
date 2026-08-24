@@ -24,3 +24,18 @@ Two client-side defects measured, both mine, both open:
 2. **Record-count termination**: recovery records count toward
    `len(seeds)` so the run ended after 3 records, leaving seed 4's
    recovery and seed 8 unrun. Fix: count only non-recovery records.
+
+## The complete recovery rate (r4, 2026-08-23): misdeliveries 3/3, recoveries 1/3
+
+Both client defects fixed and measured fixed (goal-1 3/3 success vs
+0/2 before the correction-suppression fix; all six chain records
+present after the runner's chained-recovery grace). The epoch's first
+full number: **recovery pass@1 1/3** — seed 0 end-to-end success
+(22.2 s), seed 4 `not_returned` at budget (the amended class scoring
+exactly the failure it was built for), seed 8 `collision` at 4.9 s in
+the return transit. The protocol/judging machinery is now 100%; the
+remaining headroom is return-transit MANIPULATION — the same staged-
+transit collision class that dominates post-breakthrough T2, so one
+fix likely pays both tiers. wrong_object 0 throughout, misdeliveries
+included: the judge distinguished every staged wrong delivery from a
+real one, which is what this tier exists to prove.
