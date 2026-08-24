@@ -126,7 +126,14 @@ def test_search_cli_json():
     # the perception ladder (TC-9), now complete: L0 oracle passthrough,
     # L1 estimated from ground-truth segmentation, L2 detected on rendered
     # rgb — plus the abstract hub estimator exemplar
-    assert ids == {"oracle-pose", "segmented-pose", "detected-pose", "pose-estimator"}
+    assert ids == {
+        "oracle-pose",
+        "segmented-pose",
+        "detected-pose",
+        "pose-estimator",
+        # registered 2026-08-24: the T2 breakthrough stack (0.5 suite)
+        "t2-scan-pose",
+    }
 
 
 def test_search_no_match_is_ok_empty():

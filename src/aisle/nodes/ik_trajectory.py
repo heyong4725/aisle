@@ -261,17 +261,24 @@ def so101_radial_rotation(target_pos: np.ndarray, jaw_sign: float = 1.0) -> np.n
 # absorbs the tilt; cetirizine +0.27 at pitch 0.35). Pitch is CAPPED at
 # 0.35: from 0.55 up the face quad slides onto the box behind and reads
 # it confidently wrong — the one failure mode T2 must never have.
+# FAR-FIRST reorder (campaign t2_breakthrough agent-2 audit, ported r2):
+# every audited collision was a read-park approach/advance at the 0.13 m
+# rung (fingertips ~7.7 cm nominal from the face); flat entries at
+# 0.20/0.24 m solve and stage for the same faces at the same rate with
+# 14.7/18.7 cm TCP-to-face clearance, and rectified reads stay above the
+# margin floor out to 0.24 m. Read capability is a superset — only the
+# PREFERENCE moves outward; the stock close entries stay as last-resort
+# rungs so the refusal-retry walk ends where the old ladder began.
 READ_LADDER = (
-    (0.13, 0.0, 0.0),
-    (0.13, 0.25, 0.0),
-    (0.13, -0.25, 0.0),
+    (0.20, 0.0, 0.0),
     (0.16, 0.0, 0.35),
+    (0.20, 0.25, 0.0),
+    (0.20, -0.25, 0.0),
     (0.16, 0.25, 0.35),
     (0.16, -0.25, 0.35),
-    (0.20, 0.0, 0.35),
-    (0.16, 0.0, 0.0),
-    (0.20, 0.0, 0.0),
     (0.24, 0.0, 0.0),
+    (0.16, 0.0, 0.0),
+    (0.13, 0.0, 0.0),
 )
 # jam chirality (measured, seed 3): flat near entries TRACK for faces on
 # the -y side but JAM into the shelf for +y faces (0.3-0.9 rad terminal
@@ -280,9 +287,24 @@ READ_LADDER = (
 # entries are moved to the FRONT of the ladder so the jamming entries
 # never execute; a deterministic function of the face (CON-5).
 FAR_SIDE_Y = 0.05
-_PITCHED_FIRST_LADDER = tuple(
-    sorted(READ_LADDER, key=lambda entry: (entry[2] == 0.0, entry[0], abs(entry[1])))
+_PITCHED_FIRST_LADDER = (
+    (0.16, 0.0, 0.35),
+    (0.16, 0.25, 0.35),
+    (0.16, -0.25, 0.35),
+    (0.20, 0.0, 0.35),
+    (0.20, 0.0, 0.0),
+    (0.20, 0.25, 0.0),
+    (0.20, -0.25, 0.0),
+    (0.24, 0.0, 0.0),
+    (0.16, 0.0, 0.0),
+    (0.13, 0.0, 0.0),
 )
+# near-side faces under this clearance over their board also take the
+# pitched-first ladder (v7's measured jam class: flat entries press into
+# the shelf — arm-L run 73d6d1: 56/115 parks bailed); the same
+# deterministic face-based choice already made for far-side (+y) faces
+PITCH_FIRST_CLEARANCE_M = 0.05
+_BOARD_TOPS: tuple[float, ...] | None = None
 # a read parks or it retries: terminal tracking error above this means
 # the camera is NOT looking at the planned face. Wide on purpose: the
 # rectified read projects through the ACHIEVED pose, so closeness only
@@ -366,7 +388,18 @@ def solve_read_poses(
     if embodiment != "franka":
         return []
     face = np.asarray(face, dtype=np.float64)
-    ladder = _PITCHED_FIRST_LADDER if face[1] > FAR_SIDE_Y else READ_LADDER
+    pitched_first = face[1] > FAR_SIDE_Y
+    if not pitched_first:
+        global _BOARD_TOPS
+        if _BOARD_TOPS is None:
+            from aisle.nodes.label_reader import shelf_board_tops
+
+            _BOARD_TOPS = tuple(shelf_board_tops())
+        below = [t for t in _BOARD_TOPS if t <= face[2] + 0.01]
+        board = max(below) if below else min(_BOARD_TOPS)
+        if face[2] - board < PITCH_FIRST_CLEARANCE_M:
+            pitched_first = True
+    ladder = _PITCHED_FIRST_LADDER if pitched_first else READ_LADDER
     solutions = []
     for range_m, azimuth, pitch in ladder:
         tcp, r_flange = read_flange_targets(face, range_m, azimuth, mount, pitch)
@@ -1077,6 +1110,10 @@ def main() -> None:
             # ladder entry: the state machine passes back attempt_used+1
             offset = int(request.get("attempt_offset", 0))
             attempts = solve_read_poses(face, mount, home[: len(home) - 2].astype(np.float64))
+            if request.get("flat_only"):
+                # pitched-refusal retry (t2-scan-tsm): walk only the flat
+                # entries, whose margin floor (0.04) is the trustworthy one
+                attempts = [a for a in attempts if a[2] == 0.0]
             if offset >= len(attempts):
                 # ladder exhausted (or unreachable face / non-franka):
                 # REPLY with failure so the tour advances instead of
