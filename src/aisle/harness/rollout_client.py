@@ -244,9 +244,17 @@ def main() -> None:
                 # ADR-32 §2: the human-sim's script context — goal_id and
                 # seed only, a FORWARD edge carrying no target information
                 # beyond what the script derives
+                meta = {"goal_id": goal_id, "seed": seeds[episode]}
+                if inc2:
+                    # inc-2 goal 1 IS the misdelivery: the human insists
+                    # on A and the correction arrives POST-delivery (the
+                    # recovery meta) — without this flag the inc-1 script
+                    # corrected mid-dialogue against an A-goal (measured:
+                    # seeds 0/4 goal-1 collisions, analysis/t4_inc2)
+                    meta["inc2_goal1"] = True
                 send(
                     "episode_meta",
-                    pa.array([json.dumps({"goal_id": goal_id, "seed": seeds[episode]})]),
+                    pa.array([json.dumps(meta)]),
                     {"goal_id": goal_id},
                 )
             phase = "running"
@@ -276,6 +284,8 @@ def main() -> None:
                 # kill the client mid-campaign (PR #168 review)
                 last_result_sim_ns = 0
             record = {"episode": episode_base + episode, "seed": seeds[episode], **result}
+            if str(record.get("goal_id", "")).endswith("r"):
+                record["recovery"] = True  # excluded from the runner's episode count
             record["retries"] = retries_seen.pop(record.get("goal_id", ""), 0)
             if tier == "T4":
                 record["dialogue_corrections"] = corrections_seen.pop(record.get("goal_id", ""), 0)

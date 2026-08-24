@@ -1179,13 +1179,32 @@ def rollout(
     last_growth = time.monotonic()
     current_traces = traces_dir
     lines_at_launch = 0
+    count_met_t = None  # inc-2 chained-recovery grace (see below)
+    lines_at_count = 0
     last_lines = 0
     last_line_t = time.monotonic()
     try:
         while time.monotonic() < deadline:
-            lines = results_path.read_bytes().count(b"\n") if results_path.exists() else 0
+            raw = results_path.read_bytes() if results_path.exists() else b""
+            # T4 inc-2: recovery records ("recovery": true) are EXTRA
+            # rows chained inside an episode -- they must not satisfy
+            # the completion count (measured: a 3-seed run stopped at 3
+            # rows with seed 4's recovery and seed 8 unrun). And the
+            # count alone must not break MID-CHAIN: the last seed's
+            # recovery lands after its goal-1 row (measured again on
+            # r3: seed 8's recovery cut off). Once the count is met,
+            # wait for the client to exit or the file to go quiet.
+            total = raw.count(b"\n")
+            lines = total - raw.count(b'"recovery": true')
             if lines >= episodes:
-                break
+                if count_met_t is None:
+                    count_met_t = time.monotonic()
+                    lines_at_count = total
+                if total > lines_at_count:
+                    lines_at_count = total
+                    count_met_t = time.monotonic()
+                if proc.poll() is not None or time.monotonic() - count_met_t > 90.0:
+                    break
             if lines != last_lines:
                 last_lines = lines
                 last_line_t = time.monotonic()
