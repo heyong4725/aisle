@@ -1145,3 +1145,36 @@ def test_recorded_campaign_pin_reports_conflicting_history(tmp_path):
     error = resume_pin_error(tmp_path, "a" * 40)
     assert "conflicting campaign pins" in error
     assert "h3_results-prev1.json" in error and "h3_results.json" in error
+
+
+def test_wipe_removes_pin_tracked_agent_skills_to_the_curated_core(tmp_path):
+    """ADR-h3 arm-W definition enforced at pins that TRACK registered
+    agent skills (#304 made the t2 stack pin-tracked): the wipe removes
+    non-curated manifests + skills even though detach-at-pin restores
+    them; curated entries survive."""
+    from h3_campaign import wipe_library
+
+    wt, oid = _mini_repo(tmp_path)
+    (wt / "registry" / "schema").mkdir(parents=True)
+    (wt / "registry" / "schema" / "curated_core.toml").write_text('core = ["oracle-pose"]\n')
+    (wt / "skills" / "t2-scan-pose").mkdir(parents=True)
+    (wt / "skills" / "t2-scan-pose" / "x.py").write_text("tracked skill")
+    (wt / "registry" / "manifests" / "t2-scan-pose.yaml").write_text(
+        "id: t2-scan-pose\norigin: agent-authored\neval: {pass_rate: 0.5}\n"
+    )
+    import subprocess as sp
+
+    sp.run(["git", "add", "-A"], cwd=wt, check=True)
+    sp.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "pin2"],
+        cwd=wt,
+        check=True,
+    )
+    oid2 = sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True, text=True
+    ).stdout.strip()
+    report = wipe_library(wt, oid2, keep_ref="h3/keep-W-pre-X")
+    assert "t2-scan-pose" in report["removed_extras"]
+    assert not (wt / "registry" / "manifests" / "t2-scan-pose.yaml").exists()
+    assert not (wt / "skills" / "t2-scan-pose").exists()
+    assert (wt / "registry" / "manifests" / "oracle-pose.yaml").exists()
