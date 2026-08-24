@@ -287,7 +287,33 @@ def wipe_library(wt: Path, oid: str, keep_ref: str | None = None) -> dict:
     if ideas.exists():
         removed.append("runs/ideas/")
         shutil.rmtree(ideas)
-    return {"removed": removed, "detached_from": head, "kept_ref": keep_ref}
+    # ADR-h3 arm-W definition: "the registry is restored to the CURATED
+    # CORE" -- at pins that TRACK registered agent skills (possible since
+    # contract rule 4 merges them to main; first hit: the t2 stack,
+    # #304), detaching at the pin restores those extras too, silently
+    # handing the wiped arm the library (the #191 situation inverted).
+    # Enforce the written definition: remove non-curated agent manifests
+    # and their skills/ dirs even when pin-tracked.
+    import tomllib as _toml
+
+    core_path = wt / "registry" / "schema" / "curated_core.toml"
+    removed_extras = []
+    if core_path.exists():
+        curated = set(_toml.loads(core_path.read_text())["core"])
+        for mpath in sorted((wt / "registry" / "manifests").glob("*.yaml")):
+            mid = mpath.stem
+            if mid not in curated:
+                mpath.unlink()
+                skill_dir = wt / "skills" / mid
+                if skill_dir.exists():
+                    shutil.rmtree(skill_dir)
+                removed_extras.append(mid)
+    return {
+        "removed_extras": removed_extras,
+        "removed": removed,
+        "detached_from": head,
+        "kept_ref": keep_ref,
+    }
 
 
 def clear_nonlibrary_residue(
