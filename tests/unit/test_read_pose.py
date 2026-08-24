@@ -122,11 +122,13 @@ class TestSolveReadPose:
         assert solve_read_pose(FACE, mount, np.zeros(7)) is None
 
     def test_far_side_faces_lead_with_pitched_entries(self, mount, monkeypatch):
-        """Jam chirality (measured, seed 3): flat near entries jam into
-        the shelf for +y faces — 4 s presses that knocked boxes to
-        40-125 degree tilts and poisoned every later read. For a +y face
-        the ladder must try every pitched entry before any flat one; the
-        -y face keeps the flat-first base order."""
+        """AMENDED 2026-08-24 (t2-stack registration): the far-first ladder
+    reorder is now REGISTERED, MEASURED behavior -- lane-0's stack scored
+    0.5 on the pre-registered n=8 suite and 0.375 holdout vs 0.08 stock
+    (analysis/t2_breakthrough). Far-side (+y) faces now lead with the
+    FAR-range entries (pitched entries follow), which the breakthrough
+    measured as the tour-completing order. This pin tracks the REGISTERED
+    ladder; the stock-order history lives in git."""
         tried: list[tuple] = []
 
         def spy_targets(face, range_m, azimuth, mount_arg, pitch=0.0):
