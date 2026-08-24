@@ -157,3 +157,13 @@ class TestRecoveryScript:
         human.on_episode_meta({"goal_id": "g", "seed": 4, "recovery": True}, "g")
         out = human.on_robot_msg({"kind": "confirm", "med": corrected_med(4)}, "g")
         assert out[0][1]["kind"] == "confirm_reply"
+
+
+def test_inc2_goal1_meta_suppresses_the_mid_dialogue_correction():
+    """T4 inc-2 defect 1 (analysis/t4_inc2): goal 1 IS the misdelivery —
+    the human insists on A even on corrected seeds; the correction
+    arrives post-delivery via the recovery meta."""
+    human = HumanSim()
+    human.on_episode_meta({"goal_id": "g", "seed": 4, "inc2_goal1": True}, "g")
+    out = human.on_robot_msg({"kind": "confirm", "med": requested_med(4)}, "g")
+    assert out[0][1]["kind"] == "confirm_reply"  # NOT a correction
