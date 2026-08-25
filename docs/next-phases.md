@@ -1,13 +1,22 @@
-# Next phases — the model tier and the road to hardware (PROPOSED)
+# Next phases — the model tier and the road to hardware
 
-Status: **RATIFIED by the owner 2026-08-17** ("ratify the plan, start
-the SmolVLA bring-up"). Originally PROPOSED 2026-08-16, drafted at the
-owner's direction at the close of Phases 2–3 (`analysis/reports/phase2_phase3_report.md`). This
-is the executable plan behind the technical report's model agenda
-(§10) and roadmap (§14): what gets built, in what order, what each
-step measures, and which decisions are the owner's. Phase numbering
-continues the design doc's (§8.5 was "Phase 4 — stretch"); model work
-was always scoped as "Phase 3+" (§7.5) and becomes its own phase here.
+Status: **RATIFIED 2026-08-17**; progress ledger updated 2026-08-25.
+The design document (Project_AISLE_Experiment_Design.md) is the frozen
+pre-registration artifact and is never content-updated; THIS file is
+the living plan reconciled against measured results.
+
+## Progress ledger (2026-08-25)
+
+| Item | State |
+|---|---|
+| 5.1 SmolVLA integration | DONE (#263/#277/#278/#300): typed node, ADR-38 preemption, async inference. Zero-shot structurally impossible (uninitialized base normalizers); SO-101 fine-tune pipeline validated end-to-end — first live policy 0/8, mechanism = CPU latency vs the staleness floor as designed. GPU-peer inference is the measured unlock. |
+| 5.1b hybrid fallback | DONE (#293): decision-node arbitration; value contrast awaits a live policy. |
+| 5.2 vlm-verifier | v1 DONE (#279/#292): offline judge + promotion-gated bench; 500M disqualified (0.2, 4/5 false-success). Open: the 2B+/label-rendered retry — also a Phase-6 entry criterion. |
+| 5.3 world-model-env | NOT STARTED (M3's replay dataset exists). |
+| M1 / M5 | Blocked on GPU (live policy). |
+| H6 (design doc §6, Operation) | REGISTERED, NEVER RUN — machinery exists (swap/probe/H4 latency), no GPU needed. The strongest open experiment. |
+| Owner decisions | 1 ratified; 3 (T4 inc-2) DONE (#295–#303: 3/3 + 1/3); 4 (parked skills) DONE (#304: registered 0.5). OPEN: 2 — GPU budget. |
+| Since ratification | T2 breakthrough 0.375 (#299); accumulation differential equal-score/35%-cheaper (#306); standing lever = transit collisions (both tiers). |
 
 ## Why models now
 
