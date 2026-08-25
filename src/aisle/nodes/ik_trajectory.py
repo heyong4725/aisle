@@ -944,7 +944,13 @@ class StageStreamer:
         max_vel: float,
         integ_cap: float = 0.15,
         embodiment: str = "franka",
+        max_waypoints: int | None = None,
     ) -> None:
+        # H6 F3 (ADR-h6-operation-protocol): with a cap, the executor
+        # holds pose after marching that many waypoints and never
+        # finishes; None (the default) is byte-identical pre-H6 behavior
+        self.max_waypoints = max_waypoints
+        self.marched = 0
         self.stages = list(stages)
         self.home = np.asarray(home, dtype=np.float32)
         self.limits = load_limits(embodiment)
@@ -976,6 +982,10 @@ class StageStreamer:
         qpos = np.asarray(qpos, dtype=np.float32).reshape(-1)
         if self.current_cmd is None:
             self.current_cmd = qpos[: self.n_arm].copy()
+        if self.max_waypoints is not None and self.marched >= self.max_waypoints:
+            fingers = gripper_to_fingers(self.current_grip, self.limits).astype(np.float32)
+            arm = np.clip(self.current_cmd + self.integ, self.q_min, self.q_max)
+            return np.concatenate([arm, fingers]).astype(np.float32), None, []
         logs: list[str] = []
         stage = self.stages[self.stage_idx]
         # ramp the gripper (unit-tested via grip_ramp_tick)
@@ -991,6 +1001,7 @@ class StageStreamer:
         )
         if self.wp_idx < len(stage.path) - 1 and np.abs(self.current_cmd - waypoint).max() < 1e-6:
             self.wp_idx += 1
+            self.marched += 1
         # integral correction: the MJCF actuators sag ~0.08 rad under
         # gravity (their gains are baked into the asset) — integrate the
         # tracking error into the COMMAND so the sim settles on target
@@ -1025,6 +1036,7 @@ class StageStreamer:
                     )
                 logs.append(f"stage done: {stage.name}")
                 self.stage_idx += 1
+                self.marched += 1
                 self.wp_idx = 0
                 self.settle_ticks = 0
                 self.at_target_ticks = 0
@@ -1038,10 +1050,12 @@ def main() -> None:
 
     import pyarrow as pa
 
+    from aisle.nodes.h6_fault import armed_fault, plan_waypoint_cap
     from aisle.scenes.pharmacy import load_physics, resolve_layout, wrist_mount_transform
     from aisle.topics import env_accepts, env_pin_from_env, make_sender
     from aisle.turn_node import Node
 
+    h6_fault = armed_fault("ik-trajectory")
     embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
     physics = load_physics()
     layout = resolve_layout(physics, embodiment)
@@ -1171,7 +1185,14 @@ def main() -> None:
                     ),
                 )
                 parked_at_read = False
-            streamer = StageStreamer(stages, home, dt, max_vel, embodiment=embodiment)
+            streamer = StageStreamer(
+                stages,
+                home,
+                dt,
+                max_vel,
+                embodiment=embodiment,
+                max_waypoints=plan_waypoint_cap(stages) if h6_fault == "traj_short" else None,
+            )
             print(f"plan ready: {len(stages)} stages", file=sys.stderr)
         elif event["id"] == "joint_state" and streamer is not None and not streamer.done:
             qpos = np.asarray(

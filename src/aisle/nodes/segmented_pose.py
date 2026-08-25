@@ -167,6 +167,9 @@ class L1Session(FramePairSession):
 
     backprojector: Callable[[dict], Callable] | None = None
     id_map: dict = field(default_factory=dict)
+    # H6 F1 (ADR-h6-operation-protocol): "pose_bias" shifts the TARGET
+    # estimate only; None (the default) is byte-identical pre-H6 behavior
+    fault: str | None = None
 
     def on_bridge_info(self, info: dict) -> None:
         super().on_bridge_info(info)
@@ -189,6 +192,10 @@ class L1Session(FramePairSession):
             project,
             footprint_m=tuple(self.meds[self.target]["size"][:2]),
         )
+        if self.fault == "pose_bias":
+            from aisle.nodes.h6_fault import bias_pose
+
+            estimate = bias_pose(estimate)
         neighbours, refused = estimate_neighbours(seg, depth, self.id_map, self.meds, project)
         return {
             **estimate,
@@ -213,8 +220,11 @@ def main() -> None:  # pragma: no cover — dora runtime
     # TC-2's per-topic monotonic seq lives in one place for every AISLE node;
     # hand-building metadata here dropped `seq` entirely
     send = make_sender(node)
+    from aisle.nodes.h6_fault import armed_fault
+
     session = L1Session(
         meds=load_meds(),
+        fault=armed_fault("segmented-pose"),
         # bound per bridge_info by the session (B023): a closure over a loop
         # variable here would follow a later republish
         backprojector=lambda calibration: (
