@@ -293,10 +293,12 @@ def main() -> None:
 
     import pyarrow as pa
 
+    from aisle.nodes.h6_fault import armed_fault, raise_grasp
     from aisle.scenes.pharmacy import MED_NAMES, load_meds, load_physics, resolve_layout
     from aisle.topics import env_accepts, env_pin_from_env, make_sender
     from aisle.turn_node import Node
 
+    h6_fault = armed_fault("grasp-planner-topdown")
     embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
     physics = load_physics()
     layout = resolve_layout(physics, embodiment)
@@ -354,6 +356,8 @@ def main() -> None:
                 front_jaw_center_offset=float(profile.get("front_jaw_center_offset_m", 0.0)),
                 front_vertical_offset=float(profile.get("front_vertical_offset_m", 0.0)),
             )
+            if h6_fault == "grasp_high":
+                grasp = raise_grasp(grasp)
             send(
                 "grasp_pose",
                 pa.array(grasp),
