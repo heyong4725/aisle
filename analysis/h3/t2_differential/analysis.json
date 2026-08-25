@@ -1,0 +1,120 @@
+{
+ "ok": true,
+ "treatment": {
+  "commit": "bd2799adb34f7471b0e398e8c17357abb7f95838",
+  "agent": "claude",
+  "model": "claude-fable-5",
+  "dev_seeds": "0..49",
+  "holdout_seeds": "100..107"
+ },
+ "suite": "desk",
+ "cells": [
+  {
+   "arm": "L",
+   "tier": "T2",
+   "attempt": 1,
+   "holdout_pass1": 0.25,
+   "no_deliverable": false,
+   "episodes_scored": 8,
+   "holdout_failures": {
+    "never_grasped": 2,
+    "wall_clamp": 1,
+    "dropped": 1,
+    "collision": 2
+   },
+   "delivery_failures": {},
+   "delivery_failures_total": 0,
+   "placement_failures": {},
+   "placement_failures_total": 0,
+   "stopped": "agent_done",
+   "tokens": 450728,
+   "wall_s": 14385.7,
+   "first_success_wall_s": null,
+   "first_success_rederived": false,
+   "tokens_to_first_success": null,
+   "wrong_object_total": 0,
+   "skills_after": [
+    "ik-transfer-v2",
+    "s1-driver-v2",
+    "s3-driver-v1",
+    "t2-scan-pose",
+    "t2-scan-tsm"
+   ],
+   "deliverable_archive": "refs/campaign/h3-L-T2-r1",
+   "skill_reuse_in_deliverable": [
+    "t2-scan-pose",
+    "t2-scan-tsm"
+   ],
+   "flags": [
+    "treatment_drift"
+   ]
+  },
+  {
+   "arm": "W",
+   "tier": "T2",
+   "attempt": 2,
+   "holdout_pass1": 0.25,
+   "no_deliverable": false,
+   "episodes_scored": 8,
+   "holdout_failures": {
+    "never_grasped": 3,
+    "collision": 3
+   },
+   "delivery_failures": {},
+   "delivery_failures_total": 0,
+   "placement_failures": {},
+   "placement_failures_total": 0,
+   "stopped": "agent_done",
+   "tokens": 696251,
+   "wall_s": 15532.9,
+   "first_success_wall_s": null,
+   "first_success_rederived": false,
+   "tokens_to_first_success": null,
+   "wrong_object_total": 0,
+   "skills_after": [
+    "t2-allbox-pose",
+    "t2-read-exec",
+    "t2-tour-tsm"
+   ],
+   "deliverable_archive": "refs/campaign/h3-W-T2-r2",
+   "skill_reuse_in_deliverable": [],
+   "flags": [
+    "treatment_drift"
+   ]
+  }
+ ],
+ "verdict": {
+  "criterion": "arm L T2+T3+T4 time-to-first-success <= 0.5x arm W's (ADR-h3 \u00a77)",
+  "ratios": {},
+  "token_ratios": {},
+  "per_tier": {},
+  "complete": false,
+  "met": null,
+  "caveats": [
+   "L/T2: treatment_drift",
+   "W/T2-r2: treatment_drift"
+  ]
+ },
+ "wrong_object_total": 0,
+ "h5": {
+  "selected": {
+   "cells": [],
+   "episodes_scored": 0,
+   "delivery_failures_total": 0,
+   "delivery_failures_by_class": {},
+   "placement_failures_total": 0,
+   "placement_failures_by_class": {}
+  },
+  "all_records": {
+   "cells": [
+    "L/T2",
+    "W/T2-r2"
+   ],
+   "episodes_scored": 16,
+   "delivery_failures_total": 0,
+   "delivery_failures_by_class": {},
+   "placement_failures_total": 0,
+   "placement_failures_by_class": {}
+  }
+ }
+}
