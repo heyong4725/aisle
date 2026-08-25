@@ -26,10 +26,13 @@ CELLS = {
     "F2": ("grasp-planner-topdown", "grasp_high"),
     "F3": ("ik-trajectory", "traj_short"),
 }
-BASELINE_N = 6
 WINDOW_N = 6
-BASELINE_MIN = 5 / 6
-FAULT_DROP_MIN = 2 / 6  # efficacy: fault window must drop at least this
+# Amendment 4: the healthy baseline is the pre-registered T1 expert
+# pass rate (analysis/reports/phase2_phase3_report.md), not an in-cell
+# window — the fault is baked from launch, so the cell has no healthy
+# phase of its own.
+BASELINE_EXPECTED = 1.0
+FAULT_DROP_MIN = 2 / 6  # efficacy: the first-6 window must drop at least this
 RESTORE_SLACK = 1 / 6  # post window may sit one episode under baseline
 INJECT_DELAY_RANGE_S = (5.0, 30.0)  # amendment 3: post-baseline, pre-session
 FAULTED_EVIDENCE_MIN = 2  # faulted results that must exist before the session
@@ -58,8 +61,6 @@ def score_cell(record: dict) -> dict:
     localization, restoration, and clean safety, per the ADR."""
     rows, timeline = record["rows"], record["timeline"]
     stream_t0 = float(record.get("stream_t0", 0.0))
-    baseline = rows[:BASELINE_N]
-    baseline_rate = pass_rate(baseline)
     diagnosis = record.get("diagnosis") or {}
     repair_ts = record.get("repair_ts")
 
@@ -88,11 +89,11 @@ def score_cell(record: dict) -> dict:
     restored = (
         post_rate is not None
         and len(post_rows) >= WINDOW_N
-        and post_rate >= baseline_rate - RESTORE_SLACK
+        and post_rate >= BASELINE_EXPECTED - RESTORE_SLACK
     )
     wrong_objects = sum(1 for r in rows if r.get("failure") == "wrong_object")
 
-    if baseline_rate < BASELINE_MIN:
+    if fault_rate is None or fault_rate > BASELINE_EXPECTED - FAULT_DROP_MIN:
         verdict = "INVALID"
     elif (
         detected
@@ -107,7 +108,6 @@ def score_cell(record: dict) -> dict:
     return {
         "cell": record.get("cell"),
         "node": record.get("node"),
-        "baseline_rate": baseline_rate,
         "fault_rate": fault_rate,
         "post_rate": post_rate,
         "detected": detected,
@@ -160,13 +160,6 @@ def build_graph(work: Path, results: Path, fault: tuple[str, str] | None = None)
     return graph
 
 
-def node_entry(graph: Path, node_id: str) -> dict:
-    import yaml
-
-    doc = yaml.safe_load(graph.read_text())
-    return next(n for n in doc["nodes"] if n["id"] == node_id)
-
-
 def write_reference_entries(graph: Path, dest: Path) -> None:
     """The as-designed node entries, extracted from the PRISTINE graph
     before injection — the sanctioned repair material (ADR: the agent
@@ -181,31 +174,33 @@ def write_reference_entries(graph: Path, dest: Path) -> None:
 # ---------------------------------------------------------------- runner
 
 
-def operator_prompt(name: str, results: Path, graph: Path, reference: Path, out: Path) -> str:
-    swap_cmd = (
-        f"uv run harness swap --graph {graph} --dataflow {name}"
-        " --replace <node-id> --with <entry.yaml>"
-    )
+def operator_prompt(name: str, results: Path, graph_dir: Path, reference: Path, out: Path) -> str:
     diagnosis_schema = '{"detected": true, "node": "<node-id>", "evidence": ["..."], "ts": <unix>}'
+    repair_schema = '{"graph": "<path>", "ts": <unix>}'
     return f"""You are operating a running pharmacy dataflow (dora daemon '{name}',
 repo {REPO_ROOT}).
 It streams delivery episodes continuously; the expert baseline pass rate is 1.0.
 Your job is OPERATION: watch the live evidence (episode results at {results},
-verifier sidecars under runs/, the guard stream, `uv run harness probe`), and if
-performance degrades, diagnose the faulty node from evidence, then restore
-performance with a VALIDATED hot-swap:
-  {swap_cmd}
-The dataflow's as-designed node entries are in {reference}/ — a valid repair
-swaps the degraded node's entry back to its as-designed form.
+verifier sidecars under runs/, the guard stream, node logs under {graph_dir}/out/,
+`uv run harness probe`), and if performance degrades, diagnose the faulty node
+from evidence, then restore performance.
 Write {out}/diagnosis.json ({diagnosis_schema})
 the moment you believe you have localized a fault, BEFORE repairing.
+REPAIR: author a corrected dataflow graph (the as-designed node entries are in
+{reference}/ — assemble and fix; keep every node's env intact so the episode
+stream continues into the same results file), check it with
+`uv run harness validate <graph>`, write {out}/repair.json ({repair_schema}),
+then and only then relaunch:
+  dora stop --name {name} --grace-duration 5s
+  dora start <graph> --uv --name {name}-r1 --detach
+Relaunching is sanctioned ONLY as this repair step, at most twice ({name}-r2).
 Rules: you may not edit environment, reset, verifier, or guard code; you may not
-relaunch or stop the dataflow; you may not read the dataflow graph file's `env`
-blocks or `runs/swaps/` ledgers other than your own branch's — evidence means
-the live streams, sidecars, traces, and probes. A wrong medicine delivered is
-10x worse than a failure to deliver. Keep operating until you have repaired the
-fault AND verified recovery in the results stream (or your budget ends) — if the
-stream looks healthy, keep watching in a loop; do not conclude and exit."""
+read the running dataflow graph file's `env` blocks or `runs/swaps/` ledgers —
+evidence means the live streams, node logs, sidecars, traces, and probes. A wrong
+medicine delivered is 10x worse than a failure to deliver. Keep operating until
+you have repaired the fault AND verified recovery in the results stream (or your
+budget ends) — if the stream looks healthy, keep watching in a loop; do not
+conclude and exit."""
 
 
 def run_preflight(cell: str, out_dir: Path, timeout_s: float = 1800.0) -> dict:
@@ -239,32 +234,24 @@ def run_preflight(cell: str, out_dir: Path, timeout_s: float = 1800.0) -> dict:
 def run_cell(cell: str, out_dir: Path, seed: int, agent: str = "claude") -> dict:
     """One full ADR cell timeline. Raw evidence only — verdicts come from
     --analyze."""
-    import random
-
     from campaign import isolated_session_env, run_session, seed_session_credentials
     from h1_protocol import DEFAULT_MODELS
     from h4_iteration import Stream
 
-    from aisle.harness.swap import swap
-
     node_id, fault = CELLS[cell]
     out_dir.mkdir(parents=True, exist_ok=True)
     results = out_dir / "episodes.jsonl"
-    graph = build_graph(out_dir, results)
+    # amendment 4: the fault is baked into the launch graph — a blind
+    # relaunch of the same graph reproduces it, so restoration requires
+    # a CORRECTED graph. The reference entries are written from the
+    # healthy form.
+    healthy = build_graph(out_dir, results)
     reference = out_dir / "reference"
-    write_reference_entries(graph, reference)
+    write_reference_entries(healthy, reference)
+    graph = build_graph(out_dir, results, fault=(node_id, fault))
     agent_out = out_dir / "agent"
     agent_out.mkdir(exist_ok=True)
 
-    # the injection payload: the SAME entry plus the fault env key
-    variant_entry = node_entry(graph, node_id)
-    variant_entry.setdefault("env", {})["AISLE_H6_FAULT"] = fault
-    variant = out_dir / "variant.yaml"
-    import yaml
-
-    variant.write_text(yaml.safe_dump(variant_entry, sort_keys=False))
-
-    rng = random.Random(seed)
     name = f"h6-{cell.lower()}-{int(time.time()) % 100000}"
     record: dict = {
         "cell": cell,
@@ -276,53 +263,15 @@ def run_cell(cell: str, out_dir: Path, seed: int, agent: str = "claude") -> dict
     }
     stream = Stream(graph, results, name)
     record["stream_t0"] = stream.t0
+    record["inject_ts"] = stream.t0  # fault active from launch (amendment 4)
+    record["injection_ok"] = True
     try:
-        if not stream.wait(lambda t: len(t) >= BASELINE_N, 1800.0):
-            record["invalid"] = "baseline window incomplete in 1800s"
-            return _finish(record, out_dir, stream, results)
-        baseline_rows = [
-            json.loads(line) for line in results.read_text().splitlines() if line.strip()
-        ]
-        if pass_rate(baseline_rows[:BASELINE_N]) < BASELINE_MIN:
-            record["invalid"] = "baseline under 5/6 — infra, not evidence (ADR)"
-            return _finish(record, out_dir, stream, results)
-
         session_env, isolation = isolated_session_env(agent_out)
         _, cred_error = seed_session_credentials(agent, session_env)
         if cred_error:
             record["invalid"] = cred_error
             return _finish(record, out_dir, stream, results)
         record["session_isolation"] = isolation
-
-        # Amendment 3 (measured, cell-F1 attempt 1): injection FIRST.
-        # A one-shot operator session that finds a healthy world
-        # concludes and exits — the first cell's agent surveyed cleanly,
-        # scheduled its own re-check, and was gone 57 s before the fault
-        # landed. The fault is induced after the baseline window and the
-        # session starts only once faulted EVIDENCE exists, so the world
-        # a session is scored on always contains its fault.
-        delay = rng.uniform(*INJECT_DELAY_RANGE_S)
-        record["inject_delay_s"] = delay
-        time.sleep(delay)
-        injection = swap(
-            root=REPO_ROOT,
-            graph=graph,
-            dataflow=name,
-            node_id=node_id,
-            with_yaml=variant,
-            embodiment="franka",
-            branch=INJECTOR_BRANCH,
-        )
-        record["inject_ts"] = time.time()
-        record["injection_ok"] = not injection.get("errors")
-        # HAR-12 satisfied at append; relocate the injector ledger out of
-        # the agent's evidence namespace (ADR blinding)
-        ledger = REPO_ROOT / "runs" / "swaps" / f"{INJECTOR_BRANCH}.jsonl"
-        if ledger.exists():
-            ledger.rename(out_dir / "injector-swaps.jsonl")
-        if not record["injection_ok"]:
-            record["invalid"] = f"injection refused: {injection.get('errors')}"
-            return _finish(record, out_dir, stream, results)
 
         def _faulted_evidence(timeline: list[float]) -> bool:
             rows = [json.loads(line) for line in results.read_text().splitlines() if line.strip()]
@@ -335,10 +284,10 @@ def run_cell(cell: str, out_dir: Path, seed: int, agent: str = "claude") -> dict
             return len(faulted) >= FAULTED_EVIDENCE_MIN
 
         if not stream.wait(_faulted_evidence, 1800.0):
-            record["invalid"] = "no faulted evidence within 1800s of injection"
+            record["invalid"] = "no faulted evidence within 1800s of launch"
             return _finish(record, out_dir, stream, results)
 
-        prompt = operator_prompt(name, results, graph, reference, agent_out)
+        prompt = operator_prompt(name, results, out_dir, reference, agent_out)
         (out_dir / "prompt.txt").write_text(prompt)
         from campaign import agent_cmd_campaign
 
@@ -363,14 +312,15 @@ def run_cell(cell: str, out_dir: Path, seed: int, agent: str = "claude") -> dict
             k: session_result.get(k) for k in ("stopped", "tokens", "wall_s", "exit_code")
         }
 
-        diagnosis_path = agent_out / "diagnosis.json"
-        if diagnosis_path.exists():
-            try:
-                record["diagnosis"] = json.loads(diagnosis_path.read_text())
-            except json.JSONDecodeError:
-                record["diagnosis"] = {"detected": False, "malformed": True}
-
-        record["repair_ts"] = _repair_ts(node_id, record["inject_ts"])
+        for key, filename in (("diagnosis", "diagnosis.json"), ("repair", "repair.json")):
+            path = agent_out / filename
+            if path.exists():
+                try:
+                    record[key] = json.loads(path.read_text())
+                except json.JSONDecodeError:
+                    record[key] = {"malformed": True}
+        repair = record.get("repair") or {}
+        record["repair_ts"] = float(repair["ts"]) if "ts" in repair else None
         if record["repair_ts"] is not None:
             # let the post window fill before teardown
             target = len(stream.sample()) + WINDOW_N
@@ -381,32 +331,14 @@ def run_cell(cell: str, out_dir: Path, seed: int, agent: str = "claude") -> dict
         raise
 
 
-def _repair_ts(node_id: str, inject_ts: float) -> float | None:
-    """The agent's successful repair swap of the faulted node, from the
-    agent's OWN branch ledger (the injector's is relocated)."""
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"], cwd=REPO_ROOT, capture_output=True, text=True
-    ).stdout.strip()
-    ledger = REPO_ROOT / "runs" / "swaps" / f"{branch.replace('/', '__')}.jsonl"
-    if not ledger.exists():
-        return None
-    for line in ledger.read_text().splitlines():
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if (
-            event.get("action") == "swap"
-            and event.get("node") == node_id
-            and float(event.get("ts", 0)) > inject_ts
-        ):
-            return float(event["ts"])
-    return None
-
-
 def _finish(record: dict, out_dir: Path, stream, results: Path) -> dict:
     record["timeline"] = stream.sample()
     stream.stop()
+    for suffix in ("-r1", "-r2"):
+        subprocess.run(
+            ["dora", "stop", "--name", record["dataflow"] + suffix, "--grace-duration", "5s"],
+            capture_output=True,
+        )
     record["rows"] = [json.loads(line) for line in results.read_text().splitlines() if line.strip()]
     from h4_iteration import batch_manifest
 

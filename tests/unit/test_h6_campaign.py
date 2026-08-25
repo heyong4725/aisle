@@ -51,16 +51,16 @@ def _record(
 
 # A canonical healthy->faulted->repaired cell: 6 baseline passes,
 # injection at t=100, 6 faulted failures, repair at t=300, 6 passes.
-# 19 episodes: 6 baseline passes, 6 faulted fails, 7 post passes — the
-# FIRST post episode (12) straddles the repair (started at 160) and is
-# credited to neither window, leaving a full 6-episode post window.
+# Amendment 4 shape: the fault is baked from launch (inject_ts = stream
+# start), 6 faulted fails, then 7 post passes — the FIRST post episode
+# (6) straddles the repair (started at 60) and is credited to neither
+# window, leaving a full 6-episode post window. The healthy baseline is
+# the pre-registered expert 1.0 (BASELINE_EXPECTED), not an in-cell
+# window.
 GOOD = dict(
-    statuses=["success"] * 6 + ["fail"] * 6 + ["success"] * 7,
-    timeline=[
-        float(t)
-        for t in list(range(10, 70, 10)) + list(range(110, 170, 10)) + list(range(310, 380, 10))
-    ],
-    inject_ts=100.0,
+    statuses=["fail"] * 6 + ["success"] * 7,
+    timeline=[float(t) for t in list(range(10, 70, 10)) + list(range(310, 380, 10))],
+    inject_ts=0.0,
     diagnosis={
         "detected": True,
         "node": "segmented-pose",
@@ -73,7 +73,6 @@ GOOD = dict(
 
 def test_good_cell_passes():
     score = h6.score_cell(_record(**GOOD))
-    assert score["baseline_rate"] == 1.0
     assert score["fault_rate"] == 0.0
     assert score["post_rate"] == 1.0
     assert score["detected"] and score["localized"] and score["restored"]
@@ -81,8 +80,10 @@ def test_good_cell_passes():
     assert score["verdict"] == "PASS"
 
 
-def test_weak_baseline_is_invalid_not_fail():
-    rec = _record(**{**GOOD, "statuses": ["fail", "fail"] + ["success"] * 16})
+def test_weak_fault_is_invalid_not_fail():
+    """Amendment 4: the first-6 window must sit at least 2/6 under the
+    registered baseline or the cell measured nothing."""
+    rec = _record(**{**GOOD, "statuses": ["success"] * 6 + ["success"] * 7})
     assert h6.score_cell(rec)["verdict"] == "INVALID"
 
 
@@ -105,7 +106,7 @@ def test_missing_diagnosis_and_repair_fail_cleanly():
 
 
 def test_unrestored_post_window_fails():
-    rec = _record(**{**GOOD, "statuses": ["success"] * 6 + ["fail"] * 12})
+    rec = _record(**{**GOOD, "statuses": ["fail"] * 13})
     score = h6.score_cell(rec)
     assert not score["restored"] and score["verdict"] == "FAIL"
 
@@ -117,15 +118,15 @@ def test_short_post_window_is_not_restored():
     rec = _record(
         **{
             **GOOD,
-            "statuses": ["success"] * 6 + ["fail"] * 6 + ["success"] * 2,
-            "timeline": GOOD["timeline"][:14],
+            "statuses": ["fail"] * 6 + ["success"] * 2,
+            "timeline": GOOD["timeline"][:8],
         }
     )
     assert not h6.score_cell(rec)["restored"]
 
 
 def test_any_wrong_object_fails_the_cell():
-    rec = _record(**GOOD, wrong_object_at=14)
+    rec = _record(**GOOD, wrong_object_at=9)
     score = h6.score_cell(rec)
     assert score["wrong_objects"] == 1 and score["verdict"] == "FAIL"
 
@@ -133,12 +134,12 @@ def test_any_wrong_object_fails_the_cell():
 def test_post_window_counts_only_episodes_started_after_repair():
     """The h4 crediting rule: an episode straddling the repair is never
     credited to the post window. Episode i starts at timeline[i-1]."""
-    # episode 12 STARTS at timeline[11]=160 < repair 300: straddler, excluded
+    # episode 6 STARTS at timeline[5]=60 < repair 300: straddler, excluded
     rec = _record(
         **{
             **GOOD,
-            "statuses": ["success"] * 6 + ["fail"] * 6 + ["fail"] + ["success"] * 6,
-            "timeline": GOOD["timeline"][:12] + [305.0] + [float(t) for t in range(310, 370, 10)],
+            "statuses": ["fail"] * 6 + ["fail"] + ["success"] * 6,
+            "timeline": GOOD["timeline"][:6] + [305.0] + [float(t) for t in range(310, 370, 10)],
         }
     )
     score = h6.score_cell(rec)
