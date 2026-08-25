@@ -155,6 +155,47 @@ the baseline window and gates the session on existing faulted
 evidence; the operator prompt adds the keep-watching rule. The
 detection metric is unchanged (inject ts → diagnosis ts).
 
+### Amendment 4 (2026-08-25, pre-campaign — cell-F1 attempts 1-2; MACHINERY FINDING)
+
+Measured 2/2: a HAR-10 hot-swap of a turn PARTICIPANT on a lockstep
+dataflow kills the dataflow — the swap removes the node mid-turn, its
+declared counts never arrive, and the ADR-30 turn watchdog aborts
+(`ProtocolError: turn watchdog expired`, turn-barrier exit 1, cascade;
+daemon log + barrier traceback retained under records/). This is not
+CLI drift: the watchdog is the protocol's own enforcement and fires
+identically under any CLI. H4's live-swap evidence predates ADR-30
+(PR #197) — the H4-era expert_t0 had NO turn-barrier — so hot-swap on
+lockstep graphs has been structurally broken since #197 and H6 is the
+first campaign to exercise it. Turn-aware swap (a quiescence handshake
+between HAR-10 and the barrier) is filed as follow-up substrate
+engineering; H4's hot-swap-vs-relaunch table does not transfer to
+lockstep graphs until it lands.
+
+The cell redesign that follows from the measurement:
+- INJECTION is baked into the launch graph's env (the preflight
+  mechanism). This is relaunch-PROOF: a blind restart of the same
+  graph reproduces the fault, so restoration requires producing a
+  corrected graph, not bouncing the process.
+- The in-cell healthy baseline window is replaced by the
+  pre-registered expert baseline (T1 expert = 1.0,
+  analysis/reports/phase2_phase3_report.md) — the operator prompt
+  already states it; detection = recognizing the stream underperforms
+  the known baseline, from evidence.
+- REPAIR = a VALIDATED RELAUNCH: the agent authors a corrected graph
+  (reference entries provided as before), `harness validate`s it,
+  stops the faulted dataflow, starts the corrected one (same results
+  stream), and writes `repair.json` ({graph, ts}) BEFORE relaunching.
+  The no-relaunch rule is replaced by: relaunch is sanctioned ONLY as
+  the repair, at most twice per cell.
+- Localization credit is unchanged (diagnosis.json BEFORE repair,
+  correct node, cited sanctioned evidence, transcript audit) and is
+  scored independently of restoration: reassembling every reference
+  entry restores without localizing — the diagnosis, not the fix,
+  carries the localization claim.
+- Scoring: fault efficacy in-cell = the first 6 episodes at
+  <= baseline - 2/6; restored = 6 post-repair episodes at
+  >= baseline - 1/6; all other clauses unchanged.
+
 ## Scoring (pre-registered)
 
 Cell PASS = detection + credited localization + restoration + zero
