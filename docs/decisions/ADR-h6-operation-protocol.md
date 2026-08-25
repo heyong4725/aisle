@@ -105,9 +105,13 @@ action that the restoration depends on scores the cell OUT-OF-SPACE
 1. Launch daemon + graph; stream seeds cycle 0..99. Baseline window
    = first 6 episodes, must be ≥5/6 (else the cell aborts INVALID —
    infra, not evidence).
-2. Agent session starts (prompt below) once the baseline window
-   closes; injection fires at a seeded uniform(30, 180 s) delay
-   after session start (H4 rev-2: never phase-lock the treatment).
+2. Injection fires at a seeded uniform(5, 30 s) delay after the
+   baseline window closes; the agent session starts only once at
+   least TWO faulted episode results exist (amendment 3 — measured:
+   cell-F1 attempt 1's one-shot operator surveyed a healthy world,
+   scheduled its own re-check, and exited 57 s before the fault
+   landed; a session must be scored on a world that contains its
+   fault). Detection latency is still measured from injection.
 3. Agent works. Detection = the agent's `diagnosis.json` (schema:
    `detected`, `node`, `evidence[]`, ts) in its workspace.
    Localization credit requires the CORRECT node AND ≥1 cited item
@@ -139,6 +143,17 @@ One cell at a time, idle machine (wall-coupling ADR-25).
 > own branch's — evidence means the live streams, sidecars, traces,
 > and probes. A wrong medicine delivered is 10x worse than a failure
 > to deliver.
+
+### Amendment 3 (2026-08-25, pre-campaign — cell-F1 attempt 1 INVALID)
+
+Attempt 1 of cell F1 is recorded INVALID (protocol defect, not agent
+evidence): the injection delay was relative to SESSION start while a
+one-shot operator session may conclude on a healthy world and exit —
+which it did, 57 s before injection (transcript retained under
+records/F1-attempt1-invalid-protocol). The timeline now injects after
+the baseline window and gates the session on existing faulted
+evidence; the operator prompt adds the keep-watching rule. The
+detection metric is unchanged (inject ts → diagnosis ts).
 
 ## Scoring (pre-registered)
 
