@@ -39,14 +39,36 @@ pharmacy asymmetry binds the experimenter too).
 
 | Cell | Node | `AISLE_H6_FAULT` | Mechanism |
 |---|---|---|---|
-| F1 | segmented-pose (perception) | `pose_bias` | +18 mm fixed +x bias on the estimated target XY |
-| F2 | grasp-planner-topdown (decision) | `grasp_high` | +25 mm on the grasp TCP z (closes on air) |
+| F1 | segmented-pose (perception) | `pose_bias` | +45 mm fixed +x bias on the estimated target XY (amendment 1) |
+| F2 | grasp-planner-topdown (decision) | `grasp_high` | +60 mm on the grasp TCP z (closes on air; amendment 2) |
 | F3 | ik-trajectory (motion) | `traj_short` | the pick-plan executor stalls after 70% of the plan's waypoints (holds pose; the episode closes on the budget) |
 
 Fault efficacy is measured ONCE before the campaign (6 episodes per
 fault): a fault must drop the 6-episode window by ≥2/6 vs baseline
 or it is redesigned BEFORE any cell runs (recorded here by
 amendment; never mid-campaign).
+
+### Amendment 1 (2026-08-25, pre-campaign — the redesign clause above)
+
+Preflight F1 measured the original +18 mm +x bias INEFFECTIVE: 6/6
+episodes still passed. Mechanism: +x is the finger-SLIDING axis — the
+top-down grip closes across the box's narrow (y) face, and the boxes
+are 50-70 mm long in x, so an 18 mm offset leaves the fingers on-box.
+Redesign: 45 mm, past the longest box's 35 mm half-length, so the
+fingers close beyond the box's end. A y-bias was REJECTED although a
+smaller magnitude would degrade: y points along the shelf row toward
+same-level neighbours, and a fault that can steer the gripper at a
+neighbouring med violates the identity-safe rule.
+
+### Amendment 2 (2026-08-25, pre-campaign — the redesign clause above)
+
+Preflight F2 measured the original +25 mm TCP lift INEFFECTIVE: 6/6.
+Mechanism: the top-down plan engages the top GRIP_ENGAGEMENT = 35 mm
+of the box, so a 25 mm lift leaves ~10 mm of finger still on the box
+— enough, with the executor's settle and integral correction, to
+grip. Redesign: 60 mm, which puts the fingertips ~25 mm ABOVE the box
+top; the close is guaranteed air. Same identity-safety as before (a
+vertical lift points at no neighbour).
 
 ## Blinding and the evidence set
 

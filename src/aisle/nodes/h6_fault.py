@@ -17,8 +17,8 @@ from collections.abc import Mapping
 
 import numpy as np
 
-POSE_BIAS_M = 0.018
-GRASP_HIGH_M = 0.025
+POSE_BIAS_M = 0.045  # amendment 1: 18 mm measured ineffective (preflight F1, 6/6)
+GRASP_HIGH_M = 0.060  # amendment 2: 25 mm measured ineffective (preflight F2, 6/6)
 TRAJ_SHORT_FRACTION = 0.7
 
 NODE_FAULTS: dict[str, frozenset[str]] = {
