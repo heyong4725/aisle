@@ -1,0 +1,30 @@
+id: rollout-client
+path: /Users/yonghe/src/aisle-runner/src/aisle/harness/rollout_client.py
+env:
+  AISLE_LOCKSTEP: '1'
+  AISLE_TURN_NODE: rollout-client
+  AISLE_TURN_OUTPUTS: reset,episode_goal,turn_done
+  AISLE_SEEDS: 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19
+  AISLE_RESULTS: /Users/yonghe/src/aisle-runner/analysis/h6/records/F2/episodes.jsonl
+inputs:
+  tick: dora/timer/millis/1000
+  reset_done:
+    source: reset/reset_done
+    queue_size: 100
+  reset_refused:
+    source: reset/reset_refused
+    queue_size: 100
+  episode_result:
+    source: verifier-oracle/episode_result
+    queue_size: 100
+  episode_feedback:
+    source: task-state-machine/episode_feedback
+    queue_size: 100
+  turn:
+    source: turn-barrier/turn
+    queue_size: 4
+    queue_policy: backpressure
+outputs:
+- reset
+- episode_goal
+- turn_done

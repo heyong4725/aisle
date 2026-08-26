@@ -1,0 +1,25 @@
+id: ik-trajectory
+path: /Users/yonghe/src/aisle-runner/src/aisle/nodes/ik_trajectory.py
+env:
+  AISLE_LOCKSTEP: '1'
+  AISLE_TURN_NODE: ik-trajectory
+  AISLE_TURN_OUTPUTS: joint_cmd,gripper_cmd,plan_done,turn_done
+inputs:
+  grasp_pose:
+    source: grasp-planner-topdown/grasp_pose
+    queue_size: 100
+  joint_state:
+    source: dora-genesis/joint_state
+    queue_size: 1
+  reset_done:
+    source: reset/reset_done
+    queue_size: 100
+  turn:
+    source: turn-barrier/turn
+    queue_size: 4
+    queue_policy: backpressure
+outputs:
+- joint_cmd
+- gripper_cmd
+- plan_done
+- turn_done

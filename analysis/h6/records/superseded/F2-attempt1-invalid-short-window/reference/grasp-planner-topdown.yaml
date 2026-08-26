@@ -1,0 +1,17 @@
+id: grasp-planner-topdown
+path: /Users/yonghe/src/aisle-runner/src/aisle/nodes/grasp_topdown.py
+env:
+  AISLE_LOCKSTEP: '1'
+  AISLE_TURN_NODE: grasp-planner-topdown
+  AISLE_TURN_OUTPUTS: grasp_pose,turn_done
+inputs:
+  target_pose:
+    source: segmented-pose/target_pose
+    queue_size: 100
+  turn:
+    source: turn-barrier/turn
+    queue_size: 4
+    queue_policy: backpressure
+outputs:
+- grasp_pose
+- turn_done

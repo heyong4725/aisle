@@ -1,0 +1,30 @@
+id: segmented-pose
+path: /Users/yonghe/src/aisle-runner/src/aisle/nodes/segmented_pose.py
+env:
+  AISLE_LOCKSTEP: '1'
+  AISLE_TURN_NODE: segmented-pose
+  AISLE_TURN_OUTPUTS: target_pose,turn_done
+  AISLE_H6_FAULT: pose_bias
+inputs:
+  bridge_info:
+    source: dora-genesis/bridge_info
+    queue_size: 100
+  seg_overhead:
+    source: dora-genesis/seg_overhead
+    queue_size: 100
+  depth_overhead:
+    source: dora-genesis/depth_overhead
+    queue_size: 100
+  target_request:
+    source: task-state-machine/target_request
+    queue_size: 100
+  reset_done:
+    source: reset/reset_done
+    queue_size: 100
+  turn:
+    source: turn-barrier/turn
+    queue_size: 4
+    queue_policy: backpressure
+outputs:
+- target_pose
+- turn_done

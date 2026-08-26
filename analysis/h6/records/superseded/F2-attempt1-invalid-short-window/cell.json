@@ -1,0 +1,276 @@
+{
+ "cell": "F2",
+ "node": "grasp-planner-topdown",
+ "fault": "grasp_high",
+ "seed": 3,
+ "dataflow": "h6-f2-56622",
+ "out_of_space": false,
+ "stream_t0": 1787756622.996874,
+ "inject_ts": 1787756622.996874,
+ "injection_ok": true,
+ "session_isolation": {
+  "home": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F2/agent/agent_home",
+  "claude_config_dir": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F2/agent/agent_home/.claude",
+  "codex_home": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F2/agent/agent_home/.codex",
+  "xdg_rebound": true
+ },
+ "session": {
+  "stopped": "agent_done",
+  "tokens": 225819,
+  "wall_s": 490.4,
+  "exit_code": null
+ },
+ "diagnosis": {
+  "detected": true,
+  "node": "grasp-planner-topdown",
+  "evidence": [
+   "episodes.jsonl: every episode (0-9) fails status=fail failure=never_grasped, t_end=30.0, retries=1 -- expert baseline is 1.0",
+   "log_ik-trajectory.jsonl: every attempt reaches 'plan ready: 13 stages' and completes all stages (rise..close..lift..home) -- motion executes, gripper closes on air; rules out traj_short (F3), which would stall the executor mid-plan",
+   "probe pairing (probe-724f80a3 grasp_pose seq16 sim_t=240.47 vs probe-dd29cfe8 target_pose seq17 sim_t=263.47, identical xy to 1e-5): grasp_z=0.16995 vs target_z=0.10244 -> lift above designed top-down TCP (target_z + h/2 - GRIP_ENGAGEMENT 0.035) of +0.055..0.060 m depending on slot med (metformin/omeprazole) -- matches GRASP_HIGH_M=0.060 (h6_fault.py F2 'grasp_high', armed only in grasp-planner-topdown)",
+   "target_pose is unbiased: today's targets [0.38065,0.20024,0.10244] and [0.39017,0.04194,0.10729] equal yesterday's F1-preflight probes [0.42566,0.20024,0.10245] / [0.43517,0.04194,0.10729] minus exactly 0.045 m in x (POSE_BIAS_M) -- rules out pose_bias (F1) on segmented-pose",
+   "log_segmented-pose.jsonl 'L1 pose refused ... top face measures 0.016x0.025 vs upright 0.035x0.055' bursts are a downstream symptom: both extents shrink ~uniformly (0.45x) as the too-high hovering gripper occludes the mask during retries; a genuinely tipped box changes the short extent ~3x on one axis",
+   "graph topology (env redacted) matches reference/ for all 10 nodes -- fault is env-carried (AISLE_H6_FAULT=grasp_high on grasp-planner-topdown per ADR-h6-operation-protocol HAR-10 swap)"
+  ],
+  "ts": 1787757181
+ },
+ "repair": {
+  "graph": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F2/agent/h6_graph_repaired.yaml",
+  "ts": 1787757206
+ },
+ "repair_ts": 1787757206.0,
+ "timeline": [
+  1787756712.8645241,
+  1787756749.074629,
+  1787756788.309149,
+  1787756828.322499,
+  1787756867.5275898,
+  1787756909.031428,
+  1787756950.296808,
+  1787756990.779841,
+  1787757032.093513,
+  1787757072.123853,
+  1787757112.049793,
+  1787757152.364722,
+  1787757193.4212449,
+  1787757278.058727,
+  1787757308.9476008,
+  1787757329.5644438,
+  1787757363.500386,
+  1787757384.9453702,
+  1787757418.6543958
+ ],
+ "rows": [
+  {
+   "episode": 0,
+   "seed": 0,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0000",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 1,
+   "seed": 1,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0001",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 2,
+   "seed": 2,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0002",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 3,
+   "seed": 3,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0003",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 4,
+   "seed": 4,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0004",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 5,
+   "seed": 5,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0005",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 6,
+   "seed": 6,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0006",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 7,
+   "seed": 7,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0007",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 8,
+   "seed": 8,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0008",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 9,
+   "seed": 9,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0009",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 10,
+   "seed": 10,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0010",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 11,
+   "seed": 11,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0011",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 12,
+   "seed": 12,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0012",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 0,
+   "seed": 0,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.86,
+   "goal_id": "ep-0000",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 1,
+   "seed": 1,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.0,
+   "goal_id": "ep-0001",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 2,
+   "seed": 2,
+   "status": "success",
+   "failure": null,
+   "t_end": 13.43,
+   "goal_id": "ep-0002",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 3,
+   "seed": 3,
+   "status": "success",
+   "failure": null,
+   "t_end": 21.2,
+   "goal_id": "ep-0003",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 4,
+   "seed": 4,
+   "status": "success",
+   "failure": null,
+   "t_end": 13.33,
+   "goal_id": "ep-0004",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 5,
+   "seed": 5,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.7,
+   "goal_id": "ep-0005",
+   "verifier": "oracle",
+   "retries": 0
+  }
+ ],
+ "manifest": {
+  "git_sha": "952bc1c8f3fdcaf33b12c381fcbfe602f3f5b64b",
+  "git_dirty": true,
+  "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+  "env_hash": "461d115324f7ca4a50cc331870997f10524dc4878693ee2b49e2aae7be31d418",
+  "env_fingerprint": null,
+  "env_attested": false,
+  "dist_problems": [
+   "environment out of sync with the locked selection (uv sync --locked --check:  - torchcodec==0.16.0\n - torchvision==0.28.0\n - urllib3==2.7.0\n - wandb==0.28.2\n - werkzeug==3.1.8\n - xxhash==4.0.0\n - yarl==1.24.5\nThe environment is outdated; run `uv sync` to update the environment)"
+  ],
+  "attestation_note": "dev measurement: local baseline, no post-run audit \u2014 per CON-5 as amended (ADR-24) this evidence makes NO reproducibility claim",
+  "graph_sha256": "1fa34ce5ad64df3f8670ac2d4bf7d1ea419d7ceaf9772ba1ee359c2fd6167b11",
+  "seeds": "0..29 (episode stream)",
+  "order_seed": 3,
+  "order": [
+   "F2"
+  ],
+  "phase_model": "idea arrival delayed uniform(0, 25.0)s after stream health check",
+  "dora_cli": "dora-cli 1.0.0-rc.4",
+  "dora_api_rev": "cd597e705",
+  "coordinator_port": "6113"
+ }
+}

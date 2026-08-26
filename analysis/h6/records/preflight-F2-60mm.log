@@ -1,0 +1,12 @@
++ dora start /Users/yonghe/src/aisle-runner/analysis/h6/records/preflight-F2/h6_graph.yaml --uv --name h6pre-f2-96416 --detach
++ dora node list -d h6pre-f2-96416 --format json
++ dora stop --name h6pre-f2-96416 --grace-duration 5s
+{
+ "cell": "F2",
+ "node": "grasp-planner-topdown",
+ "fault": "grasp_high",
+ "episodes": 6,
+ "rate": 0.0,
+ "complete": true,
+ "wrong_objects": 0
+}

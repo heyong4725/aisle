@@ -1,0 +1,12 @@
++ dora start /Users/yonghe/src/aisle-runner/analysis/h6/records/preflight-F1/h6_graph.yaml --uv --name h6pre-f1-94918 --detach
++ dora node list -d h6pre-f1-94918 --format json
++ dora stop --name h6pre-f1-94918 --grace-duration 5s
+{
+ "cell": "F1",
+ "node": "segmented-pose",
+ "fault": "pose_bias",
+ "episodes": 6,
+ "rate": 1.0,
+ "complete": true,
+ "wrong_objects": 0
+}

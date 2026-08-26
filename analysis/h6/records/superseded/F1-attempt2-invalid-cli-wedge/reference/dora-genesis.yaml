@@ -1,0 +1,32 @@
+id: dora-genesis
+path: /Users/yonghe/src/aisle-runner/src/aisle/nodes/dora_genesis.py
+env:
+  AISLE_LOCKSTEP: '1'
+  AISLE_TURN_OUTPUTS: bridge_info,joint_state,gripper_state,oracle_state,rgb_overhead,rgb_wrist,depth_overhead,seg_overhead,reset_done,sim_turn
+  AISLE_PERCEPTION: L1
+inputs:
+  tick: dora/timer/millis/10
+  joint_cmd:
+    source: budget-guard/joint_cmd_safe
+    queue_size: 100
+  gripper_cmd:
+    source: budget-guard/gripper_cmd_safe
+    queue_size: 100
+  reset:
+    source: reset/bridge_reset
+    queue_size: 100
+  turn_commit:
+    source: turn-barrier/turn_commit
+    queue_size: 4
+    queue_policy: backpressure
+outputs:
+- bridge_info
+- joint_state
+- gripper_state
+- oracle_state
+- rgb_overhead
+- rgb_wrist
+- depth_overhead
+- seg_overhead
+- reset_done
+- sim_turn

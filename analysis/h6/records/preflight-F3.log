@@ -1,0 +1,12 @@
++ dora start /Users/yonghe/src/aisle-runner/analysis/h6/records/preflight-F3/h6_graph.yaml --uv --name h6pre-f3-95373 --detach
++ dora node list -d h6pre-f3-95373 --format json
++ dora stop --name h6pre-f3-95373 --grace-duration 5s
+{
+ "cell": "F3",
+ "node": "ik-trajectory",
+ "fault": "traj_short",
+ "episodes": 6,
+ "rate": 0.0,
+ "complete": true,
+ "wrong_objects": 0
+}

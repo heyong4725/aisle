@@ -1,0 +1,22 @@
+id: reset
+path: /Users/yonghe/src/aisle-runner/src/aisle/reset/service.py
+env:
+  AISLE_LOCKSTEP: '1'
+  AISLE_TURN_NODE: reset
+  AISLE_TURN_OUTPUTS: bridge_reset,reset_done,reset_refused,turn_done
+inputs:
+  reset:
+    source: rollout-client/reset
+    queue_size: 100
+  reset_done:
+    source: dora-genesis/reset_done
+    queue_size: 100
+  turn:
+    source: turn-barrier/turn
+    queue_size: 4
+    queue_policy: backpressure
+outputs:
+- bridge_reset
+- reset_done
+- reset_refused
+- turn_done

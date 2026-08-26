@@ -1,0 +1,23 @@
+id: verifier-oracle
+path: /Users/yonghe/src/aisle-runner/src/aisle/verifier/oracle.py
+env:
+  AISLE_LOCKSTEP: '1'
+  AISLE_TURN_NODE: verifier-oracle
+  AISLE_TURN_OUTPUTS: episode_result,turn_done
+inputs:
+  oracle_state:
+    source: dora-genesis/oracle_state
+    queue_size: 100
+  joint_state:
+    source: dora-genesis/joint_state
+    queue_size: 100
+  episode_goal:
+    source: rollout-client/episode_goal
+    queue_size: 100
+  turn:
+    source: turn-barrier/turn
+    queue_size: 4
+    queue_policy: backpressure
+outputs:
+- episode_result
+- turn_done

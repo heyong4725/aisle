@@ -1,0 +1,9 @@
+{
+ "cell": "F3",
+ "node": "ik-trajectory",
+ "fault": "traj_short",
+ "episodes": 6,
+ "rate": 0.0,
+ "complete": true,
+ "wrong_objects": 0
+}

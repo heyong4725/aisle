@@ -1,0 +1,111 @@
+{
+ "cell": "F1",
+ "node": "segmented-pose",
+ "fault": "pose_bias",
+ "seed": 1,
+ "dataflow": "h6-f1-97821",
+ "out_of_space": false,
+ "stream_t0": 1787697821.7923,
+ "session_isolation": {
+  "home": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F1/agent/agent_home",
+  "claude_config_dir": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F1/agent/agent_home/.claude",
+  "codex_home": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F1/agent/agent_home/.codex",
+  "xdg_rebound": true
+ },
+ "inject_delay_s": 8.359106102810031,
+ "inject_ts": 1787698015.747349,
+ "injection_ok": true,
+ "invalid": "no faulted evidence within 1800s of injection",
+ "timeline": [
+  1787697865.552106,
+  1787697896.244208,
+  1787697917.153334,
+  1787697951.378484,
+  1787697972.783752,
+  1787698006.703137
+ ],
+ "rows": [
+  {
+   "episode": 0,
+   "seed": 0,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.86,
+   "goal_id": "ep-0000",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 1,
+   "seed": 1,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.0,
+   "goal_id": "ep-0001",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 2,
+   "seed": 2,
+   "status": "success",
+   "failure": null,
+   "t_end": 13.43,
+   "goal_id": "ep-0002",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 3,
+   "seed": 3,
+   "status": "success",
+   "failure": null,
+   "t_end": 21.2,
+   "goal_id": "ep-0003",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 4,
+   "seed": 4,
+   "status": "success",
+   "failure": null,
+   "t_end": 13.33,
+   "goal_id": "ep-0004",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 5,
+   "seed": 5,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.7,
+   "goal_id": "ep-0005",
+   "verifier": "oracle",
+   "retries": 0
+  }
+ ],
+ "manifest": {
+  "git_sha": "f85536e75d2fe7140d8f1e162e8e875b7610df34",
+  "git_dirty": true,
+  "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+  "env_hash": "461d115324f7ca4a50cc331870997f10524dc4878693ee2b49e2aae7be31d418",
+  "env_fingerprint": null,
+  "env_attested": false,
+  "dist_problems": [
+   "environment out of sync with the locked selection (uv sync --locked --check:  - torchcodec==0.16.0\n - torchvision==0.28.0\n - urllib3==2.7.0\n - wandb==0.28.2\n - werkzeug==3.1.8\n - xxhash==4.0.0\n - yarl==1.24.5\nThe environment is outdated; run `uv sync` to update the environment)"
+  ],
+  "attestation_note": "dev measurement: local baseline, no post-run audit \u2014 per CON-5 as amended (ADR-24) this evidence makes NO reproducibility claim",
+  "graph_sha256": "82a5a29310bdaec42b67a285b6a45e32d843d90db43305290be20b37b857ca25",
+  "seeds": "0..29 (episode stream)",
+  "order_seed": 1,
+  "order": [
+   "F1"
+  ],
+  "phase_model": "idea arrival delayed uniform(0, 25.0)s after stream health check",
+  "dora_cli": "dora-cli 1.0.0-rc.4",
+  "dora_api_rev": "cd597e705",
+  "coordinator_port": "6113"
+ }
+}

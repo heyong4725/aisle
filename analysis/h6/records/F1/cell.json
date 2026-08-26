@@ -1,0 +1,452 @@
+{
+ "cell": "F1",
+ "node": "segmented-pose",
+ "fault": "pose_bias",
+ "seed": 2,
+ "dataflow": "h6-f1-767",
+ "out_of_space": false,
+ "stream_t0": 1787700767.859875,
+ "inject_ts": 1787700767.859875,
+ "injection_ok": true,
+ "session_isolation": {
+  "home": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F1/agent/agent_home",
+  "claude_config_dir": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F1/agent/agent_home/.claude",
+  "codex_home": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F1/agent/agent_home/.codex",
+  "xdg_rebound": true
+ },
+ "session": {
+  "stopped": null,
+  "tokens": null,
+  "wall_s": null,
+  "exit_code": null
+ },
+ "diagnosis": {
+  "detected": true,
+  "node": "segmented-pose",
+  "evidence": [
+   "episodes.jsonl: 5/5 fail (never_grasped x2, dropped x2, collision) vs expert baseline 1.0",
+   "log_ik-trajectory.jsonl ep2: all 13 stages completed through 'home' yet verdict never_grasped -- gripper closed beside the box; excludes traj_short (a 70% waypoint stall would truncate every run)",
+   "probe-154d0be1 grasp_pose z=0.1199 with probe-105e91c4 target z=0.1073: z = target + size_z/2 - 0.035 engagement exactly for a 0.095m med; +60mm grasp_high is numerically impossible -- excludes grasp-planner fault",
+   "ep1 dropped t=4.06 and ep3 dropped t=4.0 at close/lift, ep4 collision t=2.96 -- descending fingers striking the box edge, consistent with a ~45mm lateral target bias (> half-width of every med, 0.015-0.035)",
+   "ep0: 'IK failed for waypoint staging at [0.665, -0.043, 0.56]' then never_grasped -- +x-biased target pushed a deep shelf placement past the reach envelope",
+   "segmented_pose.py applies the armed H6 fault to the finished estimate (bias_pose, +0.045 x) before publishing target_pose; downstream nodes measured clean"
+  ],
+  "ts": 1787701215
+ },
+ "repair": {
+  "graph": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F1/agent/repair_graph.yaml",
+  "ts": 1787701245
+ },
+ "repair_ts": 1787701245.0,
+ "timeline": [
+  1787700833.123397,
+  1787700839.757208,
+  1787700880.709715,
+  1787700887.6022131,
+  1787700892.7104142,
+  1787700902.41682,
+  1787700909.028028,
+  1787700947.517875,
+  1787700954.1531641,
+  1787700995.705971,
+  1787701002.886204,
+  1787701042.294878,
+  1787701081.019319,
+  1787701116.128167,
+  1787701157.941317,
+  1787701165.0822752,
+  1787701200.68787,
+  1787701238.870922,
+  1787701245.5190191,
+  1787701319.2802591,
+  1787701348.54635,
+  1787701369.202058,
+  1787701401.3387258,
+  1787701421.7461529,
+  1787701452.332468,
+  1787701482.152224,
+  1787701502.3073769,
+  1787701534.197243,
+  1787701556.399352,
+  1787701586.990437,
+  1787701616.833185,
+  1787701640.271908,
+  1787701662.9761128,
+  1787701688.973752,
+  1787701719.817952
+ ],
+ "rows": [
+  {
+   "episode": 0,
+   "seed": 0,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0000",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 1,
+   "seed": 1,
+   "status": "fail",
+   "failure": "dropped",
+   "t_end": 4.06,
+   "goal_id": "ep-0001",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 2,
+   "seed": 2,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0002",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 3,
+   "seed": 3,
+   "status": "fail",
+   "failure": "dropped",
+   "t_end": 4.0,
+   "goal_id": "ep-0003",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 4,
+   "seed": 4,
+   "status": "fail",
+   "failure": "collision",
+   "t_end": 2.96,
+   "goal_id": "ep-0004",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 5,
+   "seed": 5,
+   "status": "fail",
+   "failure": "dropped",
+   "t_end": 5.66,
+   "goal_id": "ep-0005",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 6,
+   "seed": 6,
+   "status": "fail",
+   "failure": "dropped",
+   "t_end": 3.9,
+   "goal_id": "ep-0006",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 7,
+   "seed": 7,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0007",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 8,
+   "seed": 8,
+   "status": "fail",
+   "failure": "dropped",
+   "t_end": 3.9,
+   "goal_id": "ep-0008",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 9,
+   "seed": 9,
+   "status": "fail",
+   "failure": "timeout",
+   "t_end": 30.0,
+   "goal_id": "ep-0009",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 10,
+   "seed": 10,
+   "status": "fail",
+   "failure": "collision",
+   "t_end": 4.33,
+   "goal_id": "ep-0010",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 11,
+   "seed": 11,
+   "status": "fail",
+   "failure": "timeout",
+   "t_end": 30.0,
+   "goal_id": "ep-0011",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 12,
+   "seed": 12,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0012",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 13,
+   "seed": 13,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0013",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 14,
+   "seed": 14,
+   "status": "fail",
+   "failure": "timeout",
+   "t_end": 30.0,
+   "goal_id": "ep-0014",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 15,
+   "seed": 15,
+   "status": "fail",
+   "failure": "collision",
+   "t_end": 4.16,
+   "goal_id": "ep-0015",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 16,
+   "seed": 16,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0016",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 17,
+   "seed": 17,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0017",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 18,
+   "seed": 18,
+   "status": "fail",
+   "failure": "dropped",
+   "t_end": 4.1,
+   "goal_id": "ep-0018",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 0,
+   "seed": 0,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.86,
+   "goal_id": "ep-0000",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 1,
+   "seed": 1,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.0,
+   "goal_id": "ep-0001",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 2,
+   "seed": 2,
+   "status": "success",
+   "failure": null,
+   "t_end": 13.43,
+   "goal_id": "ep-0002",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 3,
+   "seed": 3,
+   "status": "success",
+   "failure": null,
+   "t_end": 21.2,
+   "goal_id": "ep-0003",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 4,
+   "seed": 4,
+   "status": "success",
+   "failure": null,
+   "t_end": 13.33,
+   "goal_id": "ep-0004",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 5,
+   "seed": 5,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.7,
+   "goal_id": "ep-0005",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 6,
+   "seed": 6,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.1,
+   "goal_id": "ep-0006",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 7,
+   "seed": 7,
+   "status": "success",
+   "failure": null,
+   "t_end": 13.53,
+   "goal_id": "ep-0007",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 8,
+   "seed": 8,
+   "status": "success",
+   "failure": null,
+   "t_end": 21.06,
+   "goal_id": "ep-0008",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 9,
+   "seed": 9,
+   "status": "success",
+   "failure": null,
+   "t_end": 14.86,
+   "goal_id": "ep-0009",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 10,
+   "seed": 10,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.0,
+   "goal_id": "ep-0010",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 11,
+   "seed": 11,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.0,
+   "goal_id": "ep-0011",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 12,
+   "seed": 12,
+   "status": "success",
+   "failure": null,
+   "t_end": 15.0,
+   "goal_id": "ep-0012",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 13,
+   "seed": 13,
+   "status": "success",
+   "failure": null,
+   "t_end": 15.13,
+   "goal_id": "ep-0013",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 14,
+   "seed": 14,
+   "status": "success",
+   "failure": null,
+   "t_end": 16.56,
+   "goal_id": "ep-0014",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 15,
+   "seed": 15,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.46,
+   "goal_id": "ep-0015",
+   "verifier": "oracle",
+   "retries": 0
+  }
+ ],
+ "manifest": {
+  "git_sha": "952bc1c8f3fdcaf33b12c381fcbfe602f3f5b64b",
+  "git_dirty": true,
+  "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+  "env_hash": "461d115324f7ca4a50cc331870997f10524dc4878693ee2b49e2aae7be31d418",
+  "env_fingerprint": null,
+  "env_attested": false,
+  "dist_problems": [
+   "environment out of sync with the locked selection (uv sync --locked --check:  - torchcodec==0.16.0\n - torchvision==0.28.0\n - urllib3==2.7.0\n - wandb==0.28.2\n - werkzeug==3.1.8\n - xxhash==4.0.0\n - yarl==1.24.5\nThe environment is outdated; run `uv sync` to update the environment)"
+  ],
+  "attestation_note": "dev measurement: local baseline, no post-run audit \u2014 per CON-5 as amended (ADR-24) this evidence makes NO reproducibility claim",
+  "graph_sha256": "82a5a29310bdaec42b67a285b6a45e32d843d90db43305290be20b37b857ca25",
+  "seeds": "0..29 (episode stream)",
+  "order_seed": 2,
+  "order": [
+   "F1"
+  ],
+  "phase_model": "idea arrival delayed uniform(0, 25.0)s after stream health check",
+  "dora_cli": "dora-cli 1.0.0-rc.4",
+  "dora_api_rev": "cd597e705",
+  "coordinator_port": "6113"
+ }
+}
