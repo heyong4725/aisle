@@ -322,9 +322,22 @@ def run_cell(cell: str, out_dir: Path, seed: int, agent: str = "claude") -> dict
         repair = record.get("repair") or {}
         record["repair_ts"] = float(repair["ts"]) if "ts" in repair else None
         if record["repair_ts"] is not None:
-            # let the post window fill before teardown
-            target = len(stream.sample()) + WINDOW_N
-            stream.wait(lambda t: len(t) >= target, 1200.0)
+            # let the post window fill before teardown — counted as the
+            # SCORER counts (episodes whose inferred start clears the
+            # repair ts), not raw rows: the h4 start inference gives the
+            # first post-relaunch episode a pre-repair start, and a raw
+            # count stopped cell-F2 attempt 1 one credited episode short
+            # of the window it had actually earned (amendment 5)
+            def _credited_window(timeline: list[float]) -> bool:
+                rows = [
+                    json.loads(line) for line in results.read_text().splitlines() if line.strip()
+                ]
+                credited = episodes_started_after(
+                    rows, timeline, record["stream_t0"], record["repair_ts"]
+                )
+                return len(credited) >= WINDOW_N
+
+            stream.wait(_credited_window, 1800.0)
         return _finish(record, out_dir, stream, results)
     except Exception:
         stream.stop()
