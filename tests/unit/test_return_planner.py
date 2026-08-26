@@ -36,3 +36,26 @@ def test_return_slot_is_inside_the_shelf_front_corner(geometry):
 def test_unknown_med_refuses(geometry):
     meds, layout = geometry
     assert return_grasp_and_slot("aspirin", meds, layout) is None
+
+
+def test_estimate_grasp_targets_the_measured_pose_not_the_centre(geometry):
+    """t4-inc2-recovery-r4 seeds 4/8: the delivered box lies wherever
+    release dropped it — a centre-assuming grasp strikes the edge
+    (collision) or closes on air (not_returned). With an estimate the
+    grasp targets the MEASURED pose; the slot is unchanged."""
+    from aisle.nodes.return_planner import return_grasp_from_estimate
+
+    meds, layout = geometry
+    est = {"pos": [0.62, -0.13, 0.093]}
+    grasp, place_xy = return_grasp_from_estimate(est, "amoxicillin", meds, layout)
+    assert grasp[:3] == pytest.approx([0.62, -0.13, 0.093])
+    assert grasp[3:] == [0.0, 0.0, 0.0, 1.0]
+    _, centre_slot = return_grasp_and_slot("amoxicillin", meds, layout)
+    assert place_xy == pytest.approx(centre_slot)
+
+
+def test_estimate_grasp_refuses_unknown_med(geometry):
+    from aisle.nodes.return_planner import return_grasp_from_estimate
+
+    meds, layout = geometry
+    assert return_grasp_from_estimate({"pos": [0.6, 0.0, 0.09]}, "aspirin", meds, layout) is None

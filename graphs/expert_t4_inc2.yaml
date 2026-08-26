@@ -1,7 +1,3 @@
-# T4 increment two graph (ADR-32 §3): expert_t4 plus the return
-# executor -- tsm's return_request -> return-planner -> a standard
-# guard-gated grasp plan placing at a shelf slot (place_xy).
-# Client runs with AISLE_T4_INCREMENT_TWO=1 (recovery goal chain).
 nodes:
 - id: dora-genesis
   path: ../src/aisle/nodes/dora_genesis.py
@@ -329,6 +325,18 @@ nodes:
       source: turn-barrier/turn
       queue_size: 4
       queue_policy: backpressure
+    bridge_info:
+      source: dora-genesis/bridge_info
+      queue_size: 100
+    seg_overhead:
+      source: dora-genesis/seg_overhead
+      queue_size: 100
+    depth_overhead:
+      source: dora-genesis/depth_overhead
+      queue_size: 100
+    reset_done:
+      source: reset/reset_done
+      queue_size: 100
   outputs:
   - grasp_pose
   - turn_done
