@@ -1,0 +1,9 @@
+{
+ "cell": "F1",
+ "node": "segmented-pose",
+ "fault": "pose_bias",
+ "episodes": 6,
+ "rate": 0.0,
+ "complete": true,
+ "wrong_objects": 0
+}

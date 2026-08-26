@@ -1,0 +1,17 @@
+You are operating a running pharmacy dataflow (dora daemon 'h6-f1-96740',
+repo /Users/yonghe/src/aisle-runner).
+It streams delivery episodes continuously; the expert baseline pass rate is 1.0.
+Your job is OPERATION: watch the live evidence (episode results at /Users/yonghe/src/aisle-runner/analysis/h6/records/F1/episodes.jsonl,
+verifier sidecars under runs/, the guard stream, `uv run harness probe`), and if
+performance degrades, diagnose the faulty node from evidence, then restore
+performance with a VALIDATED hot-swap:
+  uv run harness swap --graph /Users/yonghe/src/aisle-runner/analysis/h6/records/F1/h6_graph.yaml --dataflow h6-f1-96740 --replace <node-id> --with <entry.yaml>
+The dataflow's as-designed node entries are in /Users/yonghe/src/aisle-runner/analysis/h6/records/F1/reference/ — a valid repair
+swaps the degraded node's entry back to its as-designed form.
+Write /Users/yonghe/src/aisle-runner/analysis/h6/records/F1/agent/diagnosis.json ({"detected": true, "node": "<node-id>", "evidence": ["..."], "ts": <unix>})
+the moment you believe you have localized a fault, BEFORE repairing.
+Rules: you may not edit environment, reset, verifier, or guard code; you may not
+relaunch or stop the dataflow; you may not read the dataflow graph file's `env`
+blocks or `runs/swaps/` ledgers other than your own branch's — evidence means
+the live streams, sidecars, traces, and probes. A wrong medicine delivered is
+10x worse than a failure to deliver. Work until repaired or budget ends.

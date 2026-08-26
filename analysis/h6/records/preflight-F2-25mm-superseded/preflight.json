@@ -1,0 +1,9 @@
+{
+ "cell": "F2",
+ "node": "grasp-planner-topdown",
+ "fault": "grasp_high",
+ "episodes": 6,
+ "rate": 1.0,
+ "complete": true,
+ "wrong_objects": 0
+}

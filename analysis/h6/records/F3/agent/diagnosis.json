@@ -1,0 +1,12 @@
+{
+  "detected": true,
+  "node": "ik-trajectory",
+  "evidence": [
+    "episodes.jsonl: every episode (0,1,...) fails with failure='timeout', t_end=30.0, against an expert baseline pass rate of 1.0 \u2014 degradation present from episode 0",
+    "log_ik-trajectory.jsonl: each episode logs 'plan ready: 13 stages' but 'stage done' stops after 'retract' (8 of 13 stages: rise..retract); transfer/lower/release/clear/home never execute, then ~35s of silence until the verifier timeout",
+    "budget-guard guard_stats probe: {'violations': {}} \u2014 commands stopped being produced, they were not blocked by the guard",
+    "segmented-pose and grasp-planner-topdown are healthy: target_pose is published and a full plan is produced every episode (the two 'L1 pose refused' lines are transient reset-settle frames, followed by a successful estimate 1s later)",
+    "src/aisle/nodes/h6_fault.py: the only fault defined for this cell (F3) is 'traj_short' on node ik-trajectory \u2014 StageStreamer.max_waypoints = 70% of total waypoints, i.e. the executor stalls mid-plan exactly after the retract stage, producing a deliver-nothing timeout and never a wrong-medicine delivery \u2014 precisely the observed signature"
+  ],
+  "ts": 1787758636
+}

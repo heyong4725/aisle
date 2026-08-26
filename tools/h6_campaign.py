@@ -345,6 +345,14 @@ def run_cell(cell: str, out_dir: Path, seed: int, agent: str = "claude") -> dict
 
 
 def _finish(record: dict, out_dir: Path, stream, results: Path) -> dict:
+    from campaign import scrub_session_credentials
+
+    # the session home holds a live credential seed; the record must not
+    # (measured: three cells' agent_home carried .credentials.json into
+    # the findings changeset before the pre-commit scan caught it)
+    agent_home = out_dir / "agent" / "agent_home"
+    if agent_home.exists():
+        scrub_session_credentials(agent_home)
     record["timeline"] = stream.sample()
     stream.stop()
     for suffix in ("-r1", "-r2"):

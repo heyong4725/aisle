@@ -1,0 +1,28 @@
+id: budget-guard
+path: /Users/yonghe/src/aisle-runner/src/aisle/nodes/budget_guard.py
+env:
+  AISLE_LOCKSTEP: '1'
+  AISLE_TURN_NODE: budget-guard
+  AISLE_TURN_OUTPUTS: joint_cmd_safe,gripper_cmd_safe,violation,guard_stats,turn_done
+  AISLE_TURN_WALL_OUTPUTS: guard_stats
+inputs:
+  tick: dora/timer/millis/5000
+  joint_cmd:
+    source: ik-trajectory/joint_cmd
+    queue_size: 100
+  gripper_cmd:
+    source: ik-trajectory/gripper_cmd
+    queue_size: 100
+  reset_done:
+    source: reset/reset_done
+    queue_size: 100
+  turn:
+    source: turn-barrier/turn
+    queue_size: 4
+    queue_policy: backpressure
+outputs:
+- joint_cmd_safe
+- gripper_cmd_safe
+- violation
+- guard_stats
+- turn_done

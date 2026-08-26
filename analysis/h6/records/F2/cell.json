@@ -1,0 +1,242 @@
+{
+ "cell": "F2",
+ "node": "grasp-planner-topdown",
+ "fault": "grasp_high",
+ "seed": 4,
+ "dataflow": "h6-f2-57591",
+ "out_of_space": false,
+ "stream_t0": 1787757591.62241,
+ "inject_ts": 1787757591.62241,
+ "injection_ok": true,
+ "session_isolation": {
+  "home": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F2/agent/agent_home",
+  "claude_config_dir": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F2/agent/agent_home/.claude",
+  "codex_home": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F2/agent/agent_home/.codex",
+  "xdg_rebound": true
+ },
+ "session": {
+  "stopped": "agent_done",
+  "tokens": 280008,
+  "wall_s": 360.4,
+  "exit_code": null
+ },
+ "diagnosis": {
+  "detected": true,
+  "node": "grasp-planner-topdown",
+  "evidence": [
+   "episodes.jsonl: episodes 0-4 all fail status=fail failure=never_grasped across five different medicines (amoxicillin, ibuprofen, cetirizine, omeprazole, metformin) while the expert baseline pass rate is 1.0",
+   "log_ik-trajectory.jsonl: every episode's plan completes all 13 stages (rise..close..lift..home) with no IK errors, so trajectory execution is healthy and rules out traj_short",
+   "live probe of segmented-pose/target_pose vs grasp-planner-topdown/grasp_pose at identical sim_time_ns: xy identical, but grasp TCP z is 0.18494 vs planner-recomputed 0.12494 (amoxicillin) and 0.17495 vs 0.11495 (ibuprofen) -- an offset of exactly +0.06000 m in both, matching GRASP_HIGH_M (h6_fault.py F2 grasp_high), so the corruption occurs inside grasp-planner-topdown after plan_grasp",
+   "recomputing plan_grasp from the probed target_pose with as-designed config reproduces the observed grasp_pose exactly except for the +0.060 m z shift, exonerating segmented-pose (its published pose is consistent with scene geometry: box centre z = shelf 0.060 + half height)",
+   "log_segmented-pose.jsonl: 'L1 pose refused for ibuprofen ... box is not upright' bursts appear only mid-episode after a grasp attempt (first at 15:20:41.9, measurements evolving 0.016x0.026 -> 0.023x0.023 before settling), i.e. the 60 mm-high fingers closing on air knock the box over -- a downstream symptom, not the cause"
+  ],
+  "ts": 1787757930
+ },
+ "repair": {
+  "graph": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F2/agent/repair_graph.yaml",
+  "ts": 1787757977
+ },
+ "repair_ts": 1787757977.0,
+ "timeline": [
+  1787757641.864167,
+  1787757679.755562,
+  1787757720.50789,
+  1787757761.654273,
+  1787757802.170688,
+  1787757843.486368,
+  1787757884.315475,
+  1787757925.0149279,
+  1787757966.569621,
+  1787758049.4939241,
+  1787758080.107745,
+  1787758100.790986,
+  1787758134.757613,
+  1787758156.1988869,
+  1787758190.1426802,
+  1787758221.229347
+ ],
+ "rows": [
+  {
+   "episode": 0,
+   "seed": 0,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0000",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 1,
+   "seed": 1,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0001",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 2,
+   "seed": 2,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0002",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 3,
+   "seed": 3,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0003",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 4,
+   "seed": 4,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0004",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 5,
+   "seed": 5,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0005",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 6,
+   "seed": 6,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0006",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 7,
+   "seed": 7,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0007",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 8,
+   "seed": 8,
+   "status": "fail",
+   "failure": "never_grasped",
+   "t_end": 30.0,
+   "goal_id": "ep-0008",
+   "verifier": "oracle",
+   "retries": 1
+  },
+  {
+   "episode": 0,
+   "seed": 0,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.86,
+   "goal_id": "ep-0000",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 1,
+   "seed": 1,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.0,
+   "goal_id": "ep-0001",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 2,
+   "seed": 2,
+   "status": "success",
+   "failure": null,
+   "t_end": 13.43,
+   "goal_id": "ep-0002",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 3,
+   "seed": 3,
+   "status": "success",
+   "failure": null,
+   "t_end": 21.2,
+   "goal_id": "ep-0003",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 4,
+   "seed": 4,
+   "status": "success",
+   "failure": null,
+   "t_end": 13.33,
+   "goal_id": "ep-0004",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 5,
+   "seed": 5,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.7,
+   "goal_id": "ep-0005",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 6,
+   "seed": 6,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.1,
+   "goal_id": "ep-0006",
+   "verifier": "oracle",
+   "retries": 0
+  }
+ ],
+ "manifest": {
+  "git_sha": "e14c6e5e2928836a41f9ad1f116b169f5949f604",
+  "git_dirty": true,
+  "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+  "env_hash": "461d115324f7ca4a50cc331870997f10524dc4878693ee2b49e2aae7be31d418",
+  "env_fingerprint": null,
+  "env_attested": false,
+  "dist_problems": [
+   "environment out of sync with the locked selection (uv sync --locked --check:  - torchcodec==0.16.0\n - torchvision==0.28.0\n - urllib3==2.7.0\n - wandb==0.28.2\n - werkzeug==3.1.8\n - xxhash==4.0.0\n - yarl==1.24.5\nThe environment is outdated; run `uv sync` to update the environment)"
+  ],
+  "attestation_note": "dev measurement: local baseline, no post-run audit \u2014 per CON-5 as amended (ADR-24) this evidence makes NO reproducibility claim",
+  "graph_sha256": "1fa34ce5ad64df3f8670ac2d4bf7d1ea419d7ceaf9772ba1ee359c2fd6167b11",
+  "seeds": "0..29 (episode stream)",
+  "order_seed": 4,
+  "order": [
+   "F2"
+  ],
+  "phase_model": "idea arrival delayed uniform(0, 25.0)s after stream health check",
+  "dora_cli": "dora-cli 1.0.0-rc.4",
+  "dora_api_rev": "cd597e705",
+  "coordinator_port": "6113"
+ }
+}

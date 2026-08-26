@@ -1,0 +1,22 @@
++ dora start /Users/yonghe/src/aisle-runner/analysis/h6/records/F1/h6_graph.yaml --uv --name h6-f1-767 --detach
+Exception in thread Thread-2 (_session):
+Traceback (most recent call last):
+  File "/Users/yonghe/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 1043, in _bootstrap_inner
+    self.run()
+    ~~~~~~~~^^
+  File "/Users/yonghe/.local/share/uv/python/cpython-3.13-macos-aarch64-none/lib/python3.13/threading.py", line 994, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yonghe/src/aisle-runner/tools/h6_campaign.py", line 305, in _session
+    run_session(agent, cmd, REPO_ROOT, agent_out, ceilings, env=session_env)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/yonghe/src/aisle-runner/tools/campaign.py", line 820, in run_session
+    raise InfraError(f"{agent} CLI exited rc={rc} (not an agent outcome)")
+h1_protocol.InfraError: claude CLI exited rc=1 (not an agent outcome)
++ dora node list -d h6-f1-767 --format json
++ dora stop --name h6-f1-767 --grace-duration 5s
+{
+ "cell": "F1",
+ "invalid": null,
+ "inject_ts": 1787700767.859875
+}

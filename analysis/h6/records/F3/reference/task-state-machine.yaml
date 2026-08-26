@@ -1,0 +1,29 @@
+id: task-state-machine
+path: /Users/yonghe/src/aisle-runner/src/aisle/nodes/task_state_machine.py
+inputs:
+  tick: dora/timer/millis/1000
+  episode_goal:
+    source: rollout-client/episode_goal
+    queue_size: 100
+  episode_result:
+    source: verifier-oracle/episode_result
+    queue_size: 100
+  violation:
+    source: budget-guard/violation
+    queue_size: 100
+  plan_done:
+    source: ik-trajectory/plan_done
+    queue_size: 100
+  turn:
+    source: turn-barrier/turn
+    queue_size: 4
+    queue_policy: backpressure
+outputs:
+- target_request
+- episode_feedback
+- turn_done
+env:
+  AISLE_LOCKSTEP: '1'
+  AISLE_TURN_NODE: task-state-machine
+  AISLE_TURN_OUTPUTS: target_request,episode_feedback,turn_done
+  AISLE_MAX_RETRIES: '8'

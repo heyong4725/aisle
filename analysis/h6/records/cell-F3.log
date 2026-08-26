@@ -1,0 +1,8 @@
++ dora start /Users/yonghe/src/aisle-runner/analysis/h6/records/F3/h6_graph.yaml --uv --name h6-f3-58336 --detach
++ dora node list -d h6-f3-58336 --format json
++ dora stop --name h6-f3-58336 --grace-duration 5s
+{
+ "cell": "F3",
+ "invalid": null,
+ "inject_ts": 1787758336.770085
+}

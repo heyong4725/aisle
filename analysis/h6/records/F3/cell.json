@@ -1,0 +1,209 @@
+{
+ "cell": "F3",
+ "node": "ik-trajectory",
+ "fault": "traj_short",
+ "seed": 5,
+ "dataflow": "h6-f3-58336",
+ "out_of_space": false,
+ "stream_t0": 1787758336.770085,
+ "inject_ts": 1787758336.770085,
+ "injection_ok": true,
+ "session_isolation": {
+  "home": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F3/agent/agent_home",
+  "claude_config_dir": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F3/agent/agent_home/.claude",
+  "codex_home": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F3/agent/agent_home/.codex",
+  "xdg_rebound": true
+ },
+ "session": {
+  "stopped": "agent_done",
+  "tokens": 168955,
+  "wall_s": 360.4,
+  "exit_code": null
+ },
+ "diagnosis": {
+  "detected": true,
+  "node": "ik-trajectory",
+  "evidence": [
+   "episodes.jsonl: every episode (0,1,...) fails with failure='timeout', t_end=30.0, against an expert baseline pass rate of 1.0 \u2014 degradation present from episode 0",
+   "log_ik-trajectory.jsonl: each episode logs 'plan ready: 13 stages' but 'stage done' stops after 'retract' (8 of 13 stages: rise..retract); transfer/lower/release/clear/home never execute, then ~35s of silence until the verifier timeout",
+   "budget-guard guard_stats probe: {'violations': {}} \u2014 commands stopped being produced, they were not blocked by the guard",
+   "segmented-pose and grasp-planner-topdown are healthy: target_pose is published and a full plan is produced every episode (the two 'L1 pose refused' lines are transient reset-settle frames, followed by a successful estimate 1s later)",
+   "src/aisle/nodes/h6_fault.py: the only fault defined for this cell (F3) is 'traj_short' on node ik-trajectory \u2014 StageStreamer.max_waypoints = 70% of total waypoints, i.e. the executor stalls mid-plan exactly after the retract stage, producing a deliver-nothing timeout and never a wrong-medicine delivery \u2014 precisely the observed signature"
+  ],
+  "ts": 1787758636
+ },
+ "repair": {
+  "graph": "/Users/yonghe/src/aisle-runner/analysis/h6/records/F3/agent/repair_graph.yaml",
+  "ts": 1787758668
+ },
+ "repair_ts": 1787758668.0,
+ "timeline": [
+  1787758395.276823,
+  1787758443.008215,
+  1787758492.767234,
+  1787758542.358259,
+  1787758592.754764,
+  1787758641.9514182,
+  1787758743.205873,
+  1787758773.984688,
+  1787758794.866583,
+  1787758828.817185,
+  1787758849.990342,
+  1787758883.08698,
+  1787758914.485672
+ ],
+ "rows": [
+  {
+   "episode": 0,
+   "seed": 0,
+   "status": "fail",
+   "failure": "timeout",
+   "t_end": 30.0,
+   "goal_id": "ep-0000",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 1,
+   "seed": 1,
+   "status": "fail",
+   "failure": "timeout",
+   "t_end": 30.0,
+   "goal_id": "ep-0001",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 2,
+   "seed": 2,
+   "status": "fail",
+   "failure": "timeout",
+   "t_end": 30.0,
+   "goal_id": "ep-0002",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 3,
+   "seed": 3,
+   "status": "fail",
+   "failure": "timeout",
+   "t_end": 30.0,
+   "goal_id": "ep-0003",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 4,
+   "seed": 4,
+   "status": "fail",
+   "failure": "timeout",
+   "t_end": 30.0,
+   "goal_id": "ep-0004",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 5,
+   "seed": 5,
+   "status": "fail",
+   "failure": "timeout",
+   "t_end": 30.0,
+   "goal_id": "ep-0005",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 0,
+   "seed": 0,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.86,
+   "goal_id": "ep-0000",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 1,
+   "seed": 1,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.0,
+   "goal_id": "ep-0001",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 2,
+   "seed": 2,
+   "status": "success",
+   "failure": null,
+   "t_end": 13.43,
+   "goal_id": "ep-0002",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 3,
+   "seed": 3,
+   "status": "success",
+   "failure": null,
+   "t_end": 21.2,
+   "goal_id": "ep-0003",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 4,
+   "seed": 4,
+   "status": "success",
+   "failure": null,
+   "t_end": 13.33,
+   "goal_id": "ep-0004",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 5,
+   "seed": 5,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.7,
+   "goal_id": "ep-0005",
+   "verifier": "oracle",
+   "retries": 0
+  },
+  {
+   "episode": 6,
+   "seed": 6,
+   "status": "success",
+   "failure": null,
+   "t_end": 20.1,
+   "goal_id": "ep-0006",
+   "verifier": "oracle",
+   "retries": 0
+  }
+ ],
+ "manifest": {
+  "git_sha": "e14c6e5e2928836a41f9ad1f116b169f5949f604",
+  "git_dirty": true,
+  "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+  "env_hash": "461d115324f7ca4a50cc331870997f10524dc4878693ee2b49e2aae7be31d418",
+  "env_fingerprint": null,
+  "env_attested": false,
+  "dist_problems": [
+   "environment out of sync with the locked selection (uv sync --locked --check:  - torchcodec==0.16.0\n - torchvision==0.28.0\n - urllib3==2.7.0\n - wandb==0.28.2\n - werkzeug==3.1.8\n - xxhash==4.0.0\n - yarl==1.24.5\nThe environment is outdated; run `uv sync` to update the environment)"
+  ],
+  "attestation_note": "dev measurement: local baseline, no post-run audit \u2014 per CON-5 as amended (ADR-24) this evidence makes NO reproducibility claim",
+  "graph_sha256": "6ea01d31bb7c3876e2c1636d09d1d8e158efc6351885be44aff27b3a9eef667d",
+  "seeds": "0..29 (episode stream)",
+  "order_seed": 5,
+  "order": [
+   "F3"
+  ],
+  "phase_model": "idea arrival delayed uniform(0, 25.0)s after stream health check",
+  "dora_cli": "dora-cli 1.0.0-rc.4",
+  "dora_api_rev": "cd597e705",
+  "coordinator_port": "6113"
+ }
+}

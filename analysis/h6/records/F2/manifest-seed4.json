@@ -1,0 +1,22 @@
+{
+ "git_sha": "e14c6e5e2928836a41f9ad1f116b169f5949f604",
+ "git_dirty": true,
+ "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+ "env_hash": "461d115324f7ca4a50cc331870997f10524dc4878693ee2b49e2aae7be31d418",
+ "env_fingerprint": null,
+ "env_attested": false,
+ "dist_problems": [
+  "environment out of sync with the locked selection (uv sync --locked --check:  - torchcodec==0.16.0\n - torchvision==0.28.0\n - urllib3==2.7.0\n - wandb==0.28.2\n - werkzeug==3.1.8\n - xxhash==4.0.0\n - yarl==1.24.5\nThe environment is outdated; run `uv sync` to update the environment)"
+ ],
+ "attestation_note": "dev measurement: local baseline, no post-run audit \u2014 per CON-5 as amended (ADR-24) this evidence makes NO reproducibility claim",
+ "graph_sha256": "1fa34ce5ad64df3f8670ac2d4bf7d1ea419d7ceaf9772ba1ee359c2fd6167b11",
+ "seeds": "0..29 (episode stream)",
+ "order_seed": 4,
+ "order": [
+  "F2"
+ ],
+ "phase_model": "idea arrival delayed uniform(0, 25.0)s after stream health check",
+ "dora_cli": "dora-cli 1.0.0-rc.4",
+ "dora_api_rev": "cd597e705",
+ "coordinator_port": "6113"
+}

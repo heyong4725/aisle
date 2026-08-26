@@ -1,0 +1,13 @@
+{
+  "detected": true,
+  "node": "segmented-pose",
+  "evidence": [
+    "episodes.jsonl: 5/5 fail (never_grasped x2, dropped x2, collision) vs expert baseline 1.0",
+    "log_ik-trajectory.jsonl ep2: all 13 stages completed through 'home' yet verdict never_grasped -- gripper closed beside the box; excludes traj_short (a 70% waypoint stall would truncate every run)",
+    "probe-154d0be1 grasp_pose z=0.1199 with probe-105e91c4 target z=0.1073: z = target + size_z/2 - 0.035 engagement exactly for a 0.095m med; +60mm grasp_high is numerically impossible -- excludes grasp-planner fault",
+    "ep1 dropped t=4.06 and ep3 dropped t=4.0 at close/lift, ep4 collision t=2.96 -- descending fingers striking the box edge, consistent with a ~45mm lateral target bias (> half-width of every med, 0.015-0.035)",
+    "ep0: 'IK failed for waypoint staging at [0.665, -0.043, 0.56]' then never_grasped -- +x-biased target pushed a deep shelf placement past the reach envelope",
+    "segmented_pose.py applies the armed H6 fault to the finished estimate (bias_pose, +0.045 x) before publishing target_pose; downstream nodes measured clean"
+  ],
+  "ts": 1787701215
+}
