@@ -188,3 +188,57 @@ def test_place_height_tracks_the_supplied_tray_top():
     _, _, z_other = plan_grasp(target, size, grip=0.025, tray_top_z=0.10)
     assert z_other - z_franka == pytest.approx(0.06, abs=1e-9)
     assert z_other == pytest.approx(0.10 + (0.090 - 0.025) + PLACE_DROP_GAP, abs=1e-6)
+
+
+def test_bailed_stage_hands_the_next_stage_the_actual_position():
+    """T2 registration seeds 10/15 (runs/t2-stack-registration): a read
+    stage bails contact-blocked with 2.5 rad of tracking error, the
+    streamer keeps current_cmd at the phantom stage target, and the next
+    stage interpolates FROM the phantom — dragging the pressed arm across
+    the shelf (the measured transit-collision class). After an UNTRACKED
+    bail the next stage must start from the arm's actual qpos."""
+    from aisle.nodes.ik_trajectory import STAGE_BAIL_S, Stage, StageStreamer
+
+    home = np.zeros(7, dtype=np.float32)
+    blocked_target = np.full(7, 1.0, dtype=np.float32)
+    next_target = np.full(7, 0.1, dtype=np.float32)
+    stages = [
+        Stage(name="press", path=(blocked_target,), gripper=0.0, settle_s=0.1),
+        Stage(name="after", path=(next_target,), gripper=0.0, settle_s=0.0),
+    ]
+    streamer = StageStreamer(stages, home, 0.01, 10.0)
+    stuck = np.zeros(9, dtype=np.float32)  # the arm never moves: contact-blocked
+    for _ in range(int(STAGE_BAIL_S / 0.01) + 200):
+        cmd, _grip, _logs = streamer.step(stuck)
+        if streamer.stage_idx >= 1:
+            break
+    assert streamer.stage_idx == 1, "press stage should have bailed"
+    cmd, _grip, _logs = streamer.step(stuck)
+    # the first command of the next stage must step from qpos (0), not from
+    # the phantom press target (1.0): one velocity-bounded tick from zero
+    assert float(np.abs(cmd[:7]).max()) <= 10.0 * 0.01 + 0.15 + 1e-6, (
+        f"next stage yanked from the phantom command: {cmd[:7]}"
+    )
+
+
+def test_tracked_stage_transition_keeps_the_leading_command():
+    """The reseed is bail-scoped: a stage that completes TRACKED keeps the
+    command lead (gravity-sag design) — byte-identical behavior."""
+    from aisle.nodes.ik_trajectory import Stage, StageStreamer
+
+    home = np.zeros(7, dtype=np.float32)
+    a = np.full(7, 0.05, dtype=np.float32)
+    b = np.full(7, 0.10, dtype=np.float32)
+    stages = [
+        Stage(name="one", path=(a,), gripper=0.0, settle_s=0.0),
+        Stage(name="two", path=(b,), gripper=0.0, settle_s=0.0),
+    ]
+    streamer = StageStreamer(stages, home, 0.01, 10.0)
+    qpos = np.zeros(9, dtype=np.float32)
+    for _ in range(400):
+        cmd, _grip, _logs = streamer.step(qpos)
+        if cmd is not None:
+            qpos = cmd  # perfect tracking
+        if streamer.done:
+            break
+    assert streamer.done

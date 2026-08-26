@@ -1034,6 +1034,16 @@ class StageStreamer:
                         f"stage {stage.name} bailed at joint {int(track_err.argmax())} "
                         f"err {float(track_err.max()):.3f}"
                     )
+                    # T2 registration seeds 10/15: after a contact-blocked
+                    # bail the command sits at a stage target the arm never
+                    # reached, and the NEXT stage would interpolate from
+                    # that phantom — dragging the pressed arm across the
+                    # shelf (the measured transit-collision class). Hand
+                    # the next stage the arm's ACTUAL position; tracked
+                    # completions keep the command lead (gravity-sag
+                    # design) untouched.
+                    self.current_cmd = qpos[: self.n_arm].copy()
+                    self.integ[:] = 0.0
                 logs.append(f"stage done: {stage.name}")
                 self.stage_idx += 1
                 self.marched += 1
