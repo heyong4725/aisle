@@ -22,6 +22,17 @@ from pathlib import Path
 
 MODEL_ID = "HuggingFaceTB/SmolVLM-500M-Instruct"
 PINNED_REVISION = "a7da5b986cb59b408707209984f360a5f4ad7e47"  # pinned 2026-08-17
+# the pre-declared 2B retry (vlm_judge_findings path (a)): same tool,
+# same prompts, larger instruct model behind a flag — the baseline
+# constants above stay the default so the recorded 500M numbers
+# reproduce byte-for-byte
+MODELS = {
+    "smolvlm-500m": (MODEL_ID, PINNED_REVISION),
+    "smolvlm2-2.2b": (
+        "HuggingFaceTB/SmolVLM2-2.2B-Instruct",
+        "482adb537c021c86670beed01cd58990d01e72e4",  # pinned 2026-08-26
+    ),
+}
 TAIL_S = 2.0  # judge from frames this close to the episode's end
 # Two PRE-DECLARED prompt styles (reported side by side, never silently
 # swapped): `semantic` asks in task language; `calibrated` grounds the

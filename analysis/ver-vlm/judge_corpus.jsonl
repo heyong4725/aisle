@@ -6,8 +6,8 @@
 {"run": "/Users/yonghe/src/aisle/runs/a3/worktree_F/runs/review-reeval-ik-transfer-v2", "episode": 5, "target_med": "", "oracle_status": "success", "failure": null, "split": "dev"}
 {"run": "/Users/yonghe/src/aisle/runs/a3/worktree_F/runs/review-reeval-ik-transfer-v2", "episode": 6, "target_med": "", "oracle_status": "success", "failure": null, "split": "dev"}
 {"run": "/Users/yonghe/src/aisle/runs/a3/worktree_F/runs/review-reeval-ik-transfer-v2", "episode": 7, "target_med": "", "oracle_status": "success", "failure": null, "split": "dev"}
-{"run": "/private/tmp/claude-501/-Users-yonghe-src-aisle/a1397c3f-4297-476c-aabf-303655bc0f9c/scratchpad/runner/runs/register-eval-t2-scan-pose-r3", "episode": 0, "target_med": "", "oracle_status": "success", "failure": null, "split": "holdout"}
-{"run": "/private/tmp/claude-501/-Users-yonghe-src-aisle/a1397c3f-4297-476c-aabf-303655bc0f9c/scratchpad/runner/runs/register-eval-t2-scan-pose-r3", "episode": 1, "target_med": "", "oracle_status": "fail", "failure": "collision", "split": "holdout"}
-{"run": "/private/tmp/claude-501/-Users-yonghe-src-aisle/a1397c3f-4297-476c-aabf-303655bc0f9c/scratchpad/runner/runs/register-eval-t2-scan-pose-r3", "episode": 2, "target_med": "", "oracle_status": "fail", "failure": "collision", "split": "holdout"}
+{"run": "/Users/yonghe/src/aisle-runner/runs/register-eval-t2-scan-pose-r3", "episode": 0, "target_med": "", "oracle_status": "success", "failure": null, "split": "holdout"}
+{"run": "/Users/yonghe/src/aisle-runner/runs/register-eval-t2-scan-pose-r3", "episode": 1, "target_med": "", "oracle_status": "fail", "failure": "collision", "split": "holdout"}
+{"run": "/Users/yonghe/src/aisle-runner/runs/register-eval-t2-scan-pose-r3", "episode": 2, "target_med": "", "oracle_status": "fail", "failure": "collision", "split": "holdout"}
 {"run": "/Users/yonghe/src/aisle/runs/h3_desk/worktree_L/runs/review-reeval-t2-scan-tsm", "episode": 0, "target_med": "", "oracle_status": "fail", "failure": "collision", "split": "holdout"}
 {"run": "/Users/yonghe/src/aisle/runs/h3_desk/worktree_L/runs/review-reeval-t2-scan-tsm", "episode": 1, "target_med": "", "oracle_status": "fail", "failure": "never_grasped", "split": "holdout"}
