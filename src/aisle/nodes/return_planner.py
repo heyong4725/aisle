@@ -41,6 +41,21 @@ def return_grasp_from_estimate(
     return [x, y, z, 0.0, 0.0, 0.0, 1.0], slot
 
 
+def carry_request_meta(request_meta: dict, place_xy: list) -> dict:
+    """The outgoing plan's metadata: the request's CORRELATION keys plus
+    the place redirect — never its turn stamp. The estimate arrives frames
+    after the request, and re-sending the request's full stamp is an
+    ADR-30 'unrelated turn stamp' ProtocolError (run 20260826-173702);
+    the turn_node wrapper stamps outputs with the active turn itself."""
+    carried = {
+        k: v
+        for k, v in request_meta.items()
+        if k not in ("turn_epoch", "turn_id", "sim_time_ns", "seq")
+    }
+    carried["place_xy"] = place_xy
+    return carried
+
+
 def return_grasp_and_slot(med: str, meds: dict, layout: dict) -> tuple[list, list] | None:
     """(grasp_pose7, place_xy) for returning `med` from the tray to the
     front-most free shelf slot column on level 0. Pure (CON-12)."""
@@ -88,8 +103,7 @@ def main() -> None:  # pragma: no cover — graph-tested
     FALLBACK_FRAMES = 75  # ~5 s at 15 Hz: the centre grasp is the floor, not the plan
 
     def plan_and_send(grasp: list, place_xy: list, meta: dict, med: str, how: str) -> None:
-        out_meta = dict(meta)
-        out_meta["place_xy"] = place_xy
+        out_meta = carry_request_meta(meta, place_xy)
         send("grasp_pose", pa.array(np.asarray(grasp, dtype=np.float32)), out_meta)
         print(f"return plan ({how}): {med} tray->slot {place_xy}", file=sys.stderr)
 

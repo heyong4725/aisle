@@ -59,3 +59,28 @@ def test_estimate_grasp_refuses_unknown_med(geometry):
 
     meds, layout = geometry
     assert return_grasp_from_estimate({"pos": [0.6, 0.0, 0.09]}, "aspirin", meds, layout) is None
+
+
+def test_carried_request_metadata_drops_the_stale_turn_stamp():
+    """Run 20260826-173702: the estimate arrives frames after the
+    return_request, and re-sending the request's FULL turn stamp is an
+    ADR-30 ProtocolError ('unrelated turn stamp') that kills the node —
+    the wrapper stamps outputs with the ACTIVE turn itself, so the
+    carried metadata must keep only correlation keys."""
+    from aisle.nodes.return_planner import carry_request_meta
+
+    request_meta = {
+        "goal_id": "ep-0001r",
+        "env_id": 0,
+        "seq": 7,
+        "turn_epoch": 1,
+        "turn_id": 2093,
+        "sim_time_ns": 20920000000,
+    }
+    carried = carry_request_meta(request_meta, [0.31, -0.18])
+    assert carried["goal_id"] == "ep-0001r"
+    assert carried["env_id"] == 0
+    assert carried["place_xy"] == [0.31, -0.18]
+    for stale in ("turn_epoch", "turn_id", "sim_time_ns", "seq"):
+        assert stale not in carried
+    assert request_meta["turn_id"] == 2093  # input not mutated
