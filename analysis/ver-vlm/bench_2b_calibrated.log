@@ -1,0 +1,30 @@
+Installed 16 packages in 239ms
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[transformers] Model config: pad_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 128002. This may result in unexpected behavior.
+Loading weights:   0%|          | 0/657 [00:00<?, ?it/s]Loading weights: 100%|██████████| 657/657 [00:00<00:00, 26501.55it/s]
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[bench] review-reeval-ik-transfer-v2 ep0: oracle=success vlm=fail
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[bench] review-reeval-ik-transfer-v2 ep1: oracle=success vlm=success
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[bench] review-reeval-ik-transfer-v2 ep2: oracle=success vlm=success
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[bench] review-reeval-ik-transfer-v2 ep3: oracle=success vlm=success
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[bench] review-reeval-ik-transfer-v2 ep4: oracle=success vlm=fail
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[bench] review-reeval-ik-transfer-v2 ep5: oracle=success vlm=fail
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[bench] review-reeval-ik-transfer-v2 ep6: oracle=success vlm=fail
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[bench] review-reeval-ik-transfer-v2 ep7: oracle=success vlm=fail
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[bench] register-eval-t2-scan-pose-r3 ep0: oracle=success vlm=success
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[bench] register-eval-t2-scan-pose-r3 ep1: oracle=fail vlm=fail
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[bench] register-eval-t2-scan-pose-r3 ep2: oracle=fail vlm=fail
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[bench] review-reeval-t2-scan-tsm ep0: oracle=fail vlm=success
+[transformers] Kwargs passed to `processor.__call__` have to be in `processor_kwargs` dict, not in `**kwargs`
+[bench] review-reeval-t2-scan-tsm ep1: oracle=fail vlm=success

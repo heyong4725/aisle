@@ -47,3 +47,35 @@ holdout agreement **0.2**, false_success **4/5**, `passes: false` —
 worse on fresh holdout than on dev, confirming both the disqualification
 and the necessity of the split. This is the number the 2B+ model,
 label-rendered frames, or fine-tuned judge must beat.
+
+
+## The 2B retry (path (a)) — 2026-08-26: fails, and exposes a gate defect
+
+SmolVLM2-2.2B-Instruct @ 482adb53 behind the same tool (`--model
+smolvlm2-2.2b`, both pre-declared prompts, corpus unchanged except the
+purged r3 run repointed to the runner's identical copy — manifest
+run_id matches):
+
+| prompt | holdout agreement | false_success | success_recall | gate |
+|---|---|---|---|---|
+| calibrated | 0.6 | **2** | 1.0 | fail |
+| semantic | 0.8 | 0 | **0.0** | fail (post-fix) |
+
+- **Calibrated** quadruples the 500M's holdout agreement (0.2 → 0.6)
+  and halves false_success (4 → 2), but the two surviving
+  false-successes are the same class as before: collision episodes
+  where a box IS on the pad and identity-free "is a box on the pad"
+  says yes. Disqualified by the 10x asymmetry, as pre-registered.
+- **Semantic** answered FAIL on all 13 episodes — including every
+  plainly visible delivery — and "passed" the original gate at 0.8
+  purely because 4/5 holdout episodes are failures. A constant-fail
+  judge with zero discriminative power satisfying the promotion gate
+  is a BENCH DEFECT: the gate now also requires success_recall > 0
+  (`bench_verdict`, unit-pinned). No recorded verdict changes: the
+  500M baseline failed on false_success, not recall.
+- Verdict: **2B zero-shot on the stylized render is better but still
+  disqualified.** Remaining pre-declared paths: (b) label-rendered
+  frames (needs newly recorded runs with AISLE_LABELS — sim time),
+  (c) fine-tuning (GPU). The scaling trend (0.2 → 0.6 agreement,
+  4 → 2 false_success) suggests (b)+(a) combined is the next cheap
+  test once a labeled corpus run is recorded.

@@ -43,3 +43,28 @@ def test_promotion_gate_requires_floor_and_zero_false_success():
     assert not v2["passes"] and v2["false_success"] == 1
     v3 = jb.bench_verdict([dict(base, vlm_status=None)])
     assert not v3["passes"]  # nothing judged is never a pass
+
+
+def test_constant_fail_judge_cannot_pass_the_gate():
+    """Measured (2B retry, 2026-08-26): the semantic prompt judged FAIL on
+    all 13 episodes and 'passed' at 0.8 because 4/5 holdout episodes are
+    failures — a judge with zero success-recall must never promote. The
+    gate now requires every oracle-success holdout episode to be judged,
+    and at least one judged success."""
+    import judge_bench as jb
+
+    rows = [
+        {"split": "holdout", "oracle_status": "success", "vlm_status": "fail"},
+        {"split": "holdout", "oracle_status": "fail", "vlm_status": "fail"},
+        {"split": "holdout", "oracle_status": "fail", "vlm_status": "fail"},
+        {"split": "holdout", "oracle_status": "fail", "vlm_status": "fail"},
+        {"split": "holdout", "oracle_status": "fail", "vlm_status": "fail"},
+    ]
+    v = jb.bench_verdict(rows)
+    assert v["agreement"] == 0.8 and v["false_success"] == 0
+    assert v["success_recall"] == 0.0
+    assert not v["passes"]
+    # the same mix with the success detected passes
+    rows[0]["vlm_status"] = "success"
+    v2 = jb.bench_verdict(rows)
+    assert v2["success_recall"] == 1.0 and v2["passes"]

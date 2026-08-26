@@ -64,15 +64,24 @@ def bench_verdict(rows: list[dict], floor: float = PASS_FLOOR) -> dict:
         1 for r in judged if r["vlm_status"] == "success" and r["oracle_status"] == "fail"
     )
     agreement = round(agree / len(judged), 3) if judged else None
+    # success-recall (2B retry, 2026-08-26): a constant-fail judge scored
+    # 0.8 on a failure-heavy holdout and "passed" — zero discriminative
+    # power must never promote, so every oracle-success episode counts
+    # and at least one must be recognized
+    oracle_successes = [r for r in judged if r["oracle_status"] == "success"]
+    recalled = sum(1 for r in oracle_successes if r["vlm_status"] == "success")
+    success_recall = round(recalled / len(oracle_successes), 3) if oracle_successes else None
     return {
         "holdout_episodes": len(hold),
         "judged": len(judged),
         "agreement": agreement,
         "false_success": false_success,
+        "success_recall": success_recall,
         "passes": bool(judged)
         and agreement is not None
         and agreement >= floor
-        and false_success == 0,
+        and false_success == 0
+        and (success_recall or 0.0) > 0.0,
         "floor": floor,
     }
 
@@ -86,6 +95,7 @@ def main() -> int:
     s = sub.add_parser("score", help="score a judge spec against the corpus")
     s.add_argument("--corpus", type=Path, required=True)
     s.add_argument("--prompt-style", default="calibrated")
+    s.add_argument("--model", default="smolvlm-500m", help="key in vlm_judge.MODELS")
     s.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
@@ -111,8 +121,9 @@ def main() -> int:
     import vlm_judge as vj
     from transformers import AutoModelForImageTextToText, AutoProcessor
 
-    processor = AutoProcessor.from_pretrained(vj.MODEL_ID, revision=vj.PINNED_REVISION)
-    model = AutoModelForImageTextToText.from_pretrained(vj.MODEL_ID, revision=vj.PINNED_REVISION)
+    model_id, revision = vj.MODELS[args.model]
+    processor = AutoProcessor.from_pretrained(model_id, revision=revision)
+    model = AutoModelForImageTextToText.from_pretrained(model_id, revision=revision)
     model.eval()
     import torch
     from PIL import Image
@@ -158,7 +169,7 @@ def main() -> int:
             {
                 "ok": True,
                 "prompt_style": args.prompt_style,
-                "model": {"id": vj.MODEL_ID, "revision": vj.PINNED_REVISION},
+                "model": {"id": model_id, "revision": revision},
                 "verdict": bench_verdict(rows),
             }
         )
