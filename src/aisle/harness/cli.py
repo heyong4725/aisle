@@ -80,6 +80,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     roll.add_argument("--run-id", default=None, help="override the generated run id (CON-5)")
     roll.add_argument(
+        "--per-episode-wall-s",
+        type=int,
+        default=None,
+        help="override the tier's per-episode WALL clamp (lockstep VLA eval, ADR-38 amendment)",
+    )
+    roll.add_argument(
         "--env-baseline",
         default=os.environ.get("AISLE_ENV_BASELINE", "origin/main"),
         help="TRUSTED frozen-set baseline: protected server main or a "
@@ -202,6 +208,7 @@ def main() -> int:
             env_baseline=args.env_baseline,
             perception=args.perception,
             sim_extra=args.sim_extra,
+            per_episode_wall_s=args.per_episode_wall_s,
         )
         return emit_report(report, lambda level, e: f"rollout {level}: {e}")
 

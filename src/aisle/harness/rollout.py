@@ -85,7 +85,9 @@ def a7_per_episode_budget_s(episode_timeout_s: int, per_episode_budget_s: int) -
     return max(per_episode_budget_s, episode_timeout_s * A7_WALL_PER_SIM + A7_JUDGE_BUDGET_S)
 
 
-def resolve_budgets(tier: str, verifier: str) -> tuple[int, int]:
+def resolve_budgets(
+    tier: str, verifier: str, per_episode_wall_override_s: int | None = None
+) -> tuple[int, int]:
     """(episode timeout in SIM seconds, per-episode WALL budget) for a run.
 
     The verifier is part of the budget, not just the tier: in A7
@@ -114,6 +116,11 @@ def resolve_budgets(tier: str, verifier: str) -> tuple[int, int]:
                 "measured retail A7 budget with an ADR-21 re-budget."
             )
         per_episode_budget_s = a7_per_episode_budget_s(episode_timeout_s, per_episode_budget_s)
+    if per_episode_wall_override_s is not None:
+        # lockstep VLA eval (ADR-38 amendment): in-turn inference freezes
+        # sim time while wall time runs, so the wall clamp must scale with
+        # model latency; SIM budgets are the tier's, untouched
+        per_episode_budget_s = int(per_episode_wall_override_s)
     return episode_timeout_s, per_episode_budget_s
 
 
@@ -1007,6 +1014,7 @@ def rollout(
     env_baseline: str = "origin/main",
     perception: str | None = None,
     sim_extra: str = "sim",
+    per_episode_wall_s: int | None = None,
 ) -> dict:
     """HAR-1: the full run. Returns the report dict (CON-8: caller emits)."""
     # A relative root (`--root .`) must be pinned to THIS process's cwd:
@@ -1112,7 +1120,9 @@ def rollout(
     # SIM timeout declared in the graph, since it ends episodes on its own
     # budget rather than waiting for the oracle (VER-5, increment 1b)
     try:
-        episode_timeout_s, per_episode_budget_s = resolve_budgets(tier, verifier)
+        episode_timeout_s, per_episode_budget_s = resolve_budgets(
+            tier, verifier, per_episode_wall_override_s=per_episode_wall_s
+        )
     except ValueError as exc:
         # refuse the unbudgeted tier/verifier combination the same way the
         # gates refuse: loudly, before anything launches (PR #177 review)

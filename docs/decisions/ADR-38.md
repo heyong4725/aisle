@@ -37,3 +37,24 @@ measurement); claims of VLA value await it. The dependency rides an
 optional `vla` extra (CON-1: nothing CUDA-only in defaults; MPS/CPU
 inference). Model identity: weights pinned by HF revision hash in the
 manifest (the env-hash discipline extended to weights, next-phases §5).
+
+## Amendment 1 (2026-08-26): the lockstep evaluation condition
+
+The M1 fine-tuned eval (analysis/m1, 0/8) measured that CPU inference
+latency makes every chunk stale under rule 4 — the honest live result,
+and one that leaves the policy's TASK VALUE unmeasured. Path (b) from
+those findings is hereby defined: with `AISLE_VLA_LOCKSTEP: "1"` on
+the policy node, inference runs INSIDE the ADR-30 turn — the barrier
+waits (the graph declares a widened `AISLE_TURN_WATCHDOG_S`; the
+watchdog still catches genuine hangs), sim time freezes while the
+model thinks, and the chunk is offered at `obs_ns == now_ns`
+(`lockstep_offer`, unit-pinned), so rule 4 is satisfied by
+construction rather than bypassed. The wall clock absorbs the latency;
+`harness rollout --per-episode-wall-s` scales the per-episode clamp
+while every SIM budget stays the tier's.
+
+This is a MEASUREMENT CONDITION, not a deployment mode: it isolates
+"can the policy do the task" from "can it do so at the control rate".
+Results under it MUST be labeled lockstep-eval and never quoted as
+live-latency performance; the preemption/staleness rules above remain
+the deployment semantics.
