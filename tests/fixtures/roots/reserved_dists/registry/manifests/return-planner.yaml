@@ -10,6 +10,10 @@ requires: [task_sequencing]
 inputs:
   turn: {schema: sim_turn_u64, rate_hz: 100, is_clock: true}
   return_request: {schema: json_utf8, rate_hz: 1}
+  bridge_info: {schema: json_utf8, rate_hz: 1}
+  seg_overhead: {schema: seg_i32, rate_hz: 15}
+  depth_overhead: {schema: depth_f32, rate_hz: 15}
+  reset_done: {schema: reset_done_u32, rate_hz: 1}
 outputs:
   turn_done: {schema: sim_turn_u64, latency_class: hard_rt}
   grasp_pose: {schema: pose7d_f32, latency_class: best_effort}
