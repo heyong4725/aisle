@@ -196,6 +196,21 @@ The cell redesign that follows from the measurement:
   <= baseline - 2/6; restored = 6 post-repair episodes at
   >= baseline - 1/6; all other clauses unchanged.
 
+### Amendment 5 (2026-08-26, measurement machinery — cell-F2 attempt 1 INVALID)
+
+Cell-F2 attempt 1: detection, credited localization, validated repair,
+and a post-relaunch stream at 6/6 — scored FAIL only because the
+harness stopped the stream at a RAW episode count while the scorer
+credits by inferred start, and the h4 start inference (episode i
+starts at i−1's result) gives the first post-relaunch episode a
+pre-repair start across the stop/start boundary. One credited episode
+short is a harness defect, not agent evidence: the attempt is recorded
+INVALID (record retained under records/F2-attempt1-invalid-short-window),
+the teardown wait now counts CREDITED episodes with the scorer's own
+function, and the crediting rule itself is unchanged (conservative:
+the boundary episode is still never credited). Rerun at a fresh seed
+per the standing rerun discipline.
+
 ## Scoring (pre-registered)
 
 Cell PASS = detection + credited localization + restoration + zero
