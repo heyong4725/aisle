@@ -42,7 +42,7 @@ stayed outside it).
 
 | Surface | Count |
 |---|---:|
-| Graphs | 17 |
+| Graphs | 18 |
 | Capability manifests | 38 |
 | CLI command entries | 12 |
 | ADR files | 54 |
@@ -58,6 +58,7 @@ stayed outside it).
 | [graphs/eval_s3_driver_v1.yaml](../../graphs/eval_s3_driver_v1.yaml) | store / S3 | mobile | L0 (default) | 8 |
 | [graphs/eval_t2_stack.yaml](../../graphs/eval_t2_stack.yaml) | pharmacy (default) / — | franka (default) | L2 | 11 |
 | [graphs/eval_vla_smolvla_so101.yaml](../../graphs/eval_vla_smolvla_so101.yaml) | pharmacy (default) / — | so101 | L1 | 8 |
+| [graphs/eval_vla_smolvla_so101_lockstep.yaml](../../graphs/eval_vla_smolvla_so101_lockstep.yaml) | pharmacy (default) / — | so101 | L1 | 8 |
 | [graphs/eval_vla_smolvla_t1.yaml](../../graphs/eval_vla_smolvla_t1.yaml) | pharmacy (default) / — | franka (default) | L1 | 8 |
 | [graphs/expert_s1.yaml](../../graphs/expert_s1.yaml) | store / S1 | mobile | L0 (default) | 10 |
 | [graphs/expert_t0.yaml](../../graphs/expert_t0.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 10 |
@@ -78,6 +79,7 @@ stayed outside it).
 - **graphs/eval_s3_driver_v1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `s3-driver-v1`, `verifier-retail`, `rollout-client`, `turn-barrier`
 - **graphs/eval_t2_stack.yaml:** `dora-genesis`, `reset`, `budget-guard`, `t2-scan-pose`, `ocr-label`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `t2-scan-tsm`, `rollout-client`, `turn-barrier`
 - **graphs/eval_vla_smolvla_so101.yaml:** `dora-genesis`, `reset`, `budget-guard`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`, `vla-policy-smolvla`
+- **graphs/eval_vla_smolvla_so101_lockstep.yaml:** `dora-genesis`, `reset`, `budget-guard`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`, `vla-policy-smolvla`
 - **graphs/eval_vla_smolvla_t1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`, `vla-policy-smolvla`
 - **graphs/expert_s1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `waypoint-nav`, `order-reader`, `task-planner`, `s1-expert`, `verifier-retail`, `rollout-client`, `turn-barrier`
 - **graphs/expert_t0.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
@@ -141,7 +143,7 @@ stayed outside it).
 | `harness probe` | `--dataflow`, `--topic`, `--for`, `--root` |
 | `harness report close` | `--id`, `--observed`, `--verdict`, `--root` |
 | `harness report log` | `--idea`, `--parent`, `--expect`, `--root` |
-| `harness rollout` | `--graph`, `--tier`, `--embodiment`, `--episodes`, `--seeds`, `--reset`, `--verifier`, `--sim-extra`, `--root`, `--no-idea-gate`, `--perception`, `--run-id`, `--env-baseline`, `--timeout-s` |
+| `harness rollout` | `--graph`, `--tier`, `--embodiment`, `--episodes`, `--seeds`, `--reset`, `--verifier`, `--sim-extra`, `--root`, `--no-idea-gate`, `--perception`, `--run-id`, `--per-episode-wall-s`, `--env-baseline`, `--timeout-s` |
 | `harness skill register` | `<skill_dir>`, `--root`, `--sandbox`, `--run-id` |
 | `harness swap` | `--graph`, `--dataflow`, `--replace`, `--with`, `--embodiment`, `--root` |
 | `harness traces query` | `--run`, `--topic`, `--t0`, `--t1`, `--episode`, `--node`, `--format`, `--out`, `--summarize`, `--root` |

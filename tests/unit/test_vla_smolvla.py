@@ -92,3 +92,24 @@ def test_inference_is_seeded_from_a_reproducible_stamp():
 
     backend_src = inspect.getsource(vla_backend.select_chunk)
     assert "torch.manual_seed" in backend_src
+
+
+def test_lockstep_offer_is_never_stale():
+    """ADR-38 amendment (lockstep evaluation condition): inference runs
+    INSIDE the turn, so the chunk's observation stamp equals emission
+    time by construction and the staleness floor cannot drop it — the
+    wall clock stretches instead. The async path is untouched."""
+    from aisle.nodes.vla_smolvla import ChunkQueue, lockstep_offer
+
+    queue = ChunkQueue()
+    accepted = lockstep_offer(queue, [[0.1] * 7], now_ns=99_000_000_000)
+    assert accepted and queue.pop() == [0.1] * 7
+
+
+def test_lockstep_offer_refuses_empty_chunks():
+    from aisle.nodes.vla_smolvla import ChunkQueue, lockstep_offer
+
+    queue = ChunkQueue()
+    assert not lockstep_offer(queue, None, now_ns=1)
+    assert not lockstep_offer(queue, [], now_ns=1)
+    assert queue.pop() is None

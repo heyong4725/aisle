@@ -56,6 +56,16 @@ class ChunkQueue:
         self.obs_ns = None
 
 
+def lockstep_offer(queue: ChunkQueue, chunk, now_ns: int) -> bool:
+    """The lockstep evaluation condition (ADR-38 amendment): inference
+    ran INSIDE the turn, so the observation stamp equals emission time by
+    construction and the staleness floor cannot drop the chunk — the
+    wall clock stretched instead. Empty results are refused."""
+    if not chunk:
+        return False
+    return queue.offer(list(chunk), now_ns, now_ns)
+
+
 class AsyncInference:
     """Single-worker inference gate (pure, thread injected): at most one
     in-flight request; results land via a callback that must be
@@ -104,6 +114,7 @@ def main() -> None:  # pragma: no cover — exercised by graph tests
     node = Node()
     send = make_sender(node)
     env_pin = env_pin_from_env(os.environ)
+    lockstep_eval = os.environ.get("AISLE_VLA_LOCKSTEP", "") == "1"
     queue = ChunkQueue()
     pool = ThreadPoolExecutor(max_workers=1)
     gate = AsyncInference(pool.submit)
@@ -175,7 +186,17 @@ def main() -> None:  # pragma: no cover — exercised by graph tests
                     queue.offer(chunk, obs_ns, now_ns)
             step = queue.pop()
             if step is None and instruction is not None:
-                gate.request(infer, lambda c, snap=obs_ns: landed.__setitem__(0, (c, snap)))
+                if lockstep_eval:
+                    # ADR-38 amendment (lockstep evaluation condition):
+                    # infer INSIDE the turn — the barrier waits (the graph
+                    # declares the widened watchdog), sim time freezes,
+                    # and the chunk is fresh by construction. Measures
+                    # task value with latency removed; NOT the deployment
+                    # condition.
+                    lockstep_offer(queue, infer(), now_ns)
+                    step = queue.pop()
+                else:
+                    gate.request(infer, lambda c, snap=obs_ns: landed.__setitem__(0, (c, snap)))
             if step is not None:
                 q, grip = step[:-1], step[-1]
                 send("joint_cmd", pa.array(np.asarray(q, dtype=np.float32)), metadata)
