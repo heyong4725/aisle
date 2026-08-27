@@ -14,10 +14,11 @@ conventions), 050 (registry ext), 070 (rollout tiers).
   scoops); (c) qualitative pile/pour sanity (angle of repose forms; no
   explosion). Results land in `docs/decisions/ADR-powder-spike.md` with a
   human go/no-go and the chosen solver + particle budget. All PW thresholds
-  below marked TBD-SPIKE — including the TIER TARGET-MASS RANGES (a
+  formerly marked TBD-SPIKE — including the TIER TARGET-MASS RANGES (a
   percentage tolerance is meaningless for targets near the particle-mass
-  quantization the spike measures) — are filled by that ADR via one
-  spec-change PR.
+  quantization the spike measures) — were filled by that ADR via the
+  spec-change PR that carries this sentence (ratified 2026-08-27:
+  GO P0/P1 only, MPM sand, <=5k @ 4 mm CPU-scored).
 
 ## Scene & oracle
 
@@ -45,11 +46,19 @@ conventions), 050 (registry ext), 070 (rollout tiers).
 ## Task tiers
 
 - PW-5 (P0): scoop-and-dump — transfer ANY nonzero mass source→receiver without
-  spill > TBD-SPIKE mg outside vessels. Sanity tier.
-- PW-6 (P1): open-loop target — transfer target mass (range TBD-SPIKE)
-  ±10%, single strategy, known material.
-- PW-7 (P2): closed-loop target — target mass (range TBD-SPIKE; MUST sit
-  well above the particle-mass quantization floor the spike measures) ±1%
+  spill > 110,000 mg outside vessels (ADR-powder-spike: ~2x the measured CPU
+  spill median at the 4 mm/5k scale; a sanity bound — PW-11's continuous
+  spill_mg carries the real signal). Sanity tier.
+- PW-6 (P1): open-loop target — BEST-EFFORT BASELINE (ADR-powder-spike:
+  the scripted primitive's CV ~88% makes ±10% open-loop unachievable at
+  the 4 mm scale): transfer toward a 25–100 g target, single strategy,
+  known material; REPORT transferred-mass error and CV, no pass/fail
+  tolerance.
+- PW-7 (P2): closed-loop target — DEFERRED pending the CUDA determinism
+  spike (ADR-powder-spike: NO-GO for P2+ on this substrate; at 2 mm the
+  ±1% tolerance is control-bound, not quantization-bound — 12 mg
+  particles put ±1% of 50 g at ~42 particles). When unlocked: target
+  mass 50–200 g (well above the quantization floor the spike measured) ±1%
   via multi-scoop with balance feedback; overshoot beyond tolerance
   triggers redo-cycle (reset, re-dose) per the workstation's spec; success
   counts final state only, redo count reported.
