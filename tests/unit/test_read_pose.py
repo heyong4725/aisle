@@ -166,3 +166,52 @@ class TestSolveReadPose:
         solve_read_pose(FACE, mount, np.zeros(7))
         for rot in seen:
             assert any(np.allclose(rot, entry, atol=1e-12) for entry in ladder)
+
+
+class TestWristFlipFilter:
+    def test_flipped_hop_is_rejected(self):
+        """Transit-collision mechanism 2 (analysis/transit_collisions): a
+        read solution whose wrist jumps 2.25-3.07 rad from its staged
+        entry is a flipped IK branch — commanding it presses the shelf
+        and the retreat transits knock boxes. The hop check rejects it."""
+        from aisle.nodes.ik_trajectory import WRIST_FLIP_TOL, wrist_hop_flips
+
+        a = np.zeros(7)
+        b = np.zeros(7)
+        b[4] = 2.5  # the measured class
+        assert wrist_hop_flips(a, b)
+        b[4] = WRIST_FLIP_TOL - 0.1
+        assert not wrist_hop_flips(a, b)
+
+    def test_elbow_articulation_is_not_a_flip(self):
+        """Large SHOULDER/ELBOW deltas are legitimate (home -> shelf-front
+        is a big reach); only the wrist joints carry the flip signal."""
+        from aisle.nodes.ik_trajectory import wrist_hop_flips
+
+        a = np.zeros(7)
+        b = np.zeros(7)
+        b[1], b[2], b[3] = 2.4, -2.2, 2.6
+        assert not wrist_hop_flips(a, b)
+
+    def test_solver_drops_flipped_branches(self, mount, monkeypatch):
+        """solve_read_poses must never emit an entry whose home->staged or
+        staged->read hop flips the wrist: a flipped candidate falls
+        through to other seeds/entries rather than being commanded."""
+        import aisle.nodes.ik_trajectory as ik
+
+        flipped = np.zeros(7)
+        flipped[4] = 2.6
+        clean = np.full(7, 0.2)
+
+        calls = {"n": 0}
+
+        def fake_ik(tcp, rot, seed, embodiment):
+            calls["n"] += 1
+            return flipped if calls["n"] == 1 else clean
+
+        monkeypatch.setattr(ik, "_ik_once", fake_ik)
+        solutions = ik.solve_read_poses(FACE, mount, np.zeros(7))
+        assert solutions, "clean branches must survive"
+        for q, _range, _pitch, q_far in solutions:
+            assert not ik.wrist_hop_flips(np.zeros(7), q_far)
+            assert not ik.wrist_hop_flips(q_far, q)
