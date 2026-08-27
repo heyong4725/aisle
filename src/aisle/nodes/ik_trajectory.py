@@ -58,10 +58,13 @@ DIVERGE_TOL = 0.8
 DIVERGE_BAIL_S = 1.0
 # wrist-flip filter (transit-collision mechanism 2): the staged read
 # entry sits 6-14 cm behind the read pose at near-identical orientation,
-# so a wrist joint jumping more than this between the hops (home->staged,
-# staged->read) is a flipped IK branch, never articulation — the measured
-# flip class is 2.25-3.07 rad. Flipped candidates are dropped at SOLVE
-# time so the executor never commands the press.
+# so a wrist joint jumping more than this across the STAGED->READ hop is
+# a flipped IK branch, never articulation — the measured flip class is
+# 2.25-3.07 rad. Scoped to that hop ONLY (v2): the first filter also
+# bounded home-referenced hops and measured 0.5 -> 0.375 on the n=8
+# (24 read_move exhaustions; home->read legitimately articulates the
+# wrist past this bound). Flipped candidates are dropped at SOLVE time
+# so the executor never commands the press.
 WRIST_FLIP_TOL = 2.0
 WRIST_JOINTS = slice(4, 7)  # franka wrist: joints 5-7
 
@@ -429,10 +432,6 @@ def solve_read_poses(
         tcp, r_flange = read_flange_targets(face, range_m, azimuth, mount, pitch)
         for seed in (q0, *_CANONICAL_SEEDS):
             q = _ik_once(tcp, r_flange, seed, embodiment)
-            if q is not None and wrist_hop_flips(q0, q):
-                # flipped read branch: try the next seed rather than ever
-                # commanding a wrist that must wrap through the shelf
-                continue
             if q is not None:
                 # staged approach: the same view retracted along its axis
                 # (READ_STAGE_BACKOFF_M), IK'd from q first so the branch
@@ -450,10 +449,8 @@ def solve_read_poses(
                     )
                     for far_seed in (q, *_CANONICAL_SEEDS):
                         q_far = _ik_once(far_tcp, far_rot, far_seed, embodiment)
-                        if q_far is not None and (
-                            wrist_hop_flips(q0, q_far) or wrist_hop_flips(q_far, q)
-                        ):
-                            q_far = None  # flipped staged hop: next seed
+                        if q_far is not None and wrist_hop_flips(q_far, q):
+                            q_far = None  # flipped staged->read hop: next seed
                             continue
                         if q_far is not None:
                             break
