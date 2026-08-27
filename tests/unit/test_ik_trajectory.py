@@ -242,3 +242,61 @@ def test_tracked_stage_transition_keeps_the_leading_command():
         if streamer.done:
             break
     assert streamer.done
+
+
+def test_wild_divergence_bails_fast_not_at_stage_bail():
+    """T2 registration/re-measure seed 15 (analysis/transit_collisions):
+    the read solve commands a wrist configuration 2.5+ rad away, and the
+    executor pressed the shelf for the full STAGE_BAIL_S window before
+    giving up. Tracking error far beyond gravity-sag scale (DIVERGE_TOL)
+    must bail within DIVERGE_BAIL_S once the command has reached the
+    stage target — an order of magnitude sooner."""
+    from aisle.nodes.ik_trajectory import (
+        DIVERGE_BAIL_S,
+        STAGE_BAIL_S,
+        Stage,
+        StageStreamer,
+    )
+
+    home = np.zeros(7, dtype=np.float32)
+    flipped = np.zeros(7, dtype=np.float32)
+    flipped[4] = 2.5  # the measured wrist-flip class
+    stages = [Stage(name="read", path=(flipped,), gripper=0.0, settle_s=0.4)]
+    streamer = StageStreamer(stages, home, 0.01, 10.0)
+    stuck = np.zeros(9, dtype=np.float32)  # arm pressed, never tracking
+    ticks = 0
+    for _ in range(int(STAGE_BAIL_S / 0.01) + 100):
+        streamer.step(stuck)
+        ticks += 1
+        if streamer.done:
+            break
+    assert streamer.done, "stage never bailed"
+    # command reaches the target in ~25 ticks at max_vel 10; the bail must
+    # land well before the ordinary STAGE_BAIL_S path would allow
+    assert ticks * 0.01 < DIVERGE_BAIL_S + 1.0, f"took {ticks * 0.01:.2f}s"
+    assert ticks * 0.01 < STAGE_BAIL_S / 2
+
+
+def test_sag_scale_error_does_not_divergence_bail():
+    """Gravity sag (measured up to ~0.27 rad on long reaches) must NOT
+    trip the divergence bail: a stage tracking within sag scale settles
+    normally."""
+    from aisle.nodes.ik_trajectory import Stage, StageStreamer
+
+    home = np.zeros(7, dtype=np.float32)
+    target = np.full(7, 0.3, dtype=np.float32)
+    stages = [Stage(name="lift", path=(target,), gripper=0.0, settle_s=0.1)]
+    streamer = StageStreamer(stages, home, 0.01, 10.0)
+    logs_seen: list = []
+    qpos = np.zeros(9, dtype=np.float32)
+    for _ in range(600):  # past STAGE_BAIL_S: the sag path ends by ordinary bail
+        cmd, _grip, logs = streamer.step(qpos)
+        logs_seen.extend(logs)
+        if cmd is not None:
+            # track with a constant sag-scale lag on one joint
+            qpos = cmd.copy()
+            qpos[4] = cmd[4] - 0.25
+        if streamer.done:
+            break
+    assert streamer.done
+    assert not any("diverged" in line for line in logs_seen)
