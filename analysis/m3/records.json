@@ -1,0 +1,242 @@
+[
+ {
+  "id": "claude_00",
+  "agent": "claude",
+  "attempt": 0,
+  "sha256": "9ca6aa12cffaded91f3177e9ca2fedbd777271751413660ccefe71e9324946a2",
+  "pass1_genesis": 0.875,
+  "genesis_failures": {
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "claude_10",
+  "agent": "claude",
+  "attempt": 10,
+  "sha256": "76c7062494ad0483d11ed0416acc9d0db9fc6f526f00b050652b84796a390a84",
+  "pass1_genesis": 0.875,
+  "genesis_failures": {
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "claude_15",
+  "agent": "claude",
+  "attempt": 15,
+  "sha256": "0482c6ec5df07f2acc5f263a18c4dd66bf17f40fa82241b7301a2015397e5b84",
+  "pass1_genesis": 0.75,
+  "genesis_failures": {
+   "dropped": 1,
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "codex_02",
+  "agent": "codex",
+  "attempt": 2,
+  "sha256": "7109ccff9e0740700ba48d97dcbfb8457806380df54c5338764f5eda42e14e99",
+  "pass1_genesis": 0.875,
+  "genesis_failures": {
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "codex_04",
+  "agent": "codex",
+  "attempt": 4,
+  "sha256": "d1241f053d276c65095d0daae7cf1f709e40a95547c42cc5092fa87f4f015848",
+  "pass1_genesis": 0.875,
+  "genesis_failures": {
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "codex_06",
+  "agent": "codex",
+  "attempt": 6,
+  "sha256": "7109ccff9e0740700ba48d97dcbfb8457806380df54c5338764f5eda42e14e99",
+  "pass1_genesis": 0.75,
+  "genesis_failures": {
+   "dropped": 1,
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "codex_07",
+  "agent": "codex",
+  "attempt": 7,
+  "sha256": "d1241f053d276c65095d0daae7cf1f709e40a95547c42cc5092fa87f4f015848",
+  "pass1_genesis": 0.875,
+  "genesis_failures": {
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "codex_08",
+  "agent": "codex",
+  "attempt": 8,
+  "sha256": "7109ccff9e0740700ba48d97dcbfb8457806380df54c5338764f5eda42e14e99",
+  "pass1_genesis": 0.875,
+  "genesis_failures": {
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "codex_10",
+  "agent": "codex",
+  "attempt": 10,
+  "sha256": "7109ccff9e0740700ba48d97dcbfb8457806380df54c5338764f5eda42e14e99",
+  "pass1_genesis": 0.875,
+  "genesis_failures": {
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "codex_11",
+  "agent": "codex",
+  "attempt": 11,
+  "sha256": "3aaf30be245e9a6339c39a62ed0e4aa724e9bfaed37deb1e88bd7cec27aec2b4",
+  "pass1_genesis": 0.875,
+  "genesis_failures": {
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "codex_12",
+  "agent": "codex",
+  "attempt": 12,
+  "sha256": "d1241f053d276c65095d0daae7cf1f709e40a95547c42cc5092fa87f4f015848",
+  "pass1_genesis": 0.875,
+  "genesis_failures": {
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "codex_13",
+  "agent": "codex",
+  "attempt": 13,
+  "sha256": "d1241f053d276c65095d0daae7cf1f709e40a95547c42cc5092fa87f4f015848",
+  "pass1_genesis": 1.0,
+  "genesis_failures": {},
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "codex_16",
+  "agent": "codex",
+  "attempt": 16,
+  "sha256": "d1241f053d276c65095d0daae7cf1f709e40a95547c42cc5092fa87f4f015848",
+  "pass1_genesis": 0.875,
+  "genesis_failures": {
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "codex_17",
+  "agent": "codex",
+  "attempt": 17,
+  "sha256": "d1241f053d276c65095d0daae7cf1f709e40a95547c42cc5092fa87f4f015848",
+  "pass1_genesis": 0.875,
+  "genesis_failures": {
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "codex_18",
+  "agent": "codex",
+  "attempt": 18,
+  "sha256": "6e1a58a4065bba579a0f7b2593755b56cbb0127b8d9a9e86d1357ba402f51c9b",
+  "pass1_genesis": 0.875,
+  "genesis_failures": {
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ },
+ {
+  "id": "codex_19",
+  "agent": "codex",
+  "attempt": 19,
+  "sha256": "d1241f053d276c65095d0daae7cf1f709e40a95547c42cc5092fa87f4f015848",
+  "pass1_genesis": 0.875,
+  "genesis_failures": {
+   "collision": 1
+  },
+  "pass1_surrogate": 0.875,
+  "surrogate_failures": {
+   "dropped": 1
+  },
+  "episodes": 8
+ }
+]
