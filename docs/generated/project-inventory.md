@@ -45,7 +45,7 @@ stayed outside it).
 | Graphs | 18 |
 | Capability manifests | 38 |
 | CLI command entries | 12 |
-| ADR files | 54 |
+| ADR files | 55 |
 
 ## Graphs
 
@@ -211,6 +211,7 @@ inference.
 | [docs/decisions/ADR-h3-campaign-protocol.md](../decisions/ADR-h3-campaign-protocol.md) | ADR-h3-campaign-protocol — H3 accumulation campaign, S1→S2→S3 (design doc §11.5, §8.4) | accepted 2026-07-27 (decisions D1–D6 resolved by human; D1 |
 | [docs/decisions/ADR-h4-iteration-protocol.md](../decisions/ADR-h4-iteration-protocol.md) | ADR-h4-iteration-protocol — H4 iteration-latency protocol (hot-swap vs relaunch) | ACCEPTED (CON-15 — interpretation recorded, proceeding). |
 | [docs/decisions/ADR-h6-operation-protocol.md](../decisions/ADR-h6-operation-protocol.md) | ADR-h6-operation-protocol — H6 (Operation) campaign protocol | ACCEPTED (CON-15 — interpretation recorded, proceeding). |
+| [docs/decisions/ADR-m3-protocol.md](../decisions/ADR-m3-protocol.md) | ADR-m3-protocol — M3: neural-env ranking agreement, v0 surrogate | ACCEPTED (CON-15 — protocol pre-registered before any scored |
 | [docs/decisions/ADR-powder-spike.md](../decisions/ADR-powder-spike.md) | ADR-powder-spike — T20 solver spike for the powder family (SPEC 300 PW-0) | **ACCEPTED** — ratified by the owner 2026-08-27 ("ratify PW-0 |
 | [docs/decisions/ADR-realistic-verifier.md](../decisions/ADR-realistic-verifier.md) | ADR-realistic-verifier — accepted design (D1–D6 ratified 2026-08-05) | ACCEPTED — D1–D6 ratified by the owner 2026-08-05 |
 
