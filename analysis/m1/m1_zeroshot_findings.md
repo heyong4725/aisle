@@ -119,3 +119,39 @@ async gate keeps turn_done flowing but the sim still outruns the
 model); (c) smaller/distilled policies. The fine-tune itself is
 validated as a PIPELINE (loss learned, adapter loads, policy lives);
 its task value is unmeasurable until inference fits the control rate.
+
+## The lockstep-eval: task value isolated from latency — 0/8, competence is the wall (2026-08-26)
+
+ADR-38 amendment 1 (#319): `AISLE_VLA_LOCKSTEP` runs inference INSIDE
+the ADR-30 turn — the barrier waits under a graph-declared 600 s
+watchdog, sim time freezes while the model thinks, chunks are offered
+at obs==now, and `--per-episode-wall-s` absorbs the latency in wall
+clock. Runs m1-lockstep-smoke + m1-lockstep-n8 (seeds 30..37, same
+adapter, UNATTESTED dev measurement, `--env-baseline local` like every
+M1 number; lerobot via the `vla` extra).
+
+**The condition works**: zero `inference refused` lines across all
+episodes — every chunk the policy computed was executed, the exact
+opposite of the live run's sparse mostly-refused actuation. Wall cost
+~17 min per full 60 sim-s episode (1002 s smoke; 3484 s for the n=8
+because collisions end episodes early).
+
+**Result: pass@1 0/8** — 3 never_grasped (full budget), 1 dropped at
+39 s, 4 collision at 0.56–3.43 s. wrong_object 0.
+
+The failure MIX is the finding. Live (latency-dominated), the arm
+barely moved: 5 never_grasped + 3 wall_clamp. Lockstep (latency
+removed), the policy ACTS on every tick and its actions are wrong:
+half the seeds drive into the scene within ~3 s; one seed grasps and
+drops at 39 s (the only sign of partial pick competence in the M1
+record); the rest move without ever converging on the box. With
+latency eliminated as a variable, the 800-step / 4000-tuple LoRA dose
+simply has not learned the task.
+
+Consequence for the M1 unlock ordering: GPU-peer INFERENCE alone
+(path (a)) would not rescue this adapter — the policy would fail
+fast instead of failing sparse. The real unlock is TRAINING dose
+(the pre-decode fix + more steps/tuples, or GPU training), with the
+lockstep condition now available to measure each dose's task value
+honestly on this machine at ~17 min/episode, before any GPU is spent
+on inference serving.
