@@ -1,9 +1,19 @@
 # ADR-powder-spike — T20 solver spike for the powder family (SPEC 300 PW-0)
 
-Status: **DRAFT** — numbers measured; the go/no-go and the TBD-SPIKE
-thresholds are a HUMAN decision (PW-0).
+Status: **ACCEPTED** — ratified by the owner 2026-08-27 ("ratify PW-0
+as recommended").
 
-DECISION: (human)
+DECISION: GO for P0/P1 ONLY (PW-5, PW-6-as-reframed); NO-GO for P2+ as
+specced until a CUDA determinism spike shows a deterministic-enough GPU
+path (PW-0 names CUDA optional; the GPU budget decision gates it).
+Solver: MPM sand. Particle budget: <= ~5k at 4 mm for CPU-SCORED work
+(CON-5: scored statistics on the deterministic backend only); Metal is
+an exploration backend, never scored. 2 mm reserved for future
+P2-scale work per the addendum. No scene or verifier may depend on
+heap/repose geometry. PW-6 is reframed to a best-effort baseline (the
+scripted primitive's CV ~88% makes +/-10% open-loop unachievable);
+PW-5's spill sanity threshold is 110 g (~2x the measured CPU spill
+median) with PW-11's continuous spill_mg carrying the real signal.
 
 ## Setup
 
@@ -150,4 +160,4 @@ a best-effort baseline or drop. PW-7 (±1%): particle quantization
 count per volume at 2 mm — untested throughput). Do not build
 repose-dependent behavior into scenes or verifiers.
 
-DECISION: (human)
+DECISION: ratified above (owner, 2026-08-27) — one decision block, not two.
