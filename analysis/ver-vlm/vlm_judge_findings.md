@@ -79,3 +79,39 @@ run_id matches):
   (c) fine-tuning (GPU). The scaling trend (0.2 → 0.6 agreement,
   4 → 2 false_success) suggests (b)+(a) combined is the next cheap
   test once a labeled corpus run is recorded.
+
+
+## Path (b) measured: label-reading fails at overhead resolution (2026-08-27)
+
+The pre-declared `label` prompt (#326) asks the judge to use the med
+name the T2 scenes print on every box. Scored beside both prior styles
+on the EXTENDED holdout — 13 episodes after adding the fresh
+t2-scope-v2 labeled run (8 episodes, 4 success / 4 fail, never used
+for prompt development; goal mapping episode%5, verified against the
+registration run's goal log):
+
+| prompt | holdout agreement | false_success | success_recall | gate |
+|---|---|---|---|---|
+| label | 0.615 | 0 | **0.0** | fail |
+| calibrated | 0.538 | **5** | 0.8 | fail |
+| semantic | 0.615 | 0 | 0.0 | fail |
+
+- **Label-reading is a nonstarter at this camera geometry**: boxes are
+  ~21 px in the 640x480 overhead frame, so the model can never affirm
+  "the box printed with '<med>'" — recall 0.0, i.e. the constant-fail
+  shape the hardened gate exists to refuse. The failure is optics, not
+  prompting: no wording change makes 21 px text legible.
+- **Calibrated degrades on the harder mix** (0.6 → 0.538, 2 → 5
+  false-successes): more failure episodes with boxes near the tray =
+  more identity-free yeses. The dangerous class scales with exactly
+  the episodes a deployment would care about.
+- The promotion gate has now correctly refused FIVE judge
+  configurations (500M-calibrated, 500M-semantic-era, 2B-semantic,
+  2B-calibrated, 2B-label) without a single false promotion.
+
+**5.2 closes as**: v1 shipped and gate-hardened; cheap paths (a)
+larger model and (b) label prompts both measured and exhausted. The
+recorded remainder needs a design change — wrist-camera tail frames
+or higher-res judged renders (new recorded runs), or path (c)
+fine-tuning (GPU). The bench, corpus, and per-model pins make any of
+those a one-command measurement when unlocked.

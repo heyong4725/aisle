@@ -11,3 +11,11 @@
 {"run": "/Users/yonghe/src/aisle-runner/runs/register-eval-t2-scan-pose-r3", "episode": 2, "target_med": "", "oracle_status": "fail", "failure": "collision", "split": "holdout"}
 {"run": "/Users/yonghe/src/aisle/runs/h3_desk/worktree_L/runs/review-reeval-t2-scan-tsm", "episode": 0, "target_med": "", "oracle_status": "fail", "failure": "collision", "split": "holdout"}
 {"run": "/Users/yonghe/src/aisle/runs/h3_desk/worktree_L/runs/review-reeval-t2-scan-tsm", "episode": 1, "target_med": "", "oracle_status": "fail", "failure": "never_grasped", "split": "holdout"}
+{"run": "/Users/yonghe/src/aisle-runner/runs/t2-scope-v2", "episode": 0, "target_med": "amoxicillin", "oracle_status": "fail", "failure": "dropped", "split": "holdout"}
+{"run": "/Users/yonghe/src/aisle-runner/runs/t2-scope-v2", "episode": 1, "target_med": "ibuprofen", "oracle_status": "success", "failure": null, "split": "holdout"}
+{"run": "/Users/yonghe/src/aisle-runner/runs/t2-scope-v2", "episode": 2, "target_med": "cetirizine", "oracle_status": "fail", "failure": "collision", "split": "holdout"}
+{"run": "/Users/yonghe/src/aisle-runner/runs/t2-scope-v2", "episode": 3, "target_med": "omeprazole", "oracle_status": "success", "failure": null, "split": "holdout"}
+{"run": "/Users/yonghe/src/aisle-runner/runs/t2-scope-v2", "episode": 4, "target_med": "metformin", "oracle_status": "success", "failure": null, "split": "holdout"}
+{"run": "/Users/yonghe/src/aisle-runner/runs/t2-scope-v2", "episode": 5, "target_med": "amoxicillin", "oracle_status": "fail", "failure": "never_grasped", "split": "holdout"}
+{"run": "/Users/yonghe/src/aisle-runner/runs/t2-scope-v2", "episode": 6, "target_med": "ibuprofen", "oracle_status": "success", "failure": null, "split": "holdout"}
+{"run": "/Users/yonghe/src/aisle-runner/runs/t2-scope-v2", "episode": 7, "target_med": "cetirizine", "oracle_status": "fail", "failure": "collision", "split": "holdout"}
