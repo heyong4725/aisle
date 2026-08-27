@@ -596,8 +596,19 @@ def main() -> int:
     parser.add_argument("--case", default=None, help="internal: run ONE case in this process")
     parser.add_argument("--out", type=Path, default=OUT_DIR)
     parser.add_argument("--scoop-reps", type=int, default=SCOOP_REPS)
+    parser.add_argument(
+        "--particle-size",
+        type=float,
+        default=None,
+        help="override PARTICLE_SIZE (m) — the ADR's untested-2mm throughput "
+        "probe (PW-7 needs ~8x finer quantization than the 4mm baseline)",
+    )
     args = parser.parse_args()
 
+    if args.particle_size:
+        global PARTICLE_SIZE, PARTICLE_MASS_KG
+        PARTICLE_SIZE = args.particle_size
+        PARTICLE_MASS_KG = RHO * PARTICLE_SIZE**3
     if args.case:  # child mode: one genesis init, one case, JSON out
         print(json.dumps(run_case(args.case, args.backend)))
         return 0

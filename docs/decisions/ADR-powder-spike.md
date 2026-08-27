@@ -94,6 +94,37 @@ verifiers must not depend on heap geometry.
    magnitude — tool-pose sensitivity dominates dosing variance.
 5. MPS tensors need a `.cpu()` hop before numpy.
 
+## Addendum (2026-08-27): the 2 mm throughput probe — the ADR's one untested number
+
+`--particle-size` added to the spike tool; MPM sand, SAME integration
+regime (dt 1 ms / substeps 4), same physical volume as the 4 mm 5k case
+(0.068 m cube → 39,304 particles at 2 mm), 100 timed steps, no
+instability warnings. Machine-state control: the 4 mm/50k Metal case
+re-measured 91.9 steps/s against the recorded 94 (2% drift — the probe
+is comparable to the tables above).
+
+| case | steps/s | sim-s per wall-s |
+|---|---|---|
+| Metal MPM 2 mm, 39.3k | 27.4 | 0.027 |
+| CPU MPM 2 mm, 39.3k | 12.8 | 0.013 |
+| Metal MPM 4 mm, 50.7k (recheck) | 91.9 | 0.092 |
+
+Readings for the decision:
+- **Quantization**: 2 mm particle mass is 12 mg (vs 96 mg at 4 mm), so
+  PW-7's ±1% of a 50 g target spans ~42 particles — no longer
+  quantization-bound. The tolerance becomes a CONTROL problem (the
+  scripted-scoop CV), not a resolution problem.
+- **Throughput**: the 2 mm grid refinement costs ~3.4x beyond particle
+  count on Metal (27.4 at 39k vs 91.9 at 50k coarse). A 1.6 sim-s scoop
+  at the CPU 2 mm BENCH rate is ~2 wall-min; the scoop scene (CPIC +
+  tool) will be slower — the 4 mm scoop-scene CPU rate was ~7 steps/s
+  against a 4 mm bench rate well above it, so expect single-digit
+  steps/s for a 2 mm CPU scoop scene.
+- **Backend gap narrows at 2 mm**: Metal/CPU is 2.1x on this bench (vs
+  the ~20x quoted from the 4 mm scoop scene) — grid-dominated regimes
+  flatten the GPU advantage, which weakens the case for tolerating
+  Metal's nondeterminism at fine scales.
+
 ## Recommendation to the human decider
 
 The family faces a **determinism / throughput / fidelity trilemma**:
