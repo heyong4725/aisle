@@ -13,7 +13,7 @@ the living plan reconciled against measured results.
 | 5.1b hybrid fallback | DONE (#293): decision-node arbitration; value contrast awaits a live policy. |
 | 5.2 vlm-verifier | v1 DONE (#279/#292): offline judge + promotion-gated bench; 500M disqualified (0.2, 4/5 false-success). Open: the 2B+/label-rendered retry — also a Phase-6 entry criterion. |
 | 5.3 world-model-env | NOT STARTED (M3's replay dataset exists). |
-| M1 / M5 | Blocked on GPU (live policy). |
+| M1 / M5 | M1 task-value HALF measured on-Mac via the lockstep-eval condition (ADR-38 amendment 1, #319): 0/8 with latency removed — competence, not latency, is the wall at the 800-step dose; the measured unlock is TRAINING dose, then GPU serving. M5 halt discipline held in every VLA run. |
 | H6 (design doc §6, Operation) | REGISTERED, NEVER RUN — machinery exists (swap/probe/H4 latency), no GPU needed. The strongest open experiment. |
 | Owner decisions | 1 ratified; 3 (T4 inc-2) DONE (#295–#303: 3/3 + 1/3); 4 (parked skills) DONE (#304: registered 0.5). OPEN: 2 — GPU budget. |
 | Since ratification | T2 breakthrough 0.375 (#299); accumulation differential equal-score/35%-cheaper (#306); standing lever = transit collisions (both tiers). |
