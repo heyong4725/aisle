@@ -48,6 +48,14 @@ LIFT_H = 0.015
 # stage-completion tracking tolerance (rad) and bounded at-target dwell (s)
 TRACK_TOL = 0.10
 STAGE_BAIL_S = 4.0
+# divergence bail (transit-collision mechanism 2, seed 15): a tracking
+# error far beyond gravity-sag scale means the arm is pressed against
+# something the command cannot push through — bail in DIVERGE_BAIL_S,
+# not STAGE_BAIL_S, so the press lasts ~1 s instead of the full dwell.
+# 0.8 rad sits 3x above the worst measured sag (0.27 rad, T15 round 12)
+# and 3x below the measured wrist-flip class (2.25-3.07 rad).
+DIVERGE_TOL = 0.8
+DIVERGE_BAIL_S = 1.0
 # gripper ramp per 100 Hz tick and message cadence: emission is
 # 100/GRIP_SEND_EVERY = 25 Hz (the gripper_cmd contract is <=30 Hz;
 # every-3rd-tick's 33.3 Hz was illegal) and the per-message step
@@ -967,6 +975,7 @@ class StageStreamer:
         self.wp_idx = 0
         self.settle_ticks = 0
         self.at_target_ticks = 0
+        self.diverge_ticks = 0
         self.current_cmd: np.ndarray | None = None
         self.integ = np.zeros(self.n_arm, dtype=np.float32)
         self.current_grip = 0.0
@@ -1025,13 +1034,21 @@ class StageStreamer:
             tracked = track_err.max() < stage.track_tol
             if tracked:
                 self.settle_ticks += 1
+            if track_err.max() > DIVERGE_TOL:
+                self.diverge_ticks += 1
+            else:
+                self.diverge_ticks = 0
             if (
                 self.settle_ticks * self.dt >= stage.settle_s
                 or self.at_target_ticks * self.dt >= STAGE_BAIL_S
+                or self.diverge_ticks * self.dt >= DIVERGE_BAIL_S
             ):
                 if not tracked:
+                    kind = (
+                        "diverged" if self.diverge_ticks * self.dt >= DIVERGE_BAIL_S else "bailed"
+                    )
                     logs.append(
-                        f"stage {stage.name} bailed at joint {int(track_err.argmax())} "
+                        f"stage {stage.name} {kind} at joint {int(track_err.argmax())} "
                         f"err {float(track_err.max()):.3f}"
                     )
                     # T2 registration seeds 10/15: after a contact-blocked
@@ -1050,6 +1067,7 @@ class StageStreamer:
                 self.wp_idx = 0
                 self.settle_ticks = 0
                 self.at_target_ticks = 0
+                self.diverge_ticks = 0
         return full_cmd, grip_out, logs
 
 
