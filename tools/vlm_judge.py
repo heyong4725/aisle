@@ -51,6 +51,20 @@ PROMPTS = {
         "small colored box sitting on that white pad? Answer with "
         "exactly one word: yes or no."
     ),
+    # path (b) of the 500M findings, pre-declared 2026-08-27: the T2
+    # scenes render the med name ON the box (AISLE_LABELS) — ask the
+    # judge to use the printed text, closing the identity-free hole the
+    # calibrated prompt measured (false_success on collision episodes
+    # where SOME box sat on the pad). Reported side by side like every
+    # style, never silently swapped.
+    "label": (
+        "This is an overhead view of a robot workstation. The delivery "
+        "tray is the small white rectangular pad near the bottom of the "
+        "image, below and left of the large white shelf. Each medicine "
+        "box has its name printed on it. Is the box printed with the "
+        "name '{med}' sitting on that white pad? Answer with exactly "
+        "one word: yes or no."
+    ),
 }
 
 
