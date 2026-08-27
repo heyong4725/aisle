@@ -5,14 +5,22 @@ The design document (Project_AISLE_Experiment_Design.md) is the frozen
 pre-registration artifact and is never content-updated; THIS file is
 the living plan reconciled against measured results.
 
-## Progress ledger (2026-08-25)
+## PHASE 5 CLOSED (2026-08-27)
+
+Every 5.x item is at its measured end-state on this hardware (rows
+below); what remains in each is explicitly GPU- or design-gated and
+recorded in the findings it points to. Closed under the owner's
+standing order ("continue the loop until phase 5 is done",
+2026-08-27).
+
+## Progress ledger (2026-08-25; rows updated at close)
 
 | Item | State |
 |---|---|
 | 5.1 SmolVLA integration | DONE (#263/#277/#278/#300): typed node, ADR-38 preemption, async inference. Zero-shot structurally impossible (uninitialized base normalizers); SO-101 fine-tune pipeline validated end-to-end — first live policy 0/8, mechanism = CPU latency vs the staleness floor as designed. GPU-peer inference is the measured unlock. |
 | 5.1b hybrid fallback | DONE (#293): decision-node arbitration; value contrast awaits a live policy. |
-| 5.2 vlm-verifier | v1 DONE (#279/#292): offline judge + promotion-gated bench; 500M disqualified (0.2, 4/5 false-success). Open: the 2B+/label-rendered retry — also a Phase-6 entry criterion. |
-| 5.3 world-model-env | NOT STARTED (M3's replay dataset exists). |
+| 5.2 vlm-verifier | CLOSED (#318/#326 + findings): v1 + bench; gate hardened twice (success-recall; asymmetry). Five judge configs measured and refused — 2B scales (0.2→0.6) but keeps the identity-free false-success class; label prompts fail at overhead optics (21 px text, recall 0). Remainder needs a design change (wrist/hi-res frames) or fine-tuning (GPU). |
+| 5.3 world-model-env | v0 DONE (#329): env-swap node (cartoon surrogate) + pre-registered M3 — 16/16 H1 graphs ran unmodified at ~100x Genesis speed (the §7.5 ladder holds mechanically); ranking UNDECIDABLE (population variance ~0 — the H3 band lesson at the env tier; contact fidelity is the named gap a learned backbone must close, GPU-gated). |
 | M1 / M5 | M1 task-value HALF measured on-Mac via the lockstep-eval condition (ADR-38 amendment 1, #319): 0/8 with latency removed — competence, not latency, is the wall at the 800-step dose; the measured unlock is TRAINING dose, then GPU serving. M5 halt discipline held in every VLA run. |
 | H6 (design doc §6, Operation) | REGISTERED, NEVER RUN — machinery exists (swap/probe/H4 latency), no GPU needed. The strongest open experiment. |
 | Owner decisions | 1 ratified; 3 (T4 inc-2) DONE (#295–#303: 3/3 + 1/3); 4 (parked skills) DONE (#304: registered 0.5). OPEN: 2 — GPU budget. |
