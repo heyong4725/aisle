@@ -213,5 +213,6 @@ class TestWristFlipFilter:
         solutions = ik.solve_read_poses(FACE, mount, np.zeros(7))
         assert solutions, "clean branches must survive"
         for q, _range, _pitch, q_far in solutions:
-            assert not ik.wrist_hop_flips(np.zeros(7), q_far)
+            # v2: the filter binds ONLY the staged->read hop — home-
+            # referenced bounds measured a regression (0.5 -> 0.375)
             assert not ik.wrist_hop_flips(q_far, q)
