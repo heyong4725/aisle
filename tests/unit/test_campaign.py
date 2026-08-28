@@ -1330,3 +1330,51 @@ def test_the_session_record_carries_both_units(tmp_path, monkeypatch):
     )
     assert record["tokens"] == 107  # new-token semantics, unchanged
     assert record["tokens_generated"] == 7  # ADR-43 cross-arm unit
+
+
+class TestAgentAdapters:
+    """Issue #285 C2: the four agent seams as one adapter registry —
+    behavior byte-identical for the existing agents (pinned here), with
+    a `local` adapter slot whose ledger follows ADR-43 (enforcement on
+    tokens_generated; no credential seam)."""
+
+    def test_registry_covers_existing_agents_byte_identically(self):
+        import agent_adapters as aa
+        import campaign as c
+
+        for agent in ("claude", "codex"):
+            ad = aa.ADAPTERS[agent]
+            assert ad.cmd("m-x", "PROMPT") == c.agent_cmd_campaign(agent, "m-x", "PROMPT")
+            assert ad.parse_usage is c.PARSE_USAGE[agent]
+            assert ad.parse_generated is c.PARSE_GENERATED[agent]
+            assert (ad.login_dir, ad.cred_name) == c.CAMPAIGN_LOGIN[agent]
+
+    def test_local_adapter_ledger_semantics(self):
+        """ADR-43: a local arm has no vendor meter — its enforcement unit
+        IS tokens_generated, and usage must not silently reuse an
+        API-shaped parser."""
+        import agent_adapters as aa
+
+        ad = aa.ADAPTERS["local"]
+        assert ad.enforcement_unit == "tokens_generated"
+        assert ad.parse_usage is ad.parse_generated
+        lines = [
+            '{"type": "assistant", "message": {"usage": {"output_tokens": 7}}}',
+            '{"type": "assistant", "message": {"usage": {"output_tokens": 5}}}',
+            "not json",
+        ]
+        assert ad.parse_generated(lines) == 12
+
+    def test_local_adapter_has_no_credential_seam(self):
+        import agent_adapters as aa
+
+        ad = aa.ADAPTERS["local"]
+        assert ad.login_dir is None
+        record, err = aa.seed_credentials(ad, {"HOME": "/tmp/x"})
+        assert err is None and record == {"credentials": "none (local adapter)"}
+
+    def test_api_adapters_keep_the_enforcement_unit(self):
+        import agent_adapters as aa
+
+        for agent in ("claude", "codex"):
+            assert aa.ADAPTERS[agent].enforcement_unit == "tokens_new"
