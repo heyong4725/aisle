@@ -35,6 +35,7 @@ EXPECTED_IDS = {
     "return-planner",
     "budget-guard",  # SPEC 080 BG-1 (T07)
     "dora-genesis",  # executable bridge identity (T08)
+    "so101-driver",  # Phase 6 prep: the hardware bridge (ADR-phase6-prep)
     "rollout-client",  # episode driver for runnable graphs (T08)
     "nav-action",  # SPEC 210 MOB-2 navigation action (T11)
     # T14 retail capability extension (design doc §11.4, ADR-17)

@@ -1,0 +1,28 @@
+# Phase 6 prep (ADR-phase6-prep): the SO-101 HARDWARE driver behind the
+# same topic surface as the sim bridge — SPEC 010's sim->real node-swap
+# claim made concrete. Free-run by design (ADR-30 lockstep is a sim
+# instrument); reset REFUSES (hardware has no teleport, TC-6/ADR-34).
+id: so101-driver
+kind: node
+provides: [hw_bridge]
+requires: []
+inputs:
+  tick: {schema: timer_tick, rate_hz: 100}
+  joint_cmd: {schema: jointvec_f32, rate_hz: 100}
+  gripper_cmd: {schema: scalar_f32, rate_hz: 30}
+  reset: {schema: reset_request_u32, rate_hz: 1}
+outputs:
+  joint_state: {schema: jointvec_f32, latency_class: hard_rt}
+  gripper_state: {schema: scalar_f32, latency_class: hard_rt}
+  bridge_info: {schema: json_utf8, latency_class: best_effort}
+  reset_refused: {schema: reset_refused_u32, latency_class: best_effort}
+embodiment:
+  arm: [so101]
+  gripper: parallel
+safety_class: motion
+eval:
+  suite: tests/unit/test_so101_driver.py (loopback contract; ADR-phase6-prep)
+  pass_rate: 1.0
+  last_run: '2026-08-27'
+origin: hub
+source: src/aisle/nodes/so101_driver.py
