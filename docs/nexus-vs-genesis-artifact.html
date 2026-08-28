@@ -1,0 +1,841 @@
+<title>Nexus vs Genesis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#F6F7F9; --surface:#FFFFFF; --surface2:#EEF1F4; --ink:#1C222B; --ink2:#4A5462;
+  --faint:#8A94A3; --line:#D8DDE4; --accent:#0E7C86; --accent-ink:#0A5C64;
+  --blocking:#B3372E; --blocking-bg:#F9E9E7; --partial:#B07C1F; --partial-bg:#F7EFDC;
+  --parity:#2E7D4F; --parity-bg:#E4F1E9; --upside:#4A5FA5; --upside-bg:#E8ECF7;
+  --code-bg:#EEF1F4; --mark:#FDF3D7;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14181E; --surface:#1B212A; --surface2:#232B36; --ink:#E6EAEF; --ink2:#A9B3C0;
+    --faint:#6E7887; --line:#323C49; --accent:#3FB8C4; --accent-ink:#5FCBD6;
+    --blocking:#E4756B; --blocking-bg:#3A2320; --partial:#D9AE55; --partial-bg:#362C17;
+    --parity:#6FBF8F; --parity-bg:#1D3226; --upside:#94A7E0; --upside-bg:#232B44;
+    --code-bg:#232B36; --mark:#3A3320;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14181E; --surface:#1B212A; --surface2:#232B36; --ink:#E6EAEF; --ink2:#A9B3C0;
+  --faint:#6E7887; --line:#323C49; --accent:#3FB8C4; --accent-ink:#5FCBD6;
+  --blocking:#E4756B; --blocking-bg:#3A2320; --partial:#D9AE55; --partial-bg:#362C17;
+  --parity:#6FBF8F; --parity-bg:#1D3226; --upside:#94A7E0; --upside-bg:#232B44;
+  --code-bg:#232B36; --mark:#3A3320;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"Source Serif 4", Georgia, "Times New Roman", serif;
+  font-size:1.0625rem; line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:46rem; margin:0 auto; padding:0 1.25rem 6rem}
+.wide{max-width:66rem; margin-left:auto; margin-right:auto}
+header.hero{border-bottom:1px solid var(--line); background:var(--surface)}
+.hero-inner{max-width:66rem; margin:0 auto; padding:3rem 1.25rem 2.2rem}
+.eyebrow{
+  font-family:"IBM Plex Mono", ui-monospace, monospace; font-size:.72rem; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 .9rem;
+}
+h1{
+  font-family:Archivo, "Helvetica Neue", Arial, sans-serif; font-weight:800;
+  font-size:clamp(1.9rem, 4.5vw, 3rem); line-height:1.08; letter-spacing:-.02em;
+  margin:0 0 1rem; text-wrap:balance;
+}
+h1 .vs{color:var(--faint); font-weight:500}
+.standfirst{max-width:44rem; font-size:1.1rem; color:var(--ink2); margin:0 0 1.4rem}
+.meta{
+  display:flex; flex-wrap:wrap; gap:.5rem 1.6rem;
+  font-family:"IBM Plex Mono", ui-monospace, monospace; font-size:.76rem; color:var(--faint);
+}
+.meta b{color:var(--ink2); font-weight:500}
+h2{
+  font-family:Archivo, "Helvetica Neue", Arial, sans-serif; font-weight:700;
+  font-size:1.5rem; letter-spacing:-.01em; line-height:1.2; text-wrap:balance;
+  margin:3.2rem 0 .9rem; padding-top:2.2rem; border-top:1px solid var(--line);
+}
+h2 .no, h3 .no{
+  font-family:"IBM Plex Mono", ui-monospace, monospace; font-weight:500; font-size:.8em;
+  color:var(--accent); margin-right:.55em;
+}
+h3{
+  font-family:Archivo, sans-serif; font-weight:600; font-size:1.13rem;
+  margin:2rem 0 .6rem; text-wrap:balance;
+}
+p{margin:0 0 1rem}
+a{color:var(--accent-ink); text-decoration-color:color-mix(in srgb, var(--accent) 45%, transparent)}
+a:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:2px}
+strong{font-weight:600}
+code, .mono{
+  font-family:"IBM Plex Mono", ui-monospace, "SF Mono", monospace; font-size:.84em;
+  background:var(--code-bg); padding:.1em .35em; border-radius:4px;
+}
+th code, td code{background:transparent; padding:0}
+ul,ol{margin:0 0 1rem; padding-left:1.4rem}
+li{margin-bottom:.45rem}
+li::marker{color:var(--faint)}
+blockquote{
+  margin:1.2rem 0; padding:.2rem 0 .2rem 1.1rem; border-left:3px solid var(--accent);
+  color:var(--ink2); font-style:italic;
+}
+/* summary cards */
+.summary{display:grid; gap:.8rem; margin:1.6rem 0; padding:0; list-style:none; counter-reset:sum}
+.summary li{
+  counter-increment:sum; background:var(--surface); border:1px solid var(--line);
+  border-radius:8px; padding:1rem 1.1rem 1rem 3.1rem; position:relative; margin:0;
+}
+.summary li::before{
+  content:counter(sum); position:absolute; left:1.05rem; top:1.02rem;
+  font-family:Archivo, sans-serif; font-weight:700; font-size:.95rem; color:var(--accent);
+}
+/* tables */
+.tbl{overflow-x:auto; margin:1.4rem 0; border:1px solid var(--line); border-radius:8px; background:var(--surface)}
+table{border-collapse:collapse; width:100%; font-size:.86rem; line-height:1.45}
+caption{
+  caption-side:top; text-align:left; padding:.8rem 1rem .4rem;
+  font-family:Archivo, sans-serif; font-weight:600; font-size:.95rem;
+}
+th{
+  font-family:Archivo, sans-serif; font-weight:600; font-size:.74rem; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--ink2); text-align:left;
+  padding:.6rem .8rem; border-bottom:1px solid var(--line); background:var(--surface2);
+  white-space:nowrap;
+}
+td{padding:.55rem .8rem; border-bottom:1px solid var(--line); vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.num, .mono-cell{font-family:"IBM Plex Mono", monospace; font-size:.8rem; font-variant-numeric:tabular-nums}
+/* chips */
+.chip{
+  display:inline-block; font-family:Archivo, sans-serif; font-weight:600; font-size:.66rem;
+  letter-spacing:.07em; text-transform:uppercase; padding:.14rem .5rem; border-radius:999px;
+  white-space:nowrap;
+}
+.chip.blocking{color:var(--blocking); background:var(--blocking-bg)}
+.chip.partial{color:var(--partial); background:var(--partial-bg)}
+.chip.upside{color:var(--upside); background:var(--upside-bg)}
+.chip.parity{color:var(--parity); background:var(--parity-bg)}
+/* callouts */
+.callout{
+  background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--accent);
+  border-radius:0 8px 8px 0; padding:.9rem 1.1rem; margin:1.4rem 0;
+}
+.callout .label{
+  font-family:"IBM Plex Mono", monospace; font-size:.7rem; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--accent); display:block; margin-bottom:.35rem; font-weight:600;
+}
+/* TOC */
+nav.toc{
+  background:var(--surface); border:1px solid var(--line); border-radius:8px;
+  padding:1.1rem 1.3rem; margin:2rem 0; font-family:Archivo, sans-serif; font-size:.88rem;
+}
+nav.toc .label{
+  font-family:"IBM Plex Mono", monospace; font-size:.7rem; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--faint); display:block; margin-bottom:.6rem;
+}
+nav.toc ol{columns:2; column-gap:2rem; margin:0; padding-left:1.2rem}
+nav.toc li{margin-bottom:.35rem; break-inside:avoid}
+nav.toc a{text-decoration:none; color:var(--ink2)}
+nav.toc a:hover{color:var(--accent-ink)}
+@media (max-width:600px){ nav.toc ol{columns:1} }
+.footnote{font-size:.85rem; color:var(--faint); margin-top:3rem; border-top:1px solid var(--line); padding-top:1rem}
+mark{background:var(--mark); color:inherit; padding:0 .15em}
+@media (prefers-reduced-motion: no-preference){ html{scroll-behavior:smooth} }
+</style>
+
+<header class="hero">
+  <div class="hero-inner">
+    <p class="eyebrow">AISLE · Simulator parity dossier</p>
+    <h1>Nexus <span class="vs">vs</span> Genesis World</h1>
+    <p class="standfirst">A deep technical parity analysis of dimforge/nexus against Genesis World,
+    measured against AISLE's frozen simulator requirements — prepared for discussion with Sébastien Crozet (dimforge).</p>
+    <div class="meta">
+      <span><b>Prepared</b> 2026-08-24</span>
+      <span><b>Nexus</b> v0.5.0</span>
+      <span><b>Genesis World</b> v1.3.3</span>
+      <span><b>zealot</b> @ HEAD</span>
+      <span><b>AISLE</b> specs + measured ADRs</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav class="toc" aria-label="Contents">
+  <span class="label">Contents</span>
+  <ol>
+    <li><a href="#summary">Executive summary</a></li>
+    <li><a href="#reqs">What AISLE requires</a></li>
+    <li><a href="#nexus">Nexus as of v0.5.0</a></li>
+    <li><a href="#zealot">zealot: the existence proof</a></li>
+    <li><a href="#genesis">Genesis World, honestly assessed</a></li>
+    <li><a href="#matrix">Axis-by-axis parity matrix</a></li>
+    <li><a href="#desk">The desk/retail verdict</a></li>
+    <li><a href="#bench">The bench family inversion</a></li>
+    <li><a href="#determinism">Determinism deep dive</a></li>
+    <li><a href="#throughput">Throughput</a></li>
+    <li><a href="#integration">AISLE-side integration cost</a></li>
+    <li><a href="#roadmap">Roadmap: Nexus for physical AI</a></li>
+    <li><a href="#meeting">Meeting agenda: asks &amp; offers</a></li>
+  </ol>
+</nav>
+
+<h2 id="summary"><span class="no">0</span>Executive summary</h2>
+<ol class="summary">
+  <li><strong>ADR-42's desk/retail NO-GO still stands, but its strongest sentence has weakened.</strong>
+  The ADR said sensor simulation is "a different product surface" that won't arrive "by waiting for a
+  version bump." Since then Nexus merged headless off-screen RGB capture at 92 fps (PR #11), a Python
+  path-tracer API (PR #8), and PR #7's stated motivation was literally <em>"as mujoco.Renderer.render()
+  or a Genesis camera.render() would give."</em> The trajectory toward a simulator is real. What remains
+  missing is precisely enumerable: <mark>depth, segmentation, camera intrinsics/mount model, and
+  multi-camera</mark> — four items, not a product pivot (§6.2).</li>
+  <li><strong>zealot is the existence proof that the Nexus stack can be a <em>training simulator</em> at
+  competitive scale</strong> — a deployable humanoid policy (flown on a real Unitree G1 via LeRobot),
+  0.7–1.2× NVIDIA's shipped G1 pipeline throughput on one RTX 5090 — but it also marks the boundary:
+  its only exteroception is a 5-float oracle "step cue" designed explicitly to avoid vision. No
+  pixel-observation path exists anywhere in the ecosystem (§3).</li>
+  <li><strong>For AISLE's bench/powder family the case has inverted.</strong> AISLE's own powder spike
+  measured Genesis granular simulation failing on three axes at once — nondeterministic <em>and</em>
+  ~10% crashy on Metal, bit-exact but 20× too slow on CPU, and no angle of repose at any friction
+  setting. Nexus's new GPU MPM (merged 2026-08-15) with sparse grids and dynamic particle add/remove is
+  a strong structural fit. The blocker is coupling: Nexus MPM is <strong>one-way</strong>
+  (rigid→particle), and SPEC 310 makes wrist force/torque the <em>primary safety mechanism</em> for this
+  family. A minimal "per-collider particle-impulse readback" (sensing without dynamics) would unblock it
+  ahead of full two-way coupling (§7).</li>
+  <li><strong>Determinism is Nexus's sleeper advantage.</strong> AISLE's CON-5 had to be
+  <em>weakened</em> (ADR-26) because Genesis-on-Metal cannot produce bit-exact replicates — single-ULP
+  divergences that flip episode outcomes. zealot demonstrates same-source kernels compiled to CUDA and
+  WebGPU running <strong>bit-exact against each other</strong>. A bit-exact GPU physics engine would let
+  AISLE <em>tighten</em> its reproducibility constitution — an argument Genesis cannot currently answer
+  (§8).</li>
+  <li><strong>Honest blockers on the Nexus side today:</strong> macOS Metal multibody contacts are
+  broken upstream (naga MSL miscompile, nexus issue #5 — and macOS arm64 is AISLE's constitutionally
+  primary platform, CON-1); 14 open unreviewed contributor PRs including three correctness fixes to
+  articulated dynamics (#25 dt bug, #26 friction leak, #27 Jacobian lever arm); a one-maintainer review
+  bottleneck; no documentation site content. Any adoption conversation is also a maintenance-bandwidth
+  conversation (§2.4, §11).</li>
+</ol>
+
+<h2 id="reqs"><span class="no">1</span>What AISLE requires of its simulator</h2>
+<p>AISLE's requirements were extracted from the frozen specs and measured ADRs into 76 numbered items
+(R1–R76). The load-bearing structure is four requirement clusters.</p>
+
+<h3><span class="no">1.1</span>The sensor chain is fail-closed, so it is all-or-nothing</h3>
+<p>The topic contract (SPEC 010) obliges the bridge to publish:</p>
+<div class="tbl"><table>
+<thead><tr><th>Topic</th><th>Schema</th><th>Rate</th><th>Consumer</th></tr></thead>
+<tbody>
+<tr><td><code>rgb_overhead</code></td><td class="mono-cell">UInt8[h·w·3], 640×480</td><td class="num">30 Hz</td><td>VER-9 identity (OWLv2), L2 pose</td></tr>
+<tr><td><code>rgb_wrist</code></td><td class="mono-cell">UInt8[h·w·3], 320×240, <strong>EE-link-mounted</strong></td><td class="num">30 Hz</td><td>VER-9 corroborating vote</td></tr>
+<tr><td><code>depth_overhead</code></td><td class="mono-cell">Float32[h·w], metric metres</td><td class="num">15 Hz</td><td>VER-10 containment (depth-<strong>only</strong> by ADR), L1/L2 pose</td></tr>
+<tr><td><code>seg_overhead</code></td><td class="mono-cell">Int32[h·w] + published id map</td><td class="num">15 Hz</td><td>L1 segmented-pose (L1 rung only)</td></tr>
+</tbody></table></div>
+<p>Three properties make this non-negotiable rather than nice-to-have:</p>
+<ul>
+<li><strong>VER-8 refuses to judge without an attested calibration block</strong> — versioned v1 schema in
+OpenCV conventions: per-camera <code>{resolution, fov_deg, intrinsics{fx,fy,cx,cy}, cam_to_base /
+cam_to_ee, depth_scale_m}</code>, with exact pinned numerics (overhead:
+<code>fx = fy = 240/tan(27.5°) ≈ 461.04</code>, <code>cx = 319.5</code>). The block must come from the
+<em>realized</em> built scene — post-jitter read-back of the camera transform, not config. Even the
+camera roll convention is pinned: AISLE reproduces Genesis's degenerate-lookat epsilon branch exactly
+because a tighter epsilon once produced a 90°-wrong roll.</li>
+<li><strong>VER-13 fuses fail-closed</strong>: a stage that cannot produce a verdict makes the episode
+FAIL — "never skip-and-fuse." No cameras ⇒ no calibration ⇒ VER-8 refusal ⇒ every episode of every run
+scores FAIL. There is no degraded mode.</li>
+<li><strong>The perception ladder (TC-9) collapses without rendering</strong>: L1 requires same-stamp
+segmentation+depth from one render pass; L2 requires RGB identity plus same-stamp depth. A render-less
+engine hosts only L0 (oracle poses) — "the rung that measures the least."</li>
+</ul>
+<p>One further subtlety: RGB, depth, and segmentation must come from <strong>one render pass carrying one
+<code>sim_time_ns</code></strong>; rendering must be rate-limited independently of physics; and T2
+label-reading requires UV-mapped meshes with image textures (primitive boxes carry no UVs).</p>
+
+<h3><span class="no">1.2</span>The stepping contract is lockstep, single-step, and honest</h3>
+<ul>
+<li><strong>Single-step-on-demand</strong> (ADR-30): apply queued inputs in canonical order, advance
+physics by exactly <code>dt</code>, once. No internal wall clock, no uncontrolled substepping, no async
+stepping.</li>
+<li><strong>Reset is a service</strong>: teleport re-injection of all entity poses, zeroed velocities,
+re-latched PD targets, <strong>without process restart</strong>, in &lt; 2 s; the first post-reset
+snapshot must be a pure function of the seed and is published before any physics step.</li>
+<li><strong>Failure honesty</strong>: the bridge deliberately wraps no try/except around
+<code>scene.step()</code> — sim exceptions must crash loudly (BRG-7).</li>
+<li>Per-message <code>sim_time_ns</code> / <code>env_id</code> / <code>seq</code>; batched envs need
+per-env state addressing on <em>every</em> write (a global velocity-zero once froze another agent's
+carried box mid-swing in a fleet probe).</li>
+</ul>
+
+<h3><span class="no">1.3</span>Determinism: what CON-5 demands and what Genesis forced AISLE to concede</h3>
+<p>CON-5 is layered: (a) seed-derived artifacts bit-identical; (b) trace timing exact; (c) physics state
+within 1e-6 over the first 1.0 s after each reset; (d) episode <em>outcomes</em> only statistical. Layer
+(d) exists <strong>because of Genesis</strong>: ADR-26 measured identical cold runs on Metal diverging by
+a single joint-state ULP at unpredictable steps (GPU parallel-reduction ordering), which chaos amplifies
+into episode-level outcome flips.</p>
+<blockquote>"No configuration of this stack yields bit-exact replicates on Metal." — ADR-26</blockquote>
+<p>The CPU backend is bit-exact but ~10× slower than needed at campaign scale — Genesis makes AISLE
+choose between reproducibility and evidence throughput.</p>
+
+<h3><span class="no">1.4</span>The bench family (SPEC 300/310) asks different questions</h3>
+<ul>
+<li><strong>PW-3</strong>: the oracle is <em>mass</em> — particle count in the receiving vessel ×
+particle mass, exact by construction. Needs per-particle positions and stable identity, not cameras.
+The realistic channel is a simulated balance (<code>balance_mass</code> + noise/settling model), not a
+detector.</li>
+<li><strong>PW-4</strong> caps sim claims at <em>control strategy and architecture</em> — milligram
+fidelity is hardware-only. So qualitative granular behaviour + repeatability is the bar, which is
+exactly what a solver swap can clear.</li>
+<li><strong>FT-1 / FT-3 (SPEC 310)</strong>: wrist F/T <code>Float32[6]</code> at ≥200 Hz, and force
+limits as <em>the primary safety mechanism</em> near glass vessels. A loaded scoop exerting reaction
+forces <strong>is</strong> particle→rigid coupling, at least at the sensing level.</li>
+<li><strong>PW-0</strong> gates the family on a measured spike: particle throughput at 5k/20k/50k,
+scripted-scoop repeatability (std/mean over 20 seeded scoops), pile/pour sanity. Any replacement engine
+re-runs the same spike harness.</li>
+</ul>
+
+<h3><span class="no">1.5</span>Integration fence</h3>
+<p><code>env_hash</code> today is one sha256 over 59 frozen files; the rollout gate
+(<code>resolve_sim_identity</code>) is Genesis-hardcoded with a literal <code>{cpu, metal, cuda}</code>
+backend enum; <code>bridge_info</code> carries a field literally named <code>genesis_version</code>.
+Issue #283 (composite env_hash, sim-backend protocol, per-sim layout, guard relocation) is the pre-work
+any second engine triggers, with a required bridging measurement (re-run the M0 gate + one tier curve at
+the new hash, show identity). It was deliberately parked as "rescoped, not closed" when ADR-42 landed.</p>
+<p>Also constitutional: macOS arm64 / Metal is the <strong>primary platform</strong> (CON-1 — CUDA-only
+deps forbidden in default extras), and the sim must be a Python package installable under uv (CON-2).
+Nexus's WebGPU portability and PyO3 bindings fit both — <em>if</em> Metal correctness holds (§2.4).</p>
+
+<h2 id="nexus"><span class="no">2</span>Nexus as of v0.5.0: what exists, with evidence</h2>
+<p>Timeline for calibration of expectations: repo created 2025-09-08; <strong>v0.4.0 (2026-07-04) was a
+complete rewrite</strong> ("a full GPU physics engine written in rust-gpu"); v0.5.0 (2026-08-16) added
+MPM. The engine in its current architecture is under two months old. 82 stars, 3 contributors,
+effectively one maintainer (sebcrozet) plus one prolific external contributor (haixuanTao — dora-rs
+maintainer and zealot author).</p>
+
+<h3><span class="no">2.1</span>Engine</h3>
+<ul>
+<li>"Rapier on the GPU": worlds are authored as rapier <code>PhysicsWorld</code>s and baked to GPU
+buffers on <code>finalize</code> — <strong>one rapier world per environment</strong>, stepped in
+parallel. Batching is first-class and explicitly aimed at RL.</li>
+<li>Rigid bodies: full collider set, LBVH GPU broad phase (brute-force path for ≤64 colliders),
+TGS-soft solver with warmstart and speculative contacts.</li>
+<li><strong>Both</strong> joint models: maximal-coordinate impulse joints <em>and</em>
+reduced-coordinate multibodies (3D) with per-multibody mass matrix + dense LU on GPU; PR #31 brought
+"multibody features and stability on par with rapier 0.35"; v0.5.0 added self-contacts, per-link
+external wrenches, runtime motor retargeting.</li>
+<li>URDF/MJCF import via rapier3d-urdf/-mjcf (MuJoCo Menagerie loads); full MJCF <em>actuator
+semantics</em> (<code>&lt;position&gt;</code> kp/kv servos inside the GPU solver) exist only in open
+PR #12.</li>
+<li>Backends: WebGPU (default) / Metal / CPU / CUDA features; wasm32 browser builds; native-CUDA via
+cuda-oxide is draft PR #13 (blocked upstream), though contributor benchmarks already run it.</li>
+</ul>
+
+<h3><span class="no">2.2</span>Rendering surface — the decisive axis</h3>
+<p><strong>What exists</strong>, all merged in July 2026:</p>
+<ul>
+<li><strong>PR #7</strong>: <code>NexusViewer.render()</code> → <code>(H, W, 3) uint8</code> NumPy RGB.
+The PR's own motivation text benchmarks against <code>Genesis camera.render()</code>.</li>
+<li><strong>PR #11</strong>: true headless mode (no window, no swapchain, off-screen texture, no vsync
+throttle) with pipelined async capture — <strong>92 fps at 640×480</strong> on an RTX 5080. This
+supersedes the 365 ms/frame naive readback measured in the #7 thread; AISLE's 30 Hz overhead + 30 Hz
+wrist budget is comfortably within reach on paper.</li>
+<li><strong>PR #8</strong>: Python access to kiss3d's GPU path tracer (<code>raytrace_frame()</code>,
+samples/bounces/denoise) — pretty RGB, not a sensor model.</li>
+</ul>
+<p><strong>What does not exist</strong> (verified by code search, not just absence of docs):</p>
+<ul>
+<li><strong>No depth readback of any kind.</strong> The only "depth" in the tree is path-tracer bounce
+depth.</li>
+<li><strong>No segmentation.</strong></li>
+<li><strong>No camera intrinsics model</strong> — the bound camera API is look-at
+(<code>set_camera(eye, target)</code>); no FOV setter is exposed in the Python bindings, no
+principal-point / fx / fy concept anywhere.</li>
+<li><strong>No link-mounted cameras, no multi-camera scenes</strong> — and the viewer renders
+<strong>environment 0 only</strong> ("batch environments are physics-only", PR #16).</li>
+<li><strong>No raycast/scene-query public API</strong> — a shader-side <code>Ray</code> type exists but
+nothing is exported host-side, so even a "depth via raycasts" shortcut is new engine work.</li>
+<li>No open issue, PR, or discussion mentions cameras, depth, or a sensor roadmap (discussions are
+disabled).</li>
+</ul>
+
+<h3><span class="no">2.3</span>MPM (v0.5.0, merged 2026-08-15)</h3>
+<ul>
+<li>Materials: corotated-linear + Neo-Hookean elasticity, Drucker-Prager sand, Stomakhin snow, weakly
+compressible fluid. 2D and 3D. <strong>Sparse open-domain grid</strong> (no clamp box) and
+<strong>dynamic particle add/remove</strong> — both called out as differentiators vs typical
+open-source GPU MPM, and both directly useful for AISLE's scoop-and-pour episodes (Genesis requires a
+bounded domain).</li>
+<li>Rigid-boundary handling: grid-based (≥1.5 cell thickness) or <strong>CPIC</strong> for thin plates —
+currently <strong>limited to 16 colliders</strong>.</li>
+<li><strong>Coupling, exact statement</strong>: "rigid-bodies … can push particles, but particles cannot
+push rigid-bodies … Full two-ways coupling will be implemented in the future." The
+<code>RbdCoupling::MpmTwoWay</code> variant hands a body <em>entirely</em> to MPM (the rigid pipeline
+treats it as static) — useful for a free-floating object in powder, useless for a robot-held scoop.</li>
+<li>No published particle-throughput numbers anywhere (the sand example builds 202,500 particles). PW-0
+would produce the first real measurement.</li>
+</ul>
+
+<h3><span class="no">2.4</span>Correctness backlog and project health — the honest part</h3>
+<p>Fourteen open PRs by haixuanTao, <strong>none reviewed</strong> as of 2026-08-24 (oldest open since
+2026-07-09), include three that contest articulated-dynamics correctness at humanoid scale:</p>
+<ul>
+<li><strong>#25</strong>: every multibody kernel integrates substeps with the wrong dt whenever the
+configured substep count ≠ 4 (NaN in ~4 steps at 16 iterations).</li>
+<li><strong>#26</strong>: contact compliance applied to friction rows makes μ = 1.0 behave like
+μ ≈ 0.03.</li>
+<li><strong>#27</strong>: contact lever arms computed about the wrong point make an ankle-pitch Jacobian
+column 8× too small — "a quiet stand is impossible at any motor stiffness."</li>
+</ul>
+<div class="callout"><span class="label">Platform blocker</span>
+<strong>Issue #5 (open)</strong>: on macOS, a naga MSL loop miscompile makes multibody contact/joint
+solves produce <strong>zero impulses</strong> — CUDA/Vulkan unaffected, fix upstream in wgpu, workaround
+known (while→for loops), one instance already fixed in v0.5.0. Until this closes, <strong>Nexus
+multibody is effectively broken on AISLE's primary platform.</strong> zealot ships a vendored naga fix
+to work around it.</div>
+<p>Batching scale limits on upstream main (fixed only in open PRs #16/#24): single-env robot packing is
+quadratic in DOFs (~58 GiB requested at 2,048 robots); the 4096-pairs/env default hits wgpu's 4 GiB
+buffer wall near 512 envs. With #24 applied: 5.67M env-steps/s at 16,384 cube envs.</p>
+<p>No docs-site content (landing page + demos + docs.rs only), no GitHub releases, MIT OR Apache-2.0,
+sponsorship via GitHub Sponsors. None of this is disqualifying for a research adoption; all of it
+belongs in a candid meeting.</p>
+
+<h2 id="zealot"><span class="no">3</span>zealot: the existence proof, and the boundary it marks</h2>
+<p>zealot (haixuanTao, created 2026-05-26, 420 commits in 13 weeks, 3 contributors) is a complete
+whole-body-control humanoid training stack on Nexus — env + MDP layer, PPO/GAE/Adam hand-rolled in Rust
+on the same portable GPU layer, browser-deployable, and <strong>deployed to a real Unitree G1</strong>
+(checkpoint v21, via LeRobot's <code>ZealotLocomotionController</code>).</p>
+<h3>What it proves</h3>
+<ul>
+<li>The Nexus stack sustains serious RL scale: full training iteration (rollout + PPO update) at
+<strong>91.4k env-steps/s (N=4,096) / 99.5k (N=8,192)</strong> on one RTX 5090 with native CUDA +
+cuTile — vs Isaac Lab's 126k/201k on the same box (≈2× gap at the top end), and <strong>1.23× ahead of
+NVIDIA's shipped WBC-AGILE G1 pipeline at N=2,048</strong> in a like-for-like realism+terrain
+configuration.</li>
+<li>Isaac-Lab-tier MDP machinery is reproducible on this stack: terrain curriculum ported from
+WBC-AGILE, extensive domain randomization (including structural foot-shape DR sampling box/capsule feet
+per template — an engine-overfit countermeasure), delayed-actuator model, asymmetric actor-critic,
+per-env GPU reset from spawn-template snapshots.</li>
+<li><strong>Cross-backend bit-exactness is achievable</strong> (§8).</li>
+<li>Sim-to-sim discipline: every policy validated against MuJoCo (the named reference), plus rapier.js,
+Isaac, and — notably — a <code>sim2sim_g1_genesis.py</code> harness. The cross-engine methodology AISLE
+would want already exists in this ecosystem.</li>
+</ul>
+<h3>What it equally proves by omission</h3>
+<ul>
+<li>Observations are proprioceptive (53→79 dims + 5-frame history). The single exteroceptive input is a
+<strong>5-float oracle step cue</strong> with sensor-shaped noise, explicitly designed as "a SCRIPTED
+perception step … rather than a CNN on raw depth." There is no camera, depth, or height-map pipeline in
+the repo, and the visible roadmap is entirely solver throughput.</li>
+<li>Rigid-body only; <code>MAX_MB_DOFS = 32</code> (the G1's wrists are welded to fit); no torque-speed
+actuator saturation; box (uncoupled) friction; Metal training path broken (the naga bug).</li>
+<li>Build fragility: ~6 patched sibling forks are load-bearing.</li>
+<li><strong>Zero dora-rs integration</strong> — despite the author. The dora angle is an opportunity,
+not an existing artifact.</li>
+</ul>
+
+<h2 id="genesis"><span class="no">4</span>Genesis World as of v1.3.3: the incumbent, honestly assessed</h2>
+<p>AISLE pins <code>genesis-world&gt;=1.2.3</code>. Current upstream: v1.3.3 (2026-08-13), Apache-2.0,
+29.8k stars, 106 contributors, backed since 2025 by Genesis AI ($105M seed, Jul 2025). Renamed from
+"Genesis" at v1.0 (May 2026); the renderer is now <strong>Nyx</strong> (in-house path tracer —
+distributed from an <em>internal package index</em>, not yet public), the compiler
+<strong>Quadrants</strong> (a Taichi fork); LuisaRender is deprecated; the CUDA-only Madrona batch
+renderer serves RL.</p>
+<p><strong>Why Genesis won the AISLE design in the first place (all still true):</strong>
+<code>cam.render(rgb, depth, segmentation, normal)</code> in one pass from a visualization camera;
+link-mountable camera sensors; IMU/contact/tactile/lidar/depth-raycaster sensor suite with noise
+models; MuJoCo-lineage rigid solver with documented algorithms; MJCF/URDF/USD import; MPM/FEM/PBD/SPH/SF
+solvers with <strong>genuine two-way coupling</strong> (three coupler implementations — impulse-based
+legacy, Drake-style SAP, IPC via libuipc); batched + heterogeneous envs; four-platform matrix including
+Apple Metal; pip/uv install.</p>
+<p><strong>Where it has genuinely hurt AISLE (measured, not anecdotal):</strong></p>
+<ul>
+<li><strong>Determinism</strong>: opt-in (<code>use_deterministic_algorithms=True</code>), documented as
+per-machine bit-exactness at best, "only partially" on GPU; the default runtime
+<strong>perf-dispatch</strong> system live-times interchangeable kernels, so "a rollout also depends on
+everything the process ran before it." ADR-26's Metal ULP divergence forced CON-5's outcome layer to go
+statistical.</li>
+<li><strong>Throughput vs the contract</strong>: BRG-2 targets ≥5× realtime with rendering; measured on
+M3 Metal: <code>scene.step()</code> 4.4 ms + 5.6 ms overhead render + 3.4 ms wrist ⇒ sustained
+<strong>~0.77× realtime</strong>. The named remedy in the ADR is "batched offline stepping or a faster
+physics backend."</li>
+<li><strong>Granular media</strong>: the powder-spike ADR measured Metal MPM nondeterministic (GPU
+atomics) <em>and</em> ~10% crashy (NaN "invalid constraint forces"); CPU MPM bit-exact but ~7 steps/s
+at 5k particles; scooped-mass CV 87.9%; and <strong>no angle of repose emerges at any friction
+setting</strong> (flank fits 2.7–6.3° vs ~30–40° physical) — AISLE had to rule that "scenes and
+verifiers must not depend on heap geometry."</li>
+<li><strong>Contact/grasp fidelity carried as config hacks</strong>: SO-101's pinch cannot survive
+horizontal motion (<code>kinematic_carry_latch = true</code> — the carry is faked kinematically);
+Franka finger gains had to be raised 4× over defaults to stop in-grip pitching.</li>
+<li><strong>Ecosystem friction</strong>: the rendering/EGL setup breakage cluster is the largest issue
+category; 200 GB URDF-load memory spikes; MPM tunneling (#600); depth camera does not render MPM bodies
+in parallel envs (#2044, open); the team's own #3207 "Stability Initiative" candidly tracks
+unreproducible numerical failures. Headline performance claims ("10–80× faster than Isaac/MJX") were
+publicly contested (issue #181; corrected benchmarks showed 3–10× <em>slower</em> than ManiSkill on
+manipulation under example-default settings) and later revised.</li>
+</ul>
+<div class="callout"><span class="label">Frame for the meeting</span>
+Genesis is a funded, fast-moving, full-surface simulator whose weaknesses for AISLE are concentrated
+exactly where Nexus's strengths are — determinism, granular GPU physics, lean portability — and vice
+versa.</div>
+
+<h2 id="matrix" class="wide-title"><span class="no">5</span>Axis-by-axis parity matrix</h2>
+</div>
+<div class="wide" style="padding:0 1.25rem">
+<div class="tbl"><table>
+<caption>Nexus v0.5.0 (+ ecosystem) vs Genesis v1.3.3, scored against AISLE requirements</caption>
+<thead><tr><th>Axis</th><th>AISLE requirement</th><th>Genesis v1.3.3</th><th>Nexus v0.5.0 (+ ecosystem)</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>Programmatic RGB</td><td>640×480 + 320×240 @30 Hz, one pass w/ depth+seg</td><td><code>cam.render()</code> multi-channel</td><td>headless <code>snap_rgb</code> 92 fps, RGB <strong>only</strong>, single camera</td><td><span class="chip partial">partial</span></td></tr>
+<tr><td>Metric depth</td><td>Float32 m @15 Hz (VER-10 is depth-only)</td><td>yes (viz camera + raycaster sensor)</td><td><strong>none</strong></td><td><span class="chip blocking">blocking</span></td></tr>
+<tr><td>Segmentation</td><td>Int32 id map @15 Hz (L1 rung)</td><td>yes, + seg-id dict</td><td><strong>none</strong></td><td><span class="chip blocking">blocking (L1)</span></td></tr>
+<tr><td>Intrinsics / calibration</td><td>v1 OpenCV block from realized state, pinned numerics</td><td>intrinsics + transform read-back (conformance-tested)</td><td>look-at only; no FOV/intrinsics binding</td><td><span class="chip blocking">blocking</span></td></tr>
+<tr><td>Link-mounted camera</td><td>wrist cam rides EE every step</td><td><code>cam.attach(link, offset_T)</code></td><td>not supported</td><td><span class="chip blocking">blocking</span></td></tr>
+<tr><td>Multi-camera, rate-scheduled</td><td>overhead+wrist, independent rates</td><td>yes</td><td>one viewer camera, env 0 only</td><td><span class="chip blocking">blocking</span></td></tr>
+<tr><td>UV/texture rendering (T2)</td><td>image-textured mesh boxes</td><td>yes</td><td>kiss3d mesh support (unverified for this use)</td><td><span class="chip partial">verify</span></td></tr>
+<tr><td>Rigid solver + articulations</td><td>Franka 7+2 / SO-101 5+1, PD control, stable grasp</td><td>MuJoCo-lineage; grasp needed gain hacks + carry latch</td><td>reduced-coord multibody, TGS-soft; correctness PRs #25/#26/#27 pending; ≤32–64 DOF</td><td><span class="chip partial">needs PR review</span></td></tr>
+<tr><td>URDF/MJCF import</td><td>both, with decomposition control</td><td>yes (+USD)</td><td>yes (rapier3d-urdf/mjcf); actuator semantics in open PR #12</td><td><span class="chip upside">close</span></td></tr>
+<tr><td>Build-time IK</td><td>multi-start, rot_mask, TCP offset (SCN-3)</td><td>yes (build-time only; runtime IK is AISLE's own)</td><td>none exposed (runtime chain is engine-independent)</td><td><span class="chip partial">partial</span></td></tr>
+<tr><td>Lockstep step + injectable reset</td><td>ADR-30; teleport &lt;2 s, no restart</td><td>yes (AISLE-shaped)</td><td><code>simulate()</code> per-call stepping; zealot does per-env GPU snapshot resets</td><td><span class="chip parity">likely</span></td></tr>
+<tr><td>Batched envs</td><td><code>n_envs</code> + per-env addressing</td><td>yes; heterogeneous</td><td>first-class (world-per-env); scale fixes in open PRs #16/#24</td><td><span class="chip parity">parity+</span></td></tr>
+<tr><td>Deterministic replicates</td><td>CON-5; Genesis failed (c)→(d) on Metal</td><td>opt-in, per-machine, GPU partial, perf-dispatch nondeterminism by design</td><td>engine claims nothing; zealot demonstrates CUDA↔WebGPU <strong>bit-exact</strong>, CPU reference to float-ε</td><td><span class="chip parity">differentiator</span></td></tr>
+<tr><td>macOS Metal (CON-1)</td><td>primary platform, deterministic preferred</td><td>works; float64 unavailable; ULP nondeterminism</td><td><strong>broken multibody contacts</strong> (naga #5); Vulkan/CUDA fine</td><td><span class="chip blocking">today, fixable</span></td></tr>
+<tr><td>Granular media (bench)</td><td>PW-0/PW-3: throughput, repeatability, pile sanity, particle readback</td><td>measured: crashy/nondet. on Metal, 20× slow on CPU, no repose angle</td><td>GPU MPM w/ Drucker-Prager sand, sparse grid, dynamic emit; unmeasured; Python particle readback <strong>to verify</strong></td><td><span class="chip partial">promising</span></td></tr>
+<tr><td>Particle↔rigid coupling (bench)</td><td>wrist F/T ≥200 Hz; force-limit safety; tool drag</td><td>two-way (3 couplers) but see spike failures</td><td><strong>one-way</strong>; <code>MpmTwoWay</code> = MPM-owned bodies ≤16 (CPIC limit)</td><td><span class="chip blocking">bench — see §7.2</span></td></tr>
+<tr><td>Wrist F/T sensing</td><td>FT-1 (bench family)</td><td>contact/tactile sensors exist (uncalibrated estimates)</td><td>per-link <em>applied</em> wrenches exist; contact-wrench readback partial</td><td><span class="chip partial">partial</span></td></tr>
+<tr><td>Throughput</td><td>BRG-2 ≥5× realtime w/ rendering (Genesis: 0.77×)</td><td>0.77× measured (M3)</td><td>far faster at batch scale; un-benchmarked in AISLE's single-env + render regime</td><td><span class="chip upside">upside</span></td></tr>
+<tr><td>Python/uv packaging</td><td>CON-2</td><td>pip <code>genesis-world</code></td><td>PyO3/maturin, PyPI <code>dimforge-nexus3d</code></td><td><span class="chip parity">parity</span></td></tr>
+<tr><td>Browser/WASM</td><td>(not required; demo value)</td><td>no</td><td>GPU sim in-browser, live demos</td><td><span class="chip parity">bonus</span></td></tr>
+<tr><td>License</td><td>permissive required</td><td>Apache-2.0</td><td>MIT OR Apache-2.0</td><td><span class="chip parity">parity</span></td></tr>
+<tr><td>Maturity / staffing</td><td>frozen-fence stability expectations</td><td>106 contributors, corporate backing, weekly releases</td><td>1 maintainer + 1 contributor; 14 unreviewed PRs; rewrite &lt;2 months old</td><td><span class="chip partial">risk</span></td></tr>
+</tbody></table></div>
+</div>
+<div class="wrap">
+
+<h2 id="desk"><span class="no">6</span>The desk/retail verdict, re-examined</h2>
+<h3><span class="no">6.1</span>The cascade that makes it binary</h3>
+<p>Missing depth alone (never mind RGB details) ⇒ no VER-10 containment ⇒ VER-13 fail-closed ⇒ every
+episode FAILs. Missing intrinsics ⇒ no VER-8 calibration block ⇒ stage-0 refusal ⇒ same outcome. This
+is why ADR-42 is right that partial rendering doesn't help: <strong>the verifier consumes the sensor
+chain atomically.</strong> PR #7/#11's RGB capture, real progress though it is, changes nothing for an
+attested desk run until depth + intrinsics + wrist mount exist.</p>
+
+<h3><span class="no">6.2</span>The concrete parity list (the ask, if desk workloads should be reachable)</h3>
+<p>In dependency order, with effort as estimated from the current tree (all kiss3d/viewer-layer except
+item 5):</p>
+<ol>
+<li><strong>Camera model</strong>: perspective camera with settable vertical FOV (or full fx/fy/cx/cy),
+pose read-back, multiple named cameras per scene, render target per camera. (kiss3d has FOV internally;
+it is simply not bound.)</li>
+<li><strong>Depth channel</strong>: linearized metric z-buffer readback alongside RGB from the same
+pass. The pipelined-readback machinery from PR #11 already exists; this adds a second attachment, not a
+new pipeline.</li>
+<li><strong>Segmentation channel</strong>: flat per-object id render (no lighting) + an id map API.
+Same machinery again.</li>
+<li><strong>Link-mounted cameras</strong>: camera pose slaved to a body/link transform each step (AISLE
+composes the mount transform itself; it needs only "camera follows link X with offset T").</li>
+<li><strong>(Engine, alternative to 2)</strong> a GPU raycast query API would allow a
+depth-camera-as-raycaster (the route Genesis's sensor path takes) — but given the render pipeline
+exists, z-buffer depth is the cheaper route.</li>
+<li><strong>Metal correctness</strong>: close issue #5 (while→for sweep or the wgpu fix) — independent
+of sensors but gating for AISLE's primary platform.</li>
+</ol>
+<p>Items 1–4 are exactly what "a calibration block convertible to VER-8's v1 conventions" (ADR-42's
+stated verdict-changer) decomposes into. None of them touches the physics engine. The honest
+engineering framing: <strong>this is a viewer/sensor subsystem of perhaps a few thousand lines, not a
+product pivot — but it is also unowned, unroadmapped work in a one-maintainer project.</strong> AISLE
+should neither assume it nor demand it; the right question is whether it aligns with where Sébastien
+wants Nexus to go (zealot-style RL stacks will eventually want camera observations too — today's
+step-cue oracle is explicitly a placeholder for a RealSense).</p>
+
+<h3><span class="no">6.3</span>What changed since ADR-42 — a candid re-scoring</h3>
+<p>ADR-42 (2026-08-18) said: physics engine, not simulator; no programmatic RGB. That was already
+slightly stale when written: PR #7 (RGB export) merged 2026-07-16, PR #11 (headless, 92 fps) in July.
+The ADR's <em>conclusion</em> survives — depth/seg/intrinsics/multi-cam remain absent and the
+fail-closed cascade holds — but its <em>rationale</em> ("different product surface", "not a maturity
+gap") is now contestable: the maintainer merged frame export whose PR text benchmarks against Genesis
+by name. Recommended posture: keep the NO-GO, replace the rationale with the enumerated gap list
+(§6.2), and record what would reopen #284.</p>
+
+<h2 id="bench"><span class="no">7</span>The bench family: where the case inverts</h2>
+<h3><span class="no">7.1</span>Genesis's measured granular failure — the bar Nexus has to beat</h3>
+<div class="tbl"><table>
+<thead><tr><th>Axis</th><th>Genesis measured result (AISLE powder-spike ADR)</th></tr></thead>
+<tbody>
+<tr><td>Metal MPM determinism</td><td>nondeterministic (GPU atomics) <strong>and</strong> ~10% of scoop cases crash with NaN constraint forces</td></tr>
+<tr><td>CPU MPM</td><td>bit-exact but ~7 steps/s at 5k particles (~20× short)</td></tr>
+<tr><td>Scoop repeatability</td><td>CV 87.9% transferred mass; spill ~8× payload</td></tr>
+<tr><td>Pile realism</td><td><strong>no angle of repose</strong> — 2.7–6.3° flank vs ~30–40° physical; <code>friction_angle</code> knob ineffective</td></tr>
+<tr><td>Domain</td><td>bounded box required; escaping particles clamped</td></tr>
+</tbody></table></div>
+<p>Consequence already absorbed into AISLE: "scenes and verifiers must not depend on heap geometry."
+PW-4's honest-scope rule means the replacement bar is <em>qualitative granular behaviour +
+repeatability + throughput</em>, not milligrams.</p>
+
+<h3><span class="no">7.2</span>Nexus MPM fit — and the one blocker</h3>
+<p>Structurally strong fit: GPU Drucker-Prager sand, <strong>sparse open-domain grid</strong> (no clamp
+box), <strong>dynamic particle add/remove</strong> (emitters — pouring), CPIC thin-plate boundaries (a
+scoop <em>is</em> a thin plate; the spike showed CPIC-class handling is required, since near-surface
+spawns NaN'd Genesis without it). Erosion/emitter/heightfield demos exist. Unknown: throughput (no
+published numbers — PW-0 measures it) and whether per-particle positions are readable from Python
+(needed for the PW-3 mass oracle; <code>add_particles</code> is bound, readback needs verification — a
+specific question for the meeting).</p>
+<p>The blocker is <strong>coupling direction</strong>. AISLE's bench needs, in increasing order of
+difficulty:</p>
+<ol>
+<li><strong>Rigid→particle</strong> (scoop pushes powder, with true tool velocity):
+<span class="chip parity">exists</span> — one-way coupling; the spike's kinematic-tool-velocity lesson
+applies identically.</li>
+<li><strong>Particle→rigid <em>sensing</em></strong> (wrist F/T while the scoop is loaded; FT-1, and
+FT-3's force-limit safety clamp): <span class="chip blocking">missing</span> — but this does
+<strong>not</strong> require full two-way dynamics. The MPM grid already computes particle–collider
+interaction impulses to enforce boundaries; <em>accumulating and exposing the net wrench per
+collider</em> (without applying it) would satisfy FT-1/FT-3 for a position/impedance-controlled arm.
+This is the minimal, well-scoped ask.</li>
+<li><strong>Particle→rigid dynamics</strong> (powder mass loading the arm, balance pans deflecting):
+the "full two-ways coupling … in the future" item. Nice for fidelity; not required by PW-3 (the mass
+oracle is particle-count) nor BAL-1 (the balance is a simulated instrument: oracle mass + noise +
+settling model — no force sim involved).</li>
+</ol>
+<div class="callout"><span class="label">The key technical point</span>
+AISLE's bench family needs (2), not (3) — and (2) is a readback, not a solver redesign.</div>
+
+<h3><span class="no">7.3</span>A concrete PW-0 spike shape for Nexus</h3>
+<p>Reuse AISLE's existing spike harness semantics: N ∈ {5k, 20k, 50k} sand particles, steps/s on
+Metal-WebGPU and CUDA; 20 seeded scripted scoops → std/mean of transferred particle count; pour into
+vessel; pile and measure flank angle. Pass thresholds already exist in SPEC 300. Deliverable: an ADR
+mirroring ADR-powder-spike, directly comparable row-for-row against Genesis's numbers. Estimated
+effort: days, not weeks, once particle readback is confirmed — the harness design is already written.</p>
+
+<h2 id="determinism"><span class="no">8</span>Determinism: the sleeper argument</h2>
+<p>Line up the three stories:</p>
+<ul>
+<li><strong>AISLE's need</strong>: CON-5(c) — physics within 1e-6 over a 1 s post-reset window;
+bit-exact replicates <em>desired</em> (the constitution had to be amended down to statistical outcomes
+specifically because of the engine).</li>
+<li><strong>Genesis</strong>: honest docs, but: determinism is opt-in, costs throughput, holds
+per-machine at best, "GPU backends support it only partially," and the default perf-dispatch design
+makes a rollout depend on process history. On Metal: unfixable ULP divergence (ADR-26).</li>
+<li><strong>Nexus/zealot</strong>: the engine itself claims nothing — but the architecture (single Rust
+kernel source compiled by three backends, no runtime kernel switching) is what let zealot demonstrate
+<strong>CUDA ↔ WebGPU bit-exact physics</strong> (pose-fingerprint identical; full-buffer gather err
+0.0), CPU reference verified to float-ε, deterministic injected RNG. Same-backend run-to-run
+bit-identity is repeatedly verified in the nexus PR stream. Caveats: contributor-verified claims, not
+engine guarantees; Metal is currently outside the club (naga bug); AISLE would want the guarantee
+documented and tested upstream.</li>
+</ul>
+<p>If Nexus adopted "cross-backend bit-exactness is a supported, CI-tested property" as a headline
+feature, it would hold a determinism position that neither Genesis nor Isaac occupies — and for AISLE
+specifically it would mean CON-5 could <em>tighten</em> (bit-exact GPU replicates ⇒ layer (c)
+everywhere, possibly (d) becoming exact), which strengthens every evidence-integrity claim the project
+makes. This is the argument most likely to interest a maintainer whose brand is correctness-first
+physics.</p>
+
+<h2 id="throughput"><span class="no">9</span>Throughput, briefly</h2>
+<ul>
+<li>Genesis in AISLE's actual regime (single env + 2 cameras, M3 Metal): <strong>0.77× realtime</strong>
+vs a ≥5× contract target. The store scene runs ~0.1×.</li>
+<li>Nexus at batch scale (contributor benchmarks, RTX 5090): 138k env-steps/s at 2,048 robot envs
+upstream; 5.67M at 16,384 cube envs with PR #24; zealot full <em>training</em> iterations at 91–99k
+env-steps/s — 2× behind Isaac at N=8,192, ahead at N=2,048.</li>
+<li>Caution against Genesis's own headline numbers in any slide: the "430,000× realtime" / "10–80×"
+claims were publicly corrected (issue #181); use AISLE's measured numbers and zealot's like-for-like
+tables instead.</li>
+<li>Un-benchmarked and decision-relevant: Nexus in AISLE's regime (1 env, Franka/SO-101 multibody,
+30 Hz dual-camera rendering, Metal). If the §6.2 gaps ever close, this measurement comes first.</li>
+</ul>
+
+<h2 id="integration"><span class="no">10</span>AISLE-side integration cost (either family, any engine)</h2>
+<p>Issue #283's four items are the entry fee, sized once for any second engine: composite
+<code>env_hash</code> (core + per-sim), a sim-backend protocol replacing the Genesis-hardcoded
+<code>resolve_sim_identity</code> and the <code>cpu|metal|cuda</code> enum, per-sim
+<code>src/aisle/sims/{genesis,nexus}/</code> layout, <code>budget_guard.py</code> relocation — landed
+as <strong>one</strong> attestation discontinuity with the bridging measurement (re-run M0 + one tier
+curve, show identity). Plus: <code>bridge_info</code>'s literal <code>genesis_version</code> field
+becomes <code>sim_version</code> (contract change), ADR-24's attested-dist set gains the nexus package,
+and ADR-33's open question ("should the bridge be inside the fence?") gets sharper with a second
+bridge. For the bench family specifically, SPEC 310's FT-1/FT-2 topics are DRAFT and already
+engine-agnostic.</p>
+
+<h2 id="roadmap"><span class="no">11</span>Roadmap: Nexus as a physical-AI simulation platform</h2>
+<p>The analysis points at a clear direction: a pure-Rust, thin, genuinely open core with a
+<strong>Genesis-compatible Python API by profile</strong> — leveraging the Genesis ecosystem's
+conventions without chasing its full surface. This section turns that into a development roadmap.
+Phases are ordered so each one is the <em>credibility precondition</em> of the next; every exit
+criterion is a runnable test, not a demo, so progress is verifiable.</p>
+
+<h3><span class="no">11.0</span>Positioning principles — what "worthy of physical AI" means</h3>
+<ol>
+<li><strong>Correctness-first, determinism as brand.</strong> CI-tested bit-exact replicates,
+same-backend and CUDA↔WebGPU — the position neither Genesis (perf-dispatch nondeterminism by design)
+nor Isaac holds. For RL this means replayable rollouts and debuggable training; for evidence-driven
+projects like AISLE it is constitutional.</li>
+<li><strong>Sensors are simulator citizens.</strong> Cameras, depth, segmentation, and force/torque as
+engine features with calibrated conventions — not viewer afterthoughts. This is the line between
+"physics engine" and "simulator."</li>
+<li><strong>Batched-first.</strong> Every feature works at <code>n_envs = 4096</code> and is per-env
+addressable (reset, sensors, actuation). RL is the design center, not a use case.</li>
+<li><strong>Portable, thin, open — the anti-Genesis differentiators.</strong> One wheel, no torch
+dependency, WebGPU/Metal/CUDA/browser from a single kernel source, and <strong>no closed
+tiers</strong> (Genesis's recommended renderer ships from an internal package index; Nexus should make
+openness a stated guarantee).</li>
+<li><strong>Compatibility by profile, not by chase.</strong> A Genesis-compatible Python layer scoped
+to a <em>pinned, conformance-tested</em> call surface (§11.5), grown only when a real consumer needs a
+call. Full-surface compatibility with a weekly-release, VC-funded project is an unwinnable race; a
+profile with a test suite is a deliverable.</li>
+<li><strong>Honest benchmarks.</strong> Like-for-like methodology, published configs,
+iteration-equivalent comparisons — explicitly avoiding the failure mode of Genesis's contested launch
+numbers (issue #181).</li>
+</ol>
+
+<h3><span class="no">11.1</span>Phase 0 — Foundations: trust the engine</h3>
+<p>The bottleneck is review bandwidth, not code: most of this phase already exists as unreviewed PRs.</p>
+<ul>
+<li>Triage the contributor backlog: correctness first (#25 substep-dt, #26 friction-compliance leak,
+#27 contact lever arms, #28 prediction distance), then batching/perf (#14, #16, #17, #19–#24).</li>
+<li>Close the Metal miscompile (issue #5): the while→for sweep or the wgpu/naga fix — plus a macOS CI
+job so it stays closed. (Metal is AISLE's constitutional platform and every Mac laptop's.)</li>
+<li>Determinism CI: same-backend bit-exact replicate tests and CUDA↔WebGPU golden-fingerprint tests,
+promoted from contributor claims to documented engine guarantees. AISLE contributes its CON-5
+replicate harness.</li>
+<li>Release discipline: tagged GitHub releases, changelog, PyPI wheels for
+<code>dimforge-nexus3d</code> on all three platforms.</li>
+<li>Upstream zealot's vendored forks (naga fix, khal/vortx patches) so the flagship consumer builds on
+released crates.</li>
+</ul>
+<div class="callout"><span class="label">Exit criteria</span>
+Biped training example green on WebGPU + CUDA + Metal; determinism CI green; zealot builds without
+sibling patched forks.</div>
+
+<h3><span class="no">11.2</span>Phase 1 — The RL-environment substrate</h3>
+<p>Generalize what zealot proved from a hand-built stack into engine surface:</p>
+<ul>
+<li>MJCF actuator semantics upstreamed (PR #12): position/motor actuators with kp/kv inside the GPU
+solver, control-vector API, batched link-state readback.</li>
+<li>Contact sensing API: true contact pairs and per-link net wrench readback (zealot currently
+synthesizes foot contact from height thresholds because "the nexus host API doesn't expose them").</li>
+<li>First-class per-env snapshot/reset (zealot's spawn-template pattern as an engine API, not app
+code).</li>
+<li>GPU raycast scene queries — height probes and lidar-style observations for locomotion; also the
+fallback depth path for §11.3.</li>
+<li>Articulation headroom: lift the effective 32-DOF multibody cap (welded-wrist workarounds) toward
+full humanoids with hands.</li>
+<li>The solver megakernel / env-per-lane work (the stated "closes most of the remaining large-N Isaac
+gap" item, salvaging the #15 tree-sparse finding).</li>
+<li>A reference environment layer: either bless zealot-env as the rsl_rl-tier reference or extract a
+minimal <code>nexus-env</code> (obs/action/reset/step over batches), plus gym / LeRobot adapters.</li>
+</ul>
+<div class="callout"><span class="label">Exit criteria</span>
+A WBC-AGILE-class humanoid task trains at ≥ Isaac throughput parity for N ≤ 4,096 on upstream releases
+only, with a documented RL quickstart.</div>
+
+<h3><span class="no">11.3</span>Phase 2 — Sensor simulation: crossing the simulator threshold</h3>
+<p>The §6.2 list, promoted from "ask" to roadmap:</p>
+<ul>
+<li>Camera model: settable vertical FOV (or fx/fy/cx/cy), realized pose read-back, multiple named
+cameras per scene, render target per camera.</li>
+<li>Metric z-buffer depth and flat-id segmentation rendered in the <strong>same pass</strong> as RGB,
+one timestamp, using PR #11's existing pipelined readback.</li>
+<li>Link-mounted cameras (pose slaved to a body/link with a fixed offset).</li>
+<li>Calibration export in OpenCV conventions — VER-8 v1 convertible by construction.</li>
+<li>Per-env render selection (render env <em>i</em>, not just env 0); later, batched tiled rendering
+(Madrona-class) for pixel-observation RL at scale.</li>
+</ul>
+<div class="callout"><span class="label">Exit criteria</span>
+AISLE's VER-8/calibration conformance suite passes; dual-camera 30 Hz at ≥5× realtime single-env (the
+BRG-2 bar Genesis misses at 0.77×); AISLE reopens desk feasibility (#284) — the recorded reopening
+condition is exactly this feature set.</div>
+
+<h3><span class="no">11.4</span>Phase 3 — Granular &amp; manipulation multiphysics <span class="mono" style="font-size:.75em">overlaps Phase 2</span></h3>
+<ul>
+<li>Per-collider MPM <strong>wrench readback</strong> — accumulated particle-boundary impulses exposed
+as F/T <em>sensing</em> without dynamics coupling (§7.2). This alone unblocks AISLE's bench family
+(FT-1 wrist F/T, FT-3 force-limit safety).</li>
+<li>Python per-particle position/velocity readback (the PW-3 mass oracle).</li>
+<li>CPIC collider-limit lift (16 → scene-scale).</li>
+<li>Full two-way RBD↔MPM coupling (already stated as planned) — fidelity tier, not the unblocker.</li>
+<li>Impedance/torque command hooks at the joint level (SPEC 310 FT-2 shape).</li>
+</ul>
+<div class="callout"><span class="label">Exit criteria</span>
+AISLE runs PW-0 on Nexus and publishes the ADR row-for-row against Genesis's measured numbers
+(throughput at 5k/20k/50k particles, scoop repeatability CV vs 87.9%, angle of repose emerging where
+Genesis produced 2.7–6.3°); the bench-family bridge lands as the first production Nexus workload.</div>
+
+<h3><span class="no">11.5</span>Phase 4 — Ecosystem &amp; the Genesis-compatible profile</h3>
+<ul>
+<li><strong><code>nexus-gs-compat</code></strong> (neutral name — API reimplementation of Apache-2.0
+software is fine; implied affiliation is not): a pure-Python shim over <code>nexus3d</code>
+implementing the <strong>pinned genesis-world 1.2.x profile</strong> — the ~60-call surface AISLE's
+bridge and scene builder actually touch (init/backend, Scene/options, morphs,
+materials/surfaces/textures, cameras with <code>render(rgb, depth, segmentation)</code>, entity state
+get/set with the wxyz→xyzw convention, <code>control_dofs_position</code>, <code>build(n_envs)</code>
++ <code>envs_idx</code> addressing, build-time IK). Semantic parity is where the bodies are buried —
+quaternion order, the camera-roll epsilon branch, neutral-pose collision pruning — and AISLE's
+conformance tests already encode exactly these traps.</li>
+<li>dora-rs bridge node — the first dora↔nexus integration (AISLE is dora-native; zealot's author
+maintains dora; natural three-way glue).</li>
+<li>Documentation site with a real user guide; examples gallery; the browser demos as the marketing
+surface.</li>
+<li>An honest cross-engine benchmark suite (MuJoCo, MJX, Isaac, Genesis) with published methodology,
+extending zealot's sim2sim harness pattern.</li>
+</ul>
+<div class="callout"><span class="label">Exit criteria</span>
+AISLE's bench bridge runs on Nexus <em>via the shim</em> in CI; docs site live; benchmark report
+published.</div>
+
+<h3><span class="no">11.6</span>Sequencing rationale</h3>
+<p>Correctness → RL substrate → sensors → multiphysics → compat: each phase is worthless without the
+previous one (a compat shim over an engine with a friction leak helps no one), and each phase ends in a
+test someone else can run. Given dimforge's one-maintainer reality, prioritize <strong>review
+bandwidth before features</strong> — the 14-PR backlog is the cheapest unlock in the entire roadmap,
+possibly including a second maintainer. AISLE's contributions (conformance suites, the PW-0 spike, the
+requirements extraction, a production workload with published verdicts) are exactly what a young
+engine most needs: an adversarial, evidence-publishing user.</p>
+
+<h2 id="meeting"><span class="no">12</span>What to bring to the meeting</h2>
+<h3>Asks — ordered by value-per-effort</h3>
+<ol>
+<li><em>Bench</em>: per-collider particle-impulse <strong>wrench readback</strong> from the MPM grid
+pass (sensing, not dynamics — §7.2 item 2), and confirmation of Python per-particle position readback.
+These two unblock PW-0.</li>
+<li><em>Bench</em>: the CPIC collider limit (16) — headroom or config?</li>
+<li><em>Platform</em>: plan for issue #5 (Metal MSL miscompile) — the while→for sweep or tracking the
+wgpu fix; AISLE is constitutionally macOS-first.</li>
+<li><em>Desk (only if Sébastien volunteers interest)</em>: the §6.2 sensor list — FOV+pose camera API,
+z-buffer depth, flat-id segmentation, link-mounted cameras. Framed as "what VER-8 v1 convertibility
+decomposes into," not as a demand.</li>
+<li><em>Determinism</em>: would dimforge accept cross-backend bit-exactness as a documented, CI-tested
+engine property? (AISLE can contribute the replicate harness — it already exists as CON-5 tooling.)</li>
+<li><em>Health</em>: the 14-PR review backlog — three of them are correctness fixes any
+articulated-robotics adopter needs merged (or refuted) first.</li>
+</ol>
+<h3>Offers — what AISLE brings</h3>
+<ul>
+<li>A spec-grade requirements document (the R1–R76 extraction) and frozen conformance tests
+(calibration-vs-engine, determinism replicates, PW-0 spike harness) — a real, demanding,
+<em>measured</em> workload with published verdicts, which is what a young engine needs more than
+stars.</li>
+<li>The PW-0 Nexus spike run and a public ADR directly comparable to the Genesis numbers — a credible
+third-party benchmark of nexus_mpm.</li>
+<li>The dora-rs angle: AISLE is already a dora-native robotics stack; zealot's author maintains dora; a
+nexus-backed AISLE bench bridge would be the first dora↔nexus integration — Switzerland-position glue
+for both projects.</li>
+</ul>
+<div class="callout"><span class="label">Recommended posture</span>
+Desk/retail stays NO-GO (unchanged verdict, updated rationale, reopening condition = roadmap Phase 2);
+the bench family moves from "live option" to "PW-0 spike scheduled," conditional on the two Phase-3
+unblockers (MPM wrench readback, particle readback); issue #283 gets re-scoped into the PW-0 plan
+rather than waiting for it. The meeting's frame shifts from "asks" to a <strong>shared roadmap
+proposal</strong> (§11) — the open question for Sébastien is roadmap appetite and maintenance
+bandwidth, not whether the work is worth doing.</div>
+
+<p class="footnote">Primary sources — AISLE: specs 000/010/020/030/040/300/310; ADR-7, -24, -25, -26,
+-30, -33, -42, ADR-powder-spike; tools/env_hash.py; src/aisle/nodes/dora_genesis.py;
+src/aisle/scenes/pharmacy.py + physics.toml; issues #71, #281, #283, #284. Nexus: README/CHANGELOG @
+v0.5.0; issues #5, #18; PRs #7, #8, #11, #12, #13, #15, #16, #24–#28, #31, #32; nexus_python3d README.
+zealot: README, docs/explanation.md, docs/benchmarks.md, docs/train-on-5090.md,
+metal-contact-bug-proposal.md, velocity_flat.rs, HF model card. Genesis World: docs v1.3.3 (rendering,
+sensing, coupling, initialization, installation); issues #181, #600, #653, #1015, #2044, #3207, #3229;
+Genesis AI 1.0 blog; the Dec 2024 benchmark critique. Companion file in the repo:
+docs/nexus-vs-genesis-deep-analysis.md.</p>
+
+</div>
