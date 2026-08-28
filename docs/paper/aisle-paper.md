@@ -1,6 +1,6 @@
 # AISLE: Measuring Whether Coding Agents Can Engineer Robots — on a Laptop, with Receipts
 
-*v1.1 (expanded edition), 2026-08-28 — assembled from the technical
+*v1.2 (peer-review pass) — assembled from the technical
 report (docs/AISLE-technical-report.md, canonical for detail) and the
 campaign records under analysis/. Every number cites a recorded run;
 nothing here is quotable without its caveat. **Every data figure is
@@ -35,12 +35,13 @@ the deployment half — agents given only live evidence detected,
 localized, and repaired induced faults in a running dataflow in **3/3
 pre-registered cells** (detection 299–447 s, repair +30–47 s, zero
 safety violations, audited transcripts). The negative results are load-
-bearing: five VLM-judge configurations refused by an asymmetric-risk
+bearing: five vision-language-model (VLM) judge configurations refused by an asymmetric-risk
 gate that itself needed hardening twice — one model found a scoring
 hole, and label-reading prompts died on camera optics, not prompting;
 a swappable surrogate environment that ran agent-authored graphs
 unmodified at ~100x physics speed while its ranking value proved
-honestly undecidable on a variance-free population; a fine-tuned VLA policy
+honestly undecidable on a variance-free population; a fine-tuned
+vision-language-action (VLA) policy
 whose live 0/8 measured latency and whose lockstep 0/8 — a measurement
 condition we introduce that freezes simulation time during in-turn
 inference — measured competence, redirecting the next dollar from GPU
@@ -53,7 +54,8 @@ hypotheses and its own instruments — at laptop cost.
 
 ## 1. Introduction
 
-The demonstration culture in robotics-plus-LLM work produces artifacts
+The demonstration culture at the intersection of robotics and large
+language models (LLMs) produces artifacts
 ("the robot did X") that cannot be separated from seed selection, scorer
 drift, contamination, or silent human assistance. ENPIRE's contribution
 was scale and closure of the loop; its harness, however, is bespoke and
@@ -67,6 +69,34 @@ new nodes as evalcarded skills, and iterate against automatic reset and
 verification in a Genesis physics scene. The claim under test: *a typed
 dataflow substrate makes agentic robotics faster, more auditable, and
 more reusable than script-level iteration* — reproducible on a laptop.
+
+**Notation.** AISLE is spec-driven, and this paper keeps the spec's
+identifiers so every claim remains greppable in the artifact: `Hn`
+are registered hypotheses and `An` registered ablations; `Mn` are the
+model-tier measurements; `Tn`/`Sn` are task tiers (desk/retail).
+Two-part codes such as `CON-7`, `VAL-5`, `HAR-10`, `TC-6`, `VER-8`,
+`PW-0` are numbered normative requirements in the open specification
+(the prefix names the spec: constitution, validator, harness, topic
+contract, verifier, powder family). `ADR-n` are architecture decision
+records — each campaign's pre-registered protocol is one. On first
+mention we gloss what an identifier requires; the artifact carries the
+full text.
+
+**Contributions.** (1) An open substrate that makes the agentic
+robot-engineering loop *measurable*: typed capability composition,
+static validation with stable error codes, an unbypassable safety
+topology, frozen evaluation, and hash-attested evidence, reproducible
+on one laptop. (2) A pre-registered experimental program (six
+hypotheses, seven ablations, model-tier measurements) executed
+against it, with every verdict — including the negative and
+undecidable ones — derived from committed records by committed
+analyzers. (3) The lockstep evaluation condition, which separates a
+learned policy's competence from its inference latency by freezing
+simulated time during in-turn inference. (4) A measured operations
+result: agents repairing live induced faults from evidence alone,
+3/3. (5) A safety record: zero wrong-medicine deliveries across every
+episode the project has ever run, under free agent authorship of
+motion code.
 
 Three design commitments separate this from a demo repository:
 
@@ -120,16 +150,19 @@ validator rejects graphs statically with stable error codes and
 teaching-surface hints (16+ checks: producer/schema/rate matching,
 oracle isolation, motion gating, perception-rung enforcement, turn-
 topology compilation). Motion output reaches actuation only through a
-budget guard the agent cannot swap, gate, or outrank (VAL-5 topology
-check); the verifier and reset are frozen artifacts (CON-7) whose hash
-is attested in every run manifest.
+budget guard the agent cannot swap, gate, or outrank (VAL-5, the
+validator requirement that checks this topology statically); the
+verifier and reset are frozen artifacts (CON-7, the constitution's
+frozen-set rule) whose hash is attested in every run manifest.
 
-**Deterministic turns.** A lockstep turn barrier (ADR-30) makes
+**Deterministic turns.** A lockstep turn barrier (decision record
+ADR-30) makes
 simulation advance only when every participant closes its causal turn —
 same seed, same result, byte-exact on the deterministic backend. This is
 what turns "the agent claims improvement" into a replayable measurement,
 and it has teeth: the H6 campaign discovered that live node hot-swap
-(HAR-10) — measured viable pre-barrier — kills a lockstep dataflow by
+(HAR-10, the harness's runtime node-replacement operation) — measured
+viable pre-barrier — kills a lockstep dataflow by
 removing a turn participant mid-turn (watchdog abort, 2/2). The H4
 hot-swap latency table therefore does not transfer to lockstep graphs;
 the honest scope note is part of the record.
@@ -186,7 +219,7 @@ registry any other way.*
 ## 3. Experimental program
 
 Hypotheses H1–H6 and ablations A1–A7 were registered in the frozen
-design document (July–August 2026) before their campaigns ran; the
+design document before their campaigns ran; the
 protocol for each campaign is its own ACCEPTED ADR with pre-registered
 scoring. Tiers: T0 (fixed pick) → T1 (named med among 5, randomized) →
 T2 (label-text identification, no color prior) → T4 (dialogue-corrected
@@ -221,8 +254,9 @@ are comparable by construction:
 ## 4. Results
 
 Every number below is derived from committed records by analyzer tools
-(never hand-written); "UNATTESTED" marks dev measurements that make no
-reproducibility claim (ADR-24).
+(never hand-written); "UNATTESTED" marks development-condition
+measurements that make no reproducibility claim under the attestation
+policy (ADR-24).
 
 ### 4.1 Composition (H1): schema-solved, launchability-limited
 
@@ -268,8 +302,11 @@ transit-collision fixes landed — including the honest middle bar where
 an over-broad fix regressed 0.5 → 0.375 before being scoped back
 (§5). Sources: the four committed episode records.*
 
-*Clip: a registered-stack success episode (read tour → label read →
-grasp; seed 12, 3x) — [media/t2_label_read_pick.mp4](../media/t2_label_read_pick.mp4).*
+![T2 filmstrip](../media/t2_label_read_pick_strip.png)
+
+*Figure 3 — key frames of a registered-stack success episode (read
+tour → label read → grasp; seed 12). Video: supplementary clip
+[t2_label_read_pick.mp4](../media/t2_label_read_pick.mp4) (3x).*
 
 The residual is not one class: three collision mechanisms were traced
 (phantom-command drag after contact bails — fixed; a wrist-flipped IK
@@ -289,7 +326,7 @@ accumulation benchmarks are measurable only in the band between trivial
 and impossible, and the band must be located empirically.
 
 The sharpest admissible measurement is the T2-only differential
-(pre-registered, 2026-08-25): a wiped agent and a library agent both
+(pre-registered): a wiped agent and a library agent both
 scored **0.25 holdout — but the library arm spent 35% fewer tokens
 (451k vs 696k) with verified in-deliverable reuse** of two registered
 skills. Accumulation bought cost, not capability — convergent with A3
@@ -306,7 +343,7 @@ working system looks like.
 
 ![cost bars](figures/cost_bars.png)
 
-*Figure 3 — the recurring cost shape across three independent matched
+*Figure 4 — the recurring cost shape across three independent matched
 pairs, every pair equal on held-out outcome: constraining the action
 space (A3), choosing the converging agent style (A4), and carrying a
 skill library (the H3 T2-differential) each roughly halve or third the
@@ -327,7 +364,7 @@ reproducing ENPIRE's super-linearity direction on one laptop.
 
 ![A5 fleet](figures/a5_fleet.png)
 
-*Figure 4 — fleet scaling from `analysis/a5/a5_results.json`:
+*Figure 5 — fleet scaling from `analysis/a5/a5_results.json`:
 throughput saturates by four lanes on one host while mean per-agent
 token cost climbs — contention prices latency and tokens, never
 held-out quality.*
@@ -344,8 +381,9 @@ experimenters too: H6's fault menu was designed identity-safe by rule.
 
 ### 4.8 Operation (H6): 3/3 — the deployment half
 
-Registered August 2026, run 2026-08-25/26 under a pre-registered
-protocol (five amendments, each from a measurement, all before scoring).
+The last-registered and last-run hypothesis, executed under a
+pre-registered protocol (five amendments, each from a measurement, all
+before scoring).
 Per cell: a daemon-mode T1 dataflow streams episodes with one fault
 baked in (perception: +45 mm pose bias; decision: +60 mm grasp lift;
 motion: executor stall at 70% of plan waypoints — magnitudes themselves
@@ -376,7 +414,7 @@ out of the evidence set, and every transcript was checked.*
 
 ![H6 timelines](figures/h6_timelines.png)
 
-*Figure 5 — the three cells' operation timelines from the raw
+*Figure 6 — the three cells' operation timelines from the raw
 `cell.json` records: fault active (red) until the agent's dated
 diagnosis, repair landing 30–47 s later, restored stream (green)
 scoring 1.0 in the credited window.*
@@ -424,7 +462,7 @@ fine-tuning; the bench makes either a one-command measurement.
 
 ![judge tally](figures/judge_tally.png)
 
-*Figure 6 — five configurations against the promotion gate (floor
+*Figure 7 — five configurations against the promotion gate (floor
 0.8, false-success 0, and — post-hardening — success-recall > 0).
 Agreement alone flatters two constant-fail judges; the annotations
 carry the disqualifying number in each case. Sources: the committed
@@ -432,7 +470,8 @@ bench row files and findings.*
 
 **VLA policy (M1).** Zero-shot SmolVLA is structurally impossible (the
 base ships uninitialized normalizers) — measured, not assumed. An
-800-step LoRA fine-tune on 4k demo tuples validated the pipeline; the
+800-step low-rank-adaptation (LoRA) fine-tune on 4k demonstration
+tuples validated the pipeline; the
 live eval scored 0/8 with the mechanism *latency* (CPU chunks arrive
 stale; ADR-38's staleness floor discards them — the safety rule and the
 honest result are the same fact). We then introduced the **lockstep
@@ -447,12 +486,17 @@ so GPU inference serving would not rescue this adapter, and the next
 unit of spend belongs in training dose, measurable per-dose on the same
 laptop before any GPU is bought. M5's halt discipline held throughout.
 
-*Clip: the policy's grasp-and-drop under lockstep (seed 32, 4x) —
-[media/m1_lockstep_grasp_drop.mp4](../media/m1_lockstep_grasp_drop.mp4).*
+![M1 filmstrip](../media/m1_lockstep_grasp_drop_strip.png)
+
+*Figure 8 — key frames of the policy's grasp-and-drop under the
+lockstep condition (seed 32): the only recorded pick behavior in the
+M1 record, ending in a scored `dropped`. Video: supplementary clip
+[m1_lockstep_grasp_drop.mp4](../media/m1_lockstep_grasp_drop.mp4)
+(4x).*
 
 ![M1 mix](figures/m1_mix.png)
 
-*Figure 7 — the same adapter, same seeds, two conditions, both 0/8:
+*Figure 9 — the same adapter, same seeds, two conditions, both 0/8:
 under live latency the arm barely moves (staleness discards chunks);
 under the lockstep condition the policy acts on every tick and acts
 wrongly. The inversion is the finding — competence, not compute, is
@@ -463,17 +507,19 @@ lockstep run.*
 powder task family before any campaign: Metal MPM is nondeterministic
 (GPU atomics) and ~10% crashy — exploration only; CPU is bit-exact but
 ~20x slower at 4 mm scoop scale; the scripted scoop's transferred-mass
-CV is ~88% (open-loop dosing is a coin flip); granular repose does not
+coefficient of variation (CV) is ~88% (open-loop dosing is a coin
+flip); granular repose does not
 emerge in this regime; and at 2 mm the quantization objection to ±1%
 dosing dissolves (12 mg particles) while the Metal/CPU gap narrows to
-2.1x. Ratified scope: primitives only (P0/P1), MPM sand, ≤5k particles
+2.1x. Ratified scope: primitives only (P0/P1), material-point-method
+(MPM) sand, ≤5k particles
 CPU-scored, no repose-dependent verifiers, P2+ deferred pending a CUDA
 determinism spike. The family's dosing fidelity is honestly labeled a
 control-strategy claim, never a milligram claim, per its own spec.
 
 ![PW-0](figures/pw0_throughput.png)
 
-*Figure 8 — the trilemma in two panels: MPM scales best of the
+*Figure 10 — the trilemma in two panels: MPM scales best of the
 candidates on Metal (left), and the 2 mm probe (right) shows grid
 resolution, not particle count, dominating cost — which also narrows
 the Metal/CPU gap to 2.1x and weakens the case for tolerating GPU
@@ -513,7 +559,7 @@ surface.*
 
 ![M3 scatter](figures/m3_scatter.png)
 
-*Figure 9 — Genesis vs surrogate pass@1 per population graph, point
+*Figure 11 — Genesis vs surrogate pass@1 per population graph, point
 size by multiplicity, from `analysis/m3/records.json`. Thirteen of
 sixteen graphs share one Genesis score and the surrogate maps all
 sixteen to one value: rank correlation is undefined and is reported
@@ -530,6 +576,27 @@ condition; its protocol and calibration envelope are recorded, with the
 identity stage's measured envelope explicitly bounded (three-axis
 domain randomization is out of envelope, measured broken, and no
 threshold fixes it).
+
+### 4.12 Supplementary media
+
+![T4 filmstrip](../media/t4_recovery_chain_strip.png)
+
+*Figure 12 — key frames of the complete T4 recovery chain (seed 0):
+scripted misdelivery of the red box, the dialogue correction ("that's
+the wrong one — take it back"), return-to-shelf through the standard
+guard-gated stack, and the correct redelivery; both goals verified.
+Video: [t4_recovery_chain.mp4](../media/t4_recovery_chain.mp4) (4x).*
+
+![T1 filmstrip](../media/t1_expert_pick_strip.png)
+
+*Figure 13 — the T1 expert baseline for orientation (seed 30). Video:
+[t1_expert_pick.mp4](../media/t1_expert_pick.mp4) (2x).*
+
+All four clips are cut deterministically from committed run
+recordings by `tools/paper_media.py`; `docs/media/manifest.json`
+carries each clip's run id, seeds, simulated-time window, and speed.
+They are illustrations; the committed records they point at are the
+evidence.
 
 ## 5. The meta-result: an instrument that corrects itself
 
@@ -558,7 +625,8 @@ Across the program, the pattern that we believe generalizes:
   mainline content before anything is measured.
 - **Fixes are hypotheses.** A collision fix that filtered
   "wrist-flipped" IK branches regressed the pre-registered suite from
-  0.5 to 0.375 by starving legitimate solutions; scoping it to the one
+  0.5 to 0.375 by starving legitimate inverse-kinematics (IK)
+solutions; scoping it to the one
   hop where the measured flip class lives restored 0.5. Both steps were
   measured against the same eight seeds, and the regression is in the
   record beside the repair.
@@ -581,8 +649,10 @@ general safety claim.
 
 ## 7. Related work
 
-ENPIRE (closed harness, real fleet) — we rebuild the loop open and
-measured; ASPIRE's accumulation effect — our H3 finds economy, not
+ENPIRE (the closed-harness, real-fleet agentic-robotics system whose
+loop-closure result motivated this program) — we rebuild the loop open
+and measured; ASPIRE (its skill-accumulation companion) — our H3 finds
+economy, not
 ceiling, at these budgets and locates the instrument-design constraint;
 robot-learning benchmarks fix environments and compare policies — we
 fix environment *and evaluation machinery* and compare engineering
@@ -606,7 +676,10 @@ fail-closed calibration the simulator answers to.
 
 ## Reproducibility
 
-Repo: heyong4725/aisle. Every campaign: protocol ADR + analyzer tool +
+Repository: heyong4725/aisle (for double-blind review, this link and
+the git metadata are replaced by an anonymized artifact archive; the
+run dates in committed findings remain there as provenance and are
+deliberately absent from this text). Every campaign: protocol ADR + analyzer tool +
 committed records; every number in this paper traces to a run id named
 in analysis/. Every data figure regenerates from those records with
 `uv run python tools/paper_figures.py` (the manifest it prints names

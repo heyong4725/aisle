@@ -112,6 +112,48 @@ def cut(name: str, run_id: str, first: int, n: int, speed: int, caption: str) ->
     }
 
 
+def filmstrip(name: str, n_frames: int = 5) -> dict:
+    """A tiled key-frame PNG per clip — the venue-portable form of
+    motion (renders in PDF; the mp4 is supplementary material)."""
+    src = OUT / f"{name}.mp4"
+    dur = float(
+        subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
+                str(src),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    out = OUT / f"{name}_strip.png"
+    step = dur / n_frames
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(src),
+            "-vf",
+            f"fps=1/{step:.4f},scale=320:-2,tile={n_frames}x1",
+            "-frames:v",
+            "1",
+            str(out),
+        ],
+        check=True,
+    )
+    return {"strip": str(out.relative_to(REPO)), "frames": n_frames, "from": f"{name}.mp4"}
+
+
 def main() -> int:
     manifest = []
     for spec in CLIPS:
@@ -122,6 +164,14 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             manifest.append({"clip": spec[0], "error": str(exc)})
             print(f"[media] FAIL {spec[0]}: {exc}", file=sys.stderr)
+    for spec in CLIPS:
+        try:
+            entry = filmstrip(spec[0])
+            manifest.append(entry)
+            print(f"[media] {entry['strip']}", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001
+            manifest.append({"strip": spec[0], "error": str(exc)})
+            print(f"[media] FAIL strip {spec[0]}: {exc}", file=sys.stderr)
     ok = all("error" not in m for m in manifest)
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=1) + "\n")
     print(json.dumps({"ok": ok, "clips": manifest}, indent=1))
