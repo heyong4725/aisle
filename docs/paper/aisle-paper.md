@@ -268,6 +268,9 @@ transit-collision fixes landed — including the honest middle bar where
 an over-broad fix regressed 0.5 → 0.375 before being scoped back
 (§5). Sources: the four committed episode records.*
 
+*Clip: a registered-stack success episode (read tour → label read →
+grasp; seed 12, 3x) — [media/t2_label_read_pick.mp4](../media/t2_label_read_pick.mp4).*
+
 The residual is not one class: three collision mechanisms were traced
 (phantom-command drag after contact bails — fixed; a wrist-flipped IK
 branch pressing the shelf — mitigated at the solve after the
@@ -444,6 +447,9 @@ so GPU inference serving would not rescue this adapter, and the next
 unit of spend belongs in training dose, measurable per-dose on the same
 laptop before any GPU is bought. M5's halt discipline held throughout.
 
+*Clip: the policy's grasp-and-drop under lockstep (seed 32, 4x) —
+[media/m1_lockstep_grasp_drop.mp4](../media/m1_lockstep_grasp_drop.mp4).*
+
 ![M1 mix](figures/m1_mix.png)
 
 *Figure 7 — the same adapter, same seeds, two conditions, both 0/8:
@@ -604,5 +610,10 @@ Repo: heyong4725/aisle. Every campaign: protocol ADR + analyzer tool +
 committed records; every number in this paper traces to a run id named
 in analysis/. Every data figure regenerates from those records with
 `uv run python tools/paper_figures.py` (the manifest it prints names
-each figure's sources). Single-machine (macOS arm64, uv-locked env,
-pinned dora rev, pinned model revisions).
+each figure's sources). Four short video clips — illustrations, never
+evidence — are cut deterministically from committed run recordings by
+`tools/paper_media.py` with a provenance manifest: the T1 baseline,
+a T2 label-read pick, the full T4 recovery chain, and the M1 lockstep
+policy's grasp-and-drop ([gallery](../demo.md#recorded-clips-illustrations-not-evidence)).
+Single-machine (macOS arm64, uv-locked env, pinned dora rev, pinned
+model revisions).
