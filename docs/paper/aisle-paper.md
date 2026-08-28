@@ -1,19 +1,21 @@
 # AISLE: Measuring Whether Coding Agents Can Engineer Robots — on a Laptop, with Receipts
 
-*v1.2 (peer-review pass) — assembled from the technical
+*v1.3 (citation pass) — assembled from the technical
 report (docs/AISLE-technical-report.md, canonical for detail) and the
 campaign records under analysis/. Every number cites a recorded run;
 nothing here is quotable without its caveat. **Every data figure is
 generated from the committed records by `tools/paper_figures.py`** —
 the derived-never-hand-written discipline extended to graphics; where a
 raw record was purged, the figure cites the durable findings table it
-transcribes. Venue formatting and full citations are submission
-mechanics, applied at the venue pass.*
+transcribes. Citations are numbered against the References section;
+venue-specific formatting (template, page fitting) remains for the
+chosen venue.*
 
 ## Abstract
 
 Fleets of coding agents can run the robotics research loop — ENPIRE
-demonstrated as much on real hardware with a bespoke, closed harness. We
+[1] demonstrated as much on real hardware with a bespoke, closed
+harness. We
 ask a sharper question on open infrastructure: **can AI coding agents
 autonomously build, diagnose, improve, reuse, and safely operate robotic
 systems when those systems are composed as typed dataflows** — and can
@@ -57,16 +59,18 @@ hypotheses and its own instruments — at laptop cost.
 The demonstration culture at the intersection of robotics and large
 language models (LLMs) produces artifacts
 ("the robot did X") that cannot be separated from seed selection, scorer
-drift, contamination, or silent human assistance. ENPIRE's contribution
-was scale and closure of the loop; its harness, however, is bespoke and
+drift, contamination, or silent human assistance. ENPIRE's [1]
+contribution was scale and closure of the loop, and ASPIRE [2] added
+the compounding-skill axis; their harnesses, however, are bespoke and
 closed, so the *process* claims are hard to audit or rebuild.
 
 AISLE rebuilds the loop on open, composable infrastructure and makes the
 engineering process itself the object of measurement. The agent's action
 space is not "edit a monolithic script" but **compose and evolve a typed
-dataflow**: generate dora-rs YAML against a capability registry, author
-new nodes as evalcarded skills, and iterate against automatic reset and
-verification in a Genesis physics scene. The claim under test: *a typed
+dataflow**: generate dora-rs [3] YAML against a capability registry,
+author new nodes as evaluated, provenance-carded skills, and iterate
+against automatic reset and verification in a Genesis [4] physics
+scene. The claim under test: *a typed
 dataflow substrate makes agentic robotics faster, more auditable, and
 more reusable than script-level iteration* — reproducible on a laptop.
 
@@ -219,9 +223,9 @@ registry any other way.*
 ## 3. Experimental program
 
 Hypotheses H1–H6 and ablations A1–A7 were registered in the frozen
-design document before their campaigns ran; the
-protocol for each campaign is its own ACCEPTED ADR with pre-registered
-scoring. Tiers: T0 (fixed pick) → T1 (named med among 5, randomized) →
+design document before their campaigns ran — the registered-report
+discipline [5] applied to systems experiments; the protocol for each
+campaign is its own ACCEPTED ADR with pre-registered scoring. Tiers: T0 (fixed pick) → T1 (named med among 5, randomized) →
 T2 (label-text identification, no color prior) → T4 (dialogue-corrected
 goals); retail S1–S3 (multi-item orders, stockouts, planogram swaps).
 
@@ -446,7 +450,7 @@ class — an existence result, reported as one.
 **VLM judges.** A recorded-episode judge bench (dev/holdout split by
 run; gate: holdout agreement ≥0.8 AND false_success = 0) has now
 refused FIVE judge configurations with zero false promotions.
-SmolVLM-500M: 0.2 agreement, 4/5 false-success. SmolVLM2-2.2B
+SmolVLM-500M [6]: 0.2 agreement, 4/5 false-success. SmolVLM2-2.2B [6]
 calibrated: 0.6 — real model scaling — but the same identity-free
 false-success class, which widened to 5/13 on a harder extended
 holdout. The 2B semantic run *exposed the gate*: it answered fail on
@@ -468,9 +472,9 @@ Agreement alone flatters two constant-fail judges; the annotations
 carry the disqualifying number in each case. Sources: the committed
 bench row files and findings.*
 
-**VLA policy (M1).** Zero-shot SmolVLA is structurally impossible (the
-base ships uninitialized normalizers) — measured, not assumed. An
-800-step low-rank-adaptation (LoRA) fine-tune on 4k demonstration
+**VLA policy (M1).** Zero-shot SmolVLA [7] is structurally impossible
+(the base ships uninitialized normalizers) — measured, not assumed. An
+800-step low-rank-adaptation (LoRA) [8] fine-tune on 4k demonstration
 tuples validated the pipeline; the
 live eval scored 0/8 with the mechanism *latency* (CPU chunks arrive
 stale; ADR-38's staleness floor discards them — the safety rule and the
@@ -512,7 +516,7 @@ flip); granular repose does not
 emerge in this regime; and at 2 mm the quantization objection to ±1%
 dosing dissolves (12 mg particles) while the Metal/CPU gap narrows to
 2.1x. Ratified scope: primitives only (P0/P1), material-point-method
-(MPM) sand, ≤5k particles
+(MPM) [9] sand, ≤5k particles
 CPU-scored, no repose-dependent verifiers, P2+ deferred pending a CUDA
 determinism spike. The family's dosing fidelity is honestly labeled a
 control-strategy claim, never a milligram claim, per its own spec.
@@ -649,17 +653,31 @@ general safety claim.
 
 ## 7. Related work
 
-ENPIRE (the closed-harness, real-fleet agentic-robotics system whose
-loop-closure result motivated this program) — we rebuild the loop open
-and measured; ASPIRE (its skill-accumulation companion) — our H3 finds
-economy, not
-ceiling, at these budgets and locates the instrument-design constraint;
-robot-learning benchmarks fix environments and compare policies — we
-fix environment *and evaluation machinery* and compare engineering
-processes; agentic-coding benchmarks measure code passing tests — our
-artifacts control a physical process where a failure class
-(`wrong_object`) cannot be retried away. (Full citations deferred to
-the venue pass.)
+**Agentic robotics research systems.** ENPIRE [1] (closed-harness,
+real-fleet) closed the loop that motivated this program; ASPIRE [2]
+added the compounding skill library. We rebuild both axes on open
+infrastructure and make the loop itself measurable — including the
+places our measurements disagree with the priors (H3's economy-not-
+ceiling; hot-swap's non-transfer to lockstep graphs).
+
+**Robot-learning benchmarks.** RLBench [10], ManiSkill [11], and their
+successors fix environments and compare policies. We fix the
+environment *and the evaluation machinery* and compare engineering
+processes, with policy comparison available as a special case (M1).
+
+**Agentic-coding benchmarks.** SWE-bench [12] and its family measure
+code that passes tests. Our artifacts control a physical process with
+a safety envelope where one failure class (`wrong_object`) cannot be
+retried away — the retry-until-green strategy that solves coding
+benchmarks is unsound here by construction.
+
+**Simulators and learned world models.** Genesis [4], MuJoCo [13], and
+Isaac [14] provide physics; AISLE consumes a simulator rather than
+competing with one, which is why the surrogate swap (§4.10) is
+architecturally routine. World-action models [15] and world-model
+platforms such as Cosmos [16] are the intended learned backends behind
+the same node surface, gated on compute, with M3's variance
+requirement now known before any is trained.
 
 ## 8. Conclusion
 
@@ -673,6 +691,49 @@ its measured end-states with every remainder explicitly gated on
 compute or design, and the hardware entry is prepared as the contract
 promised: a driver node behind the same typed surface, with the same
 fail-closed calibration the simulator answers to.
+
+## References
+
+*(Venue-neutral numbered form; the 2026 systems papers are cited by
+their arXiv identifiers as released. Bibliographic details for the
+established works below were drafted from general knowledge and MUST
+be spot-verified against live sources at submission.)*
+
+1. NVIDIA GEAR, CMU LeCAR, UC Berkeley. *ENPIRE: Coding Agents Conduct
+   the Robotics Research Cycle on Physical Hardware.* arXiv:2606.19980,
+   2026.
+2. NVIDIA. *ASPIRE: Agentic Skill Accumulation for Robot Program
+   Repair.* Released with the nvidia-cosmos open stack, 2026.
+3. dora-rs contributors. *dora-rs: A Dataflow-Oriented Robotics
+   Framework.* https://github.com/dora-rs/dora, 2023–2026.
+4. Genesis Authors. *Genesis: A Universal and Generative Physics
+   Engine.* https://github.com/Genesis-Embodied-AI/Genesis, 2024.
+5. B. A. Nosek, C. R. Ebersole, A. C. DeHaven, D. T. Mellor. *The
+   Preregistration Revolution.* PNAS 115(11), 2018.
+6. A. Marafioti et al. *SmolVLM: Redefining Small and Efficient
+   Multimodal Models.* arXiv:2504.05299, 2025. Model revisions pinned
+   in the artifact.
+7. M. Shukor et al. *SmolVLA: A Vision-Language-Action Model for
+   Affordable and Efficient Robotics.* arXiv:2506.01844, 2025.
+8. E. J. Hu et al. *LoRA: Low-Rank Adaptation of Large Language
+   Models.* arXiv:2106.09685, 2021.
+9. D. Sulsky, Z. Chen, H. L. Schreyer. *A Particle Method for
+   History-Dependent Materials.* Computer Methods in Applied Mechanics
+   and Engineering 118, 1994.
+10. S. James, Z. Ma, D. R. Arrojo, A. J. Davison. *RLBench: The Robot
+    Learning Benchmark & Learning Environment.* IEEE RA-L, 2020.
+11. T. Mu et al. *ManiSkill: Generalizable Manipulation Skill
+    Benchmark.* NeurIPS Datasets and Benchmarks, 2021.
+12. C. E. Jimenez et al. *SWE-bench: Can Language Models Resolve
+    Real-World GitHub Issues?* ICLR, 2024.
+13. E. Todorov, T. Erez, Y. Tassa. *MuJoCo: A Physics Engine for
+    Model-Based Control.* IROS, 2012.
+14. NVIDIA. *Isaac Sim / Isaac Lab.* Developer documentation,
+    2021–2026.
+15. NVIDIA. *World Action Models are Zero-shot Policies (DreamZero).*
+    arXiv:2602.15922, 2026.
+16. NVIDIA. *Cosmos World Foundation Model Platform for Physical AI.*
+    arXiv:2501.03575, 2025.
 
 ## Reproducibility
 
