@@ -1,0 +1,82 @@
+{
+ "attempts": [
+  {
+   "stopped": "agent_done",
+   "wall_s": 977.6,
+   "tokens_generated": 29154,
+   "graph_exists": true,
+   "graph_sha256": "82023926568ef299aefbcdb17c72a3373d04e3a055606f532b5d156c0488ec63",
+   "turns": 32,
+   "valid": false,
+   "validate_tail": "{\"ok\": false, \"graph\": \"graphs/agent_h1.yaml\", \"errors\": [{\"code\": \"GRAPH_INVALID\", \"node\": \"graphs/agent_h1.yaml\", \"detail\": \"graph must be a mapping with a `nodes` list of mappings\", \"hint\": \"structure the file as {nodes: [{id, inputs, outputs}, ...]}\"}], \"warnings\": [], \"dist_state\": {\"dora-pose\": null, \"dora-yolo\": null}}\n",
+   "attempt": 0
+  },
+  {
+   "stopped": "agent_done",
+   "wall_s": 132.4,
+   "tokens_generated": 5725,
+   "graph_exists": false,
+   "graph_sha256": null,
+   "turns": 5,
+   "valid": false,
+   "attempt": 1
+  },
+  {
+   "stopped": "agent_done",
+   "wall_s": 113.2,
+   "tokens_generated": 5725,
+   "graph_exists": false,
+   "graph_sha256": null,
+   "turns": 5,
+   "valid": false,
+   "attempt": 2
+  },
+  {
+   "stopped": "agent_done",
+   "wall_s": 109.9,
+   "tokens_generated": 5725,
+   "graph_exists": false,
+   "graph_sha256": null,
+   "turns": 5,
+   "valid": false,
+   "attempt": 3
+  },
+  {
+   "stopped": "agent_done",
+   "wall_s": 113.0,
+   "tokens_generated": 5725,
+   "graph_exists": false,
+   "graph_sha256": null,
+   "turns": 5,
+   "valid": false,
+   "attempt": 4
+  }
+ ],
+ "replay": [
+  {
+   "stopped": "agent_done",
+   "wall_s": 132.7,
+   "tokens_generated": 5725,
+   "graph_exists": false,
+   "graph_sha256": null,
+   "turns": 5,
+   "valid": false,
+   "replay": "r1"
+  },
+  {
+   "stopped": "agent_done",
+   "wall_s": 124.9,
+   "tokens_generated": 5725,
+   "graph_exists": false,
+   "graph_sha256": null,
+   "turns": 5,
+   "valid": false,
+   "replay": "r2"
+  }
+ ],
+ "c4": {
+  "streams_identical": true,
+  "first_divergent_line": null,
+  "deliverables_identical": null
+ }
+}
