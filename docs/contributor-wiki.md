@@ -97,7 +97,8 @@ The primary implemented task families are:
 - **Mobile retail, S1–S3:** fulfill an order, restock missing inventory, or
   correct misplaced products against a planogram.
 - **Powder transfer, P0–P4:** specified as a future bench family, but gated on
-  a solver/repeatability spike and not yet an implemented benchmark family.
+  a solver/repeatability spike, now RATIFIED to a P0/P1-primitive scope
+  (ADR-powder-spike) and not yet an implemented benchmark family.
 
 ### 2.2 What makes it different
 
@@ -960,7 +961,7 @@ protocols and limitations.
 | M0 expert baseline | T0 expert passed 49/50 (0.98); the milestone replicate independently re-satisfied the acceptance gate. | [`ADR-M0`](decisions/ADR-M0.md) |
 | H1 zero-shot composition | 40/40 first validation, but launch+valid only 15% and 65% by agent arm; target not met. Missing external capabilities dominated. | [`h1_findings.md`](../analysis/h1/h1_findings.md) |
 | H2 iterative improvement | Both independent arms met the ≥0.9 supported-performance target; held-out 1.0 and 0.875. | [`h2_findings.md`](../analysis/h2/h2_findings.md) |
-| H3 skill accumulation | UNDECIDED on both ladders. Retail: no admissible library cell survived the drift audit. Desk (T1→T4): `met: null`, 13 caveats; T4 ratio ~1.03 (parity), T2/T3 unsolved by either arm. **The finding is the ladder's difficulty spacing, not the library** — no tier sits in the band between trivial and impossible where a speedup could show. Reuse verified live (`s3-driver-v1` embedded verbatim in a desk deliverable). | [`h3_findings.md`](../analysis/h3/h3_findings.md), [`desk_findings.md`](../analysis/h3/desk/desk_findings.md) |
+| H3 skill accumulation | UNDECIDED on both ladders. Retail: no admissible library cell survived the drift audit. Desk (T1→T4): `met: null`, 13 caveats; T4 ratio ~1.03 (parity), T2/T3 unsolved by either arm. **The finding is the ladder's difficulty spacing, not the library** — no tier sits in the band between trivial and impossible where a speedup could show. Post-close T2 differential (#306): equal 0.25 holdout, library arm 35% cheaper with verified reuse — economy, not ceiling. Reuse verified live (`s3-driver-v1` embedded verbatim in a desk deliverable). | [`h3_findings.md`](../analysis/h3/h3_findings.md), [`desk_findings.md`](../analysis/h3/desk/desk_findings.md) |
 | H4 iteration latency | T0 hot swap median 32.4 s vs relaunch 41.8 s, n=6 each; development evidence is explicitly unattested. | [`h4_findings.md`](../analysis/h4/h4_findings.md) |
 | H5 delivery precision | 0 wrong-object in 224/224 H2 episodes and 0 in every campaign since — desk H3, A3, A4, A6, and all 13 A5 fleet lanes under 8-way concurrent iteration (~40 agent sessions). A denominator, not an absolute. | [`h2_findings.md`](../analysis/h2/h2_findings.md), [`a5_findings.md`](../analysis/a5/a5_findings.md) |
 | A1 composition ablation | Zero-shot composition has a large end-to-end T1 tax; iterative agents close it. S1 comparison is inconclusive. | [`a1_table.md`](../analysis/a1/a1_table.md) |
@@ -968,7 +969,7 @@ protocols and limitations.
 | A4 Claude Code vs Codex | Both solve T1 at 1.0/1.0, 0 wrong-object. Codex first-success sooner (8.1 vs 9.7 min) then over-iterates; Claude ~2× cheaper end-to-end (186k vs 364k). Style, not capability. n=1/arm, lower bound. | [`a4_findings.md`](../analysis/a4/a4_findings.md) |
 | A5 fleet scaling | Throughput saturates at ~4 lanes/host: 1.6 → 4.1 → 4.3 succ/hr at N=1/4/8. Quality contention-invariant (holdout 1.0 every lane); token super-linearity +22%/+31%. | [`a5_findings.md`](../analysis/a5/a5_findings.md) |
 | A6 teleport vs behavioral reset | Teleport 1.00 pass@1 / 6.4 min; behavioral 0.80 / 9.6 min at +19 s per episode, 7 success + 3 audited fallbacks. The reset is itself a manipulation task that fails sometimes. | [`a6_findings.md`](../analysis/a6/a6_findings.md) |
-| Tier curves T1/T2 | T1 expert 1.0 per rung; **T2 expert 0.08** (2/25) — the deliberate perception wall. Label reads are accurate when parked (0 wrong reads); tour mechanics dominate the failure budget. | [`t2 findings`](../analysis/t2/t2_curve_findings.md) |
+| Tier curves T1/T2 | T1 expert 1.0 per rung. T2: original expert **0.08** (the deliberate perception wall) → fleet-authored read ladder **0.375** holdout (#299) → registered stack **0.5** on the pre-registered n=8, stable across four re-measures; residual = three named transit-collision mechanisms (one fixed, one mitigated, one structural). | [`t2 findings`](../analysis/t2/t2_curve_findings.md), [`breakthrough`](../analysis/t2_breakthrough/), [`transit collisions`](../analysis/transit_collisions/findings.md) |
 | Phase 2 / Phase 3 DoD | **Both closed 2026-08-16.** Phase 2 complete (8/8). Phase 3 five of six — skill library NOT MET at **3** of ≥5 (`s1-driver-v2`, `s3-driver-v1`, `ik-transfer-v2`); 3 was the ceiling, because ADR-37's floor refuses the two T2-authored skills at 0.33 and 0.0. | [`phase2_phase3_report.md`](../analysis/reports/phase2_phase3_report.md) |
 | §9.4 trust tier, end to end | `ik-transfer-v2` (#258): agent-authored **motion class**, trace-cited root cause, shipped eval suite with a regression population, evalcard **1.0**, lost to the retention gap, recovered and provenance-verified, reviewed, human-merged. The full governance path exercised once, on the class that matters most. | [`agent_pr_review_notes.md`](../analysis/reports/agent_pr_review_notes.md) |
 | §8.4 governance review | Three flags raised against agent code; **all three were harness defects** (self-graded eval floor → ADR-37; unretained deliverables → `refs/campaign/`; a validator rule that would have rejected the frozen corpus, dropped). Zero agent faults. First pass could review only 2 of 5 skills. | [`agent_pr_review_notes.md`](../analysis/reports/agent_pr_review_notes.md) |
@@ -1016,11 +1017,14 @@ the result, not a footnote to it.
 - Behavioral reset **is** implemented in simulation and measured (A6: 0.80
   pass@1, +19 s/episode, 7 success + 3 audited fallbacks). Real-hardware
   recovery is not implemented.
-- **T2 and T3 are unsolved by any agent arm at session budgets.** This is the
-  single largest open scientific item: it caps the skill library, and it is why
-  H3's accumulation question could not be asked on the desk ladder.
-- Powder transfer remains gated; the target ranges and solver budget cannot be
-  filled honestly until the spike decision.
+- **T2 is broken open but not solved; T3 remains unsolved.** The fleet-
+  authored read ladder took T2 from 0.08 to 0.375 holdout and the registered
+  stack holds 0.5 on the pre-registered n=8 — still short of ≥0.9, with the
+  residual traced to named transit-collision mechanisms. T3 has no agent-arm
+  success at session budgets.
+- Powder transfer is ratified at its measured floor (PW-0, 2026-08-27):
+  P0/P1 primitives only, MPM sand, CPU-scored; P2+ deferred pending a CUDA
+  determinism spike.
 - Multi-robot, humanoid, dynamic obstacle, liquid, and regulated-workflow
   concerns are explicitly outside current scope.
 
