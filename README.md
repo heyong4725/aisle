@@ -67,16 +67,19 @@ for the shorthand every other page uses (`CON-5`, `ADR-30`, `H3`, `A7`,
 `T2`, `L1`, Class C, DoD, the frozen set),
 **[`docs/glossary.md`](docs/glossary.md)**, which expands each identifier
 and names the file that defines it.
-Where this goes next — the model-node tier (VLA policies, VLM verifier,
-world-model environments) and the road to hardware — is the executable
-plan in **[docs/next-phases.md](docs/next-phases.md)** (PROPOSED).
+The model-node tier (VLA policies, VLM verifier, world-model
+environments) ran as **Phase 5** and is CLOSED at measured end-states —
+the plan, its ratification, and the per-item ledger are
+**[docs/next-phases.md](docs/next-phases.md)**. The paper distilling
+the whole measured record is
+**[docs/paper/aisle-paper.md](docs/paper/aisle-paper.md)** (v1.0).
 
 ## Status
 
 **This table is the single current status page** (issue #142). Other overview
 pages link here; protocol and evidence pages may retain dated summaries for
 context, but must identify their snapshot and defer to this table on conflict.
-Status as of **2026-08-16**, commit `0035c45`. Each row states the verdict its
+Status as of **2026-08-28**, commit `93de5e0`. Each row states the verdict its
 committed evidence supports, with that evidence's own qualifications — a
 hypothesis with no admissible data says so rather than reading as progress.
 
@@ -90,18 +93,22 @@ Full record: [`analysis/reports/phase2_phase3_report.md`](analysis/reports/phase
 | Phase 0 — world bring-up | SPEC 090 | signed off (M0) |
 | Phase 1 — registry, validator, harness | validator + 12 manifests + H1 table | complete |
 | **Phase 2** — the full autoresearch loop | 8 items | **complete** — pass@k curves T1/T2, verifier fidelity, iteration latency, A1/A3/A7, zero unclamped guard violations, post-mortems |
-| **Phase 3** — skills, fleet, cross-embodiment | 6 items | **closed: 5 met, 1 NOT MET** — the skill library reached 3 evalcarded skills against a DoD of ≥5 |
+| **Phase 3** — skills, fleet, cross-embodiment | 6 items | **closed: 5 met, 1 NOT MET** — the skill library reached 3 evalcarded skills against a DoD of ≥5 at close (see the library note below: the two refused skills later cleared the floor) |
+| **Phase 5** — the model tier (next-phases §5) | 5.1/5.1b/5.2/5.3 | **CLOSED 2026-08-27** at measured end-states; every remainder explicitly GPU- or design-gated ([ledger](docs/next-phases.md)) |
+| Phase 6 — hardware | entry criteria + prep | **prepared, not open**: SO-101 driver node (loopback-tested) + VER-8 hardware calibration parity landed (ADR-phase6-prep); entry gates unwaived (M5 met; M1 + judge fidelity gated) |
 
-The one unmet row is stated plainly rather than rounded. The library holds
-`s1-driver-v2`, `s3-driver-v1`, and **`ik-transfer-v2`** — the last a
-`safety_class: motion` trajectory skill an agent authored against a
-trace-cited collision, evalcard 1.0, reviewed and human-merged (#258). Two
-further campaign skills exist and are provenance-verified (#252), but
-ADR-37's registry floor refuses `t2-scan-pose` (0.33) and `t2-scan-tsm` (0.0)
-on their own evalcards, so **3 was the ceiling and the library reached it**.
-**T2/T3 being unsolved at session budgets is why the library is small** — not
-agent capability; the reuse mechanism demonstrably works (`s3-driver-v1`
-appears verbatim in a desk deliverable, a retail→desk cross-suite transfer).
+The one unmet row is stated plainly rather than rounded, and dated: at the
+2026-08-16 close the library held `s1-driver-v2`, `s3-driver-v1`, and
+**`ik-transfer-v2`** — the last a `safety_class: motion` trajectory skill an
+agent authored against a trace-cited collision, evalcard 1.0, reviewed and
+human-merged (#258) — while ADR-37's floor refused `t2-scan-pose` (0.33) and
+`t2-scan-tsm` (0.0) on their own evalcards. **Post-close, both refused skills
+cleared the floor** on pre-registered n=8 suites after the T2 breakthrough
+work (0.5 each, trust tier `reviewed`, #304), bringing the library to
+**five**; the closure verdict stands as dated. The reuse mechanism works in
+both directions: `s3-driver-v1` appears verbatim in a desk deliverable
+(retail→desk), and the registered T2 pair carried verified in-deliverable
+reuse in the accumulation differential (#306).
 
 `ik-transfer-v2` is also the §9.4 trust-tier path completing end to end:
 authored by an agent in the governance-critical motion class, shipped with
@@ -118,17 +125,22 @@ Orientation for contributors: [`docs/contributor-wiki.md`](docs/contributor-wiki
 | M0 — verified pharmacy-pick loop (SPEC 090) | signed off; expert graph 0.98 pass@1 over 50 seeds, with the milestone replicate independently re-satisfying the gate |
 | H1 — zero-shot composition | measured, target not met: 40/40 schema-valid graphs, but 15% (claude) / 65% (codex) launch zero-shot; single dominant failure is uninstalled hub packages (`analysis/h1/`) |
 | H2 — iteration to ≥90% | claude arm **met** held-out (1.0 pass@1); codex arm 0.875 held-out at N=8 (one `dropped`), with dev-side evidence of a ≥0.9 system — see `analysis/h2/` for the full verdict |
-| H3 — skill accumulation | **UNDECIDED on both suites; no speedup measured.** Retail (S1→S3): `met: null`, every library-arm cell lost to drift. Desk (T1→T4, `analysis/h3/desk/`): `met: null` under strict admissibility, 13 caveats. The interpretable direction, stated with that caveat — on T4, the only tier where both arms produced clean first-success numbers, the ratio is **~1.03** (L 894 s vs W 872 s: parity, not ≤0.5); T2/T3 the library did not rescue what wiped sessions could not do either. **The finding is the ladder's difficulty spacing, not the library**: T1/T4 are easy for both arms (no headroom for a speedup) and T2/T3 are beyond both (no success to speed up), so the transfer curve never got a tier that could show an effect. Skill reuse itself is verified live |
-| H4 — hot-swap vs relaunch iteration | **measured at T0**, phase-randomized (ADR-h4 rev 2): hot-swap median iteration latency 32.4 s vs relaunch 41.8 s (ratio 1.29), n=6 per path, zero infra failures. Extremes overlap; no significance or equivalence claim at n=6. UNATTESTED dev measurement — makes no reproducibility claim (`analysis/h4/`) |
-| H5 — zero wrong-object under free iteration | **holding, and the denominator has grown substantially.** 0 wrong-object in 224/224 episodes across the three H2 campaign runs (`analysis/h2/`), and 0 across every subsequent campaign: the desk-H3 ladder, A3's two arms, A4's two agent CLIs, and **all 13 A5 fleet lanes under 8-way concurrent agent-authored iteration**. Roughly 40 agent sessions have now authored motion code freely without producing a wrong-medicine delivery. Still a denominator, not an absolute — the structural argument is the guard's, and this corroborates it |
-| H6 — agent operates a running system | **registered, not yet run** (August 2026): detect an induced degradation in a live dataflow, localize it, propose a validated hot-swap, recover — no human in the loop, no guard bypass, no wrong-object during the intervention. The inference/operation half of the programme; needs a fault-injection protocol and an ADR before it runs |
+| H3 — skill accumulation | **UNDECIDED on both suites; no speedup measured.** Retail (S1→S3): `met: null`, every library-arm cell lost to drift. Desk (T1→T4, `analysis/h3/desk/`): `met: null` under strict admissibility, 13 caveats. The interpretable direction, stated with that caveat — on T4, the only tier where both arms produced clean first-success numbers, the ratio is **~1.03** (L 894 s vs W 872 s: parity, not ≤0.5); T2/T3 the library did not rescue what wiped sessions could not do either. **The finding is the ladder's difficulty spacing, not the library**: T1/T4 are easy for both arms (no headroom for a speedup) and T2/T3 are beyond both (no success to speed up), so the transfer curve never got a tier that could show an effect. The sharpest admissible follow-up (T2-only differential, #306): both arms 0.25 holdout, **library arm 35% cheaper** (451k vs 696k tokens) with verified reuse — accumulation bought economy, not ceiling. Skill reuse itself is verified live |
+| H4 — hot-swap vs relaunch iteration | **measured at T0**, phase-randomized (ADR-h4 rev 2): hot-swap median iteration latency 32.4 s vs relaunch 41.8 s (ratio 1.29), n=6 per path, zero infra failures. Extremes overlap; no significance or equivalence claim at n=6. UNATTESTED dev measurement. **Scope note (H6 finding, measured 2/2):** live swap of a turn participant kills an ADR-30 lockstep dataflow — this table holds for pre-barrier free-run graphs only; turn-aware swap is a filed substrate follow-up (`analysis/h4/`) |
+| H5 — zero wrong-object under free iteration | **holding, and the denominator has grown substantially.** 0 wrong-object in 224/224 episodes across the three H2 campaign runs (`analysis/h2/`), and 0 across every subsequent campaign: the desk-H3 ladder, A3's two arms, A4's two agent CLIs, and **all 13 A5 fleet lanes under 8-way concurrent agent-authored iteration** — then every campaign after the 08-16 close: all H6 operation cells (agents repairing live faults), every M1 VLA-driven episode (learned motion under the M5 halt discipline), the T4 inc-2 recovery chains, and every T2 re-measure. Roughly 45 agent sessions have now authored or driven motion freely without one wrong-medicine delivery. Still a denominator, not an absolute — the structural argument is the guard's, and this corroborates it |
+| H6 — agent operates a running system | **SUPPORTED, 3/3 cells** (2026-08-26, pre-registered ADR-h6 + five measured amendments): per fault tier (perception/decision/motion), an operator agent given only live evidence detected the induced degradation (299–447 s), localized the correct node with cited evidence (audited transcripts; one cell exonerated the upstream node by recomputing the planner's output from probed inputs), and restored 1.0 with a validated repair. Zero `wrong_object`, zero guard bypass, no out-of-space action. n=1 per fault class — an existence result, reported as one (`analysis/h6/`) |
 | Retail suite S1–S3 (mobile, long-horizon) | implemented: store scene, planogram verifier, mobility contract, S1 expert graph |
 | Perception ladder L0/L1/L2 (TC-9) | implemented: L0 oracle poses, L1 segmentation + depth (`segmented-pose`), L2 RGB identity + same-stamp sensor-depth geometry (`l2-pose`); the rung rides the graph and is asserted per run (`--perception`) |
-| Tier curves T1/T2 (Phase-2 DoD) | T1 expert **1.0** per rung; **T2 expert 0.08** (2/25 seeds) — the deliberate perception wall. The label READ works when parked (seed-3-class layouts read 4/5, margins +0.10..+0.31, **0 wrong reads**); what dominates the failure budget is tour mechanics — 15 `never_grasped`, 7 `collision`, 1 `dropped`. **0 `wrong_object` across all 50 T2 episodes ever run.** Every failure mode is honest: refusal, timeout, collision (`analysis/t2/`) |
+| Tier curves T1/T2 (Phase-2 DoD) | T1 expert **1.0** per rung. T2: the original expert measured **0.08** (the deliberate perception wall); the fleet-authored far-first read ladder broke through to **0.375** holdout (#299), and the registered stack holds **0.5** on the pre-registered n=8 suite across four re-measures. The residual failure class is traced to three named transit-collision mechanisms — one fixed (#314), one mitigated at the solve (#328, after a measured filter regression 0.5→0.375→0.5), one structural (tray-descent link sweep) (`analysis/t2/`, `analysis/t2_breakthrough/`, `analysis/transit_collisions/`). **0 `wrong_object` across every T2 episode ever run** |
 | T2/T3 unsolved at session budgets | **standing challenge.** No campaign arm — desk-H3 either arm, A3, A4 — has solved T2 or T3 within a session budget. This is the tiers working as designed (§1 curriculum) and is the single biggest open scientific item |
 | Realistic verifier (VER-5) | implemented (`src/aisle/verifier/realistic.py`, OWLv2 + rules, CPU-pinned); ADR at `docs/decisions/ADR-realistic-verifier.md` |
 | VER-6 verifier fidelity | current VER-13 fusion recomputed over the same 31 recorded episodes: agreement **0.45**, false SUCCESS **0.00** (0/6), false FAIL **0.68** (17/25). The preserved first, pre-amendment measurement was 0.29 / 0.00 / 0.88 (`analysis/ver6-fidelity/`; current recomputation in SPEC 040 VER-13). Conservative, not yet interchangeable with the oracle |
 | CON-5 reproducibility on S1 | **original violation dispositioned**: ADR-25 fixed and verified reset-anchored startup; ADR-26 defines full-episode outcomes as statistical under Metal noise. Issue #71 remains open for wall-coupled command/control timing and possible frozen-set retiming — per-seed outcome flips are not themselves a CON-5 violation |
+| T4 increment two — post-delivery recovery | **first complete number** (#295–#303): dialogue-corrected misdeliveries 3/3; recovery chains 1/3 (one end-to-end return+redelivery success; one `not_returned` at budget; one collision traced to the tray-descent link sweep). Protocol/judging machinery 100%; the residual is manipulation (`analysis/t4_inc2/`) |
+| M1 — learned policy value (Phase 5) | **the competence half is measured on-Mac**: zero-shot SmolVLA structurally impossible (uninitialized base normalizers); an 800-step LoRA validated the pipeline; live eval 0/8 with the mechanism = CPU latency vs ADR-38's staleness floor; the **lockstep-eval condition** (ADR-38 am. 1: sim time freezes during in-turn inference) then measured 0/8 with zero refusals and an inverted failure mix — competence, not latency, is the wall, so the next spend is training dose, per-dose measurable at ~17 min/episode (`analysis/m1/`) |
+| VLM judge (Phase 5.2) | **five configurations measured and refused, zero false promotions** by a twice-hardened asymmetric gate (success-recall added after a constant-fail judge "passed" a failure-heavy holdout). 2B scales (0.2→0.6 agreement) but keeps the identity-free false-success class; label-reading prompts die on optics (21 px text, recall 0). Remainder: judged-frame design change or fine-tuning (`analysis/ver-vlm/`) |
+| M3 — environment ladder (Phase 5.3) | **the swap works; the ranking question needs variance**: a v0 kinematic surrogate ran 16/16 agent-authored H1 graphs unmodified at ~100x Genesis speed; ranking agreement is honestly undecidable (13/16 identical Genesis scores + the pre-declared cartoon-vs-contact fidelity gap) — Spearman reported as undefined, never fabricated (`analysis/m3/`) |
+| PW-0 — powder family feasibility (SPEC 300) | **ratified 2026-08-27**: GO for P0/P1 primitives only (MPM sand, ≤5k particles CPU-scored; Metal is nondeterministic + ~10% crashy, exploration only); PW-6 reframed best-effort (scoop CV ~88%); P2+ deferred pending a CUDA determinism spike; no repose-dependent scenes/verifiers (ADR-powder-spike, spec thresholds filled #322) |
 
 ### Ablations (design doc §6)
 
@@ -192,19 +204,25 @@ CLAUDE.md          development-agent contract (read first if you are an agent)
 specs/             numbered specs with MUST IDs (000 = constitution)
 TASKS.md           implementation order + kickoff prompts
 registry/          capability schema + typed node manifests
-graphs/            expert baseline dataflows (T0/T1 desk pick, S1 retail)
+graphs/            expert + eval dataflows (T0..T4 desk, S1 retail,
+                   VLA evals incl. the lockstep condition)
 src/aisle/         scenes, bridge, verifier, reset, harness, mobility, nodes
+                   (incl. world_model_env — the env-ladder surrogate — and
+                   so101_driver — the Phase-6 hardware bridge, loopback-tested)
 harness CLIs       `uv run harness {validate,rollout,traces,report,skill,swap,probe}`
-tools/             CI, trace_check, env_hash, campaign runners (H1/H2/H3/H4)
+tools/             CI, trace_check, env_hash, campaign runners
+                   (h1..h4, h6, a3..a5, m3_ranking, judge_bench, vlm_judge,
+                   finetune_smolvla, hw_calibration, spikes/)
 tests/             unit / sim / graph markers; every MUST cited by a test
-analysis/          committed experiment findings: hypotheses (h1..h4),
-                   ablations (a1, a3, a4, a5, a6), tiers (t2, t3, t4),
+analysis/          committed experiment findings: hypotheses (h1..h4, h6),
+                   ablations (a1..a6), tiers (t2, t2_breakthrough, t3, t4,
+                   t4_inc2), m1, m3, ver-vlm, transit_collisions,
                    ver6-fidelity, s1-determinism, postmortems, transcripts,
-                   reports/ (phase2_phase3_report, agent_pr_review_notes)
-skills_pending_review/  campaign skills recovered but NOT registered
-                   (t2-scan-pose, t2-scan-tsm — both refused by ADR-37's floor)
-docs/              guides, design doc, contributor wiki, decisions/ (ADRs),
-                   generated/project-inventory.md (source-derived catalogs)
+                   reports/
+skills/            the registered library (5): s1-driver-v2, s3-driver-v1,
+                   ik-transfer-v2, t2-scan-pose, t2-scan-tsm
+docs/              guides, design doc, contributor wiki, paper/ (v1.0),
+                   decisions/ (ADRs), generated/project-inventory.md
 runs/              gitignored: traces, videos, run manifests
 ```
 
