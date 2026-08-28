@@ -20,8 +20,13 @@ that is H4 evidence frontier agents structurally cannot produce.**
 
 - Backend: ollama on this machine; model pinned by name AND digest in
   every record (`local_backend`, `local_model_digest` — adapter
-  treatment extras, tools/agent_adapters.py). First candidate:
-  gemma3:27b, temperature 0.
+  treatment extras, tools/agent_adapters.py). First candidate was
+  gemma3:27b; SUBSTITUTED before any scored run (amendment, measured
+  reason): the runtime rejects tool calls for it ("does not support
+  tools", HTTP 400) and the driver's loop is tool-call-shaped. The arm
+  runs **qwen3:30b** (digest recorded per run) — a 30B-class
+  mixture-of-experts, tools-capable, temperature 0. Same class, same
+  floor expectation.
 - Driver: `tools/local_agent.py` — one bash tool, claude-shaped
   stream-json so the campaign tee/ceiling path is unchanged; the
   `local` adapter's ledger enforces on `tokens_generated` (ADR-43;

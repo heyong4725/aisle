@@ -1,0 +1,10 @@
+{
+ "adr": "ADR-44",
+ "prompt_sha256": "ddfb8a5ff44ad78a380b69ada65c3c5a29489fb266782b0274e388cb91f6b4fb",
+ "model": "qwen3:30b",
+ "local_model_digest": "ad815644918f",
+ "local_backend": "ollama",
+ "pin_oid": "442e60cc6b737605ee42cb30904d0ce677d98bd6",
+ "session_wall_s": 1800.0,
+ "expectation": "below H1 15% launchable; plausibly 0/5 (pre-registered)"
+}
