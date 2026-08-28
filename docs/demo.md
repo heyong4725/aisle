@@ -217,3 +217,22 @@ ps -eo pid,etimes,pcpu,pmem,args |
 
 Run one simulator workload at a time. Parallel simulator runs or dependency
 operations can distort timing and leave stale processes after interruption.
+
+
+## Recorded clips (illustrations, not evidence)
+
+Every clip below is cut deterministically from a committed run's
+`traces/overhead.mp4` by `tools/paper_media.py`; the manifest
+(`docs/media/manifest.json`) names each clip's run id, seeds, sim
+window, and speed factor. **The run record is the evidence; the clip
+is the illustration** — this repo's founding complaint about demo
+culture applies to its own videos.
+
+| Clip | What it shows | Record |
+|---|---|---|
+| [T1 expert pick](media/t1_expert_pick.mp4) (2x) | the named-med baseline: locate, grasp, deliver, verified success | `hybrid-t1-noregression-r2`, seed 30 |
+| [T2 label-read pick](media/t2_label_read_pick.mp4) (3x) | the registered stack on the label tier: read tour, staged approach, grasp | `t2-scope-v2`, seed 12 |
+| [T4 recovery chain](media/t4_recovery_chain.mp4) (4x) | scripted misdelivery → "take it back" → return-to-shelf → correct redelivery, both goals verified | `t4-inc2-recovery-r4`, seed 0 |
+| [M1 lockstep policy](media/m1_lockstep_grasp_drop.mp4) (4x) | the fine-tuned VLA's only recorded pick behavior — grasp, then drop (scored `dropped`; the honest 0/8's most interesting episode) | `m1-lockstep-n8`, seed 32 |
+
+GitHub renders these inline; locally any player opens them.

@@ -1,0 +1,79 @@
+[
+ {
+  "clip": "docs/media/t1_expert_pick.mp4",
+  "run_id": "hybrid-t1-noregression-r2",
+  "episodes": [
+   {
+    "seed": 30,
+    "status": "success",
+    "t_end": 20.26
+   }
+  ],
+  "video_window_s": [
+   0.0,
+   60.78
+  ],
+  "speed": "2x",
+  "size_kb": 162,
+  "caption": "T1 expert baseline: named-med pick, seed 30, 20.3 sim-s, success"
+ },
+ {
+  "clip": "docs/media/t2_label_read_pick.mp4",
+  "run_id": "t2-scope-v2",
+  "episodes": [
+   {
+    "seed": 12,
+    "status": "success",
+    "t_end": 25.86
+   }
+  ],
+  "video_window_s": [
+   416.28,
+   493.86
+  ],
+  "speed": "3x",
+  "size_kb": 167,
+  "caption": "T2 registered stack: read-tour -> label read -> grasp, seed 12, 24.7 sim-s, success"
+ },
+ {
+  "clip": "docs/media/t4_recovery_chain.mp4",
+  "run_id": "t4-inc2-recovery-r4",
+  "episodes": [
+   {
+    "seed": 0,
+    "status": "success",
+    "t_end": 20.86
+   },
+   {
+    "seed": 0,
+    "status": "success",
+    "t_end": 22.23
+   }
+  ],
+  "video_window_s": [
+   0.0,
+   129.27
+  ],
+  "speed": "4x",
+  "size_kb": 206,
+  "caption": "T4 inc-2 seed 0: scripted misdelivery, correction, return-to-shelf, redelivery -- the full recovery chain (43.1 sim-s, both goals success)"
+ },
+ {
+  "clip": "docs/media/m1_lockstep_grasp_drop.mp4",
+  "run_id": "m1-lockstep-n8",
+  "episodes": [
+   {
+    "seed": 32,
+    "status": "fail",
+    "t_end": 39.0
+   }
+  ],
+  "video_window_s": [
+   360.0,
+   477.0
+  ],
+  "speed": "4x",
+  "size_kb": 156,
+  "caption": "M1 lockstep-eval seed 32: the fine-tuned VLA policy's only recorded pick behavior -- grasp then drop at 39 sim-s (episode scored dropped)"
+ }
+]
