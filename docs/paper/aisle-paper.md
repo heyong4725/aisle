@@ -1,6 +1,6 @@
 # AISLE: Measuring Whether Coding Agents Can Engineer Robots — on a Laptop, with Receipts
 
-*v1.3 (citation pass) — assembled from the technical
+*v1.3.1 (citations verified) — assembled from the technical
 report (docs/AISLE-technical-report.md, canonical for detail) and the
 campaign records under analysis/. Every number cites a recorded run;
 nothing here is quotable without its caveat. **Every data figure is
@@ -694,22 +694,21 @@ fail-closed calibration the simulator answers to.
 
 ## References
 
-*(Venue-neutral numbered form; the 2026 systems papers are cited by
-their arXiv identifiers as released. Bibliographic details for the
-established works below were drafted from general knowledge and MUST
-be spot-verified against live sources at submission.)*
+*(Venue-neutral numbered form. Every entry below was spot-verified
+against live sources — arXiv pages, publisher records — at the
+citation pass; two originally drafted titles were corrected in that
+verification.)*
 
-1. NVIDIA GEAR, CMU LeCAR, UC Berkeley. *ENPIRE: Coding Agents Conduct
-   the Robotics Research Cycle on Physical Hardware.* arXiv:2606.19980,
-   2026.
-2. NVIDIA. *ASPIRE: Agentic Skill Accumulation for Robot Program
-   Repair.* Released with the nvidia-cosmos open stack, 2026.
+1. W. Xiao, J. Xie, T. Zhang, et al. *ENPIRE: Agentic Robot Policy
+   Self-Improvement in the Real World.* arXiv:2606.19980, 2026.
+2. R. Lu, Y. Wu, E. Kou, et al. *ASPIRE: Agentic Skills Discovery
+   for Robotics.* arXiv:2607.00272, 2026.
 3. dora-rs contributors. *dora-rs: A Dataflow-Oriented Robotics
    Framework.* https://github.com/dora-rs/dora, 2023–2026.
 4. Genesis Authors. *Genesis: A Universal and Generative Physics
    Engine.* https://github.com/Genesis-Embodied-AI/Genesis, 2024.
 5. B. A. Nosek, C. R. Ebersole, A. C. DeHaven, D. T. Mellor. *The
-   Preregistration Revolution.* PNAS 115(11), 2018.
+   Preregistration Revolution.* PNAS 115(11):2600–2606, 2018.
 6. A. Marafioti et al. *SmolVLM: Redefining Small and Efficient
    Multimodal Models.* arXiv:2504.05299, 2025. Model revisions pinned
    in the artifact.
@@ -719,13 +718,15 @@ be spot-verified against live sources at submission.)*
    Models.* arXiv:2106.09685, 2021.
 9. D. Sulsky, Z. Chen, H. L. Schreyer. *A Particle Method for
    History-Dependent Materials.* Computer Methods in Applied Mechanics
-   and Engineering 118, 1994.
+   and Engineering 118:179–196, 1994.
 10. S. James, Z. Ma, D. R. Arrojo, A. J. Davison. *RLBench: The Robot
-    Learning Benchmark & Learning Environment.* IEEE RA-L, 2020.
+    Learning Benchmark & Learning Environment.* IEEE Robotics and
+    Automation Letters 5(2):3019–3026, 2020.
 11. T. Mu et al. *ManiSkill: Generalizable Manipulation Skill
-    Benchmark.* NeurIPS Datasets and Benchmarks, 2021.
+    Benchmark with Large-Scale Demonstrations.* NeurIPS Datasets and
+    Benchmarks (arXiv:2107.14483), 2021.
 12. C. E. Jimenez et al. *SWE-bench: Can Language Models Resolve
-    Real-World GitHub Issues?* ICLR, 2024.
+    Real-World GitHub Issues?* ICLR (arXiv:2310.06770), 2024.
 13. E. Todorov, T. Erez, Y. Tassa. *MuJoCo: A Physics Engine for
     Model-Based Control.* IROS, 2012.
 14. NVIDIA. *Isaac Sim / Isaac Lab.* Developer documentation,
