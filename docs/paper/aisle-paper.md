@@ -1,9 +1,10 @@
 # AISLE: Measuring Whether Coding Agents Can Engineer Robots — on a Laptop, with Receipts
 
-*Submission draft v0.1, 2026-08-27 — assembled from the technical report
+*v1.0 FINAL, 2026-08-27 — assembled from the technical report
 (docs/AISLE-technical-report.md, canonical for detail) and the campaign
 records under analysis/. Every number cites a recorded run; nothing here
-is quotable without its caveat. Venue formatting deferred.*
+is quotable without its caveat. Content-final; venue formatting and
+full citations are submission mechanics, applied at the venue pass.*
 
 ## Abstract
 
@@ -28,10 +29,14 @@ wrong-medicine deliveries across every campaign episode ever run**
 (~40 agent sessions authoring motion code freely, 8 concurrent); and —
 the deployment half — agents given only live evidence detected,
 localized, and repaired induced faults in a running dataflow in **3/3
-pre-registered cells** (detection 299–558 s, repair +25–32 s, zero
+pre-registered cells** (detection 299–447 s, repair +30–47 s, zero
 safety violations, audited transcripts). The negative results are load-
-bearing: two VLM judges disqualified by an asymmetric-risk gate the
-second one exposed as gameable (now hardened); a fine-tuned VLA policy
+bearing: five VLM-judge configurations refused by an asymmetric-risk
+gate that itself needed hardening twice — one model found a scoring
+hole, and label-reading prompts died on camera optics, not prompting;
+a swappable surrogate environment that ran agent-authored graphs
+unmodified at ~100x physics speed while its ranking value proved
+honestly undecidable on a variance-free population; a fine-tuned VLA policy
 whose live 0/8 measured latency and whose lockstep 0/8 — a measurement
 condition we introduce that freezes simulation time during in-turn
 inference — measured competence, redirecting the next dollar from GPU
@@ -191,7 +196,7 @@ experimenters too: H6's fault menu was designed identity-safe by rule.
 
 ### 4.7 Operation (H6): 3/3 — the deployment half
 
-Registered August 2026, run August 2026-08-25/26 under a pre-registered
+Registered August 2026, run 2026-08-25/26 under a pre-registered
 protocol (five amendments, each from a measurement, all before scoring).
 Per cell: a daemon-mode T1 dataflow streams episodes with one fault
 baked in (perception: +45 mm pose bias; decision: +60 mm grasp lift;
@@ -202,27 +207,36 @@ guard stats, topic probes) and ceilings (300k tokens / 2 h), must
 detect the degradation against the registered baseline, localize the
 node, and restore with a validated repair.
 
-**All three cells PASS**: detection 299–558 s, repair +25–32 s after
+**All three cells PASS**: detection 299–447 s, repair +30–47 s after
 diagnosis, post-repair 1.0 (6-episode credited windows), zero
 `wrong_object`, zero guard bypass, transcripts audited clean. The
 sessions independently converged on differential fault isolation —
 probing live topics and doing arithmetic on them (one cell excluded a
-sibling fault numerically; another recognized target_pose as unbiased
-by comparing against the previous day's probe values). Falsified if
+sibling fault numerically; another RECOMPUTED the planner's output
+from its probed inputs and reproduced the observed grasp exactly
+except the +60 mm fault, exonerating the upstream node by
+arithmetic). Falsified if
 localization required out-of-space action: it did not. n=1 per fault
 class — an existence result, reported as one.
 
 ### 4.8 Learned components: three honest negatives that bought direction
 
-**VLM judges.** A recorded-episode judge bench (13 episodes, dev/
-holdout by run, gate: holdout agreement ≥0.8 AND false_success = 0)
-disqualified SmolVLM-500M (0.2 agreement, 4/5 false-success) and then
-SmolVLM2-2.2B (0.6 agreement — real scaling — but 2 false-successes of
-the same identity-free class). The 2B run also *exposed the gate*: its
-semantic prompt answered fail on all 13 episodes and "passed" at 0.8 on
-a failure-heavy holdout — the gate now requires success-recall > 0. An
-asymmetric-risk promotion gate must be tested against degenerate
-constants; ours wasn't until a model found the hole.
+**VLM judges.** A recorded-episode judge bench (dev/holdout split by
+run; gate: holdout agreement ≥0.8 AND false_success = 0) has now
+refused FIVE judge configurations with zero false promotions.
+SmolVLM-500M: 0.2 agreement, 4/5 false-success. SmolVLM2-2.2B
+calibrated: 0.6 — real model scaling — but the same identity-free
+false-success class, which widened to 5/13 on a harder extended
+holdout. The 2B semantic run *exposed the gate*: it answered fail on
+every episode and "passed" at 0.8 on a failure-heavy holdout — the
+gate now also requires success-recall > 0 (an asymmetric-risk
+promotion gate must be tested against degenerate constants; ours
+wasn't until a model found the hole). The pre-declared label-reading
+prompt then died on OPTICS: with the med name printed on every box,
+recall was 0.0 because the text is ~21 px in the overhead frame — a
+camera-geometry limit no wording fixes. The recorded remainder is a
+design change (wrist or higher-resolution judged frames) or
+fine-tuning; the bench makes either a one-command measurement.
 
 **VLA policy (M1).** Zero-shot SmolVLA is structurally impossible (the
 base ships uninitialized normalizers) — measured, not assumed. An
@@ -253,7 +267,25 @@ CPU-scored, no repose-dependent verifiers, P2+ deferred pending a CUDA
 determinism spike. The family's dosing fidelity is honestly labeled a
 control-strategy claim, never a milligram claim, per its own spec.
 
-### 4.9 The reset and the evaluator (A6/A7)
+### 4.9 The environment ladder (M3): the swap works; the ranking question needs variance
+
+The cheapest tier of the three-tier environment ladder (surrogate ->
+physics -> hardware) exists to screen candidates. A v0 deterministic
+kinematic surrogate behind the bridge's exact topic surface ran all 16
+launchable agent-authored H1 graphs UNMODIFIED — full pipeline,
+planner to frozen verifier, 128 episodes, zero launch failures, at
+~100x Genesis speed. The mechanical claim (environment tiers are a
+node swap) holds. The pre-registered ranking measurement, however, is
+honestly undecidable: the launchable population carries almost no
+Genesis outcome variance (13/16 identical scores), and the cartoon
+compresses the contact-graded remainder to a constant — Spearman is
+reported as undefined rather than fabricated. The H3 lesson recurs at
+the environment tier: a ranking instrument is only measurable on a
+population with outcome spread, located before the campaign. What the
+learned backbone must add is now precisely sized: contact-outcome
+discrimination.
+
+### 4.10 The reset and the evaluator (A6/A7)
 
 Teleport reset: 1.00 pass@1 in 6.4 min. Behavioral reset: 0.80 in 9.6
 min (+19 s/episode, 3 audited fallbacks) — the reset is itself a
@@ -285,7 +317,17 @@ Across the program, the pattern that we believe generalizes:
   env-hash gate (which refused an uncommitted frozen-set graph mid-
   session — correctly), and the dist-drift gate (which caught leftover
   fine-tune packages) each demonstrated their value by refusing work
-  this project's own authors attempted.
+  this project's own authors attempted. The process needs the same
+  teeth: one silently failed PR-create produced a phantom "measurement"
+  of unchanged code, caught only because deterministic replay made the
+  byte-identical result suspicious — merge chains now verify diff and
+  mainline content before anything is measured.
+- **Fixes are hypotheses.** A collision fix that filtered
+  "wrist-flipped" IK branches regressed the pre-registered suite from
+  0.5 to 0.375 by starving legitimate solutions; scoping it to the one
+  hop where the measured flip class lives restored 0.5. Both steps were
+  measured against the same eight seeds, and the regression is in the
+  record beside the repair.
 - **Negative results are directional.** Every negative above changed
   the next action: the judge results priced the next cheap test
   (label-rendered frames); the M1 pair redirected spend from serving to
@@ -322,7 +364,11 @@ and — for the first time in this program — *operated* typed-dataflow
 robot systems under frozen evaluation, producing findings on both
 sides of the ledger and never once delivering the wrong medicine. The
 substrate claim survives contact with its own audit machinery, which
-is the only way we would want to make it.
+is the only way we would want to make it. The model tier is closed at
+its measured end-states with every remainder explicitly gated on
+compute or design, and the hardware entry is prepared as the contract
+promised: a driver node behind the same typed surface, with the same
+fail-closed calibration the simulator answers to.
 
 ## Reproducibility
 
