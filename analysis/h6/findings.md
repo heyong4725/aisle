@@ -39,10 +39,14 @@ and perception offsets, guard stats to rule out blocking.
   exactly), then pinned a ~45 mm lateral bias from failure geometry
   (fingers striking box edges; one IK failure past the reach
   envelope).
-- **F2 (grasp +60 mm):** probed grasp_pose vs target_pose on live
-  topics (+67 mm above the designed TCP), and — notably — recognized
-  target_pose as UNBIASED by comparing against the previous day's
-  probes, ruling out F1 with historical evidence.
+- **F2 (grasp +60 mm):** probed target_pose and grasp_pose at the
+  SAME sim stamp (+60 mm on z, xy identical), then RECOMPUTED
+  plan_grasp from the probed target with as-designed config and
+  reproduced the observed grasp exactly except the shift —
+  exonerating segmented-pose by arithmetic. (The superseded first
+  attempt, invalid on the credit-window defect, had instead compared
+  against the previous day's probe values; its transcript is retained
+  under records/superseded/.)
 - **F3 (executor stall at 70% waypoints):** `stage done` stops after
   `retract` (8 of 13 stages) every episode; guard violations empty
   (commands ceased, not blocked); upstream nodes shown healthy.
