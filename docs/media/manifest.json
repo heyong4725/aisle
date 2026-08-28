@@ -75,5 +75,25 @@
   "speed": "4x",
   "size_kb": 156,
   "caption": "M1 lockstep-eval seed 32: the fine-tuned VLA policy's only recorded pick behavior -- grasp then drop at 39 sim-s (episode scored dropped)"
+ },
+ {
+  "strip": "docs/media/t1_expert_pick_strip.png",
+  "frames": 5,
+  "from": "t1_expert_pick.mp4"
+ },
+ {
+  "strip": "docs/media/t2_label_read_pick_strip.png",
+  "frames": 5,
+  "from": "t2_label_read_pick.mp4"
+ },
+ {
+  "strip": "docs/media/t4_recovery_chain_strip.png",
+  "frames": 5,
+  "from": "t4_recovery_chain.mp4"
+ },
+ {
+  "strip": "docs/media/m1_lockstep_grasp_drop_strip.png",
+  "frames": 5,
+  "from": "m1_lockstep_grasp_drop.mp4"
  }
 ]
