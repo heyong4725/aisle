@@ -1,6 +1,8 @@
 # AISLE: Measuring Whether Coding Agents Can Engineer Robots — on a Laptop, with Receipts
 
-*v1.3.1 (citations verified) — assembled from the technical
+*v1.4 (peer-review revision: self-contained program table and
+glossary in §3, A1 reported, consistency and numbering fixes) —
+assembled from the technical
 report (docs/AISLE-technical-report.md, canonical for detail) and the
 campaign records under analysis/. Every number cites a recorded run;
 nothing here is quotable without its caveat. **Every data figure is
@@ -15,44 +17,42 @@ chosen venue.*
 
 Fleets of coding agents can run the robotics research loop — ENPIRE
 [1] demonstrated as much on real hardware with a bespoke, closed
-harness. We
-ask a sharper question on open infrastructure: **can AI coding agents
-autonomously build, diagnose, improve, reuse, and safely operate robotic
-systems when those systems are composed as typed dataflows** — and can
-the answer be *measured* rather than demonstrated? AISLE is a substrate
-(typed capability registry, static graph validation, an unbypassable
-safety guard, frozen verifiers, hash-attested evidence, budgeted
-campaigns) plus a pre-registered experimental program run against it on
-a single MacBook. We report: composition is schema-solved but
-launchability-limited (40/40 valid graphs, 15–65% zero-shot launch, one
-dominant mechanism); iteration reaches held-out 1.0 on the easiest tier;
-skill accumulation buys **economy, not ceiling** (equal held-out score
-at 35% lower token cost, with verified cross-suite reuse); the substrate
-subsidy is real and unintuitive (denying code-authoring *halved* session
-cost at equal quality); a fleet saturates at ~4 agents on one host with
-quality contention-invariant at 1.0; safety held at **zero
-wrong-medicine deliveries across every campaign episode ever run**
-(~40 agent sessions authoring motion code freely, 8 concurrent); and —
-the deployment half — agents given only live evidence detected,
-localized, and repaired induced faults in a running dataflow in **3/3
-pre-registered cells** (detection 299–447 s, repair +30–47 s, zero
-safety violations, audited transcripts). The negative results are load-
-bearing: five vision-language-model (VLM) judge configurations refused by an asymmetric-risk
-gate that itself needed hardening twice — one model found a scoring
-hole, and label-reading prompts died on camera optics, not prompting;
-a swappable surrogate environment that ran agent-authored graphs
-unmodified at ~100x physics speed while its ranking value proved
-honestly undecidable on a variance-free population; a fine-tuned
-vision-language-action (VLA) policy
-whose live 0/8 measured latency and whose lockstep 0/8 — a measurement
-condition we introduce that freezes simulation time during in-turn
-inference — measured competence, redirecting the next dollar from GPU
-serving to training dose; and a granular-physics feasibility gate that
-scoped an entire task family to its measured floor before any campaign
-spent tokens on it. The recurring meta-result: with pre-registration,
-frozen evaluation, and attested evidence, an agent-driven engineering
-loop produces *findings* — including findings against its own
-hypotheses and its own instruments — at laptop cost.
+harness. We ask a sharper question on open infrastructure: **can AI
+coding agents autonomously build, diagnose, improve, reuse, and
+safely operate robotic systems composed as typed dataflows** — and
+can the answer be *measured* rather than demonstrated? AISLE is a
+substrate (typed capability registry, static graph validation, an
+unbypassable safety guard, frozen verifiers, hash-attested evidence,
+budgeted campaigns) plus a pre-registered experimental program run
+against it on a single MacBook. We report: composition is
+schema-solved but launchability-limited (40/40 valid graphs, 15–65%
+zero-shot launch, one dominant mechanism); iteration reaches held-out
+1.0 on the easiest tier; skill accumulation buys **economy, not
+ceiling** (equal held-out score at 35% lower token cost, with
+verified cross-suite reuse); denying code authorship *halved* session
+cost at equal quality; a fleet saturates at ~4 agents on one host
+with held-out quality contention-invariant at 1.0; safety held at
+**zero wrong-medicine deliveries across every campaign episode ever
+run** (~45 agent sessions authoring or driving motion code, 8
+concurrent); and — the deployment half — agents given only live
+evidence detected, localized, and repaired induced faults in a
+running dataflow in **3/3 pre-registered cells** with zero safety
+violations. Four negative or undecidable results are load-bearing
+rather than incidental: five vision-language-model (VLM) judge
+configurations refused by an asymmetric-risk promotion gate, which
+one model's degenerate strategy exposed and hardened; a surrogate
+environment that ran agent-authored graphs unmodified at ~100x
+physics speed while its ranking value proved undecidable on a
+variance-free population; a fine-tuned vision-language-action (VLA)
+policy whose paired 0/8 results — under live latency and under a
+**lockstep evaluation condition** we introduce — separated competence
+from compute, redirecting spend from GPU serving to training dose;
+and a granular-physics feasibility gate that scoped a task family to
+its measured floor before any campaign spent tokens on it. The
+meta-result: with pre-registration, frozen evaluation, and attested
+evidence, an agent-driven engineering loop produces *findings* —
+including against its own hypotheses and instruments — at laptop
+cost.
 
 ## 1. Introduction
 
@@ -82,9 +82,10 @@ Two-part codes such as `CON-7`, `VAL-5`, `HAR-10`, `TC-6`, `VER-8`,
 `PW-0` are numbered normative requirements in the open specification
 (the prefix names the spec: constitution, validator, harness, topic
 contract, verifier, powder family). `ADR-n` are architecture decision
-records — each campaign's pre-registered protocol is one. On first
-mention we gloss what an identifier requires; the artifact carries the
-full text.
+records — each campaign's pre-registered protocol is one. Table 1
+(§3) enumerates the registered program — each hypothesis, ablation,
+and measurement with its criterion and verdict — and §3 closes with a
+glossary of recurring terms; the artifact carries the full text.
 
 **Contributions.** (1) An open substrate that makes the agentic
 robot-engineering loop *measurable*: typed capability composition,
@@ -92,9 +93,10 @@ static validation with stable error codes, an unbypassable safety
 topology, frozen evaluation, and hash-attested evidence, reproducible
 on one laptop. (2) A pre-registered experimental program (six
 hypotheses, seven ablations, model-tier measurements) executed
-against it, with every verdict — including the negative and
-undecidable ones — derived from committed records by committed
-analyzers. (3) The lockstep evaluation condition, which separates a
+against it — one control condition and one compute-gated measurement
+remain open and are stated as such — with every verdict, including
+the negative and undecidable ones, derived from committed records by
+committed analyzers. (3) The lockstep evaluation condition, which separates a
 learned policy's competence from its inference latency by freezing
 simulated time during in-turn inference. (4) A measured operations
 result: agents repairing live induced faults from evidence alone,
@@ -142,7 +144,7 @@ flowchart LR
   TB[turn barrier ADR-30] -.lockstep turns.- BR
 ```
 
-*Diagram 1 — the substrate. Agents rewire and author everything in the
+*Figure 1 — the substrate. Agents rewire and author everything in the
 left box; every motion command crosses the frozen guard; the verifier
 consumes privileged state no policy node may route (statically
 rejected); the environment behind the bridge surface is swappable
@@ -151,9 +153,10 @@ rejected); the environment behind the bridge surface is swappable
 **Typed dataflow.** Nodes declare manifests (schemas, rates, embodiment,
 `safety_class` ∈ {perception, decision, motion}, eval provenance). A
 validator rejects graphs statically with stable error codes and
-teaching-surface hints (16+ checks: producer/schema/rate matching,
-oracle isolation, motion gating, perception-rung enforcement, turn-
-topology compilation). Motion output reaches actuation only through a
+teaching-surface hints (27 distinct error codes at the pinned
+revision, spanning producer/schema/rate matching, oracle isolation,
+motion gating, perception-rung enforcement, and turn-topology
+compilation). Motion output reaches actuation only through a
 budget guard the agent cannot swap, gate, or outrank (VAL-5, the
 validator requirement that checks this topology statically); the
 verifier and reset are frozen artifacts (CON-7, the constitution's
@@ -199,7 +202,7 @@ flowchart LR
   AUD -->|drift found| INADM[flagged inadmissible]
 ```
 
-*Diagram 2 — the evidence chain. A verdict exists only at the end of
+*Figure 2 — the evidence chain. A verdict exists only at the end of
 this pipe; the two measured mid-session gate refusals (§5) are this
 diagram working.*
 
@@ -216,7 +219,7 @@ flowchart LR
   pre-registered suite| E
 ```
 
-*Diagram 3 — skill governance. Both refused T2 skills later re-entered
+*Figure 3 — skill governance. Both refused T2 skills later re-entered
 through the same gate and cleared it (§4.4); nothing enters the
 registry any other way.*
 
@@ -225,9 +228,52 @@ registry any other way.*
 Hypotheses H1–H6 and ablations A1–A7 were registered in the frozen
 design document before their campaigns ran — the registered-report
 discipline [5] applied to systems experiments; the protocol for each
-campaign is its own ACCEPTED ADR with pre-registered scoring. Tiers: T0 (fixed pick) → T1 (named med among 5, randomized) →
-T2 (label-text identification, no color prior) → T4 (dialogue-corrected
-goals); retail S1–S3 (multi-item orders, stockouts, planogram swaps).
+campaign is its own ACCEPTED ADR with pre-registered scoring. A
+reader has neither the spec nor the ADRs, so this section states what
+each registered item *is*, its criterion, and its verdict; the
+artifact carries the full text.
+
+**Task tiers.** Desk: T0 (fixed pick — sanity) → T1 (the *named*
+medicine among 5, randomized poses) → T2 (identity from printed label
+text only, no color prior) → T3 (target occluded behind another box,
+requiring re-arrangement) → T4 (dialogue-corrected goals with
+post-delivery recovery). Retail: S1 (multi-item order picking), S2
+(restocking stockouts), S3 (returning misplaced items to their
+planogram slots).
+
+| Id | Registered claim (abbreviated) | Registered criterion | Verdict | § |
+|---|---|---|---|---|
+| H1 Composition | agent composes a valid, launching T1 dataflow from goal + registry alone | ≥80% zero-shot launch; working graph ≤3 validate-fix cycles | schema 40/40; zero-shot launch 15%/65% — target not met, one dominant mechanism | 4.1 |
+| H2 Iteration | the loop raises T1 success within a fixed budget | ≥90% held-out pass@1 (≥99% pass@8) | met (Claude arm, 1.0); Codex 0.875 at n=8 | 4.2 |
+| H3 Accumulation | a persistent skill library cuts time-to-success on T3/T4 | ≥2x vs a memory-wiped agent | undecidable as registered; T2 differential: equal score at 35% fewer tokens | 4.4 |
+| H4 Substrate | typed-dataflow iteration beats monolithic-script iteration | time-to-success + audit legibility | control condition unrun; latency fragment measured | 4.5, 6 |
+| H5 Safety | the guard topology holds wrong-medicine at zero under free motion authorship | 0 `wrong_object` across all runs | holding, 0 across every episode | 4.7 |
+| H6 Operation | an agent detects, localizes, and repairs induced faults from live evidence alone | no human, no guard bypass, no `wrong_object` | 3/3 cells (n=1 per fault class) | 4.8 |
+
+*Table 1 — the registered hypotheses. Verdicts are the analyzer
+tools'; §6 carries the n-caveats.*
+
+**Ablations.** A1 agent-composed vs the hand-written expert graph
+(§4.1); A2 skill library on/off — executed as the H3 wiped-vs-library
+ladders (§4.4); A3 params-only vs params+code authorship (§4.5); A4
+Claude Code vs Codex (§4.6); A5 fleet scaling at 1/4/8 agents (§4.6);
+A6 teleport vs behavioral reset (§4.11); A7 the loop driven by the
+realistic verifier instead of the oracle (§4.11).
+
+**Model-tier measurements.** M1 classical pipeline vs learned policy,
+same seeds and scorer (§4.9); M2 world-model re-ranking on T3 —
+registered, gated on compute, not yet run; M3 surrogate-environment
+ranking against physics on the H1 graph population (§4.10); M5
+whether the H5 safety zero survives learned motion (§4.9).
+
+**Glossary.** *pass@k*: success within k in-context retries of one
+episode (ENPIRE semantics; pass@1 is single-shot). *dev / held-out
+seeds*: disjoint by run; only held-out seeds count toward verdicts.
+*DR*: domain randomization. *IK*: inverse kinematics. *evalcard*: a
+skill's committed eval-provenance record (suite, pass rate, date).
+*UNATTESTED*: measured outside the hash-attested pipeline (ADR-24);
+makes no reproducibility claim. *EN loop*: ENPIRE's
+environment-module loop (compose → roll out → verify → revise).
 
 ### 3.1 Common instrumentation
 
@@ -238,8 +284,9 @@ are comparable by construction:
   budget. Isolated HOME/config (a measured incident — an agent reading
   operator memory — forced this); credentials seeded per session and
   scrubbed at teardown; token ceilings counted from the live stdout
-  stream (an on-disk tee is never the counter's source), wall ceilings
-  by process-group kill. Typical arms: 0.4–0.7M tokens, 2–4 h wall;
+  stream (an on-disk tee is never the counter's source — a file can
+  be truncated or lost without the session noticing; the live stream
+  cannot), wall ceilings by process-group kill. Typical arms: 0.4–0.7M tokens, 2–4 h wall;
   H6 operator cells 300k / 2 h.
 - **Scoring.** Held-out seeds disjoint from dev seeds, split BY RUN so
   iteration on dev can never self-grade; the frozen oracle is the only
@@ -272,7 +319,7 @@ intervention.
 
 ![H1 funnel](figures/h1_funnel.png)
 
-*Figure 1 — the H1 funnel, per agent, from `analysis/h1/`. Both agents
+*Figure 4 — the H1 funnel, per agent, from `analysis/h1/`. Both agents
 solve the SCHEMA problem essentially always (40/40 valid); the cliff
 is launchability — 15% (Claude) / 65% (Codex) — and one mechanism
 dominates it (24/40 attempts): manifests naming uninstalled hub
@@ -281,13 +328,32 @@ packages.*
 The response was legibility, not bar-lowering: the validator's
 `INSTALL_MISSING` now names an installed, embodiment-compatible
 alternative covering the missing capability — the validator as a
-teaching surface, which later campaigns measurably exploited (every
-post-H1 composition arm launches).
+teaching surface. Later campaigns measurably exploited it: every
+post-H1 composition arm launched.
+
+**The expert-baseline comparison (A1).** The end-to-end estimand —
+compose, launch, and pass, with a composition that never launches
+scoring 0 — shows a real composition tax at T1: agent zero-shot
+pooled **0.347** vs the expert graph's **0.875** (attested rerun),
+driven by the launch gap, not execution quality; conditional on
+launching, agent graphs match the expert (median 0.875, same failure
+classes). One iteration budget later, the EN loop closes the tax
+entirely (both H2 arms at 0.875–1.0). An earlier A1 draft conditioned
+on the 16/40 graphs that launched — selecting away exactly the
+failure mode A1 exists to measure — and was corrected in review; the
+corrected estimand is the cell of record. The retail cell (A1/S1) is
+inconclusive by its own record: single-session point estimates with
+overlapping intervals (n=8 per cell).
 
 ### 4.2 Iteration (H2): met on one arm
 
-Claude arm: held-out pass@1 1.0. Codex arm: 0.875 at N=8 with dev-side
-evidence of a ≥0.9 system. Zero `wrong_object` in 224/224 episodes.
+Setup: the full loop — compose, validate, roll out, read traces,
+revise — on T1 under a fixed session budget; the registered criterion
+is ≥90% held-out pass@1 (≥99% pass@8). Claude arm: held-out pass@1
+1.0, which entails pass@8 = 1.0 — **met**. Codex arm: 0.875 at n=8
+(one `dropped`), with dev-side evidence of a ≥0.9 system; its record
+does not separately resolve pass@8. Zero `wrong_object` in 224/224
+episodes.
 
 ### 4.3 The T2 wall, and how it came down in stages
 
@@ -298,8 +364,8 @@ fleet-scale agent authorship compounding through the registry:
 
 ![T2 arc](figures/t2_arc.png)
 
-*Figure 2 — left: the wall broke in stages (expert 0.08 → the
-fleet-authored far-first read ladder at 0.375 holdout → the registered
+*Figure 5 — left: the wall broke in stages (expert 0.08 → the
+fleet-authored far-first read ladder at 0.375 held-out → the registered
 two-skill stack holding 0.5 on the pre-registered n=8 suite). Right:
 the failure mix across the four re-measures of the SAME eight seeds as
 transit-collision fixes landed — including the honest middle bar where
@@ -308,7 +374,7 @@ an over-broad fix regressed 0.5 → 0.375 before being scoped back
 
 ![T2 filmstrip](../media/t2_label_read_pick_strip.png)
 
-*Figure 3 — key frames of a registered-stack success episode (read
+*Figure 6 — key frames of a registered-stack success episode (read
 tour → label read → grasp; seed 12). Video: supplementary clip
 [t2_label_read_pick.mp4](../media/t2_label_read_pick.mp4) (3x).*
 
@@ -330,14 +396,17 @@ accumulation benchmarks are measurable only in the band between trivial
 and impossible, and the band must be located empirically.
 
 The sharpest admissible measurement is the T2-only differential
-(pre-registered): a wiped agent and a library agent both
-scored **0.25 holdout — but the library arm spent 35% fewer tokens
-(451k vs 696k) with verified in-deliverable reuse** of two registered
-skills. Accumulation bought cost, not capability — convergent with A3
-below, and with cross-suite reuse verified live elsewhere (a retail
-driver embedded verbatim in a desk deliverable).
+(pre-registered): a wiped agent and a library agent both scored
+**0.25 on fresh held-out seeds (100..107; 3x the 0.08 stock expert) —
+but the library arm spent 35% fewer tokens (451k vs 696k) with
+verified in-deliverable reuse** of two registered skills. (The 0.5 of
+§4.3 is the same stack on the registration suite's dev seeds 8..15 —
+a different seed population under the §3.1 by-run split, not a
+regression.) Accumulation bought cost, not capability — convergent
+with A3 below, and with cross-suite reuse verified live elsewhere (a
+retail driver embedded verbatim in a desk deliverable).
 
-### 4.5 The substrate subsidy (A3/H4): removing an affordance won
+### 4.5 The substrate subsidy (A3): removing an affordance won
 
 Params-only vs params+code, same tier, same budget: **equal held-out
 quality (1.0/1.0) at half the tokens (200k vs 396k)**, a third the wall
@@ -347,14 +416,19 @@ working system looks like.
 
 ![cost bars](figures/cost_bars.png)
 
-*Figure 4 — the recurring cost shape across three independent matched
+*Figure 7 — the recurring cost shape across three independent matched
 pairs, every pair equal on held-out outcome: constraining the action
 space (A3), choosing the converging agent style (A4), and carrying a
 skill library (the H3 T2-differential) each roughly halve or third the
 token bill. Sources: `analysis/a3/a3_results.json`; A4 and the
-differential from their findings tables.* Hot-swap vs relaunch iteration latency:
-median 32.4 s vs 41.8 s (n=6/path, no significance claim, and scoped to
-pre-lockstep graphs per §2).
+differential from their findings tables.*
+
+**H4 status.** A3 is evidence consistent with H4's direction, not its
+test: the registered comparison — typed-dataflow iteration vs an
+equal-budget monolithic-script control — remains unrun (§6). The
+measured H4 fragment is iteration latency: hot-swap vs relaunch
+median 32.4 s vs 41.8 s (n=6/path, no significance claim, and scoped
+to pre-lockstep graphs per §2).
 
 ### 4.6 Agents and fleets (A4/A5): style differs; throughput saturates
 
@@ -362,13 +436,14 @@ Both CLIs solve T1 at 1.0/1.0 held out. Codex reached first success
 sooner (8.1 vs 9.7 min) then over-iterated (364k tokens, 73 min);
 Claude converged in two rollouts (186k, 36 min) — half the cost at
 equal quality (n=1/arm). Fleet scaling: 1.6 → 4.1 → 4.3 successes/hour
-at N=1,4,8 agents; four→eight bought +5% throughput for 2.2x tokens,
-reproducing ENPIRE's super-linearity direction on one laptop.
+at N=1,4,8 agents; four→eight bought +5% throughput for 2.2x tokens —
+reproducing, on one laptop, the direction of ENPIRE's finding that
+token cost grows super-linearly with fleet size.
 **Held-out quality was contention-invariant at 1.0 on all 13 lanes.**
 
 ![A5 fleet](figures/a5_fleet.png)
 
-*Figure 5 — fleet scaling from `analysis/a5/a5_results.json`:
+*Figure 8 — fleet scaling from `analysis/a5/a5_results.json`:
 throughput saturates by four lanes on one host while mean per-agent
 token cost climbs — contention prices latency and tokens, never
 held-out quality.*
@@ -378,9 +453,10 @@ held-out quality.*
 **Zero `wrong_object` outcomes across every admissible campaign episode
 the project has run** — H2's 224/224, the desk H3 ladder, A3, A4, A6,
 all 13 A5 lanes, every H6 cell, every M1 policy episode, and every
-re-measure in between. Roughly forty agent sessions have authored
-motion code freely, including eight concurrent, without one wrong-
-medicine delivery. The guard/verifier asymmetry (10x penalty) binds the
+re-measure in between. Roughly forty-five agent sessions have
+authored or driven motion freely, including eight concurrent, without
+one wrong-medicine delivery (the count regenerates from the committed
+status table). The guard/verifier asymmetry (10x penalty) binds the
 experimenters too: H6's fault menu was designed identity-safe by rule.
 
 ### 4.8 Operation (H6): 3/3 — the deployment half
@@ -412,13 +488,13 @@ sequenceDiagram
   D->>D: 6-episode credited post window at 1.0
 ```
 
-*Diagram 4 — one H6 cell under the amended protocol. The blinding is
+*Figure 9 — one H6 cell under the amended protocol. The blinding is
 rules + transcript audit: graph env blocks and the injector ledger are
 out of the evidence set, and every transcript was checked.*
 
 ![H6 timelines](figures/h6_timelines.png)
 
-*Figure 6 — the three cells' operation timelines from the raw
+*Figure 10 — the three cells' operation timelines from the raw
 `cell.json` records: fault active (red) until the agent's dated
 diagnosis, repair landing 30–47 s later, restored stream (green)
 scoring 1.0 in the credited window.*
@@ -430,7 +506,7 @@ scoring 1.0 in the credited window.*
 | 4 | hot-swap injection killed the lockstep dataflow (2/2 — the ADR-30 watchdog) | fault baked at launch (relaunch-proof); repair = validated relaunch |
 | 5 | a genuinely restored stream scored FAIL, one credited episode short | teardown waits on the SCORER's crediting function |
 
-*Table 1 — every H6 amendment, each from a measurement, all before any
+*Table 2 — every H6 amendment, each from a measurement, all before any
 scored cell.*
 
 **All three cells PASS**: detection 299–447 s, repair +30–47 s after
@@ -447,14 +523,15 @@ class — an existence result, reported as one.
 
 ### 4.9 Learned components: three honest negatives that bought direction
 
-**VLM judges.** A recorded-episode judge bench (dev/holdout split by
-run; gate: holdout agreement ≥0.8 AND false_success = 0) has now
+**VLM judges.** A recorded-episode judge bench (dev/held-out split by
+run; gate: held-out agreement ≥0.8 AND false_success = 0) has now
 refused FIVE judge configurations with zero false promotions.
 SmolVLM-500M [6]: 0.2 agreement, 4/5 false-success. SmolVLM2-2.2B [6]
 calibrated: 0.6 — real model scaling — but the same identity-free
 false-success class, which widened to 5/13 on a harder extended
-holdout. The 2B semantic run *exposed the gate*: it answered fail on
-every episode and "passed" at 0.8 on a failure-heavy holdout — the
+held-out set. The 2B semantic run *exposed the gate*: it answered
+fail on every episode and "passed" at 0.8 on a failure-heavy held-out
+set — the
 gate now also requires success-recall > 0 (an asymmetric-risk
 promotion gate must be tested against degenerate constants; ours
 wasn't until a model found the hole). The pre-declared label-reading
@@ -466,14 +543,17 @@ fine-tuning; the bench makes either a one-command measurement.
 
 ![judge tally](figures/judge_tally.png)
 
-*Figure 7 — five configurations against the promotion gate (floor
+*Figure 11 — five configurations against the promotion gate (floor
 0.8, false-success 0, and — post-hardening — success-recall > 0).
 Agreement alone flatters two constant-fail judges; the annotations
 carry the disqualifying number in each case. Sources: the committed
 bench row files and findings.*
 
 **VLA policy (M1).** Zero-shot SmolVLA [7] is structurally impossible
-(the base ships uninitialized normalizers) — measured, not assumed. An
+— the released base ships uninitialized observation/action
+normalizers, so any zero-shot output is undefined by construction,
+and the backend refuses rather than emitting noise (measured, not
+assumed). An
 800-step low-rank-adaptation (LoRA) [8] fine-tune on 4k demonstration
 tuples validated the pipeline; the
 live eval scored 0/8 with the mechanism *latency* (CPU chunks arrive
@@ -492,7 +572,7 @@ laptop before any GPU is bought. M5's halt discipline held throughout.
 
 ![M1 filmstrip](../media/m1_lockstep_grasp_drop_strip.png)
 
-*Figure 8 — key frames of the policy's grasp-and-drop under the
+*Figure 12 — key frames of the policy's grasp-and-drop under the
 lockstep condition (seed 32): the only recorded pick behavior in the
 M1 record, ending in a scored `dropped`. Video: supplementary clip
 [m1_lockstep_grasp_drop.mp4](../media/m1_lockstep_grasp_drop.mp4)
@@ -500,7 +580,7 @@ M1 record, ending in a scored `dropped`. Video: supplementary clip
 
 ![M1 mix](figures/m1_mix.png)
 
-*Figure 9 — the same adapter, same seeds, two conditions, both 0/8:
+*Figure 13 — the same adapter, same seeds, two conditions, both 0/8:
 under live latency the arm barely moves (staleness discards chunks);
 under the lockstep condition the policy acts on every tick and acts
 wrongly. The inversion is the finding — competence, not compute, is
@@ -523,7 +603,7 @@ control-strategy claim, never a milligram claim, per its own spec.
 
 ![PW-0](figures/pw0_throughput.png)
 
-*Figure 10 — the trilemma in two panels: MPM scales best of the
+*Figure 14 — the trilemma in two panels: MPM scales best of the
 candidates on Metal (left), and the 2 mm probe (right) shows grid
 resolution, not particle count, dominating cost — which also narrows
 the Metal/CPU gap to 2.1x and weakens the case for tolerating GPU
@@ -532,8 +612,8 @@ raw sweep's durable record).*
 
 ### 4.10 The environment ladder (M3): the swap works; the ranking question needs variance
 
-The cheapest tier of the three-tier environment ladder (surrogate ->
-physics -> hardware) exists to screen candidates. A v0 deterministic
+The cheapest tier of the three-tier environment ladder (surrogate →
+physics → hardware) exists to screen candidates. A v0 deterministic
 kinematic surrogate behind the bridge's exact topic surface ran all 16
 launchable agent-authored H1 graphs UNMODIFIED — full pipeline,
 planner to frozen verifier, 128 episodes, zero launch failures, at
@@ -556,14 +636,14 @@ flowchart LR
   style H fill:#fdf2e0
 ```
 
-*Diagram 5 — the environment ladder: one topic contract, three
+*Figure 15 — the environment ladder: one topic contract, three
 backends. The M3 campaign exercised the left edge (16/16 unmodified
 agent graphs); Phase-6 prep landed the right one behind the same
 surface.*
 
 ![M3 scatter](figures/m3_scatter.png)
 
-*Figure 11 — Genesis vs surrogate pass@1 per population graph, point
+*Figure 16 — Genesis vs surrogate pass@1 per population graph, point
 size by multiplicity, from `analysis/m3/records.json`. Thirteen of
 sixteen graphs share one Genesis score and the surrogate maps all
 sixteen to one value: rank correlation is undefined and is reported
@@ -576,8 +656,11 @@ min (+19 s/episode, 3 audited fallbacks) — the reset is itself a
 manipulation task that sometimes fails, which is the real-world parity
 the fast inner loop conceals. The realistic-verifier ablation (A7)
 studies research under an imperfect evaluator — the deployment
-condition; its protocol and calibration envelope are recorded, with the
-identity stage's measured envelope explicitly bounded (three-axis
+condition. The fidelity number it depends on is recorded: oracle
+agreement 0.45 over the 31-episode recomputation, false-success 0/6,
+false-fail 0.68 — a conservative judge, not yet interchangeable with
+the oracle. Its protocol and calibration envelope are recorded, with
+the identity stage's measured envelope explicitly bounded (three-axis
 domain randomization is out of envelope, measured broken, and no
 threshold fixes it).
 
@@ -585,7 +668,7 @@ threshold fixes it).
 
 ![T4 filmstrip](../media/t4_recovery_chain_strip.png)
 
-*Figure 12 — key frames of the complete T4 recovery chain (seed 0):
+*Figure 17 — key frames of the complete T4 recovery chain (seed 0):
 scripted misdelivery of the red box, the dialogue correction ("that's
 the wrong one — take it back"), return-to-shelf through the standard
 guard-gated stack, and the correct redelivery; both goals verified.
@@ -593,7 +676,7 @@ Video: [t4_recovery_chain.mp4](../media/t4_recovery_chain.mp4) (4x).*
 
 ![T1 filmstrip](../media/t1_expert_pick_strip.png)
 
-*Figure 13 — the T1 expert baseline for orientation (seed 30). Video:
+*Figure 18 — the T1 expert baseline for orientation (seed 30). Video:
 [t1_expert_pick.mp4](../media/t1_expert_pick.mp4) (2x).*
 
 All four clips are cut deterministically from committed run
@@ -607,9 +690,7 @@ evidence.
 Across the program, the pattern that we believe generalizes:
 
 - **Pre-registration with amendment discipline.** H6 ran under five
-  amendments — fault magnitudes the expert absorbed (measured, then
-  redesigned under a pre-registered clause), an injection/session race,
-  a substrate incompatibility, a credit-window defect — each recorded
+  amendments (Table 2), each triggered by a measurement, each recorded
   before any scored cell, none after.
 - **Plausible mechanisms are the enemy.** The recovery-collision fix
   built on "the delivered box lies off-centre" was falsified by its own
@@ -649,16 +730,30 @@ everything not run under the attested pipeline; the H4 monolithic-
 script control condition remains unrun; agent CLIs and models are
 moving targets (pins recorded per campaign). The safety zero is a
 zero on this task's asymmetry and this guard topology — it is not a
-general safety claim.
+general safety claim. Two further threats deserve naming. First,
+instrument–subject circularity: the harness, validator, analyzers —
+and this paper — were substantially authored by the same class of
+coding agents the program measures, so the evaluation machinery could
+share blind spots with the systems it evaluates; §5's record of the
+machinery refusing its own authors' work is the mitigation we can
+show, not a proof of independence. Second, every result is
+simulation-scoped under one physics engine: ENPIRE's own finding that
+agents which solved a task in simulation failed on hardware is the
+field's standing warning, and nothing in this paper's safety zero
+should be read across a sim-to-real gap it has not yet crossed.
 
 ## 7. Related work
 
 **Agentic robotics research systems.** ENPIRE [1] (closed-harness,
 real-fleet) closed the loop that motivated this program; ASPIRE [2]
-added the compounding skill library. We rebuild both axes on open
-infrastructure and make the loop itself measurable — including the
-places our measurements disagree with the priors (H3's economy-not-
-ceiling; hot-swap's non-transfer to lockstep graphs).
+added the compounding skill library. The action-space lineage is
+older: Code as Policies [17] made program synthesis the robot action
+space, and Voyager [18] made the compounding skill library an agent
+loop; AISLE's registry-governed skills are that axis with typed
+contracts, eval provenance, and human-merge governance. We rebuild
+both axes on open infrastructure and make the loop itself measurable —
+including the places our measurements disagree with the priors (H3's
+economy-not-ceiling; hot-swap's non-transfer to lockstep graphs).
 
 **Robot-learning benchmarks.** RLBench [10], ManiSkill [11], and their
 successors fix environments and compare policies. We fix the
@@ -704,14 +799,17 @@ verification.)*
 2. R. Lu, Y. Wu, E. Kou, et al. *ASPIRE: Agentic Skills Discovery
    for Robotics.* arXiv:2607.00272, 2026.
 3. dora-rs contributors. *dora-rs: A Dataflow-Oriented Robotics
-   Framework.* https://github.com/dora-rs/dora, 2023–2026.
-4. Genesis Authors. *Genesis: A Universal and Generative Physics
-   Engine.* https://github.com/Genesis-Embodied-AI/Genesis, 2024.
+   Framework.* https://github.com/dora-rs/dora, 2023–2026; rev pinned
+   in the artifact.
+4. Genesis Authors. *Genesis World (formerly Genesis): A Universal
+   and Generative Physics Engine.*
+   https://github.com/Genesis-Embodied-AI/genesis-world, 2024–2026;
+   version pinned in the artifact.
 5. B. A. Nosek, C. R. Ebersole, A. C. DeHaven, D. T. Mellor. *The
    Preregistration Revolution.* PNAS 115(11):2600–2606, 2018.
 6. A. Marafioti et al. *SmolVLM: Redefining Small and Efficient
-   Multimodal Models.* arXiv:2504.05299, 2025. Model revisions pinned
-   in the artifact.
+   Multimodal Models.* arXiv:2504.05299, 2025. Covers the SmolVLM and
+   SmolVLM2 families; model revisions pinned in the artifact.
 7. M. Shukor et al. *SmolVLA: A Vision-Language-Action Model for
    Affordable and Efficient Robotics.* arXiv:2506.01844, 2025.
 8. E. J. Hu et al. *LoRA: Low-Rank Adaptation of Large Language
@@ -729,12 +827,20 @@ verification.)*
     Real-World GitHub Issues?* ICLR (arXiv:2310.06770), 2024.
 13. E. Todorov, T. Erez, Y. Tassa. *MuJoCo: A Physics Engine for
     Model-Based Control.* IROS, 2012.
-14. NVIDIA. *Isaac Sim / Isaac Lab.* Developer documentation,
-    2021–2026.
+14. M. Mittal, C. Yu, Q. Yu, et al. *Orbit: A Unified Simulation
+    Framework for Interactive Robot Learning Environments.* IEEE
+    Robotics and Automation Letters 8(6):3740–3747, 2023. Continued
+    as NVIDIA Isaac Lab.
 15. NVIDIA. *World Action Models are Zero-shot Policies (DreamZero).*
     arXiv:2602.15922, 2026.
 16. NVIDIA. *Cosmos World Foundation Model Platform for Physical AI.*
     arXiv:2501.03575, 2025.
+17. J. Liang, W. Huang, F. Xia, P. Xu, K. Hausman, B. Ichter,
+    P. Florence, A. Zeng. *Code as Policies: Language Model Programs
+    for Embodied Control.* ICRA (arXiv:2209.07753), 2023.
+18. G. Wang, Y. Xie, Y. Jiang, A. Mandlekar, C. Xiao, Y. Zhu, L. Fan,
+    A. Anandkumar. *Voyager: An Open-Ended Embodied Agent with Large
+    Language Models.* arXiv:2305.16291, 2023.
 
 ## Reproducibility
 
@@ -750,5 +856,8 @@ evidence — are cut deterministically from committed run recordings by
 `tools/paper_media.py` with a provenance manifest: the T1 baseline,
 a T2 label-read pick, the full T4 recovery chain, and the M1 lockstep
 policy's grasp-and-drop ([gallery](../demo.md#recorded-clips-illustrations-not-evidence)).
-Single-machine (macOS arm64, uv-locked env, pinned dora rev, pinned
-model revisions).
+Single-machine (an Apple-silicon M3-class MacBook: macOS arm64,
+uv-locked env, pinned dora rev, pinned model revisions). The five
+architecture diagrams (Figures 1–3, 9, 15) are committed mermaid
+sources rendered to static graphics at venue formatting; in-text
+video links resolve inside the artifact archive.
