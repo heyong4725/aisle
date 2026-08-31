@@ -26,3 +26,18 @@ PW-4 = "gated by PW-0 ADR; honest-scope rule cited by T23 verifier/docs tests"
 FT-2 = "gated by PW-0 ADR; impedance-reject test lands with T21 (SPEC 310)"
 BAL-1 = "gated by PW-0 ADR; balance settling test lands with T21 (SPEC 310)"
 TOOL-1 = "gated by PW-0 ADR; tool-change lifecycle test lands with T21 (SPEC 310)"
+
+# SPEC 400 confirmatory statistics — proposed in the #345 spec-change PR.
+# The tests-first implementation PR MUST remove every STA waiver before merge.
+STA-1 = "proposed statistical contract; protocol validation tests land after human spec review"
+STA-2 = "proposed statistical contract; retained-session schema tests land after human spec review"
+STA-3 = "proposed statistical contract; mixed/pilot/duplicate refusal tests land after human spec review"
+STA-4 = "proposed statistical contract; CON-8 CLI tests land after human spec review"
+STA-5 = "proposed statistical contract; binary/continuous power fixtures land after human spec review"
+STA-6 = "proposed statistical contract; exact-binomial and 8/8 fixtures land after human spec review"
+STA-7 = "proposed statistical contract; session-cluster analysis tests land after human spec review"
+STA-8 = "proposed statistical contract; equivalence/non-inferiority tests land after human spec review"
+STA-9 = "proposed statistical contract; censored survival fixtures land after human spec review"
+STA-10 = "proposed statistical contract; zero-event-bound fixtures land after human spec review"
+STA-11 = "proposed statistical contract; session-flow reconciliation tests land after human spec review"
+STA-12 = "external statistical review is a pre-confirmatory human gate, not an implementation claim"
