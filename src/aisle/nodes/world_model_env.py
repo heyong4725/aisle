@@ -53,6 +53,70 @@ def attach_candidate(
     return best
 
 
+def rasterize_overhead(
+    boxes: dict[str, np.ndarray],
+    sizes: dict[str, tuple],
+    seg_ids: dict[str, int],
+    calibration: dict,
+    resolution: tuple[int, int] = (640, 480),
+) -> tuple[np.ndarray, np.ndarray]:
+    """The cartoon's L1 sensor pair: (seg int32, depth float32) at the
+    overhead camera, VER-8 conventions — each box's TOP FACE projected
+    with the verifier's own projection and filled exactly, depth = the
+    face's camera-frame z. Round-trip pinned by test: the REAL L1
+    estimator recovers the box centre from this pair."""
+    from aisle.verifier.stages import camera_frame_points, project_to_pixels
+
+    w, h = resolution
+    seg = np.zeros((h, w), dtype=np.int32)
+    cam_h = float(calibration["overhead"]["cam_to_base"]["pos"][2])
+    depth = np.full((h, w), cam_h, dtype=np.float32)
+    for name, pose in boxes.items():
+        sx, sy, sz = (float(v) for v in sizes[name])
+        cx, cy, cz = (float(v) for v in pose[:3])
+        top_z = cz + sz / 2
+        corners = np.array(
+            [
+                [cx - sx / 2, cy - sy / 2, top_z],
+                [cx + sx / 2, cy - sy / 2, top_z],
+                [cx + sx / 2, cy + sy / 2, top_z],
+                [cx - sx / 2, cy + sy / 2, top_z],
+            ]
+        )
+        uv = project_to_pixels(corners, calibration)
+        cam_z = float(camera_frame_points(corners, calibration)[:, 2].mean())
+        mask = _fill_convex_quad(uv, h, w)
+        seg[mask] = seg_ids[name]
+        depth[mask] = cam_z
+    return seg, depth
+
+
+def _fill_convex_quad(uv: np.ndarray, h: int, w: int) -> np.ndarray:
+    """Pure-numpy convex polygon fill (cv2 is not a locked dependency —
+    measured missing from CI's unit env). A pixel is inside iff it sits
+    on the same side of every edge of the CCW-ordered quad."""
+    pts = np.asarray(uv, dtype=np.float64)
+    centre = pts.mean(axis=0)
+    order = np.argsort(np.arctan2(pts[:, 1] - centre[1], pts[:, 0] - centre[0]))
+    pts = pts[order]
+    u0 = max(int(np.floor(pts[:, 0].min())), 0)
+    u1 = min(int(np.ceil(pts[:, 0].max())) + 1, w)
+    v0 = max(int(np.floor(pts[:, 1].min())), 0)
+    v1 = min(int(np.ceil(pts[:, 1].max())) + 1, h)
+    mask = np.zeros((h, w), dtype=bool)
+    if u1 <= u0 or v1 <= v0:
+        return mask
+    us, vs = np.meshgrid(np.arange(u0, u1) + 0.0, np.arange(v0, v1) + 0.0)
+    inside = np.ones(us.shape, dtype=bool)
+    for i in range(len(pts)):
+        ax, ay = pts[i]
+        bx, by = pts[(i + 1) % len(pts)]
+        cross = (bx - ax) * (vs - ay) - (by - ay) * (us - ax)
+        inside &= cross >= 0
+    mask[v0:v1, u0:u1] = inside
+    return mask
+
+
 def settle_pose(pose: np.ndarray, tray: dict, half_h: float) -> np.ndarray:
     """Release: a box let go inside the tray AABB settles upright on the
     tray floor; elsewhere it stays where it is (cartoon: no falling)."""
@@ -129,17 +193,34 @@ def main() -> None:  # pragma: no cover — graph-tested (M3 run)
         return np.concatenate([state["boxes"][n] for n in med_names]).astype(np.float32)
 
     do_reset(0)
+    from aisle.scenes.pharmacy import wrist_mount_transform
+    from aisle.verifier.calibration import build_calibration_v1
+
+    cam_cfg = physics["cameras"]
+    over_pos = list(cam_cfg["overhead_pos"])
+    wrist_mount = wrist_mount_transform(cam_cfg, physics["embodiment"][embodiment])
+    calibration = build_calibration_v1(
+        overhead_pos=over_pos,
+        overhead_lookat=list(cam_cfg["overhead_lookat"]),
+        overhead_resolution=(640, 480),
+        overhead_fov_deg=55.0,  # SCN-5 nominal
+        wrist_offset_m=wrist_mount[:3, 3].tolist(),
+        wrist_mount_rotation_gl=wrist_mount[:3, :3],
+        wrist_resolution=(320, 240),
+        wrist_fov_deg=70.0,  # SCN-5 nominal
+    )
+    seg_ids = {name: 10 + i for i, name in enumerate(med_names)}
+    sizes = {name: tuple(meds[name]["size"]) for name in med_names}
     bridge_info = json.dumps(
         {
             "backend": "world-model-env-v0",
-            "perception": "L0",
-            "segmentation_ids": {},
-            "calibration": None,
+            "perception": "L1",
+            "segmentation_ids": {k: [v] for k, v in seg_ids.items()},
+            "calibration": calibration,
             "n_envs": 1,
         }
     )
     frame = np.zeros((8, 8, 3), dtype=np.uint8)
-    depth = np.zeros((8, 8), dtype=np.float32)
     sent_info = False
 
     for event in node:
@@ -216,7 +297,10 @@ def main() -> None:  # pragma: no cover — graph-tested (M3 run)
                 fmeta = {**meta, "h": 8, "w": 8}
                 send("rgb_overhead", pa.array(frame.reshape(-1)), fmeta)
                 send("rgb_wrist", pa.array(frame.reshape(-1)), fmeta)
-                send("depth_overhead", pa.array(depth.reshape(-1)), fmeta)
+                seg, depth = rasterize_overhead(state["boxes"], sizes, seg_ids, calibration)
+                smeta = {**meta, "h": 480, "w": 640}
+                send("seg_overhead", pa.array(seg.reshape(-1)), smeta)
+                send("depth_overhead", pa.array(depth.reshape(-1)), smeta)
 
 
 if __name__ == "__main__":

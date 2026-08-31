@@ -76,3 +76,57 @@ learned backend are recorded follow-ups, not this registration.
 - One machine, one session; no rerun-until-pass (a graph's surrogate
   run is one attempt; infra failures are recorded and the graph is
   excluded, not retried to success).
+
+
+## Amendment 1 (v2): the spread population — pre-registered before any run
+
+v0 measured the instrument gap: ranking needs outcome variance the
+launchable-H1 population lacks. v2 constructs a population with
+KNOWN-ORDERING spread from measured knobs, and thereby asks a sharper
+question than agreement: WHERE is the surrogate's fidelity boundary?
+
+**Population (16 graphs, frozen at this amendment):**
+- `clean` — expert_t1 unmodified (Genesis prior: 1.0).
+- `vel_{0.3,0.5,0.7,1.5,2.0}` — expert_t1 with `AISLE_MAX_JOINT_VEL`
+  on ik-trajectory (default 1.0). Timing-graded: low values risk
+  budget exhaustion, high values overshoot.
+- `fault_{f1,f2,f3}` — expert_t1 with the measured H6 fault magnitudes
+  (pose bias 45 mm / grasp lift 60 mm / executor stall). Genesis
+  prior: 0.0 each (preflight-measured).
+- `h1_{claude_00,claude_10,claude_15,codex_02,codex_06,codex_13}` —
+  six v0 population graphs re-used for authored diversity (recorded
+  Genesis 0.75–1.0), re-scored fresh in this sweep for
+  same-conditions comparability.
+- `nof1_neighbours` — expert_t1 with the grasp planner's `neighbours`
+  input edge removed (clearance-blind grip-axis selection; Genesis
+  prior: degraded on close-packed seeds).
+
+Ground truth: EVERY graph runs fresh in Genesis, 8 episodes, seeds
+0..7, oracle verifier (no stale priors are scored). Surrogate: the
+same staging, world-model-env v0 unchanged.
+
+**Pre-registered fidelity-boundary predictions (falsifiable):**
+1. TIMING/KINEMATIC variants (vel_*, fault_f3) rank correctly: the
+   cartoon executes the same commands on the same clock, so slow arms
+   time out and stalls fail in both worlds.
+2. CONTACT-GEOMETRY faults flatten or invert: the cartoon's attach
+   rule (60 mm radius, 100 mm z-window) SWALLOWS a 45 mm pose bias and
+   a 60 mm lift, so fault_f1/fault_f2 are predicted ~1.0 in the
+   surrogate vs 0.0 in Genesis — the fidelity boundary made visible.
+3. Overall Spearman therefore lands mid-range (positive, well below
+   the 0.995 literature reference), and EXCLUDING the two
+   contact-geometry graphs it rises substantially. Both numbers are
+   reported; neither is a pass/fail gate.
+
+Same reporting-only stance, same free-run/UNATTESTED scope as v0.
+
+Measured staging note (before the surrogate side ran): the constructed
+variants derive from expert_t1, an ADR-30 LOCKSTEP graph, and the v0
+surrogate is free-run by declared scope — the barrier starves and zero
+episodes result (measured on all ten constructed variants; the
+pre-barrier H1 graphs ran fine). The surrogate staging therefore
+STRIPS the turn machinery (barrier node, turn edges, lockstep envs) —
+lockstep is opt-in by env, so the pipeline nodes run free exactly as
+pre-ADR-30 graphs do. The Genesis ground truth stays lockstep. The
+asymmetry is a v0-scope condition, recorded here; true lockstep
+participation for the surrogate remains the v0 follow-up.
