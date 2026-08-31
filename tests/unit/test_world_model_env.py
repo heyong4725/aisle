@@ -68,3 +68,45 @@ def test_spearman_and_screening_from_records():
     assert rho is not None and 0.5 < rho <= 1.0
     assert m3.screening_agreement([0, 0, 1, 1], [0, 0, 1, 1]) == 1.0
     assert m3.screening_agreement([0, 0, 1, 1], [1, 1, 0, 0]) == 0.0
+
+
+def test_rasterizer_round_trips_through_the_real_l1_estimator():
+    """ADR-m3 amendment: the cartoon's seg/depth pair must be GENUINE L1
+    sensor data — the frozen estimator recovers the box centre from it
+    within millimetres, using the verifier's own back-projection."""
+    from aisle.nodes.segmented_pose import estimate_pose
+    from aisle.nodes.world_model_env import rasterize_overhead
+    from aisle.scenes.pharmacy import load_physics, wrist_mount_transform
+    from aisle.verifier.calibration import build_calibration_v1
+    from aisle.verifier.stages import backproject_overhead
+
+    physics = load_physics()
+    cam = physics["cameras"]
+    mount = wrist_mount_transform(cam, physics["embodiment"]["franka"])
+    calibration = build_calibration_v1(
+        overhead_pos=list(cam["overhead_pos"]),
+        overhead_lookat=list(cam["overhead_lookat"]),
+        overhead_resolution=(640, 480),
+        overhead_fov_deg=55.0,  # SCN-5 nominal
+        wrist_offset_m=mount[:3, 3].tolist(),
+        wrist_mount_rotation_gl=mount[:3, :3],
+        wrist_resolution=(320, 240),
+        wrist_fov_deg=70.0,  # SCN-5 nominal
+    )
+    size = (0.060, 0.040, 0.100)
+    pose = np.array([0.45, -0.10, 0.05, 0, 0, 0, 1], dtype=np.float32)
+    seg, depth = rasterize_overhead(
+        {"amoxicillin": pose}, {"amoxicillin": size}, {"amoxicillin": 10}, calibration
+    )
+    assert (seg == 10).sum() > 100, "top face must cover real pixels"
+    est = estimate_pose(
+        seg,
+        depth,
+        [10],
+        size[2],
+        lambda d, px: backproject_overhead(d, calibration, px),
+        footprint_m=size[:2],
+    )
+    assert abs(est["pos"][0] - 0.45) < 0.005
+    assert abs(est["pos"][1] + 0.10) < 0.005
+    assert abs(est["pos"][2] - 0.05) < 0.005

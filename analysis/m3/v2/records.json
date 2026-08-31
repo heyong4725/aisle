@@ -1,0 +1,277 @@
+{
+ "genesis": [
+  {
+   "id": "clean",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 1.0,
+   "failures": {}
+  },
+  {
+   "id": "vel_0.3",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 0.375,
+   "failures": {
+    "timeout": 5
+   }
+  },
+  {
+   "id": "vel_0.5",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 0.375,
+   "failures": {
+    "timeout": 5
+   }
+  },
+  {
+   "id": "vel_0.7",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 1.0,
+   "failures": {}
+  },
+  {
+   "id": "vel_1.5",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 1.0,
+   "failures": {}
+  },
+  {
+   "id": "vel_2.0",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 1.0,
+   "failures": {}
+  },
+  {
+   "id": "fault_f1",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 0.0,
+   "failures": {
+    "never_grasped": 3,
+    "dropped": 4,
+    "collision": 1
+   }
+  },
+  {
+   "id": "fault_f2",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 0.0,
+   "failures": {
+    "never_grasped": 8
+   }
+  },
+  {
+   "id": "fault_f3",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 0.0,
+   "failures": {
+    "timeout": 8
+   }
+  },
+  {
+   "id": "nof1_neighbours",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 1.0,
+   "failures": {}
+  },
+  {
+   "id": "h1_claude_00",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 1.0,
+   "failures": {}
+  },
+  {
+   "id": "h1_claude_10",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 1.0,
+   "failures": {}
+  },
+  {
+   "id": "h1_claude_15",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 1.0,
+   "failures": {}
+  },
+  {
+   "id": "h1_codex_02",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 1.0,
+   "failures": {}
+  },
+  {
+   "id": "h1_codex_06",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 1.0,
+   "failures": {}
+  },
+  {
+   "id": "h1_codex_13",
+   "kind": "genesis",
+   "episodes": 8,
+   "pass1": 1.0,
+   "failures": {}
+  }
+ ],
+ "surrogate": [
+  {
+   "id": "h1_claude_00",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.875,
+   "failures": {
+    "dropped": 1
+   }
+  },
+  {
+   "id": "h1_claude_10",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.875,
+   "failures": {
+    "dropped": 1
+   }
+  },
+  {
+   "id": "h1_claude_15",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.875,
+   "failures": {
+    "dropped": 1
+   }
+  },
+  {
+   "id": "h1_codex_02",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.875,
+   "failures": {
+    "dropped": 1
+   }
+  },
+  {
+   "id": "h1_codex_06",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.875,
+   "failures": {
+    "dropped": 1
+   }
+  },
+  {
+   "id": "h1_codex_13",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.875,
+   "failures": {
+    "dropped": 1
+   }
+  },
+  {
+   "id": "clean",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.125,
+   "failures": {
+    "never_grasped": 7
+   }
+  },
+  {
+   "id": "vel_0.3",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.0,
+   "failures": {
+    "never_grasped": 7,
+    "timeout": 1
+   }
+  },
+  {
+   "id": "vel_0.5",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.0,
+   "failures": {
+    "never_grasped": 7,
+    "timeout": 1
+   }
+  },
+  {
+   "id": "vel_0.7",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.125,
+   "failures": {
+    "never_grasped": 7
+   }
+  },
+  {
+   "id": "vel_1.5",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.125,
+   "failures": {
+    "never_grasped": 7
+   }
+  },
+  {
+   "id": "vel_2.0",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.125,
+   "failures": {
+    "never_grasped": 7
+   }
+  },
+  {
+   "id": "fault_f1",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.0,
+   "failures": {
+    "never_grasped": 8
+   }
+  },
+  {
+   "id": "fault_f2",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.125,
+   "failures": {
+    "never_grasped": 7
+   }
+  },
+  {
+   "id": "fault_f3",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.0,
+   "failures": {
+    "never_grasped": 7,
+    "timeout": 1
+   }
+  },
+  {
+   "id": "nof1_neighbours",
+   "kind": "surrogate",
+   "episodes": 8,
+   "pass1": 0.125,
+   "failures": {
+    "never_grasped": 7
+   }
+  }
+ ]
+}

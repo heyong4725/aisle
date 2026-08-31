@@ -45,7 +45,7 @@ stayed outside it).
 | Graphs | 18 |
 | Capability manifests | 39 |
 | CLI command entries | 12 |
-| ADR files | 57 |
+| ADR files | 58 |
 
 ## Graphs
 
@@ -199,6 +199,7 @@ inference.
 | [docs/decisions/ADR-42.md](../decisions/ADR-42.md) | ADR-42 — Nexus feasibility: NO-GO for the desk/retail families, candidate for the bench | ACCEPTED 2026-08-18 (issue #281, the gating spike). Desk/retail |
 | [docs/decisions/ADR-43.md](../decisions/ADR-43.md) | ADR-43 — the budget unit for non-API agents | ACCEPTED 2026-08-18 (issue #282, the gate for the alternative-agent |
 | [docs/decisions/ADR-44.md](../decisions/ADR-44.md) | ADR-44 — the local-agent arm: pre-registered expectations (issue #285 C3/C4) | ACCEPTED (CON-15 — expectations registered BEFORE any local |
+| [docs/decisions/ADR-45.md](../decisions/ADR-45.md) | ADR-45 — the M1 training-dose ladder (pre-registered) | ACCEPTED (CON-15 — registered before any training step runs). |
 | [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | ACCEPTED (owner-ratified 2026-08-03) |
 | [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |
 | [docs/decisions/ADR-7.md](../decisions/ADR-7.md) | ADR-7: T05 bridge interpretations and measured performance (SPEC 030) | ACCEPTED |

@@ -30,6 +30,47 @@ def frame_for(run_dir: Path, frame_idx: int, cap_cache: dict):
     return np.asarray(bgr[:, :, ::-1], dtype=np.uint8) if ok else None
 
 
+def build_frame_cache(run_dir: Path, frame_indices: set, size: int = 256):
+    """ADR-45 pre-decode: ONE sequential pass over the mp4, keeping only
+    the training frames, downscaled to the training size — the recorded
+    33 h wall was a random seek per step. Disk-cached under the run,
+    keyed by the video and the sorted index set (a ladder's doses share
+    one cache). Returns {frame_idx: uint8 (size,size,3)}."""
+    import hashlib
+
+    import cv2
+    import numpy as np
+
+    video = run_dir / "traces" / "overhead.mp4"
+    wanted = sorted(frame_indices)
+    key = hashlib.sha256(
+        (f"{video.stat().st_size}:{size}:" + ",".join(map(str, wanted))).encode()
+    ).hexdigest()[:16]
+    cache_path = run_dir / "traces" / f"frame_cache_{key}.npz"
+    if cache_path.exists():
+        data = np.load(cache_path)
+        return {int(k): data[k] for k in data.files}
+    cap = cv2.VideoCapture(str(video))
+    out: dict = {}
+    want = set(wanted)
+    idx, last = 0, wanted[-1]
+    while idx <= last:
+        ok, bgr = cap.read()
+        if not ok:
+            break
+        if idx in want:
+            rgb = np.asarray(bgr[:, :, ::-1], dtype=np.uint8)
+            out[idx] = cv2.resize(rgb, (size, size), interpolation=cv2.INTER_AREA)
+        idx += 1
+    cap.release()
+    np.savez_compressed(cache_path, **{str(k): v for k, v in out.items()})
+    print(
+        f"[finetune] frame cache: {len(out)}/{len(wanted)} frames -> {cache_path.name}",
+        file=sys.stderr,
+    )
+    return out
+
+
 def load_tuples(dataset: Path, run_dir: Path, stride: int, limit: int | None):
     """(frame, action) pairs subsampled by stride across all episodes."""
     from aisle.harness.traces import query
@@ -75,6 +116,12 @@ def main() -> int:
     parser.add_argument("--run", type=Path, required=True, help="the demos' run dir (frames)")
     parser.add_argument("--out", type=Path, required=True, help="adapter output dir")
     parser.add_argument("--steps", type=int, default=800)
+    parser.add_argument(
+        "--checkpoint-at",
+        default="",
+        help="comma-separated step numbers to dump checkpoints at (ADR-45 dose ladder)",
+    )
+    parser.add_argument("--resume", type=Path, default=None, help="checkpoint.pt to resume from")
     parser.add_argument("--stride", type=int, default=4)
     parser.add_argument("--limit", type=int, default=4000)
     parser.add_argument("--lr", type=float, default=1e-4)
@@ -123,12 +170,42 @@ def main() -> int:
         return 1
 
     opt = torch.optim.AdamW((p for p in model.parameters() if p.requires_grad), lr=args.lr)
-    cap_cache: dict = {}
+    frame_cache = build_frame_cache(args.run, {row["frame_idx"] for row in tuples})
     rng = np.random.default_rng(0)
     losses = []
-    for step in range(args.steps):
+    start_step = 0
+    if args.resume and args.resume.exists():
+        ck = torch.load(args.resume, weights_only=False)
+        model.load_state_dict(ck["model"])
+        opt.load_state_dict(ck["opt"])
+        rng.bit_generator.state = ck["rng"]
+        losses = ck["losses"]
+        start_step = ck["step"]
+        print(f"[finetune] resumed at step {start_step}", file=sys.stderr)
+    dumps = sorted(int(s) for s in args.checkpoint_at.split(",") if s.strip())
+
+    def dump_checkpoint(step: int) -> None:
+        ckdir = args.out / f"checkpoint_{step}"
+        ckdir.mkdir(parents=True, exist_ok=True)
+        model.save_pretrained(ckdir)
+        import shutil as _sh
+
+        _sh.copy(args.dataset / "stats.json", ckdir / "stats.json")
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "opt": opt.state_dict(),
+                "rng": rng.bit_generator.state,
+                "losses": losses,
+                "step": step,
+            },
+            args.out / "checkpoint.pt",
+        )
+        print(f"[finetune] checkpoint at step {step} -> {ckdir}", file=sys.stderr)
+
+    for step in range(start_step, args.steps):
         row = tuples[int(rng.integers(len(tuples)))]
-        frame = frame_for(args.run, row["frame_idx"], cap_cache)
+        frame = frame_cache.get(row["frame_idx"])
         if frame is None:
             continue
         import torch.nn.functional as F
@@ -157,6 +234,8 @@ def main() -> int:
         losses.append(float(loss))
         if step % 50 == 0:
             print(f"[finetune] step {step}: loss {float(loss):.4f}", file=sys.stderr)
+        if (step + 1) in dumps:
+            dump_checkpoint(step + 1)
 
     args.out.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(args.out)
