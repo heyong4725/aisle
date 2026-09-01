@@ -3,8 +3,10 @@ validate (SPEC 060), rollout (HAR-1..5), traces (HAR-6), report (HAR-7)."""
 
 import argparse
 import datetime
+import hashlib
 import json
 import os
+import platform
 import subprocess
 import sys
 import uuid
@@ -12,6 +14,14 @@ from pathlib import Path
 
 from aisle.harness.common import DEFAULT_ROOT, emit_report
 from aisle.harness.validate import validate
+
+
+class _JsonArgumentParser(argparse.ArgumentParser):
+    """Keep argument refusals inside the CON-8 JSON stdout contract."""
+
+    def error(self, message: str) -> None:
+        print(json.dumps({"ok": False, "error": "invalid arguments", "details": [message]}))
+        raise SystemExit(2)
 
 
 def _branch(root: Path) -> str:
@@ -33,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     """The full CLI surface (CON-8). Exposed so the research contract's
     copy-paste examples are TESTED against the real argparse tree (T17):
     a doc example that drifts from the CLI fails a unit test."""
-    parser = argparse.ArgumentParser(prog="harness", description=__doc__)
+    parser = _JsonArgumentParser(prog="harness", description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     val = subparsers.add_parser("validate", help="validate a dora dataflow YAML (SPEC 060)")
@@ -157,11 +167,111 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--for", type=float, default=30.0, dest="seconds")
     pr.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     skr.add_argument("--run-id", default=None, help="override the eval run id (CON-5)")
+
+    stats = subparsers.add_parser(
+        "stats", help="session-level benchmark statistics and power (SPEC 400)"
+    )
+    stats_sub = stats.add_subparsers(dest="stats_command", required=True)
+    stats_analyze = stats_sub.add_parser("analyze", help="analyze retained raw session records")
+    stats_analyze.add_argument("--protocol", type=Path, required=True)
+    stats_analyze.add_argument("--records", type=Path, required=True)
+    stats_analyze.add_argument("--output", type=Path, default=None)
+    stats_power = stats_sub.add_parser("power", help="power analysis from frozen assumptions")
+    stats_power.add_argument("--protocol", type=Path, required=True)
+    stats_power.add_argument("--output", type=Path, default=None)
+    stats_validate = stats_sub.add_parser(
+        "validate", help="validate a protocol for power, analysis, or confirmatory freeze"
+    )
+    stats_validate.add_argument("--protocol", type=Path, required=True)
+    stats_validate.add_argument(
+        "--purpose", choices=["power", "analysis", "freeze"], default="analysis"
+    )
+    stats_validate.add_argument("--output", type=Path, default=None)
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
+
+    if args.command == "stats":
+        import aisle.harness.benchmark_statistics as statistics_module
+        from aisle.harness.benchmark_statistics import (
+            StatisticsInputError,
+            analyze_campaign,
+            power_analysis,
+            protocol_core_hash,
+            validate_protocol,
+        )
+
+        try:
+            protocol_bytes = args.protocol.read_bytes()
+            protocol = json.loads(protocol_bytes)
+            protocol_hash = hashlib.sha256(protocol_bytes).hexdigest()
+            if args.stats_command == "validate":
+                errors = validate_protocol(protocol, purpose=args.purpose)
+                report = {
+                    "ok": not errors,
+                    "schema_version": "aisle.stats.validation.v1",
+                    "protocol_id": protocol.get("protocol_id")
+                    if isinstance(protocol, dict)
+                    else None,
+                    "protocol_core_sha256": protocol_core_hash(protocol)
+                    if isinstance(protocol, dict)
+                    else None,
+                    "purpose": args.purpose,
+                    "input_hashes": {"protocol_sha256": protocol_hash},
+                    "errors": errors,
+                }
+            elif args.stats_command == "power":
+                report = power_analysis(protocol, protocol_hash=protocol_hash)
+            else:
+                records_bytes = args.records.read_bytes()
+                records = json.loads(records_bytes)
+                report = analyze_campaign(
+                    protocol,
+                    records,
+                    input_hashes={
+                        "protocol_sha256": protocol_hash,
+                        "records_sha256": hashlib.sha256(records_bytes).hexdigest(),
+                    },
+                )
+            implementation_path = Path(statistics_module.__file__)
+            report["execution_environment"] = {
+                "python": platform.python_version(),
+                "python_implementation": platform.python_implementation(),
+                "system": platform.system(),
+                "release": platform.release(),
+                "machine": platform.machine(),
+                "analysis_implementation_sha256": hashlib.sha256(
+                    implementation_path.read_bytes()
+                ).hexdigest(),
+            }
+        except StatisticsInputError as refused:
+            report = {"ok": False, "error": str(refused), "details": refused.details}
+        except (OSError, json.JSONDecodeError) as refused:
+            report = {"ok": False, "error": "input read failed", "details": [str(refused)]}
+        if args.output is not None:
+            inputs = {args.protocol.resolve()}
+            if args.stats_command == "analyze":
+                inputs.add(args.records.resolve())
+            if args.output.resolve() in inputs:
+                report = {
+                    "ok": False,
+                    "error": "output path collides with an input",
+                    "details": [str(args.output)],
+                }
+            else:
+                try:
+                    args.output.parent.mkdir(parents=True, exist_ok=True)
+                    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+                except OSError as refused:
+                    report = {
+                        "ok": False,
+                        "error": "output write failed",
+                        "details": [str(refused)],
+                    }
+        print(json.dumps(report))
+        return 0 if report["ok"] else 1
 
     if args.command == "validate":
         if args.write_turn_plan:

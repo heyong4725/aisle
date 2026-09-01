@@ -1,0 +1,74 @@
+{
+  "schema_version": "aisle.stats.protocol.v1",
+  "protocol_id": "sta-synthetic-v1",
+  "campaign_id": "sta-synthetic-campaign-v1",
+  "campaign_phase": "synthetic",
+  "primary_estimand": {
+    "population": "synthetic autonomous coding-agent sessions",
+    "contrast": "typed minus monolithic",
+    "summary": "risk_difference"
+  },
+  "experimental_unit": "session",
+  "treatment_arms": [
+    "monolithic",
+    "typed"
+  ],
+  "control_arm": "monolithic",
+  "treatment_arm": "typed",
+  "outcome": {
+    "field": "session_success",
+    "type": "binary",
+    "direction": "higher"
+  },
+  "smallest_effect": {
+    "measure": "risk_difference",
+    "value": 0.2
+  },
+  "alpha": 0.05,
+  "target_power": 0.8,
+  "allocation_ratio": 1.0,
+  "stopping_rule": {
+    "type": "fixed",
+    "max_sessions_per_arm": 100
+  },
+  "inclusion_rules": [
+    "randomized session with a resolved lifecycle"
+  ],
+  "exclusion_rules": [
+    "predeclared infrastructure failure only"
+  ],
+  "analysis_seed": 8142,
+  "decision": {
+    "kind": "superiority",
+    "margin": null,
+    "rationale": "equivalence is not inferred from a non-significant result"
+  },
+  "power": {
+    "control_probability": 0.5,
+    "treatment_probability": 0.7,
+    "test_sidedness": "two-sided",
+    "sensitivity_effects": [
+      0.1,
+      0.2,
+      0.3
+    ]
+  },
+  "bootstrap": {
+    "replicates": 400,
+    "confidence_level": 0.95
+  },
+  "strata": [
+    "agent_system"
+  ],
+  "artifact_claim_threshold": 0.9,
+  "survival": {
+    "event_time_field": "accepted_time_s",
+    "censor_time_field": "wall_s"
+  },
+  "zero_event": {
+    "event_field": "safety_events",
+    "exposure_field": "commands",
+    "exposure_unit": "command",
+    "confidence_level": 0.95
+  }
+}

@@ -13,46 +13,53 @@ transcribes. Citations are numbered against the References section;
 venue-specific formatting (template, page fitting) remains for the
 chosen venue.*
 
+<!-- status-snapshot:2026-08-31 canonical:../../README.md#status -->
+*Status snapshot: 2026-08-31. The [README status table](../../README.md#status)
+is canonical and controls on conflict.*
+
+<!-- claim:publication-purpose/focused-paper -->
+**Publication purpose.** This is the focused benchmark-paper surface. Its
+headline scope is limited to the typed-versus-monolithic causal study, the
+typed-evidence-versus-conventional-logs fault study, the scoped safety
+boundary, and independent reproduction. The broad technical and historical
+record remains in `docs/AISLE-technical-report.md`; historical measurements
+retained below are context or supplemental feasibility evidence, not substitutes
+for the focused confirmatory controls.
+
 ## Abstract
 
-Fleets of coding agents can run the robotics research loop — ENPIRE
-[1] demonstrated as much on real hardware with a bespoke, closed
-harness. We ask a sharper question on open infrastructure: **can AI
-coding agents autonomously build, diagnose, improve, reuse, and
-safely operate robotic systems composed as typed dataflows** — and
-can the answer be *measured* rather than demonstrated? AISLE is a
-substrate (typed capability registry, static graph validation, an
-unbypassable safety guard, frozen verifiers, hash-attested evidence,
-budgeted campaigns) plus a pre-registered experimental program run
-against it on a single MacBook. We report: composition is
-schema-solved but launchability-limited (40/40 valid graphs, 15–65%
-zero-shot launch, one dominant mechanism); iteration reaches held-out
-1.0 on the easiest tier; skill accumulation buys **economy, not
-ceiling** (equal held-out score at 35% lower token cost, with
-verified cross-suite reuse); denying code authorship *halved* session
-cost at equal quality; a fleet saturates at ~4 agents on one host
-with held-out quality contention-invariant at 1.0; safety held at
-**zero wrong-medicine deliveries across every campaign episode ever
-run** (~45 agent sessions authoring or driving motion code, 8
-concurrent); and — the deployment half — agents given only live
-evidence detected, localized, and repaired induced faults in a
-running dataflow in **3/3 pre-registered cells** with zero safety
-violations. Four negative or undecidable results are load-bearing
-rather than incidental: five vision-language-model (VLM) judge
-configurations refused by an asymmetric-risk promotion gate, which
-one model's degenerate strategy exposed and hardened; a surrogate
-environment that ran agent-authored graphs unmodified at ~100x
-physics speed while its ranking value proved undecidable on a
-variance-free population; a fine-tuned vision-language-action (VLA)
-policy whose paired 0/8 results — under live latency and under a
-**lockstep evaluation condition** we introduce — separated competence
-from compute, redirecting spend from GPU serving to training dose;
-and a granular-physics feasibility gate that scoped a task family to
-its measured floor before any campaign spent tokens on it. The
-meta-result: with pre-registration, frozen evaluation, and attested
-evidence, an agent-driven engineering loop produces *findings* —
-including against its own hypotheses and instruments — at laptop
-cost.
+Fleets of coding agents can run robotics research loops, but existing
+demonstrations do not isolate whether typed robot-system structure or typed
+runtime evidence improves engineering outcomes. AISLE defines an auditable
+benchmark with the coding-agent session as the experimental unit, a mutable
+participant surface, frozen evaluation, scoped trusted actuation, and a hidden
+evaluation controller.
+
+<!-- claim:typed-dataflow-causal/paper-abstract -->
+The primary typed-dataflow-versus-monolithic superiority claim is **UNRUN**:
+the control, power rule, task band, and treatment-integrity gates must freeze
+before confirmatory collection.
+<!-- claim:typed-evidence-causal/paper-abstract -->
+The secondary typed-evidence-versus-conventional-logs localization claim is
+also **UNRUN** pending its sealed fault bank and comparator campaign.
+<!-- claim:external-reproduction/paper-abstract -->
+Independent reproduction is **UNRUN**, so this paper makes no external
+reproducibility claim.
+
+<!-- claim:typed-composition/paper-abstract -->
+The current artifact supports a **SUPPORTED structural claim** about the
+implemented typed registry and validator.
+<!-- claim:safety-topology/paper-abstract -->
+It also supports a **SUPPORTED structural claim** about declared graph-path
+guarding, not a process-wide bypass claim. The evidence machinery and bounded
+development feasibility observations remain separately scoped below.
+<!-- claim:live-fault-feasibility/paper-abstract -->
+In one such **SUPPORTED bounded feasibility result**, three pre-registered
+development cells (one each for perception, decision, and motion faults)
+recorded detection, correct-node localization from live evidence, and repair;
+this 3/3 existence result is not a typed-evidence treatment effect. Negative,
+weakened, undecidable, unattested, and hardware-pending rows remain explicit in
+the generated claim matrix rather than being promoted into benchmark findings.
 
 ## 1. Introduction
 
@@ -64,15 +71,16 @@ contribution was scale and closure of the loop, and ASPIRE [2] added
 the compounding-skill axis; their harnesses, however, are bespoke and
 closed, so the *process* claims are hard to audit or rebuild.
 
+<!-- claim:typed-dataflow-causal/paper-introduction -->
 AISLE rebuilds the loop on open, composable infrastructure and makes the
 engineering process itself the object of measurement. The agent's action
 space is not "edit a monolithic script" but **compose and evolve a typed
 dataflow**: generate dora-rs [3] YAML against a capability registry,
 author new nodes as evaluated, provenance-carded skills, and iterate
-against automatic reset and verification in a Genesis [4] physics
-scene. The claim under test: *a typed
-dataflow substrate makes agentic robotics faster, more auditable, and
-more reusable than script-level iteration* — reproducible on a laptop.
+against automatic reset and verification in a Genesis [4] physics scene. The
+**UNRUN confirmatory claim under test** is whether a typed dataflow
+substrate makes agentic robotics faster, more auditable, and more reusable than
+script-level iteration; laptop execution is not independent reproduction.
 
 **Notation.** AISLE is spec-driven, and this paper keeps the spec's
 identifiers so every claim remains greppable in the artifact: `Hn`
@@ -87,22 +95,28 @@ records — each campaign's pre-registered protocol is one. Table 1
 and measurement with its criterion and verdict — and §3 closes with a
 glossary of recurring terms; the artifact carries the full text.
 
-**Contributions.** (1) An open substrate that makes the agentic
-robot-engineering loop *measurable*: typed capability composition,
-static validation with stable error codes, an unbypassable safety
-topology, frozen evaluation, and hash-attested evidence, reproducible
-on one laptop. (2) A pre-registered experimental program (six
-hypotheses, seven ablations, model-tier measurements) executed
-against it — one control condition and one compute-gated measurement
-remain open and are stated as such — with every verdict, including
-the negative and undecidable ones, derived from committed records by
-committed analyzers. (3) The lockstep evaluation condition, which separates a
-learned policy's competence from its inference latency by freezing
-simulated time during in-turn inference. (4) A measured operations
-result: agents repairing live induced faults from evidence alone,
-3/3. (5) A safety record: zero wrong-medicine deliveries across every
-episode the project has ever run, under free agent authorship of
-motion code.
+**Contributions.**
+<!-- claim:typed-composition/paper-contributions -->
+(1) A **SUPPORTED structural** benchmark architecture and implemented typed
+capability registry with mechanically checked claim/evidence links.
+<!-- claim:safety-topology/paper-contributions -->
+(2) **SUPPORTED structural** static validation and scoped declared-path motion
+gating, without a process-wide bypass claim.
+<!-- claim:evidence-attestation/paper-contributions -->
+(3) **SUPPORTED structural** frozen-artifact hash checking and admissibility
+metadata, without a process-isolation claim.
+<!-- claim:typed-dataflow-causal/paper-contributions -->
+<!-- claim:typed-evidence-causal/paper-contributions -->
+(4) Frozen protocols for the still-**UNRUN** typed-versus-monolithic and
+typed-evidence-versus-logs studies.
+<!-- claim:live-fault-feasibility/paper-contributions -->
+(5) A **SUPPORTED bounded feasibility result**, 3/3 development cells, showing
+that agents can repair induced faults from live evidence; it is not
+comparative.
+<!-- claim:safety-observed-outcomes/paper-contributions -->
+(6) A **WEAKENED observational safety record** whose retained zero-event
+denominators do not establish prevention and await the session-level safety
+campaign and issue #350 threat model.
 
 Three design commitments separate this from a demo repository:
 
