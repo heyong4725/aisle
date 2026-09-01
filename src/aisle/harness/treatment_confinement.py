@@ -22,20 +22,25 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = "aisle.macos-confinement-capability.v1"
+SCHEMA_VERSION = "aisle.macos-confinement-capability.v2"
 EVIDENCE_CLASS = "synthetic_unscored_capability"
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 SYSTEM_PROFILE = Path("/System/Library/Sandbox/Profiles/system.sb")
 _HASH_LENGTH = 64
 _REQUIRED_CASE_IDS = {
     "absolute_hidden_read",
+    "alternate_worktree_hidden_read",
     "declared_output_write",
+    "git_object_hidden_read",
     "hidden_write",
     "parent_traversal_hidden_read",
     "subprocess_hidden_read",
     "subprocess_visible_read",
     "symlink_hidden_read",
+    "unrestricted_alternate_worktree_baseline",
+    "unrestricted_git_object_baseline",
     "unrestricted_hidden_baseline",
+    "visible_git_object_read",
     "visible_read",
 }
 
@@ -216,13 +221,16 @@ def _case_result(
     }
 
 
-def _run(command: list[str], *, cwd: Path) -> subprocess.CompletedProcess[bytes]:
+def _run(
+    command: list[str], *, cwd: Path, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[bytes]:
     try:
         return subprocess.run(
             command,
             cwd=cwd,
             check=False,
             capture_output=True,
+            env=env,
             timeout=15,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -233,6 +241,70 @@ def _run(command: list[str], *, cwd: Path) -> subprocess.CompletedProcess[bytes]
 
 def _wrapped(profile_path: Path, command: list[str]) -> list[str]:
     return [str(SANDBOX_EXEC), "-f", str(profile_path), *command]
+
+
+def _controller_command(
+    command: list[str], *, cwd: Path, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[bytes]:
+    """Run synthetic-fixture setup outside the subject sandbox and fail loudly."""
+    result = _run(command, cwd=cwd, env=env)
+    if result.returncode != 0:
+        raise ConfinementError(
+            "controller fixture command failed: "
+            f"{command[0]} rc={result.returncode} "
+            f"stdout_sha256={_sha256_bytes(result.stdout)} "
+            f"stderr_sha256={_sha256_bytes(result.stderr)}"
+        )
+    return result
+
+
+def _apple_git_runtime(*, cwd: Path) -> tuple[Path, Path]:
+    """Resolve the selected Apple developer tree and its real Git executable."""
+    developer_result = _controller_command(["/usr/bin/xcode-select", "-p"], cwd=cwd)
+    developer_root = Path(developer_result.stdout.decode().strip()).resolve()
+    git_result = _controller_command(["/usr/bin/xcrun", "--find", "git"], cwd=cwd)
+    git = Path(git_result.stdout.decode().strip()).resolve()
+    if not developer_root.is_dir() or not git.is_file() or not _contains(developer_root, git):
+        raise ConfinementError("Apple developer Git runtime is unresolved or inconsistent")
+    return git, developer_root
+
+
+def _initialize_git_fixture(
+    repository: Path,
+    filename: str,
+    content: bytes,
+    *,
+    git: Path,
+    env: dict[str, str],
+) -> str:
+    """Create one isolated synthetic commit and return the committed blob id."""
+    repository.mkdir()
+    (repository / filename).write_bytes(content)
+    git_command = str(git)
+    _controller_command([git_command, "init", "--quiet"], cwd=repository, env=env)
+    _controller_command([git_command, "add", "--", filename], cwd=repository, env=env)
+    _controller_command(
+        [
+            git_command,
+            "-c",
+            "user.name=AISLE synthetic controller",
+            "-c",
+            "user.email=synthetic-controller@invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "synthetic confinement fixture",
+        ],
+        cwd=repository,
+        env=env,
+    )
+    result = _controller_command(
+        [git_command, "rev-parse", f"HEAD:{filename}"], cwd=repository, env=env
+    )
+    object_id = result.stdout.decode("ascii").strip()
+    if len(object_id) not in (40, 64) or any(char not in "0123456789abcdef" for char in object_id):
+        raise ConfinementError("controller fixture returned an invalid git object id")
+    return object_id
 
 
 def _platform_record() -> dict[str, str]:
@@ -281,6 +353,46 @@ def run_macos_capability_audit() -> dict[str, Any]:
         hidden_file.write_bytes(hidden_sentinel)
         (visible / "hidden-link").symlink_to(hidden, target_is_directory=True)
 
+        git, developer_root = _apple_git_runtime(cwd=root)
+        isolated_home = visible / "isolated-home"
+        isolated_home.mkdir()
+        git_environment = {
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "HOME": str(isolated_home),
+            "PATH": str(git.parent),
+        }
+        visible_repository = visible / "repository"
+        _initialize_git_fixture(
+            visible_repository,
+            "allowed.txt",
+            visible_sentinel,
+            git=git,
+            env=git_environment,
+        )
+        hidden_repository = hidden / "evaluator-repository"
+        hidden_object_id = _initialize_git_fixture(
+            hidden_repository,
+            "secret.txt",
+            hidden_sentinel,
+            git=git,
+            env=git_environment,
+        )
+        hidden_worktree = hidden / "evaluator-alternate-worktree"
+        _controller_command(
+            [
+                str(git),
+                "worktree",
+                "add",
+                "--quiet",
+                "--detach",
+                str(hidden_worktree),
+                "HEAD",
+            ],
+            cwd=hidden_repository,
+            env=git_environment,
+        )
+
         policy = MacOSPolicy(
             visible_roots=(visible,),
             output_roots=(output,),
@@ -291,8 +403,13 @@ def run_macos_capability_audit() -> dict[str, Any]:
                 Path("/usr/bin").resolve(),
                 Path("/usr/lib").resolve(),
                 Path("/usr/share").resolve(),
+                developer_root,
             ),
-            allowed_executables=(Path("/bin/bash").resolve(), Path("/bin/cat").resolve()),
+            allowed_executables=(
+                Path("/bin/bash").resolve(),
+                Path("/bin/cat").resolve(),
+                git,
+            ),
             hidden_roots=(hidden,),
             network_policy="deny-external",
         )
@@ -306,6 +423,39 @@ def run_macos_capability_audit() -> dict[str, Any]:
             _case_result(
                 "unrestricted_hidden_baseline",
                 baseline,
+                hidden_sentinel,
+                expected="baseline-exposure",
+            )
+        )
+        unrestricted_worktree = _run(
+            [str(git), "-C", str(hidden_worktree), "show", "HEAD:secret.txt"],
+            cwd=visible,
+            env=git_environment,
+        )
+        cases.append(
+            _case_result(
+                "unrestricted_alternate_worktree_baseline",
+                unrestricted_worktree,
+                hidden_sentinel,
+                expected="baseline-exposure",
+            )
+        )
+        unrestricted_object = _run(
+            [
+                str(git),
+                "--git-dir",
+                str(hidden_repository / ".git"),
+                "cat-file",
+                "blob",
+                hidden_object_id,
+            ],
+            cwd=visible,
+            env=git_environment,
+        )
+        cases.append(
+            _case_result(
+                "unrestricted_git_object_baseline",
+                unrestricted_object,
                 hidden_sentinel,
                 expected="baseline-exposure",
             )
@@ -335,6 +485,29 @@ def run_macos_capability_audit() -> dict[str, Any]:
                 extra_pass=visible_shell.stdout == visible_sentinel,
             )
         )
+        visible_git_object = _run(
+            _wrapped(
+                profile_path,
+                [
+                    str(git),
+                    "-C",
+                    str(visible_repository),
+                    "show",
+                    "HEAD:allowed.txt",
+                ],
+            ),
+            cwd=visible,
+            env=git_environment,
+        )
+        cases.append(
+            _case_result(
+                "visible_git_object_read",
+                visible_git_object,
+                hidden_sentinel,
+                expected="allow",
+                extra_pass=visible_git_object.stdout == visible_sentinel,
+            )
+        )
 
         denied_reads = {
             "absolute_hidden_read": str(hidden_file),
@@ -353,6 +526,52 @@ def run_macos_capability_audit() -> dict[str, Any]:
         )
         cases.append(
             _case_result("subprocess_hidden_read", shell_hidden, hidden_sentinel, expected="deny")
+        )
+
+        alternate_worktree_hidden = _run(
+            _wrapped(
+                profile_path,
+                [
+                    str(git),
+                    "-C",
+                    str(hidden_worktree),
+                    "show",
+                    "HEAD:secret.txt",
+                ],
+            ),
+            cwd=visible,
+            env=git_environment,
+        )
+        cases.append(
+            _case_result(
+                "alternate_worktree_hidden_read",
+                alternate_worktree_hidden,
+                hidden_sentinel,
+                expected="deny",
+            )
+        )
+        git_object_hidden = _run(
+            _wrapped(
+                profile_path,
+                [
+                    str(git),
+                    "--git-dir",
+                    str(hidden_repository / ".git"),
+                    "cat-file",
+                    "blob",
+                    hidden_object_id,
+                ],
+            ),
+            cwd=visible,
+            env=git_environment,
+        )
+        cases.append(
+            _case_result(
+                "git_object_hidden_read",
+                git_object_hidden,
+                hidden_sentinel,
+                expected="deny",
+            )
         )
 
         output_file = output / "declared.txt"
@@ -414,6 +633,7 @@ def run_macos_capability_audit() -> dict[str, Any]:
                 "synthetic filesystem sentinels; no benchmark fault identities",
                 "no vendor network or credential path evaluated",
                 "no Claude/Codex end-to-end parity evaluated",
+                "Git surfaces cover the system Git CLI only, not every future allowed tool",
                 "Apple system.sb is a private interface and is hashed per audit",
             ],
             "platform": _platform_record(),
