@@ -1,0 +1,104 @@
+{
+  "capability_pass": true,
+  "cases": [
+    {
+      "false_alarm_control": false,
+      "id": "home_rebound",
+      "passed": true
+    },
+    {
+      "false_alarm_control": false,
+      "id": "agent_config_homes_rebound",
+      "passed": true
+    },
+    {
+      "false_alarm_control": false,
+      "id": "xdg_and_tmp_rebound",
+      "passed": true
+    },
+    {
+      "false_alarm_control": false,
+      "id": "unrelated_environment_removed",
+      "passed": true
+    },
+    {
+      "false_alarm_control": false,
+      "id": "credential_environment_removed",
+      "passed": true
+    },
+    {
+      "false_alarm_control": false,
+      "id": "socket_endpoint_environment_removed",
+      "passed": true
+    },
+    {
+      "false_alarm_control": false,
+      "id": "inherited_fd_closed",
+      "passed": true
+    },
+    {
+      "false_alarm_control": true,
+      "id": "declared_path_forwarded",
+      "passed": true
+    }
+  ],
+  "confirmatory_ready": false,
+  "environment_record": {
+    "env_baseline_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "environment_keys": [
+      "AISLE_ENV_BASELINE",
+      "CLAUDE_CONFIG_DIR",
+      "CODEX_HOME",
+      "HOME",
+      "LANG",
+      "LC_CTYPE",
+      "PATH",
+      "TEMP",
+      "TMP",
+      "TMPDIR",
+      "XDG_CACHE_HOME",
+      "XDG_CONFIG_HOME",
+      "XDG_DATA_HOME",
+      "XDG_STATE_HOME",
+      "__CF_USER_TEXT_ENCODING"
+    ],
+    "environment_sha256": "c30239d4005c7ede204e844e2133c60fcc4d63c393053e34dd4a2129af43c690",
+    "forwarded_variables": [
+      "LANG",
+      "LC_CTYPE",
+      "PATH"
+    ],
+    "home": "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-b1sm7kr7/session/agent_home",
+    "immutable_id": "sha256:10c6eb8f2ac4bdf8c73e1ddc4c7bca4ac85f1209cbcd39fce595afd7e1609cbc",
+    "inherited_fd_policy": "close-all-nonstandard",
+    "local_endpoint_policy": "no-ambient-endpoint-variables",
+    "removed_endpoint_key_count": 2,
+    "removed_source_key_count": 5,
+    "schema_version": "aisle.ambient-baseline.v1",
+    "state_directories": [
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-b1sm7kr7/session/agent_home",
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-b1sm7kr7/session/agent_home/.cache",
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-b1sm7kr7/session/agent_home/.claude",
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-b1sm7kr7/session/agent_home/.codex",
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-b1sm7kr7/session/agent_home/.config",
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-b1sm7kr7/session/agent_home/.local/share",
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-b1sm7kr7/session/agent_home/.local/state",
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-b1sm7kr7/session/agent_home/.tmp"
+    ]
+  },
+  "evidence_class": "synthetic_unscored_ambient_capability",
+  "limitations": [
+    "synthetic process only; no Claude or Codex vendor session",
+    "environment endpoint removal does not replace filesystem/network confinement",
+    "credential-file seeding and post-session scrubbing are audited separately"
+  ],
+  "recorded_at": "2026-09-01T15:38:20.727319+00:00",
+  "schema_version": "aisle.ambient-capability.v1",
+  "session_id": "ambient-capability-20260901T153820727319Z",
+  "summary": {
+    "checks": 8,
+    "detection_rate": 1.0,
+    "false_alarm_checks": 1,
+    "false_alarm_rate": 0.0
+  }
+}

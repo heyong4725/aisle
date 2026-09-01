@@ -1,0 +1,1190 @@
+{
+  "capability_pass": true,
+  "component_inventory": [
+    "schema_version",
+    "repository.commit",
+    "repository.tree",
+    "repository.visible_allowlist",
+    "model.requested_identity",
+    "model.served_identity",
+    "agent.kind",
+    "agent.cli_revision",
+    "agent.cli_binary_sha256",
+    "sampling",
+    "prompts.system_sha256",
+    "prompts.research_contract_sha256",
+    "runtime_binaries",
+    "environment.fingerprint_sha256",
+    "environment.simulator_backend",
+    "environment.platform",
+    "policy.approval",
+    "policy.tool_policy_sha256",
+    "policy.network",
+    "policy.allowed_external_tools",
+    "state.credential_source_class",
+    "state.credential_provenance",
+    "state.credential_policy_sha256",
+    "state.home_baseline_sha256",
+    "state.config_baseline_sha256",
+    "state.cache_baseline_sha256",
+    "state.environment_baseline_sha256",
+    "prior_context.findings_sha256",
+    "prior_context.skills_sha256",
+    "prior_context.context_sha256",
+    "budget.unit",
+    "budget.ceiling",
+    "assignment.temporal_block",
+    "assignment.arm",
+    "assignment.randomization_seed_commitment",
+    "host_load.sampling_rule_sha256",
+    "host_load.baseline",
+    "confinement.adapter_binary_sha256",
+    "confinement.profile_sha256",
+    "confinement.policy_sha256"
+  ],
+  "component_inventory_sha256": "cf6530f71b2b609b737a0fce667e0876535b2967a010609b3df7637188d7cc96",
+  "confirmatory_ready": false,
+  "detector_sha256": {
+    "postflight": "85fb7edeb719a841b2bf576ddc9d06924159b1a17b9cd7b8a94c72c6251568f1",
+    "preflight": "2c7d1a3a1221f809cd0b09d9246850afa17e11feee4768c989608664eda13744"
+  },
+  "environment": {
+    "machine": "arm64",
+    "os": "Darwin",
+    "python_implementation": "CPython",
+    "python_version": "3.13.5"
+  },
+  "evidence_class": "synthetic_unscored_treatment_mutation_audit",
+  "false_alarm_cases": [
+    {
+      "classification": "synthetic_pass",
+      "control_id": "unchanged-treatment",
+      "expected": "synthetic_pass",
+      "false_alarm": false
+    },
+    {
+      "classification": "synthetic_pass",
+      "control_id": "controller-file-outside-visible-root",
+      "expected": "synthetic_pass",
+      "false_alarm": false
+    }
+  ],
+  "fixture_sha256": "0c50dc2f17e81f156b85f0631ff048c3a8d012030e4016ae720cdd928742f7a2",
+  "limitations": [
+    "synthetic manifest and visible-tree fixtures only",
+    "does not mutate operating-system confinement or live vendor sessions",
+    "not a protocol freeze or confirmatory campaign"
+  ],
+  "mutation_cases": [
+    {
+      "component": "agent.cli_binary_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "agent.cli_binary_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-agent-cli-binary-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "agent.cli_revision",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "agent.cli_revision"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-agent-cli-revision",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "agent.kind",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "agent.kind"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-agent-kind",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "assignment.arm",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "assignment.arm"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-assignment-arm",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "assignment.randomization_seed_commitment",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "assignment.randomization_seed_commitment"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-assignment-randomization-seed-commitment",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "assignment.temporal_block",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "assignment.temporal_block"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-assignment-temporal-block",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "budget.ceiling",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "budget.ceiling"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-budget-ceiling",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "budget.unit",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "budget.unit"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-budget-unit",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "confinement.adapter_binary_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "confinement.adapter_binary_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-confinement-adapter-binary-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "confinement.policy_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "confinement.policy_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-confinement-policy-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "confinement.profile_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "confinement.profile_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-confinement-profile-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "environment.fingerprint_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "environment.fingerprint_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-environment-fingerprint-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "environment.platform",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "environment.platform"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-environment-platform",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "environment.simulator_backend",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "environment.simulator_backend"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-environment-simulator-backend",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "host_load.baseline",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "host_load.baseline.load_1m"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-host-load-baseline",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "host_load.sampling_rule_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "host_load.sampling_rule_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-host-load-sampling-rule-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "model.requested_identity",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "model.requested_identity"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-model-requested-identity",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "model.served_identity",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "model.served_identity"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-model-served-identity",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "policy.allowed_external_tools",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "policy.allowed_external_tools"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-policy-allowed-external-tools",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "policy.approval",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "policy.approval"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-policy-approval",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "policy.network",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "policy.network"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-policy-network",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "policy.tool_policy_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "policy.tool_policy_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-policy-tool-policy-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "prior_context.context_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "prior_context.context_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-prior-context-context-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "prior_context.findings_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "prior_context.findings_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-prior-context-findings-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "prior_context.skills_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "prior_context.skills_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-prior-context-skills-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "prompts.research_contract_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "prompts.research_contract_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-prompts-research-contract-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "prompts.system_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "prompts.system_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-prompts-system-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "repository.commit",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "repository.commit"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-repository-commit",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "repository.tree",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "repository.tree"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-repository-tree",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "repository.visible_allowlist",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "repository.visible_allowlist",
+        "repository.visible_files"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-repository-visible-allowlist",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "runtime_binaries",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "runtime_binaries"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-runtime-binaries",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "sampling",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "sampling.seed"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-sampling",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "schema_version",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [],
+      "exclusion_reasons": [
+        "current_treatment_unresolved"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-schema-version",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "state.cache_baseline_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "state.cache_baseline_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-state-cache-baseline-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "state.config_baseline_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "state.config_baseline_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-state-config-baseline-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "state.credential_policy_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "state.credential_policy_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-state-credential-policy-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "state.credential_provenance",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "state.credential_provenance"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-state-credential-provenance",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "state.credential_source_class",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "state.credential_source_class"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-state-credential-source-class",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "state.environment_baseline_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "state.environment_baseline_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-state-environment-baseline-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "state.home_baseline_sha256",
+      "critical": true,
+      "detected": true,
+      "drift_paths": [
+        "state.home_baseline_sha256"
+      ],
+      "exclusion_reasons": [
+        "treatment_drift"
+      ],
+      "expected": "infrastructure_exclusion",
+      "mutation_id": "TRT13-drift-state-home-baseline-sha256",
+      "mutation_kind": "drift",
+      "observed": "infrastructure_exclusion",
+      "stage": "postflight"
+    },
+    {
+      "component": "agent.cli_binary_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: agent.cli_binary_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-agent-cli-binary-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "agent.cli_revision",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: agent.cli_revision",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-agent-cli-revision",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "agent.kind",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: agent.kind",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-agent-kind",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "assignment.arm",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: assignment.arm",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-assignment-arm",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "assignment.randomization_seed_commitment",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: assignment.randomization_seed_commitment",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-assignment-randomization-seed-commitment",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "assignment.temporal_block",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: assignment.temporal_block",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-assignment-temporal-block",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "budget.ceiling",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: budget.ceiling",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-budget-ceiling",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "budget.unit",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: budget.unit",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-budget-unit",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "confinement.adapter_binary_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: confinement.adapter_binary_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-confinement-adapter-binary-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "confinement.policy_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: confinement.policy_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-confinement-policy-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "confinement.profile_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: confinement.profile_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-confinement-profile-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "environment.fingerprint_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: environment.fingerprint_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-environment-fingerprint-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "environment.platform",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: environment.platform",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-environment-platform",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "environment.simulator_backend",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: environment.simulator_backend",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-environment-simulator-backend",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "host_load.baseline",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: host_load.baseline",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-host-load-baseline",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "host_load.sampling_rule_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: host_load.sampling_rule_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-host-load-sampling-rule-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "model.requested_identity",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: model.requested_identity",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-model-requested-identity",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "model.served_identity",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: model.served_identity",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-model-served-identity",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "policy.allowed_external_tools",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: policy.allowed_external_tools",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-policy-allowed-external-tools",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "policy.approval",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: policy.approval",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-policy-approval",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "policy.network",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: policy.network",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-policy-network",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "policy.tool_policy_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: policy.tool_policy_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-policy-tool-policy-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "prior_context.context_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: prior_context.context_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-prior-context-context-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "prior_context.findings_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: prior_context.findings_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-prior-context-findings-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "prior_context.skills_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: prior_context.skills_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-prior-context-skills-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "prompts.research_contract_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: prompts.research_contract_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-prompts-research-contract-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "prompts.system_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: prompts.system_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-prompts-system-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "repository.commit",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: repository.commit",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-repository-commit",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "repository.tree",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: repository.tree",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-repository-tree",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "repository.visible_allowlist",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: repository.visible_allowlist",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-repository-visible-allowlist",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "runtime_binaries",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: runtime_binaries",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-runtime-binaries",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "sampling",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: sampling",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-sampling",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "schema_version",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: schema_version",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-schema-version",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "state.cache_baseline_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: state.cache_baseline_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-state-cache-baseline-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "state.config_baseline_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: state.config_baseline_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-state-config-baseline-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "state.credential_policy_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: state.credential_policy_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-state-credential-policy-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "state.credential_provenance",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: state.credential_provenance",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-state-credential-provenance",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "state.credential_source_class",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: state.credential_source_class",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-state-credential-source-class",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "state.environment_baseline_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: state.environment_baseline_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-state-environment-baseline-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    },
+    {
+      "component": "state.home_baseline_sha256",
+      "critical": true,
+      "detected": true,
+      "diagnostic": "required treatment field is absent: state.home_baseline_sha256",
+      "expected": "refusal",
+      "mutation_id": "TRT13-missing-state-home-baseline-sha256",
+      "mutation_kind": "missing",
+      "observed": "refusal",
+      "stage": "preflight"
+    }
+  ],
+  "randomization": {
+    "seed": null,
+    "status": "exhaustive_component_enumeration"
+  },
+  "recorded_at": "2026-09-01T17:33:29.335973Z",
+  "schema_version": "aisle.treatment-mutation-audit.v1",
+  "session_id": "treatment-mutation-20260901T173329335973Z",
+  "source_sha256": "301ecc503491b5b39a3640c6dab490055f21d5222b8192182cad90abb6c5487e",
+  "summary": {
+    "by_kind": {
+      "drift": {
+        "detected": 40,
+        "detection_rate": 1.0,
+        "total": 40
+      },
+      "missing": {
+        "detected": 40,
+        "detection_rate": 1.0,
+        "total": 40
+      }
+    },
+    "capability_pass": true,
+    "critical_survivor_blocks_confirmatory": false,
+    "detection_rate": 1.0,
+    "false_alarm_cases": 2,
+    "false_alarm_rate": 0.0,
+    "false_alarms": 0,
+    "mutations_detected": 80,
+    "mutations_total": 80,
+    "surviving_blind_spots": []
+  }
+}

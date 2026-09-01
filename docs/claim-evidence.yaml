@@ -1,0 +1,705 @@
+schema_version: 1
+
+canonical_status:
+  path: README.md
+  marker: current-status:canonical
+  anchor: "#status"
+
+overview_documents:
+  - path: README.md
+    role: canonical
+  - path: docs/AISLE-technical-report.md
+    role: snapshot
+    snapshot_date: "2026-08-16"
+    canonical_link: ../README.md#status
+  - path: docs/Project_AISLE_Experiment_Design.md
+    role: snapshot
+    snapshot_date: "2026-08-16"
+    canonical_link: ../README.md#status
+  - path: docs/research-program.md
+    role: snapshot
+    snapshot_date: "2026-08-28"
+    canonical_link: ../README.md#status
+  - path: docs/experiments.md
+    role: snapshot
+    snapshot_date: "2026-08-28"
+    canonical_link: ../README.md#status
+  - path: docs/paper/aisle-paper.md
+    role: snapshot
+    snapshot_date: "2026-08-31"
+    canonical_link: ../../README.md#status
+
+architecture:
+  path: docs/architecture.md
+  marker: architecture/four-zone-boundary
+  experimental_unit: coding_agent_session
+  zones:
+    mutable_participant: >-
+      Coding agent, workspace, declared robot graph, participant nodes, and
+      allowed configuration.
+    frozen_evaluator: >-
+      Hash-checked task, scorer, admissibility, and analysis artifacts.
+    trusted_actuation: >-
+      Scoped validator and command-guard boundary for declared graph paths.
+    hidden_controller: >-
+      Task selection, randomization, seeds, sealed faults, and assignment.
+  inaccessible:
+    - Sealed task and fault contents held outside the participant workspace.
+    - Held-out assignments and controller secrets not mounted for the participant.
+  forbidden:
+    - Direct actuation outside declared participant interfaces.
+    - Editing frozen evaluator artifacts or inspecting sealed answers.
+  threat_model_issue: "#350"
+
+publications:
+  technical_report:
+    path: docs/AISLE-technical-report.md
+    marker: publication-purpose/technical-report
+    purpose: Preserve the complete systems and historical project record.
+    in_scope:
+      - complete_project_record
+      - historical_development_results
+      - teaching_and_system_detail
+    out_of_scope:
+      - focused_confirmatory_headline
+      - causal_superiority_without_control
+  focused_paper:
+    path: docs/paper/aisle-paper.md
+    marker: publication-purpose/focused-paper
+    purpose: >-
+      Test typed versus monolithic engineering and typed evidence versus
+      conventional logs under frozen confirmatory protocols.
+    in_scope:
+      - focused_confirmatory_headline
+      - scoped_safety_boundary
+      - independent_reproduction
+    out_of_scope:
+      - historical_development_results
+      - complete_project_record
+
+terminology_review:
+  status: pending
+  required_before: public_benchmark_release
+  review_record:
+    value: not_applicable
+    rationale: >-
+      No reviewer outside the wording and catalog authorship chain has yet
+      signed and dispositioned a terminology review; release remains blocked.
+
+claims:
+  - id: typed-composition
+    claim: >-
+      AISLE implements a typed capability registry and static graph validator
+      that reject incompatible declared graph structures with stable errors.
+    type: structural
+    status: supported
+    scope:
+      environment: agnostic
+      task: shipped AISLE graph corpus
+      perception: all declared rungs
+      agent_model: any participant using the repository interface
+      platform: repository-supported Python hosts
+    experimental_unit:
+      value: not_applicable
+      rationale: This is a structural property of tracked code and fixtures.
+    sample:
+      value: not_applicable
+      rationale: Structural source and corpus tests are not sampled sessions.
+    uncertainty:
+      value: not_applicable
+      rationale: Sampling uncertainty does not apply to the structural claim.
+    attestation:
+      status: repository_verified
+      rationale: Tracked implementation and independently invoked unit tests establish the scope.
+    evidence:
+      - kind: source
+        path: src/aisle/harness/validate.py
+        scope: agnostic
+        rationale: Implements schema, topology, embodiment, and stable-error validation.
+      - kind: test
+        path: tests/unit/test_validator.py
+        node: tests/unit/test_validator.py::test_every_shipped_graph_validates
+        scope: agnostic
+        rationale: Exercises every shipped tracked graph through the validator.
+    counterevidence:
+      - Graph validity does not establish that external packages are installed or a graph launches.
+    limitations:
+      - The claim concerns declared structures, not arbitrary participant process behavior.
+      - Runtime success and causal engineering benefit require separate evidence.
+    allowed_wording:
+      readme: AISLE implements typed capability composition and static graph validation.
+      technical_report: Tracked tests support the declared typed-graph validation contract.
+      focused_paper: The implemented substrate statically validates declared typed graphs.
+    headlines:
+      - path: README.md
+        marker: typed-composition/readme
+      - path: docs/paper/aisle-paper.md
+        marker: typed-composition/paper-abstract
+      - path: docs/paper/aisle-paper.md
+        marker: typed-composition/paper-contributions
+
+  - id: typed-dataflow-causal
+    claim: >-
+      Typed dataflow engineering improves coding-agent outcomes relative to an
+      equal-capability monolithic interface.
+    type: causal
+    status: unrun
+    scope:
+      environment: simulation
+      task: "non-oracle benchmark task band pending issue #346"
+      perception: frozen by the future protocol
+      agent_model: randomized coding-agent sessions
+      platform: frozen campaign platform
+    experimental_unit: coding_agent_session
+    sample:
+      value: not_applicable
+      rationale: Confirmatory sessions have not been collected.
+    uncertainty:
+      value: not_applicable
+      rationale: No treatment estimate exists before the controlled campaign.
+    attestation:
+      status: not_applicable
+      rationale: No confirmatory treatment records exist.
+    evidence:
+      - value: not_applicable
+        rationale: "Issue #347 remains dependent on controls and protocol freeze."
+    counterevidence:
+      - Historical single-session ablations do not isolate typed dataflow structure.
+      - The monolithic equal-capability control has not run.
+    limitations:
+      - No superiority, equivalence, or non-inferiority conclusion is currently allowed.
+    allowed_wording:
+      readme: "UNRUN: typed-versus-monolithic superiority is the confirmatory claim under test."
+      technical_report: "UNRUN: historical development results do not establish the causal effect."
+      focused_paper: "UNRUN: no typed-dataflow treatment effect is reported."
+    headlines:
+      - path: README.md
+        marker: typed-dataflow-causal/readme
+      - path: docs/paper/aisle-paper.md
+        marker: typed-dataflow-causal/paper-abstract
+      - path: docs/paper/aisle-paper.md
+        marker: typed-dataflow-causal/paper-introduction
+      - path: docs/paper/aisle-paper.md
+        marker: typed-dataflow-causal/paper-contributions
+
+  - id: typed-evidence-causal
+    claim: >-
+      Typed runtime evidence improves hidden-fault localization and repair
+      relative to conventional logs under a sealed fault assignment.
+    type: causal
+    status: unrun
+    scope:
+      environment: simulation
+      task: "sealed live-fault bank pending issue #348"
+      perception: fault-stratified
+      agent_model: randomized coding-agent sessions
+      platform: frozen campaign platform
+    experimental_unit: coding_agent_session
+    sample:
+      value: not_applicable
+      rationale: Comparator sessions have not been collected.
+    uncertainty:
+      value: not_applicable
+      rationale: No session-level treatment estimate exists.
+    attestation:
+      status: not_applicable
+      rationale: No confirmatory comparator records exist.
+    evidence:
+      - value: not_applicable
+        rationale: "Issue #349 awaits the sealed bank, comparator, and protocol freeze."
+    counterevidence:
+      - The H6 feasibility cells exposed typed evidence to every participant and had no logs-only arm.
+    limitations:
+      - Feasibility cannot be relabeled as a comparative localization benefit.
+    allowed_wording:
+      readme: "UNRUN: typed evidence versus conventional logs has no treatment result."
+      technical_report: "UNRUN: H6 is feasibility evidence, not a logs comparator."
+      focused_paper: "UNRUN: no typed-evidence localization effect is reported."
+    headlines:
+      - path: docs/paper/aisle-paper.md
+        marker: typed-evidence-causal/paper-abstract
+      - path: docs/paper/aisle-paper.md
+        marker: typed-evidence-causal/paper-contributions
+
+  - id: live-fault-feasibility
+    claim: >-
+      In three retained development cells, one per perception, decision, and
+      motion fault tier, an agent using live evidence detected the fault,
+      localized the designated node, and restored the measured task outcome.
+    type: empirical
+    status: supported
+    scope:
+      environment: simulation
+      task: H6 induced-fault development cells F1, F2, and F3
+      perception: fault-dependent
+      agent_model: recorded operator-agent sessions
+      platform: development Mac campaign host
+    experimental_unit: coding_agent_session
+    sample: 3 sessions; one per fault tier; no repeated-session population inference
+    uncertainty: Descriptive 3/3 existence result; no interval used for a population claim
+    attestation:
+      status: repository_recorded
+      rationale: Cell records and scorer are retained; no independent reproduction exists.
+    evidence:
+      - kind: protocol
+        path: docs/decisions/ADR-h6-operation-protocol.md
+        scope: simulation
+        rationale: Declares cell scoring, evidence set, and amendments.
+      - kind: raw_record
+        path: analysis/h6/records/F1/cell.json
+        scope: simulation
+        rationale: Retained perception-fault cell record.
+      - kind: raw_record
+        path: analysis/h6/records/F2/cell.json
+        scope: simulation
+        rationale: Retained decision-fault cell record.
+      - kind: raw_record
+        path: analysis/h6/records/F3/cell.json
+        scope: simulation
+        rationale: Retained motion-fault cell record.
+      - kind: analyzer
+        path: tools/h6_campaign.py
+        scope: agnostic
+        rationale: Implements cell and campaign verdict derivation.
+    counterevidence:
+      - There is no conventional-logs comparator and only one session per fault tier.
+    limitations:
+      - This supports only the recorded 3/3 feasibility statement.
+      - It does not support a typed-evidence advantage or general repair rate.
+    allowed_wording:
+      readme: "SUPPORTED bounded feasibility: the three retained H6 cells met their criteria."
+      technical_report: "SUPPORTED bounded feasibility in 3/3 development cells, without comparison."
+      focused_paper: "SUPPORTED bounded feasibility; not a typed-evidence treatment effect."
+    headlines:
+      - path: README.md
+        marker: live-fault-feasibility/readme
+      - path: docs/paper/aisle-paper.md
+        marker: live-fault-feasibility/paper-abstract
+      - path: docs/paper/aisle-paper.md
+        marker: live-fault-feasibility/paper-contributions
+
+  - id: development-ledger
+    claim: >-
+      README contains the sole canonical dated project-status ledger and keeps
+      development verdict qualifications visible.
+    type: structural
+    status: supported
+    scope:
+      environment: agnostic
+      task: project documentation status
+      perception: not_applicable
+      agent_model: not_applicable
+      platform: repository documentation
+    experimental_unit:
+      value: not_applicable
+      rationale: This is a documentation-structure claim.
+    sample:
+      value: not_applicable
+      rationale: No experimental sample is used.
+    uncertainty:
+      value: not_applicable
+      rationale: Sampling uncertainty does not apply.
+    attestation:
+      status: repository_verified
+      rationale: The catalog checker enforces the one-source marker and dated snapshot links.
+    evidence:
+      - kind: source
+        path: README.md
+        scope: agnostic
+        rationale: Contains the canonical marker and dated status ledger.
+      - kind: test
+        path: tests/unit/test_claim_evidence.py
+        node: tests/unit/test_claim_evidence.py::test_only_one_canonical_current_status_is_allowed
+        scope: agnostic
+        rationale: Rejects a second canonical status declaration.
+    counterevidence:
+      - The ledger contains heterogeneous historical evidence and is not a pooled benchmark result.
+    limitations:
+      - Individual rows retain their own evidentiary strength and may predate SPEC 410.
+    allowed_wording:
+      readme: The README is the canonical dated development-status ledger.
+      technical_report: Dated report snapshots defer to the README status ledger.
+      focused_paper: Historical status is supplemental and defers to the README ledger.
+    headlines:
+      - path: README.md
+        marker: development-ledger/readme
+
+  - id: session-statistics
+    claim: >-
+      AISLE implements session-level binary, continuous, survival, power, and
+      zero-event analyses with preserved assignments and exclusions.
+    type: structural
+    status: supported
+    scope:
+      environment: agnostic
+      task: benchmark session analysis
+      perception: not_applicable
+      agent_model: any recorded treatment arm
+      platform: repository-supported Python hosts
+    experimental_unit: coding_agent_session
+    sample:
+      value: not_applicable
+      rationale: This row concerns implemented analysis behavior, not a treatment result.
+    uncertainty:
+      value: not_applicable
+      rationale: Each future campaign supplies its own estimate and interval.
+    attestation:
+      status: repository_verified
+      rationale: Tracked implementation and exact-method tests establish the capability.
+    evidence:
+      - kind: source
+        path: src/aisle/harness/benchmark_statistics.py
+        scope: agnostic
+        rationale: Implements session flow, effects, intervals, power, and release gates.
+      - kind: test
+        path: tests/unit/test_benchmark_statistics.py
+        node: tests/unit/test_benchmark_statistics.py::test_binary_effect_uses_sessions_reports_strata_and_artifact_claim_guard
+        scope: agnostic
+        rationale: Checks session effects, strata, uncertainty, and artifact claim guard.
+    counterevidence:
+      - An implemented analyzer does not make any confirmatory campaign result exist.
+    limitations:
+      - Independent statistical review remains open under STA-12.
+    allowed_wording:
+      readme: AISLE implements session-level benchmark statistics; no campaign effect is implied.
+      technical_report: The common analyzer implements registered session-level methods.
+      focused_paper: Analysis tooling exists, while confirmatory effects remain unrun.
+    headlines: []
+
+  - id: evidence-attestation
+    claim: >-
+      The harness checks tracked frozen-artifact identities and records
+      admissibility metadata for measured runs.
+    type: structural
+    status: supported
+    scope:
+      environment: agnostic
+      task: frozen evaluator integrity
+      perception: all
+      agent_model: any participant
+      platform: repository-supported hosts
+    experimental_unit:
+      value: not_applicable
+      rationale: This is an implemented integrity mechanism.
+    sample:
+      value: not_applicable
+      rationale: No sampled session population is asserted.
+    uncertainty:
+      value: not_applicable
+      rationale: Sampling uncertainty does not apply to code behavior.
+    attestation:
+      status: repository_verified
+      rationale: The frozen inventory and guard dependencies are tested from tracked sources.
+    evidence:
+      - kind: source
+        path: tools/env_hash.py
+        scope: agnostic
+        rationale: Computes and checks frozen artifact hashes.
+      - kind: test
+        path: tests/unit/test_env_hash.py
+        node: tests/unit/test_env_hash.py::test_the_guards_safety_inputs_are_all_fenced
+        scope: agnostic
+        rationale: Verifies that guard inputs remain in the frozen set.
+    counterevidence:
+      - Start-time hashes detect tracked artifact drift but do not prevent every runtime side channel.
+    limitations:
+      - This is tamper evidence and admissibility checking, not process isolation.
+    allowed_wording:
+      readme: Frozen tracked artifacts are hash-checked and recorded for admissibility.
+      technical_report: The harness provides scoped hash attestation of tracked artifacts.
+      focused_paper: Frozen evaluator artifacts are hash-checked; process isolation is not claimed.
+    headlines:
+      - path: docs/paper/aisle-paper.md
+        marker: evidence-attestation/paper-contributions
+
+  - id: safety-topology
+    claim: >-
+      The validator requires every declared motion-command path in an accepted
+      graph to traverse the configured budget guard.
+    type: structural
+    status: supported
+    safety_category: graph_topology
+    scope:
+      environment: agnostic
+      task: validated declared graphs
+      perception: all
+      agent_model: any graph author
+      platform: validator-supported hosts
+    experimental_unit:
+      value: not_applicable
+      rationale: This is a structural graph property.
+    sample:
+      value: not_applicable
+      rationale: The validator checks paths rather than sampled sessions.
+    uncertainty:
+      value: not_applicable
+      rationale: Sampling uncertainty does not apply.
+    attestation:
+      status: repository_verified
+      rationale: Source and adversarial topology tests establish the declared-path rule.
+    evidence:
+      - kind: source
+        path: src/aisle/harness/validate.py
+        scope: agnostic
+        rationale: Implements motion-path gate validation.
+      - kind: test
+        path: tests/unit/test_validator.py
+        node: tests/unit/test_validator.py::test_motion_gate_is_topological
+        scope: agnostic
+        rationale: Distinguishes topology from node naming and rejects an ungated path.
+    counterevidence:
+      - The validator does not model arbitrary process, socket, device, or driver side channels.
+    limitations:
+      - "Wider bypass claims defer to issue #350."
+    allowed_wording:
+      readme: Accepted declared graph paths route motion through the budget guard.
+      technical_report: The validator establishes declared graph-path gating only.
+      focused_paper: Declared topology is gated; a process-wide bypass boundary is not claimed.
+    headlines:
+      - path: docs/AISLE-technical-report.md
+        marker: safety-topology/technical-report
+      - path: docs/paper/aisle-paper.md
+        marker: safety-topology/paper-abstract
+      - path: docs/paper/aisle-paper.md
+        marker: safety-topology/paper-contributions
+
+  - id: safety-kinematic
+    claim: >-
+      The budget guard clamps or holds malformed, stale, out-of-limit, and
+      out-of-workspace commands according to its configured envelope.
+    type: structural
+    status: supported
+    safety_category: kinematic_enforcement
+    scope:
+      environment: agnostic
+      task: supported command envelopes
+      perception: not_applicable
+      agent_model: any declared motion producer
+      platform: supported embodiments
+    experimental_unit:
+      value: not_applicable
+      rationale: This is a deterministic command-transform property.
+    sample:
+      value: not_applicable
+      rationale: Unit and fuzz tests exercise the transformation contract.
+    uncertainty:
+      value: not_applicable
+      rationale: Sampling uncertainty does not apply to the bounded code property.
+    attestation:
+      status: repository_verified
+      rationale: Guard implementation and fuzzed command tests are tracked.
+    evidence:
+      - kind: source
+        path: src/aisle/nodes/budget_guard.py
+        scope: agnostic
+        rationale: Implements configured command clamping and holds.
+      - kind: test
+        path: tests/unit/test_guard_clamping.py
+        node: tests/unit/test_guard_clamping.py::test_fuzzed_commands_never_crash_and_always_legal
+        scope: agnostic
+        rationale: Exercises malformed and extreme commands against the legal envelope.
+    counterevidence:
+      - Kinematic clamping does not establish semantic object authorization.
+    limitations:
+      - "Held-command and safety-exposure effects await issue #351."
+    allowed_wording:
+      readme: The budget guard clamps commands to its configured kinematic envelope.
+      technical_report: Kinematic enforcement is separate from semantic safety.
+      focused_paper: The guard enforces configured command bounds on declared paths.
+    headlines: []
+
+  - id: safety-semantic
+    claim: >-
+      The verifier implements semantic detection of supported wrong-object
+      observations and emits the corresponding failure outcome.
+    type: structural
+    status: supported
+    safety_category: semantic_detection
+    scope:
+      environment: simulation
+      task: supported desk and retail verifier states
+      perception: oracle and recorded realistic-verifier paths
+      agent_model: not_applicable
+      platform: verifier-supported hosts
+    experimental_unit:
+      value: not_applicable
+      rationale: This is a verifier implementation property.
+    sample:
+      value: not_applicable
+      rationale: The row does not estimate detector population performance.
+    uncertainty:
+      value: not_applicable
+      rationale: Fidelity uncertainty belongs to separate empirical rows.
+    attestation:
+      status: repository_verified
+      rationale: Verifier source and a wrong-object regression test establish detection behavior.
+    evidence:
+      - kind: source
+        path: src/aisle/verifier/realistic.py
+        scope: simulation
+        rationale: Implements realistic-verifier semantic observations and latch behavior.
+      - kind: test
+        path: tests/unit/test_realistic_judge.py
+        node: tests/unit/test_realistic_judge.py::test_a_wrong_object_seen_by_the_OVERHEAD_still_fails_the_episode
+        scope: simulation
+        rationale: Confirms a supported wrong-object observation produces failure.
+    counterevidence:
+      - Detection fidelity is imperfect and does not authorize the commanded target.
+    limitations:
+      - Semantic prevention is not attributed to the verifier or kinematic guard.
+    allowed_wording:
+      readme: The verifier detects supported wrong-object observations; prevention is not claimed.
+      technical_report: Semantic detection is distinct from kinematic enforcement and authorization.
+      focused_paper: The verifier emits semantic failures on supported observations.
+    headlines: []
+
+  - id: safety-identity-authorization
+    claim: >-
+      An identity-aware authorization boundary prevents commands for an
+      unauthorized object from reaching actuation.
+    type: future
+    status: unrun
+    safety_category: identity_authorization
+    scope:
+      environment: simulation_and_hardware
+      task: "wrong-object intervention pending issue #352"
+      perception: identity-capable rung
+      agent_model: any participant
+      platform: future ratified boundary
+    experimental_unit: coding_agent_session
+    sample:
+      value: not_applicable
+      rationale: The authorization intervention has not run.
+    uncertainty:
+      value: not_applicable
+      rationale: No authorization effect estimate exists.
+    attestation:
+      status: not_applicable
+      rationale: No implemented and evaluated authorization boundary exists.
+    evidence:
+      - value: not_applicable
+        rationale: "Issue #352 remains unrun."
+    counterevidence:
+      - Existing verifier detection occurs after observation and is not command authorization.
+    limitations:
+      - Zero observed wrong-object events cannot establish this prevention claim.
+    allowed_wording:
+      readme: "UNRUN: identity-aware semantic authorization is not yet demonstrated."
+      technical_report: "UNRUN: verifier detection is not identity authorization."
+      focused_paper: "UNRUN: no semantic authorization effect is reported."
+    headlines: []
+
+  - id: safety-observed-outcomes
+    claim: >-
+      Historical development summaries report zero wrong-object events in
+      retained denominators, but the project-wide session denominator is not
+      yet represented by one independently audited raw table.
+    type: empirical
+    status: weakened
+    safety_category: observed_outcomes
+    scope:
+      environment: simulation
+      task: heterogeneous historical development campaigns
+      perception: heterogeneous
+      agent_model: heterogeneous historical sessions
+      platform: historical development hosts
+    experimental_unit: coding_agent_session
+    sample: Historical summaries include 224 H2 episodes and later campaign denominators.
+    uncertainty:
+      value: not_applicable
+      rationale: No unified session-level raw table supports a project-wide interval yet.
+    attestation:
+      status: mixed_historical
+      rationale: Some component campaigns are retained; the aggregate denominator is not unified.
+    evidence:
+      - value: not_applicable
+        rationale: A single project-wide raw session table and analyzer do not yet exist.
+    counterevidence:
+      - Event-free development observations do not prove prevention.
+      - Historical statements used episode and approximate session denominators inconsistently.
+    limitations:
+      - The allowed claim is observational and simulation-scoped.
+      - "Issue #351 must define exposure units and held-command ablations."
+    allowed_wording:
+      readme: "WEAKENED: retained development summaries report zero events; prevention is unproven."
+      technical_report: "WEAKENED observational record with no project-wide session interval."
+      focused_paper: "WEAKENED historical observation, not confirmatory safety evidence."
+    headlines:
+      - path: README.md
+        marker: safety-observed-outcomes/readme
+      - path: docs/paper/aisle-paper.md
+        marker: safety-observed-outcomes/paper-contributions
+
+  - id: external-reproduction
+    claim: >-
+      A party outside the AISLE authorship chain independently reproduces the
+      frozen benchmark and its confirmatory analysis from archived inputs.
+    type: reproducibility
+    status: unrun
+    scope:
+      environment: simulation_and_hardware
+      task: frozen public benchmark release
+      perception: protocol-defined
+      agent_model: independently selected supported agent
+      platform: independently provisioned environment
+    experimental_unit: independent_reproduction_attempt
+    sample:
+      value: not_applicable
+      rationale: No external reproduction attempt has been completed.
+    uncertainty:
+      value: not_applicable
+      rationale: No reproduction outcome exists.
+    attestation:
+      status: not_applicable
+      rationale: Self-runs are not independent reproduction.
+    evidence:
+      - value: not_applicable
+        rationale: "Issue #355 remains open."
+    counterevidence:
+      - Local CI and author-run regeneration do not satisfy independence.
+    limitations:
+      - Public reproducibility wording remains blocked until a retained external record exists.
+    allowed_wording:
+      readme: "UNRUN: external reproduction has not been completed."
+      technical_report: "UNRUN: local regeneration is not independent reproduction."
+      focused_paper: "UNRUN: no external reproducibility result is reported."
+    headlines:
+      - path: docs/paper/aisle-paper.md
+        marker: external-reproduction/paper-abstract
+
+  - id: hardware-so101-validation
+    claim: >-
+      The complete AISLE benchmark protocol has been validated on a physical
+      SO-101 robot with retained calibration, telemetry, and safety records.
+    type: future
+    status: hardware_pending
+    scope:
+      environment: hardware
+      task: "SO-101 physical validation checklist under issue #356"
+      perception: hardware-calibrated rung
+      agent_model: protocol-defined
+      platform: physical SO-101 equipment
+    experimental_unit: physical_robot_session
+    sample:
+      value: not_applicable
+      rationale: No physical-robot session has been executed.
+    uncertainty:
+      value: not_applicable
+      rationale: No hardware observation exists.
+    attestation:
+      status: not_applicable
+      rationale: Simulation and loopback tests are not physical evidence.
+    evidence:
+      - value: not_applicable
+        rationale: "Hardware is unavailable; issue #356 remains externally blocked."
+    counterevidence:
+      - Driver loopback and simulation calibration parity do not constitute robot trials.
+    limitations:
+      - No physical performance, safety, or sim-to-real claim is allowed.
+    allowed_wording:
+      readme: "HARDWARE PENDING: preparation exists, but no physical trial has run."
+      technical_report: "HARDWARE PENDING: simulation and loopback are not physical evidence."
+      focused_paper: "HARDWARE PENDING: the physical validation cell is unrun."
+    headlines:
+      - path: README.md
+        marker: hardware-so101-validation/readme

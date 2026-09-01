@@ -43,3 +43,20 @@ AUD-11 = "proposed generated gate; immutable repair-history tests land after hum
 AUD-12 = "proposed independent review; authorship/signature gate tests land after human spec review"
 AUD-13 = "proposed audit freeze; invalidation/deviation tests land after human spec review"
 AUD-14 = "proposed release retention; completeness/regeneration tests land after human spec review"
+
+# SPEC 420 treatment integrity — accepted in PR #363. TRT-1/TRT-2 are
+# implemented by the treatment-manifest core; the remaining tests-first changes
+# MUST remove their corresponding waiver before merge.
+TRT-3 = "proposed sealed view; allowlist and contamination tests land after human spec review"
+TRT-4 = "proposed treatment parity; Claude/Codex equivalence tests land after human spec review"
+TRT-5 = "proposed confinement boundary; adapter fail-closed tests land after human spec review"
+TRT-6 = "proposed hidden boundary; path/symlink/git-object tests land after human spec review"
+TRT-7 = "proposed session baseline; ambient-state leakage tests land after human spec review"
+TRT-8 = "proposed blocking identity; randomization/load capture tests land after human spec review"
+TRT-9 = "proposed postflight; drift/exclusion tests land after human spec review"
+TRT-10 = "proposed retention contract; complete-archive tests land after human spec review"
+TRT-11 = "proposed credential lifecycle; scrub/no-secret-archive tests land after human spec review"
+TRT-12 = "proposed arm isolation; contamination-sentinel tests land after human spec review"
+TRT-13 = "proposed mutation gate; component mutation report tests land after human spec review"
+TRT-14 = "proposed parity gate; two-agent conformance tests land after human spec review"
+TRT-15 = "proposed protocol freeze; immutable-id/deviation tests land after human spec review"
