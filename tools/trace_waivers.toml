@@ -27,6 +27,23 @@ FT-2 = "gated by PW-0 ADR; impedance-reject test lands with T21 (SPEC 310)"
 BAL-1 = "gated by PW-0 ADR; balance settling test lands with T21 (SPEC 310)"
 TOOL-1 = "gated by PW-0 ADR; tool-change lifecycle test lands with T21 (SPEC 310)"
 
+# SPEC 430 instrument audit — proposed in the #354 spec-change PR.
+# The tests-first implementation PR MUST remove every AUD waiver before merge.
+AUD-1 = "proposed instrument inventory; completeness tests land after human spec review"
+AUD-2 = "proposed instrument inventory; category coverage tests land after human spec review"
+AUD-3 = "proposed mutation catalog; mechanical coverage tests land after human spec review"
+AUD-4 = "proposed isolated runner; hash and one-mutation tests land after human spec review"
+AUD-5 = "proposed fixed oracles; independence/refusal tests land after human spec review"
+AUD-6 = "proposed recomputation suite; analyzer fixture tests land after human spec review"
+AUD-7 = "proposed paired mutations; boundary and negative-control tests land after human spec review"
+AUD-8 = "proposed report schema; exhaustive result-accounting tests land after human spec review"
+AUD-9 = "proposed audit metrics; denominator and blind-spot tests land after human spec review"
+AUD-10 = "proposed blocking gate; critical/false-alarm/coverage tests land after human spec review"
+AUD-11 = "proposed generated gate; immutable repair-history tests land after human spec review"
+AUD-12 = "proposed independent review; authorship/signature gate tests land after human spec review"
+AUD-13 = "proposed audit freeze; invalidation/deviation tests land after human spec review"
+AUD-14 = "proposed release retention; completeness/regeneration tests land after human spec review"
+
 # SPEC 420 treatment integrity — accepted in PR #363. TRT-1/TRT-2 are
 # implemented by the treatment-manifest core; the remaining tests-first changes
 # MUST remove their corresponding waiver before merge.

@@ -45,7 +45,7 @@ stayed outside it).
 | Graphs | 18 |
 | Capability manifests | 39 |
 | CLI command entries | 15 |
-| ADR files | 61 |
+| ADR files | 62 |
 
 ## Graphs
 
@@ -206,6 +206,7 @@ inference.
 | [docs/decisions/ADR-46.md](../decisions/ADR-46.md) | ADR-46 — Session-level confirmatory statistics contract | PROPOSED — requires owner approval and independent statistical review |
 | [docs/decisions/ADR-47.md](../decisions/ADR-47.md) | ADR-47 — Canonical claim catalog and four-zone benchmark narrative | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
 | [docs/decisions/ADR-48.md](../decisions/ADR-48.md) | ADR-48 — Treatment integrity v3 uses an external confinement adapter | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
+| [docs/decisions/ADR-49.md](../decisions/ADR-49.md) | ADR-49 — Instrument validity is a release-blocking mutation gate | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
 | [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | ACCEPTED (owner-ratified 2026-08-03) |
 | [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |
 | [docs/decisions/ADR-7.md](../decisions/ADR-7.md) | ADR-7: T05 bridge interpretations and measured performance (SPEC 030) | ACCEPTED |
