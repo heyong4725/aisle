@@ -26,18 +26,3 @@ PW-4 = "gated by PW-0 ADR; honest-scope rule cited by T23 verifier/docs tests"
 FT-2 = "gated by PW-0 ADR; impedance-reject test lands with T21 (SPEC 310)"
 BAL-1 = "gated by PW-0 ADR; balance settling test lands with T21 (SPEC 310)"
 TOOL-1 = "gated by PW-0 ADR; tool-change lifecycle test lands with T21 (SPEC 310)"
-
-# SPEC 410 claim/evidence catalog — proposed in the #358 spec-change PR.
-# The tests-first implementation PR MUST remove every CLM waiver before merge.
-CLM-1 = "proposed claim catalog; schema tests land after human spec review"
-CLM-2 = "proposed claim catalog; type/status/scope tests land after human spec review"
-CLM-3 = "proposed claim catalog; evidence sufficiency gates land after human spec review"
-CLM-4 = "proposed claim catalog; tracked-path and test-node checks land after human spec review"
-CLM-5 = "proposed claim catalog; safety claim separation tests land after human spec review"
-CLM-6 = "proposed claim catalog; headline marker/qualification tests land after human spec review"
-CLM-7 = "proposed claim catalog; deterministic CON-8 generator tests land after human spec review"
-CLM-8 = "proposed claim catalog; canonical status-link tests land after human spec review"
-CLM-9 = "proposed claim catalog; generated-field completeness tests land after human spec review"
-CLM-10 = "proposed architecture narrative; four-zone boundary tests land after human spec review"
-CLM-11 = "proposed publication boundary; purpose checks land after human spec review"
-CLM-12 = "external terminology review is a pre-release human gate, not an implementation claim"
