@@ -45,7 +45,7 @@ stayed outside it).
 | Graphs | 18 |
 | Capability manifests | 39 |
 | CLI command entries | 12 |
-| ADR files | 58 |
+| ADR files | 59 |
 
 ## Graphs
 
@@ -201,6 +201,7 @@ inference.
 | [docs/decisions/ADR-44.md](../decisions/ADR-44.md) | ADR-44 — the local-agent arm: pre-registered expectations (issue #285 C3/C4) | ACCEPTED (CON-15 — expectations registered BEFORE any local |
 | [docs/decisions/ADR-45.md](../decisions/ADR-45.md) | ADR-45 — the M1 training-dose ladder (pre-registered) | ACCEPTED (CON-15 — registered before any training step runs). |
 | [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | ACCEPTED (owner-ratified 2026-08-03) |
+| [docs/decisions/ADR-58.md](../decisions/ADR-58.md) | ADR-58 — Hardware evidence begins at a pinned physical station | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
 | [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |
 | [docs/decisions/ADR-7.md](../decisions/ADR-7.md) | ADR-7: T05 bridge interpretations and measured performance (SPEC 030) | ACCEPTED |
 | [docs/decisions/ADR-8.md](../decisions/ADR-8.md) | ADR-8: T06 verifier/reset interpretations (SPEC 040) | ACCEPTED |
