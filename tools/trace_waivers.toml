@@ -27,10 +27,9 @@ FT-2 = "gated by PW-0 ADR; impedance-reject test lands with T21 (SPEC 310)"
 BAL-1 = "gated by PW-0 ADR; balance settling test lands with T21 (SPEC 310)"
 TOOL-1 = "gated by PW-0 ADR; tool-change lifecycle test lands with T21 (SPEC 310)"
 
-# SPEC 420 treatment integrity — proposed in the #353 spec-change PR.
-# The tests-first implementation PR MUST remove every TRT waiver before merge.
-TRT-1 = "proposed treatment manifest; schema/preflight tests land after human spec review"
-TRT-2 = "proposed treatment manifest; unresolved/secret-field tests land after human spec review"
+# SPEC 420 treatment integrity — accepted in PR #363. TRT-1/TRT-2 are
+# implemented by the treatment-manifest core; the remaining tests-first changes
+# MUST remove their corresponding waiver before merge.
 TRT-3 = "proposed sealed view; allowlist and contamination tests land after human spec review"
 TRT-4 = "proposed treatment parity; Claude/Codex equivalence tests land after human spec review"
 TRT-5 = "proposed confinement boundary; adapter fail-closed tests land after human spec review"
