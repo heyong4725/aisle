@@ -135,6 +135,7 @@ def run_agent(
                 "wall_ceiling_s": wall_h * 3600.0,
             },
             env=env,
+            environment_record=isolation["ambient_baseline"],
         )
         record |= {
             "session": session,
