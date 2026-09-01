@@ -104,7 +104,7 @@ def _attestation(compiled, profile_path: Path, adapter_path: Path) -> dict:
     system_profile = profile_path.parent / "system.sb"
     system_profile.write_bytes(b"synthetic imported system profile")
     return {
-        "schema_version": "aisle.macos-confinement-capability.v1",
+        "schema_version": "aisle.macos-confinement-capability.v2",
         "evidence_class": "synthetic_unscored_capability",
         "capability_pass": True,
         "confirmatory_ready": False,
@@ -123,12 +123,17 @@ def _attestation(compiled, profile_path: Path, adapter_path: Path) -> dict:
             {"id": case_id, "passed": True}
             for case_id in (
                 "unrestricted_hidden_baseline",
+                "unrestricted_alternate_worktree_baseline",
+                "unrestricted_git_object_baseline",
                 "visible_read",
                 "subprocess_visible_read",
+                "visible_git_object_read",
                 "absolute_hidden_read",
                 "parent_traversal_hidden_read",
                 "symlink_hidden_read",
                 "subprocess_hidden_read",
+                "alternate_worktree_hidden_read",
+                "git_object_hidden_read",
                 "declared_output_write",
                 "hidden_write",
             )
@@ -195,15 +200,20 @@ def test_launch_wrapper_binds_the_exact_profile_and_preserves_argv(tmp_path: Pat
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="sandbox-exec capability is macOS-only")
 def test_live_capability_denies_hidden_path_variants_and_retains_no_hidden_bytes():
-    """TRT-6: synthetic absolute/traversal/symlink/subprocess reads are denied."""
+    """TRT-6: synthetic path, worktree, object, and subprocess reads are denied."""
     report = run_macos_capability_audit()
     cases = {row["id"]: row for row in report["cases"]}
 
     assert cases["unrestricted_hidden_baseline"]["passed"]
+    assert cases["unrestricted_alternate_worktree_baseline"]["passed"]
+    assert cases["unrestricted_git_object_baseline"]["passed"]
     assert cases["visible_read"]["passed"]
     assert cases["subprocess_visible_read"]["passed"]
+    assert cases["visible_git_object_read"]["passed"]
     for case_id in (
         "absolute_hidden_read",
+        "alternate_worktree_hidden_read",
+        "git_object_hidden_read",
         "parent_traversal_hidden_read",
         "symlink_hidden_read",
         "subprocess_hidden_read",
@@ -214,11 +224,11 @@ def test_live_capability_denies_hidden_path_variants_and_retains_no_hidden_bytes
         assert not cases[case_id]["sentinel_exposed"]
     assert cases["declared_output_write"]["passed"]
     assert report["summary"] == {
-        "baseline_tests": 1,
+        "baseline_tests": 3,
         "capability_pass": True,
-        "declared_allow_tests": 3,
+        "declared_allow_tests": 4,
         "denial_detection_rate": 1.0,
-        "denial_tests": 5,
+        "denial_tests": 7,
         "false_alarm_rate": 0.0,
     }
     assert report["capability_pass"] is True
