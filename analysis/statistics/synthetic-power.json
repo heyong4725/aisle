@@ -1,0 +1,72 @@
+{
+  "achieved_power": 0.8000055747840034,
+  "analysis_seed": 8142,
+  "assumptions": {
+    "allocation_ratio": 1.0,
+    "alpha": 0.05,
+    "control_probability": 0.5,
+    "sensitivity_effects": [
+      0.1,
+      0.2,
+      0.3
+    ],
+    "smallest_effect": {
+      "measure": "risk_difference",
+      "value": 0.2
+    },
+    "target_power": 0.8,
+    "test_sidedness": "two-sided",
+    "treatment_probability": 0.7
+  },
+  "campaign_id": "sta-synthetic-campaign-v1",
+  "execution_environment": {
+    "analysis_implementation_sha256": "22cde3e9d7c5cc80874c7eec30aa2898e30476d6c939c94ab3009e8b12af641e",
+    "machine": "arm64",
+    "python": "3.13.5",
+    "python_implementation": "CPython",
+    "release": "25.6.0",
+    "system": "Darwin"
+  },
+  "experimental_unit": "session",
+  "input_hashes": {
+    "protocol_sha256": "5c6bb33ffb824acb2e7a3f1b25a52a203292ec8fc3ec3f2f68e103c7b4eb541b"
+  },
+  "method": "normal approximation for two independent session proportions",
+  "ok": true,
+  "per_arm_sample_size": {
+    "monolithic": 93,
+    "typed": 93
+  },
+  "protocol_core_sha256": "593d81e9eb7ad78ec74faabea8c574f785c402ffa3972bbb2d7146ed1a0d2b15",
+  "protocol_id": "sta-synthetic-v1",
+  "schema_version": "aisle.stats.power.v1",
+  "sensitivity": [
+    {
+      "achieved_power": 0.800672010678348,
+      "effect": 0.1,
+      "per_arm_sample_size": {
+        "monolithic": 388,
+        "typed": 388
+      }
+    },
+    {
+      "achieved_power": 0.8000055747840034,
+      "effect": 0.2,
+      "per_arm_sample_size": {
+        "monolithic": 93,
+        "typed": 93
+      }
+    },
+    {
+      "achieved_power": 0.8054339225414366,
+      "effect": 0.3,
+      "per_arm_sample_size": {
+        "monolithic": 39,
+        "typed": 39
+      }
+    }
+  ],
+  "warnings": [
+    "normal-approximation planning assumptions require independent review"
+  ]
+}
