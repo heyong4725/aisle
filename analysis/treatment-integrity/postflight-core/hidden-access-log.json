@@ -1,0 +1,22 @@
+{
+  "adapter_active": true,
+  "complete": true,
+  "events": [
+    {
+      "decision": "allow",
+      "surface": "visible_path",
+      "target_class": "visible"
+    },
+    {
+      "decision": "deny",
+      "surface": "absolute_path",
+      "target_class": "hidden"
+    },
+    {
+      "decision": "deny",
+      "surface": "git_object",
+      "target_class": "hidden"
+    }
+  ],
+  "schema_version": "aisle.hidden-access-log.v1"
+}
