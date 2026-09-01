@@ -44,7 +44,7 @@ stayed outside it).
 |---|---:|
 | Graphs | 18 |
 | Capability manifests | 39 |
-| CLI command entries | 12 |
+| CLI command entries | 15 |
 | ADR files | 59 |
 
 ## Graphs
@@ -146,6 +146,9 @@ stayed outside it).
 | `harness report log` | `--idea`, `--parent`, `--expect`, `--root` |
 | `harness rollout` | `--graph`, `--tier`, `--embodiment`, `--episodes`, `--seeds`, `--reset`, `--verifier`, `--sim-extra`, `--root`, `--no-idea-gate`, `--perception`, `--run-id`, `--per-episode-wall-s`, `--env-baseline`, `--timeout-s` |
 | `harness skill register` | `<skill_dir>`, `--root`, `--sandbox`, `--run-id` |
+| `harness stats analyze` | `--protocol`, `--records`, `--output` |
+| `harness stats power` | `--protocol`, `--output` |
+| `harness stats validate` | `--protocol`, `--purpose`, `--output` |
 | `harness swap` | `--graph`, `--dataflow`, `--replace`, `--with`, `--embodiment`, `--root` |
 | `harness traces query` | `--run`, `--topic`, `--t0`, `--t1`, `--episode`, `--node`, `--format`, `--out`, `--summarize`, `--root` |
 | `harness validate` | `<graph>`, `--root`, `--embodiment`, `--allow-unproven`, `--write-turn-plan` |
