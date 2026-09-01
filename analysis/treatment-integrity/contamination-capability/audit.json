@@ -1,0 +1,82 @@
+{
+  "baseline_commit": "417923a2870f658c08462897a6122f0d3453e416",
+  "capability_pass": true,
+  "confirmatory_ready": false,
+  "evidence_class": "synthetic_unscored_contamination",
+  "later_commit": "51fbd16bd2e90c2d64c1d814628c7d3c040537ab",
+  "limitations": [
+    "synthetic sentinels only; no confirmatory agent sessions",
+    "view construction is not yet wired into Claude or Codex launchers",
+    "dependency caches and credentials require separate TRT-7 enforcement"
+  ],
+  "recorded_at": "2026-09-01T15:02:10.371255+00:00",
+  "schema_version": "aisle.contamination-capability.v1",
+  "session_id": "contamination-20260901T150210371255Z-417923a2870f",
+  "sources": [
+    {
+      "baseline_exposed": true,
+      "mechanism": "filesystem_cache",
+      "payload_sha256": "7763568a4c075e7ca0aa37f186ddc1f37d7bfc776292a56bd5957e90b2816497",
+      "source_class": "predecessor_cache"
+    },
+    {
+      "baseline_exposed": true,
+      "mechanism": "filesystem_home",
+      "payload_sha256": "7763568a4c075e7ca0aa37f186ddc1f37d7bfc776292a56bd5957e90b2816497",
+      "source_class": "predecessor_home"
+    },
+    {
+      "baseline_exposed": true,
+      "mechanism": "git_worktree",
+      "payload_sha256": "7763568a4c075e7ca0aa37f186ddc1f37d7bfc776292a56bd5957e90b2816497",
+      "source_class": "predecessor_worktree"
+    },
+    {
+      "baseline_exposed": true,
+      "mechanism": "later_commit_path",
+      "payload_sha256": "7763568a4c075e7ca0aa37f186ddc1f37d7bfc776292a56bd5957e90b2816497",
+      "source_class": "prior_analysis"
+    },
+    {
+      "baseline_exposed": true,
+      "mechanism": "git_ref",
+      "payload_sha256": "7763568a4c075e7ca0aa37f186ddc1f37d7bfc776292a56bd5957e90b2816497",
+      "source_class": "prior_deliverable_ref"
+    },
+    {
+      "baseline_exposed": true,
+      "mechanism": "filesystem_transcript",
+      "payload_sha256": "7763568a4c075e7ca0aa37f186ddc1f37d7bfc776292a56bd5957e90b2816497",
+      "source_class": "prior_transcript"
+    }
+  ],
+  "summary": {
+    "contamination_sources": 6,
+    "source_baselines_exposed": 6,
+    "view_exposures": 0
+  },
+  "view": {
+    "baseline_commit": "417923a2870f658c08462897a6122f0d3453e416",
+    "baseline_tree": "0c6b184f246f41d7b593f4a87be6d107951782ee",
+    "builder_sha256": "f50b704fa1dbb963a35ab5320d95186180c9ac45f7b89a09bcc8b7c6fc3e49cb",
+    "git_binary_sha256": "253ea2dd45d59c1c431a7350346de635ea395396f8348d2109567df94843eb40",
+    "immutable_id": "sha256:7a7799e4880a35a9a30e3cde8156965832b8c3c657ff8258808606a87df16efd",
+    "schema_version": "aisle.independent-view.v1",
+    "visible_allowlist": [
+      "AGENTS.md",
+      "src/worker.py"
+    ],
+    "visible_files": [
+      {
+        "mode": "100644",
+        "path": "AGENTS.md",
+        "sha256": "338c31b1e0255cc23ad2261861a0abdc8549014f5ca5bdf644ff2db349f59c85"
+      },
+      {
+        "mode": "100644",
+        "path": "src/worker.py",
+        "sha256": "51865be869518311191c0c7c639ff5a5e0ff01d1a1ee89f133986011db70a0cb"
+      }
+    ]
+  }
+}
