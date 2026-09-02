@@ -1,0 +1,66 @@
+{
+  "catalog_file_sha256": "c9aa4d5dbcb77c428b2d1c56f77bf1b983aa0a7e51a392cd2cc9e6e7cf51afd1",
+  "catalog_id": "catalog:current-unimplemented-gap-2026-09-01",
+  "catalog_sha256": "d73dc140c8baae0389cd62a8cb517da33c3fefe253e53a75a0d208d7acbdcc8b",
+  "catalog_valid": false,
+  "confirmatory_ready": false,
+  "coverage": {
+    "covered": 0,
+    "required": 16,
+    "uncovered": [
+      "category:analyzer-arithmetic",
+      "category:analyzer-provenance",
+      "category:figure-table-derivation",
+      "category:hidden-leakage-treatment-contamination",
+      "category:inclusion-exclusion",
+      "category:safety-exposure-accounting",
+      "category:stopping-credit-windows",
+      "category:validator-false-accept",
+      "category:validator-false-reject",
+      "category:verifier-scorer-boundary",
+      "estimand:typed-dataflow-causal",
+      "estimand:typed-evidence-causal",
+      "exclusion:infrastructure-integrity",
+      "exclusion:mixed-campaign-or-pilot",
+      "exclusion:post-stopping-rule",
+      "exclusion:treatment-drift-or-hidden-access"
+    ]
+  },
+  "environment": {
+    "machine": "arm64",
+    "os": "Darwin",
+    "python_implementation": "CPython",
+    "python_version": "3.13.5"
+  },
+  "errors": [
+    "AUD-1 inventory is invalid",
+    "mutation catalog must not be empty",
+    "required catalog coverage is absent: category:analyzer-arithmetic",
+    "required catalog coverage is absent: category:analyzer-provenance",
+    "required catalog coverage is absent: category:figure-table-derivation",
+    "required catalog coverage is absent: category:hidden-leakage-treatment-contamination",
+    "required catalog coverage is absent: category:inclusion-exclusion",
+    "required catalog coverage is absent: category:safety-exposure-accounting",
+    "required catalog coverage is absent: category:stopping-credit-windows",
+    "required catalog coverage is absent: category:validator-false-accept",
+    "required catalog coverage is absent: category:validator-false-reject",
+    "required catalog coverage is absent: category:verifier-scorer-boundary",
+    "required catalog coverage is absent: estimand:typed-dataflow-causal",
+    "required catalog coverage is absent: estimand:typed-evidence-causal",
+    "required catalog coverage is absent: exclusion:infrastructure-integrity",
+    "required catalog coverage is absent: exclusion:mixed-campaign-or-pilot",
+    "required catalog coverage is absent: exclusion:post-stopping-rule",
+    "required catalog coverage is absent: exclusion:treatment-drift-or-hidden-access"
+  ],
+  "inventory_file_sha256": "cd802c1479afdee9d5aaa731ae2d29a411e188e8c1adf38f0e4789a83faf58fa",
+  "inventory_sha256": "26d9f78d124a10337108ba7b91bdc9967140aa22cec96f446d875c6e089af5b6",
+  "limitations": [
+    "catalog validation does not execute mutations",
+    "catalog validation does not independently review scientific coverage choices"
+  ],
+  "publication_gate": "blocked",
+  "recorded_at": "2026-09-01T22:43:41.625442Z",
+  "schema_version": "aisle.instrument-mutation-catalog-validation.v1",
+  "session_id": "instrument-catalog-20260901T224341625442Z",
+  "source_sha256": "9c0d96245ebdbcb10ff7d5de44246b1b8147ad4cecefc41228ee0c12a003d8ea"
+}
