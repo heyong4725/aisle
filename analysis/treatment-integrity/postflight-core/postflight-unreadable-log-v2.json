@@ -1,0 +1,20 @@
+{
+  "checks": {
+    "confinement_active": "unresolved",
+    "hidden_access_log": "unreadable",
+    "treatment_identity": "pass",
+    "visible_tree": "pass"
+  },
+  "classification": "infrastructure_exclusion",
+  "confirmatory_ready": false,
+  "current_treatment_immutable_id": "sha256:3bbb07968c7d1161f0a70410b44934a16cc46a1ec9500a5c8271de584e7e26c2",
+  "drift_paths": [],
+  "eligible_for_estimate": false,
+  "evidence_class": "synthetic_unscored_postflight",
+  "exclusion_reasons": [
+    "hidden_access_log_unreadable"
+  ],
+  "immutable_id": "sha256:0a262907107fc9bdc0a1bc9a0bbd30f2a9ae54bd5d87b68a5b01c1f68f1202d1",
+  "preflight_immutable_id": "sha256:3bbb07968c7d1161f0a70410b44934a16cc46a1ec9500a5c8271de584e7e26c2",
+  "schema_version": "aisle.treatment-postflight.v2"
+}

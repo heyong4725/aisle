@@ -65,12 +65,16 @@ def test_agent_lane_passes_the_full_ceilings_contract(tmp_path, monkeypatch):
 
     seen = {}
 
-    def fake_run_session(agent, cmd, wt, out, ceilings, env=None):
+    def fake_run_session(agent, cmd, wt, out, ceilings, env=None, environment_record=None):
         seen.update(ceilings)
         return {"stopped": "agent_done", "rc": 0, "tokens": 1, "wall_s": 1.0}
 
     monkeypatch.setattr(a5, "make_worktree", lambda oid, wt: wt.mkdir(parents=True))
-    monkeypatch.setattr(a5, "isolated_session_env", lambda out, env_baseline_oid: ({}, {}))
+    monkeypatch.setattr(
+        a5,
+        "isolated_session_env",
+        lambda out, env_baseline_oid: ({}, {"ambient_baseline": {}}),
+    )
     monkeypatch.setattr(a5, "seed_session_credentials", lambda agent, env: ({}, None))
     monkeypatch.setattr(a5, "run_session", fake_run_session)
     monkeypatch.setattr(a5, "campaign_metrics", lambda wt, t0, pin=None: {"rollouts": []})
