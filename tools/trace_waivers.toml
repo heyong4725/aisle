@@ -27,6 +27,24 @@ FT-2 = "gated by PW-0 ADR; impedance-reject test lands with T21 (SPEC 310)"
 BAL-1 = "gated by PW-0 ADR; balance settling test lands with T21 (SPEC 310)"
 TOOL-1 = "gated by PW-0 ADR; tool-change lifecycle test lands with T21 (SPEC 310)"
 
+# SPEC 440 monolithic control — proposed in the #344 spec-change PR.
+# The tests-first implementation PR MUST remove every MON waiver before merge.
+MON-1 = "proposed treatment table; completeness/rendering tests land after human spec review"
+MON-2 = "proposed typed surface; deliverable/validator tests land after human spec review"
+MON-3 = "proposed monolithic surface; single-file and typed-facility denial tests land after human spec review"
+MON-4 = "proposed interface parity; field/authority mapping tests land after human spec review"
+MON-5 = "proposed trusted broker; common primitive/guard route tests land after human spec review"
+MON-6 = "proposed trusted boundary; frozen endpoint/refusal tests land after human spec review"
+MON-7 = "proposed bypass suite; adversarial route tests land after human spec review"
+MON-8 = "proposed matched treatment; manifest equality/difference tests land after human spec review"
+MON-9 = "proposed expert pair; provenance/view/freeze tests land after human spec review"
+MON-10 = "proposed expert parity; protocol and equivalence boundary tests land after human spec review"
+MON-11 = "proposed parity isolation; campaign-purpose/exclusion tests land after human spec review"
+MON-12 = "proposed common evidence; envelope equivalence tests land after human spec review"
+MON-13 = "proposed identity audit; drift/cross-arm/resume refusal tests land after human spec review"
+MON-14 = "proposed conformance acceptance; complete suite lands after human spec review"
+MON-15 = "proposed freeze/release record; hash/invalidation/retention tests land after human spec review"
+
 # SPEC 430 instrument audit — proposed in the #354 spec-change PR.
 # The tests-first implementation PR MUST remove every AUD waiver before merge.
 AUD-1 = "proposed instrument inventory; completeness tests land after human spec review"
