@@ -88,6 +88,20 @@ def classify_bypass_attempt(attempt: str) -> str:
     raise TypedSurfaceError("unclassified bypass attempt")
 
 
+def validate_expert_artifacts(artifacts: list[dict[str, Any]]) -> None:
+    """Require provenance and immutable hashes for one expert artifact per arm."""
+    if {item.get("arm") for item in artifacts} != {"typed", "monolithic"}:
+        raise TypedSurfaceError("expert artifacts must include exactly typed and monolithic arms")
+    for item in artifacts:
+        if not all(
+            isinstance(item.get(key), str) and item[key].strip()
+            for key in ("arm", "author", "path")
+        ):
+            raise TypedSurfaceError("expert artifact provenance is unresolved")
+        if not isinstance(item.get("sha256"), str) or not _HASH.fullmatch(item["sha256"]):
+            raise TypedSurfaceError("expert artifact hash is invalid")
+
+
 def validate_matched_treatment(
     typed: dict[str, Any], monolithic: dict[str, Any], differing: set[str]
 ) -> None:

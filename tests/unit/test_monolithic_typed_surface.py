@@ -6,6 +6,7 @@ from aisle.harness.monolithic import (
     TypedSurfaceError,
     classify_bypass_attempt,
     validate_broker_route,
+    validate_expert_artifacts,
     validate_interface_map,
     validate_matched_treatment,
     validate_monolithic_surface,
@@ -70,3 +71,13 @@ def test_matched_treatment_rejects_undeclared_difference():
         validate_matched_treatment(
             {"budget": 1, "arm": "typed"}, {"budget": 2, "arm": "mono"}, {"arm"}
         )
+
+
+def test_expert_artifacts_require_two_arms_and_hashes():
+    h = "a" * 64
+    validate_expert_artifacts(
+        [
+            {"arm": "typed", "author": "expert-a", "path": "typed.py", "sha256": h},
+            {"arm": "monolithic", "author": "expert-b", "path": "mono.py", "sha256": h},
+        ]
+    )
