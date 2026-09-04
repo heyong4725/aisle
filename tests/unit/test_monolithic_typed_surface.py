@@ -152,6 +152,19 @@ def test_submission_bundle_rejects_missing_provenance():
         validate_submission_bundle({"submission_id": "s"})
 
 
+def test_submission_bundle_rejects_session_without_provenance():
+    bundle = {
+        "submission_id": "s",
+        "benchmark_version": "v1",
+        "agent_hash": "a" * 64,
+        "treatment": "typed",
+        "sessions": [{"session_id": "1", "treatment": "typed"}],
+        "resources": {"tokens": 1, "wall_seconds": 1, "tool_calls": 1},
+    }
+    with pytest.raises(ReproductionError, match="provenance"):
+        validate_submission_bundle(bundle)
+
+
 def test_benchmark_version_rejects_unsealed_hidden_evaluation():
     with pytest.raises(ReproductionError, match="incomplete"):
         validate_benchmark_version({"version": "1", "hidden_sealed": False})
