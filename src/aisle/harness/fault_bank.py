@@ -14,6 +14,7 @@ class FaultBankError(ValueError):
 _FAMILIES = {"perception", "decision", "motion"}
 _MODES = {"persistent", "intermittent", "coupled", "sham"}
 _HANDLE = re.compile(r"^assignment:[0-9a-f]{64}$")
+_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
 
 def validate_fault_manifest(manifest: dict[str, Any]) -> None:
@@ -89,3 +90,16 @@ def validate_participant_surface(values: list[str]) -> None:
         lowered = value.lower()
         if any(token in lowered for token in forbidden):
             raise FaultBankError("participant surface leaks sealed fault metadata")
+
+
+def validate_injection_request(request: dict[str, Any]) -> None:
+    """Require an opaque, content-addressed and atomic injector request."""
+    if set(request) != {"handle", "preimage_sha256", "postimage_sha256", "atomic"}:
+        raise FaultBankError("injector request exposes fault metadata")
+    if not _HANDLE.fullmatch(request["handle"]):
+        raise FaultBankError("injector handle is not opaque")
+    for key in ("preimage_sha256", "postimage_sha256"):
+        if not isinstance(request[key], str) or not _DIGEST.fullmatch(request[key]):
+            raise FaultBankError("injector image is not content-addressed")
+    if request["atomic"] is not True:
+        raise FaultBankError("injector must apply atomically")
