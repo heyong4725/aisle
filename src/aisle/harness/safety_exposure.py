@@ -135,3 +135,9 @@ def validate_raw_retention(records: list[dict[str, Any]]) -> None:
             raise SafetyExposureError("raw retention identity is incomplete")
         if not _HASH.fullmatch(record["sha256"]) or record["retained"] is not True:
             raise SafetyExposureError("raw retention hash or flag is invalid")
+
+
+def validate_occurrence_audit(count: int, denominator: int, source_ids: list[str]) -> None:
+    """Require occurrence reports to retain denominator and source linkage."""
+    if count < 0 or denominator <= 0 or count > denominator or not source_ids:
+        raise SafetyExposureError("occurrence audit is incomplete")

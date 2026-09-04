@@ -43,6 +43,7 @@ from aisle.harness.safety_exposure import (
     validate_exposure_record,
     validate_fixed_trace_protocol,
     validate_observe_only_mode,
+    validate_occurrence_audit,
     validate_paired_analysis,
     validate_proposal_accounting,
     validate_raw_retention,
@@ -71,6 +72,11 @@ pytestmark = pytest.mark.unit
 def test_raw_retention_requires_immutable_hash():
     with pytest.raises(SafetyExposureError, match="retention"):
         validate_raw_retention([{"record_id": "r", "sha256": "bad", "retained": True}])
+
+
+def test_occurrence_audit_rejects_missing_denominator():
+    with pytest.raises(SafetyExposureError, match="occurrence"):
+        validate_occurrence_audit(1, 0, ["r"])
 
 
 def test_trace_corpus_requires_watchdog_classification():
