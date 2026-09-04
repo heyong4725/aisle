@@ -39,11 +39,17 @@ from aisle.harness.monolithic import (
 )
 from aisle.harness.threat_model import (
     ThreatModelError,
+    validate_authority_audit,
     validate_gateway_contract,
     validate_threat_model,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_authority_audit_rejects_unreconciled_receipt():
+    with pytest.raises(ThreatModelError, match="unreconciled"):
+        validate_authority_audit(["a1", "a2"], ["a1"])
 
 
 def test_fault_manifest_requires_diverse_sealed_cells():
