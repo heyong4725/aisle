@@ -108,3 +108,14 @@ def validate_trace_corpus(records: list[dict[str, Any]]) -> None:
             raise SafetyExposureError("trace identity is incomplete")
         if not all(isinstance(record[key], bool) for key in ("legal", "violation", "watchdog")):
             raise SafetyExposureError("trace classifications are invalid")
+
+
+def validate_paired_analysis(record: dict[str, Any]) -> None:
+    """Require paired analysis outputs to retain uncertainty and exclusions."""
+    required = {"estimate", "uncertainty", "excluded", "unit"}
+    if set(record) != required or not isinstance(record["estimate"], (int, float)):
+        raise SafetyExposureError("paired analysis is incomplete")
+    if not isinstance(record["uncertainty"], (int, float)) or record["uncertainty"] < 0:
+        raise SafetyExposureError("paired analysis uncertainty is invalid")
+    if not isinstance(record["excluded"], list) or record["unit"] not in {"episode", "attempt"}:
+        raise SafetyExposureError("paired analysis exclusions or unit are invalid")
