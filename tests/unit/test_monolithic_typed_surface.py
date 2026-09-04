@@ -5,6 +5,7 @@ import pytest
 from aisle.harness.fault_bank import (
     FaultBankError,
     validate_fault_manifest,
+    validate_injection_request,
     validate_opaque_assignment,
     validate_participant_surface,
     validate_sealed_location,
@@ -57,6 +58,18 @@ def test_sealed_location_rejects_worktree_path(tmp_path: Path):
 def test_participant_surface_rejects_fault_metadata():
     with pytest.raises(FaultBankError, match="leaks"):
         validate_participant_surface(["status=ok", "target=gripper"])
+
+
+def test_injector_requires_atomic_content_addressed_request():
+    with pytest.raises(FaultBankError, match="atomically"):
+        validate_injection_request(
+            {
+                "handle": "assignment:" + "a" * 64,
+                "preimage_sha256": "b" * 64,
+                "postimage_sha256": "c" * 64,
+                "atomic": False,
+            }
+        )
 
 
 def test_typed_surface_rejects_unallowlisted_files(tmp_path: Path):
