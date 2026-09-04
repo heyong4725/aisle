@@ -5,6 +5,7 @@ import pytest
 from aisle.harness.fault_bank import (
     FaultBankError,
     validate_activation_record,
+    validate_bank_lifecycle,
     validate_calibration_records,
     validate_conformance_matrix,
     validate_fault_manifest,
@@ -258,3 +259,8 @@ def test_common_evidence_requires_same_base_keys():
     validate_common_evidence(dict.fromkeys(required), dict.fromkeys(required), required)
     with pytest.raises(TypedSurfaceError, match="asymmetric"):
         validate_common_evidence({"session_id": 1}, {"session_id": 1, "treatment": 2}, required)
+
+
+def test_bank_lifecycle_rejects_regression():
+    with pytest.raises(FaultBankError, match="monotonic"):
+        validate_bank_lifecycle(["draft", "sealed", "calibration"])
