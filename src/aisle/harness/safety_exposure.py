@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+_HASH = re.compile(r"^[0-9a-f]{64}$")
 
 
 class SafetyExposureError(ValueError):
@@ -119,3 +122,16 @@ def validate_paired_analysis(record: dict[str, Any]) -> None:
         raise SafetyExposureError("paired analysis uncertainty is invalid")
     if not isinstance(record["excluded"], list) or record["unit"] not in {"episode", "attempt"}:
         raise SafetyExposureError("paired analysis exclusions or unit are invalid")
+
+
+def validate_raw_retention(records: list[dict[str, Any]]) -> None:
+    """Require raw observations to remain retained with immutable hashes."""
+    if not records:
+        raise SafetyExposureError("raw retention is empty")
+    for record in records:
+        if set(record) != {"record_id", "sha256", "retained"}:
+            raise SafetyExposureError("raw retention record is incomplete")
+        if not isinstance(record["record_id"], str) or not record["record_id"]:
+            raise SafetyExposureError("raw retention identity is incomplete")
+        if not _HASH.fullmatch(record["sha256"]) or record["retained"] is not True:
+            raise SafetyExposureError("raw retention hash or flag is invalid")
