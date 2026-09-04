@@ -87,6 +87,7 @@ from aisle.harness.semantic_authorization import (
     validate_authorization_analysis,
     validate_authorization_endpoints,
     validate_authorization_state,
+    validate_claim_occurrence,
     validate_evidence_label,
     validate_frozen_thresholds,
     validate_hardware_adapter,
@@ -172,6 +173,14 @@ def test_evidence_label_rejects_oracle_physical_claim():
     with pytest.raises(SemanticAuthorizationError, match="unsupported"):
         validate_evidence_label(
             {"kind": "physical", "oracle_used": True, "hardware_available": True}
+        )
+
+
+def test_claim_occurrence_rejects_missing_sources():
+    with pytest.raises(SemanticAuthorizationError, match="sources"):
+        validate_claim_occurrence(
+            {"claim_id": "h5", "count": 1, "denominator": 2, "source_ids": [],
+             "evidence_kind": "simulation"}
         )
 
 

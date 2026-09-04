@@ -169,3 +169,16 @@ def validate_evidence_label(label: dict[str, Any]) -> None:
         label["hardware_available"] is not True or label["oracle_used"] is True
     ):
         raise SemanticAuthorizationError("physical evidence label is unsupported")
+
+
+def validate_claim_occurrence(claim: dict[str, Any]) -> None:
+    """Require bounded claim occurrence counts linked to evidence sources."""
+    required = {"claim_id", "count", "denominator", "source_ids", "evidence_kind"}
+    if set(claim) != required or not claim["claim_id"]:
+        raise SemanticAuthorizationError("claim occurrence is incomplete")
+    if claim["denominator"] <= 0 or not 0 <= claim["count"] <= claim["denominator"]:
+        raise SemanticAuthorizationError("claim occurrence bounds are invalid")
+    if not isinstance(claim["source_ids"], list) or not claim["source_ids"]:
+        raise SemanticAuthorizationError("claim occurrence sources are missing")
+    if claim["evidence_kind"] not in {"unit", "synthetic", "simulation", "physical"}:
+        raise SemanticAuthorizationError("claim occurrence evidence kind is invalid")
