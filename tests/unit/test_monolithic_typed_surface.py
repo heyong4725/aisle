@@ -73,6 +73,7 @@ from aisle.harness.reproduction import (
     validate_layered_comparison,
     validate_participant_boundary,
     validate_release_manifest,
+    validate_rotation_policy,
     validate_submission_bundle,
 )
 from aisle.harness.safety_exposure import (
@@ -160,6 +161,18 @@ def test_participant_boundary_rejects_hidden_path():
     with pytest.raises(ReproductionError, match="exposes hidden"):
         validate_participant_boundary(
             ["tasks/public.json", "evaluator/hidden_faults.json"], {"hidden"}
+        )
+
+
+def test_rotation_policy_rejects_overdue_or_non_disjoint_set():
+    with pytest.raises(ReproductionError, match="threshold"):
+        validate_rotation_policy(
+            {
+                "release_id": "v1",
+                "rotate_after_sessions": 0,
+                "heldout_disjoint": True,
+                "contamination_action": "rotate",
+            }
         )
 
 
