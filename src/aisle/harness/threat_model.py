@@ -130,3 +130,16 @@ def validate_scoped_claim(claim: dict[str, Any]) -> None:
         raise ThreatModelError("claim evidence kind is invalid")
     if claim["scope"] == "hardware_pending" and claim["evidence_kind"] == "physical":
         raise ThreatModelError("hardware-pending claim cannot assert physical evidence")
+
+
+def validate_residual_paths(paths: list[dict[str, Any]]) -> None:
+    """Require every residual path to have a bounded disposition and rationale."""
+    if not paths:
+        raise ThreatModelError("residual path registry is empty")
+    for path in paths:
+        if set(path) != {"path", "disposition", "rationale"} or not all(
+            isinstance(path[k], str) and path[k] for k in path
+        ):
+            raise ThreatModelError("residual path record is incomplete")
+        if path["disposition"] not in {"covered", "deviation"}:
+            raise ThreatModelError("residual path disposition is invalid")

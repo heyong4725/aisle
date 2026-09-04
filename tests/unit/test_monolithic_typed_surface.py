@@ -45,12 +45,18 @@ from aisle.harness.threat_model import (
     validate_conformance_evidence,
     validate_gateway_contract,
     validate_matched_profiles,
+    validate_residual_paths,
     validate_review_record,
     validate_scoped_claim,
     validate_threat_model,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_residual_paths_require_disposition():
+    with pytest.raises(ThreatModelError, match="disposition"):
+        validate_residual_paths([{"path": "alternate", "disposition": "unknown", "rationale": "x"}])
 
 
 def test_matched_profiles_reject_different_seed_sets():
