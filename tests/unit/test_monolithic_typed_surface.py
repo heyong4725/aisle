@@ -43,6 +43,7 @@ from aisle.harness.safety_exposure import (
     validate_exposure_record,
     validate_fixed_trace_protocol,
     validate_observe_only_mode,
+    validate_paired_analysis,
     validate_proposal_accounting,
     validate_source_strata,
     validate_trace_corpus,
@@ -69,6 +70,13 @@ pytestmark = pytest.mark.unit
 def test_trace_corpus_requires_watchdog_classification():
     with pytest.raises(SafetyExposureError, match="corpus"):
         validate_trace_corpus([{"trace_id": "t", "legal": True, "violation": False}])
+
+
+def test_paired_analysis_requires_uncertainty():
+    with pytest.raises(SafetyExposureError, match="paired"):
+        validate_paired_analysis(
+            {"estimate": 1.0, "uncertainty": -1, "excluded": [], "unit": "episode"}
+        )
 
 
 def test_observe_only_mode_rejects_writes():
