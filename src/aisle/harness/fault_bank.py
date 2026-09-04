@@ -174,3 +174,13 @@ def validate_sealed_ledger(records: list[dict[str, Any]], assignment_handles: se
         seen.add(record["handle"])
     if seen != assignment_handles:
         raise FaultBankError("sealed ledger is incomplete")
+
+
+def validate_reveal_replay(revealed_handle: str, committed_handle: str, replay_handle: str) -> None:
+    """Require reveal and deterministic replay to reproduce the commitment."""
+    if not all(
+        _HANDLE.fullmatch(value) for value in (revealed_handle, committed_handle, replay_handle)
+    ):
+        raise FaultBankError("reveal handle is invalid")
+    if revealed_handle != committed_handle or replay_handle != committed_handle:
+        raise FaultBankError("replay does not reconstruct committed assignment")
