@@ -217,3 +217,12 @@ def validate_treatment_table(table: dict[str, Any]) -> dict[str, Any]:
         "immutable_id": "sha256:" + hashlib.sha256(canonical).hexdigest(),
         "row_count": len(rows),
     }
+
+
+def validate_artifact_hashes(declared: dict[str, str], observed: dict[str, str]) -> None:
+    """Fail closed on missing, extra, malformed, or drifted artifacts."""
+    if set(declared) != set(observed) or not declared:
+        raise TypedSurfaceError("artifact identity set is incomplete or asymmetric")
+    for name, digest in declared.items():
+        if not _HASH.fullmatch(digest) or observed[name] != digest:
+            raise TypedSurfaceError(f"artifact hash drift: {name}")

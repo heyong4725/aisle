@@ -5,6 +5,7 @@ import pytest
 from aisle.harness.monolithic import (
     TypedSurfaceError,
     classify_bypass_attempt,
+    validate_artifact_hashes,
     validate_broker_route,
     validate_campaign_purpose,
     validate_common_evidence,
@@ -84,6 +85,13 @@ def test_expert_artifacts_require_two_arms_and_hashes():
             {"arm": "monolithic", "author": "expert-b", "path": "mono.py", "sha256": h},
         ]
     )
+
+
+def test_artifact_hashes_fail_closed_on_drift():
+    h = "a" * 64
+    validate_artifact_hashes({"broker": h}, {"broker": h})
+    with pytest.raises(TypedSurfaceError, match="drift"):
+        validate_artifact_hashes({"broker": h}, {"broker": "b" * 64})
 
 
 def test_parity_protocol_requires_expert_parity_purpose():
