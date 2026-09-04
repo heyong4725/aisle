@@ -136,3 +136,12 @@ def validate_calibration_records(campaign_purpose: str, records: list[dict[str, 
     for record in records:
         if set(record) != {"attempt", "outcome"} or not isinstance(record["attempt"], str):
             raise FaultBankError("calibration record is incomplete")
+
+
+def validate_safety_assets(asset: dict[str, Any]) -> None:
+    """Require frozen safety assets without granting fault/oracle information."""
+    required = {"allowed_targets", "allowed_operators", "frozen", "oracle_access"}
+    if set(asset) != required or not asset["allowed_targets"] or not asset["allowed_operators"]:
+        raise FaultBankError("safety allowlist is incomplete")
+    if asset["frozen"] is not True or asset["oracle_access"] is not False:
+        raise FaultBankError("safety assets are mutable or oracle-bearing")
