@@ -40,3 +40,16 @@ def validate_stage_gates(stages: list[dict[str, Any]], thresholds_frozen: bool) 
         raise SemanticAuthorizationError("stage gates are out of order")
     if any(stage.get("renewed") is not True for stage in stages):
         raise SemanticAuthorizationError("stage permit renewal is incomplete")
+
+
+def validate_authorization_state(state: dict[str, Any]) -> None:
+    """Fail closed on stale, missing, disagreeing, or revoked authorization."""
+    required = {"permit", "lease_valid", "revoked", "agreement"}
+    if set(state) != required or not isinstance(state["permit"], str) or not state["permit"]:
+        raise SemanticAuthorizationError("authorization state is incomplete")
+    if (
+        state["lease_valid"] is not True
+        or state["revoked"] is not False
+        or state["agreement"] is not True
+    ):
+        raise SemanticAuthorizationError("authorization state is not fail closed")

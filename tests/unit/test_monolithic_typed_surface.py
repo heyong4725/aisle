@@ -54,6 +54,7 @@ from aisle.harness.safety_exposure import (
 )
 from aisle.harness.semantic_authorization import (
     SemanticAuthorizationError,
+    validate_authorization_state,
     validate_permit,
     validate_stage_gates,
 )
@@ -73,6 +74,13 @@ from aisle.harness.threat_model import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_authorization_state_rejects_revoked_permit():
+    with pytest.raises(SemanticAuthorizationError, match="fail closed"):
+        validate_authorization_state(
+            {"permit": "p", "lease_valid": True, "revoked": True, "agreement": True}
+        )
 
 
 def test_semantic_permit_rejects_replay():
