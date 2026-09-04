@@ -2,12 +2,19 @@
 
 **Agentic Infrastructure for Safe Learning and Execution · Technical report · August 2026**
 
+<!-- status-snapshot:2026-08-16 canonical:../README.md#status -->
 *Status snapshot: 2026-08-16, with **Phase 2 and Phase 3 both closed**.
 Measured results cite the [README status table](../README.md#status), which is
 canonical; the phase record is
 [`analysis/reports/phase2_phase3_report.md`](../analysis/reports/phase2_phase3_report.md).
 Forward-looking sections are labelled as such and describe committed design
 direction, not shipped capability.*
+
+<!-- claim:publication-purpose/technical-report -->
+**Publication purpose.** This broad technical report preserves the complete
+systems and historical development record. It is not the focused confirmatory
+benchmark paper: typed-versus-monolithic and typed-evidence-versus-logs
+treatment effects belong only in that paper after their frozen campaigns run.
 
 ---
 
@@ -104,9 +111,13 @@ The setup: a pharmacy-style manipulation environment in the
 [dora-rs](https://github.com/dora-rs/dora) dataflows. Coding agents (Claude
 Code, Codex) compose and evolve those dataflows. Every node is a typed,
 discoverable capability with a manifest. Every graph is statically validated
-before it can run. Every motion command traverses a safety guard the agent
-cannot bypass. Every episode is judged by a verifier the agent cannot edit,
-and every run is attested against a hash of the frozen task definition.
+before it can run.
+<!-- claim:safety-topology/technical-report -->
+Every declared motion path in a validated graph traverses a safety guard. This
+is a graph-topology property, not a claim about unmodeled process, socket, or
+driver side channels; those await issue #350. Every episode is judged by a
+verifier whose tracked frozen artifact the participant may not edit, and every
+run is attested against a hash of the frozen task definition.
 
 Three properties make this different from a robotics demo repository:
 
@@ -403,8 +414,9 @@ that produced those weights happened elsewhere.
 #### What "Safe" modifies
 
 Not an aspiration that learning be conducted carefully. It is structural:
-whatever is learning — agent, library, or policy — **the things that judge and
-constrain it are frozen and unbypassable.**
+whatever is learning — agent, library, or policy — **the tracked things that
+judge it are frozen, and validated graph paths are gated.** This does not
+establish a process-wide bypass-prevention claim.
 
 | mechanism | what it denies the learner |
 |---|---|
