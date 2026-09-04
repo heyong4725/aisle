@@ -112,3 +112,18 @@ def validate_sham_parity(sham: dict[str, Any], fault: dict[str, Any]) -> None:
         raise FaultBankError("sham and fault execution surfaces are incomplete")
     if any(sham[key] != fault[key] for key in required):
         raise FaultBankError("sham and fault execution surfaces differ")
+
+
+def validate_paired_efficacy(records: list[dict[str, Any]]) -> None:
+    """Require each scored cell to retain both clean and degraded outcomes."""
+    if not records:
+        raise FaultBankError("efficacy records are empty")
+    grouped: dict[str, set[str]] = {}
+    for record in records:
+        if set(record) != {"cell", "condition", "outcome"}:
+            raise FaultBankError("efficacy record is incomplete")
+        if record["condition"] not in {"clean", "degraded"}:
+            raise FaultBankError("invalid efficacy condition")
+        grouped.setdefault(record["cell"], set()).add(record["condition"])
+    if any(conditions != {"clean", "degraded"} for conditions in grouped.values()):
+        raise FaultBankError("paired clean/degraded efficacy evidence is incomplete")

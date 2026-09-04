@@ -7,6 +7,7 @@ from aisle.harness.fault_bank import (
     validate_fault_manifest,
     validate_injection_request,
     validate_opaque_assignment,
+    validate_paired_efficacy,
     validate_participant_surface,
     validate_sealed_location,
     validate_sham_parity,
@@ -79,6 +80,11 @@ def test_sham_parity_rejects_different_timing_surface():
             {"surface": "controller", "timing": "t1", "retention": "sealed"},
             {"surface": "controller", "timing": "t2", "retention": "sealed"},
         )
+
+
+def test_paired_efficacy_requires_clean_and_degraded_records():
+    with pytest.raises(FaultBankError, match="paired"):
+        validate_paired_efficacy([{"cell": "c1", "condition": "clean", "outcome": "ok"}])
 
 
 def test_typed_surface_rejects_unallowlisted_files(tmp_path: Path):
