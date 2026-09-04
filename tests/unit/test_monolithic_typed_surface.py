@@ -10,6 +10,7 @@ from aisle.harness.fault_bank import (
     validate_opaque_assignment,
     validate_paired_efficacy,
     validate_participant_surface,
+    validate_safety_assets,
     validate_sealed_location,
     validate_sham_parity,
 )
@@ -91,6 +92,18 @@ def test_paired_efficacy_requires_clean_and_degraded_records():
 def test_calibration_requires_excluded_pilot_purpose():
     with pytest.raises(FaultBankError, match="excluded"):
         validate_calibration_records("scoring", [{"attempt": "a", "outcome": "ok"}])
+
+
+def test_safety_assets_reject_oracle_access():
+    with pytest.raises(FaultBankError, match="oracle"):
+        validate_safety_assets(
+            {
+                "allowed_targets": ["arm"],
+                "allowed_operators": ["stop"],
+                "frozen": True,
+                "oracle_access": True,
+            }
+        )
 
 
 def test_typed_surface_rejects_unallowlisted_files(tmp_path: Path):
