@@ -6,6 +6,7 @@ from aisle.harness.monolithic import (
     TypedSurfaceError,
     classify_bypass_attempt,
     validate_broker_route,
+    validate_campaign_purpose,
     validate_expert_artifacts,
     validate_interface_map,
     validate_matched_treatment,
@@ -95,3 +96,9 @@ def test_parity_protocol_requires_expert_parity_purpose():
             "stopping_rule": "frozen",
         }
     )
+
+
+def test_campaign_purpose_isolated_from_pooling():
+    validate_campaign_purpose({"campaign_purpose": "expert_parity", "pooled": False})
+    with pytest.raises(TypedSurfaceError, match="isolated"):
+        validate_campaign_purpose({"campaign_purpose": "confirmatory"})
