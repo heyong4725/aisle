@@ -131,3 +131,16 @@ def validate_sham_rates(rows: list[dict[str, Any]]) -> None:
         raise CausalStudyError("sham rate denominator is invalid")
     if any(row["interventions"] < 0 for row in rows):
         raise CausalStudyError("sham intervention count is invalid")
+
+
+def validate_repair_outcome(outcome: dict[str, Any]) -> None:
+    """Require explicit repair outcome, acceptance, and evidence provenance."""
+    required = {"session_id", "fault_id", "repair_class", "accepted", "time_ms", "raw_evidence"}
+    if set(outcome) != required:
+        raise CausalStudyError("repair outcome is incomplete")
+    if outcome["repair_class"] not in {"novel", "restoration", "none"}:
+        raise CausalStudyError("repair class is invalid")
+    if outcome["accepted"] not in {True, False} or outcome["time_ms"] < 0:
+        raise CausalStudyError("repair outcome is invalid")
+    if not outcome["raw_evidence"]:
+        raise CausalStudyError("repair evidence is missing")
