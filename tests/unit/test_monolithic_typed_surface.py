@@ -37,6 +37,7 @@ from aisle.harness.monolithic import (
     validate_typed_graph,
     validate_typed_surface,
 )
+from aisle.harness.threat_model import ThreatModelError, validate_threat_model
 
 pytestmark = pytest.mark.unit
 
@@ -264,3 +265,15 @@ def test_common_evidence_requires_same_base_keys():
 def test_bank_lifecycle_rejects_regression():
     with pytest.raises(FaultBankError, match="monotonic"):
         validate_bank_lifecycle(["draft", "sealed", "calibration"])
+
+
+def test_threat_model_requires_explicit_scope_registries():
+    with pytest.raises(ThreatModelError, match="incomplete"):
+        validate_threat_model(
+            {
+                "gateway": "actuation-gateway",
+                "attacker_powers": [],
+                "out_of_scope": [],
+                "claims": [],
+            }
+        )
