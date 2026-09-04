@@ -115,3 +115,18 @@ def validate_review_record(record: dict[str, Any]) -> None:
         raise ThreatModelError("review artifact hash is invalid")
     if record["disposition"] not in {"accepted", "weakened", "rejected"}:
         raise ThreatModelError("review disposition is invalid")
+
+
+def validate_scoped_claim(claim: dict[str, Any]) -> None:
+    """Require bounded scope and evidence kind for each threat-model claim."""
+    required = {"statement", "scope", "evidence_kind"}
+    if set(claim) != required or not all(
+        isinstance(claim[key], str) and claim[key] for key in required
+    ):
+        raise ThreatModelError("scoped claim is incomplete")
+    if claim["scope"] not in {"hardware_independent", "hardware_pending"}:
+        raise ThreatModelError("claim scope is invalid")
+    if claim["evidence_kind"] not in {"unit", "synthetic", "simulation", "physical"}:
+        raise ThreatModelError("claim evidence kind is invalid")
+    if claim["scope"] == "hardware_pending" and claim["evidence_kind"] == "physical":
+        raise ThreatModelError("hardware-pending claim cannot assert physical evidence")
