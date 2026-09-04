@@ -87,6 +87,7 @@ from aisle.harness.semantic_authorization import (
     validate_authorization_analysis,
     validate_authorization_endpoints,
     validate_authorization_state,
+    validate_evidence_label,
     validate_frozen_thresholds,
     validate_hardware_adapter,
     validate_held_plan,
@@ -164,6 +165,13 @@ def test_hardware_adapter_rejects_unavailable_nonrefusing_adapter():
         validate_hardware_adapter(
             {"name": "so101", "available": False, "evidence_kind": "hardware_pending",
              "refusal": False, "telemetry": ["joint"]}
+        )
+
+
+def test_evidence_label_rejects_oracle_physical_claim():
+    with pytest.raises(SemanticAuthorizationError, match="unsupported"):
+        validate_evidence_label(
+            {"kind": "physical", "oracle_used": True, "hardware_available": True}
         )
 
 

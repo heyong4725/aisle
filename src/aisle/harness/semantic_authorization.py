@@ -156,3 +156,16 @@ def validate_hardware_adapter(adapter: dict[str, Any]) -> None:
         raise SemanticAuthorizationError("unavailable hardware adapter must refuse")
     if not isinstance(adapter["telemetry"], list) or not adapter["telemetry"]:
         raise SemanticAuthorizationError("hardware adapter telemetry is missing")
+
+
+def validate_evidence_label(label: dict[str, Any]) -> None:
+    """Require honest evidence kind and prevent oracle-derived physical claims."""
+    required = {"kind", "oracle_used", "hardware_available"}
+    if set(label) != required or label["kind"] not in {
+        "unit", "synthetic", "simulation", "physical"
+    }:
+        raise SemanticAuthorizationError("evidence label is invalid")
+    if label["kind"] == "physical" and (
+        label["hardware_available"] is not True or label["oracle_used"] is True
+    ):
+        raise SemanticAuthorizationError("physical evidence label is unsupported")
