@@ -37,6 +37,7 @@ from aisle.harness.monolithic import (
     validate_typed_graph,
     validate_typed_surface,
 )
+from aisle.harness.safety_exposure import SafetyExposureError, validate_exposure_record
 from aisle.harness.threat_model import (
     ThreatModelError,
     validate_attack_catalog,
@@ -53,6 +54,11 @@ from aisle.harness.threat_model import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_exposure_record_requires_layer_and_unit():
+    with pytest.raises(SafetyExposureError, match="incomplete"):
+        validate_exposure_record({"session_id": "s", "layer": "claim", "unit": "episode"})
 
 
 def test_residual_paths_require_disposition():
