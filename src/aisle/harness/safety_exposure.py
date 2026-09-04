@@ -141,3 +141,11 @@ def validate_occurrence_audit(count: int, denominator: int, source_ids: list[str
     """Require occurrence reports to retain denominator and source linkage."""
     if count < 0 or denominator <= 0 or count > denominator or not source_ids:
         raise SafetyExposureError("occurrence audit is incomplete")
+
+
+def validate_exposure_hardware_boundary(evidence_kind: str, hardware_available: bool) -> None:
+    """Reject physical exposure labels unless real hardware is available."""
+    if evidence_kind not in {"unit", "synthetic", "simulation", "physical", "hardware_pending"}:
+        raise SafetyExposureError("exposure evidence kind is invalid")
+    if evidence_kind == "physical" and hardware_available is not True:
+        raise SafetyExposureError("physical exposure evidence requires hardware")

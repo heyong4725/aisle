@@ -40,6 +40,7 @@ from aisle.harness.monolithic import (
 from aisle.harness.safety_exposure import (
     SafetyExposureError,
     validate_exposure_analysis,
+    validate_exposure_hardware_boundary,
     validate_exposure_record,
     validate_fixed_trace_protocol,
     validate_observe_only_mode,
@@ -77,6 +78,11 @@ def test_raw_retention_requires_immutable_hash():
 def test_occurrence_audit_rejects_missing_denominator():
     with pytest.raises(SafetyExposureError, match="occurrence"):
         validate_occurrence_audit(1, 0, ["r"])
+
+
+def test_exposure_boundary_rejects_physical_without_hardware():
+    with pytest.raises(SafetyExposureError, match="hardware"):
+        validate_exposure_hardware_boundary("physical", False)
 
 
 def test_trace_corpus_requires_watchdog_classification():
