@@ -41,6 +41,7 @@ from aisle.harness.non_oracle import (
     NonOracleError,
     validate_oracle_boundary,
     validate_perception_audit,
+    validate_perception_envelope,
     validate_task_card,
 )
 from aisle.harness.safety_exposure import (
@@ -108,6 +109,11 @@ def test_oracle_boundary_rejects_privileged_policy_input():
 def test_perception_audit_rejects_exposed_truth():
     with pytest.raises(NonOracleError, match="truth"):
         validate_perception_audit({"truth_hidden": False})
+
+
+def test_perception_envelope_rejects_unfrozen_thresholds():
+    with pytest.raises(NonOracleError, match="not frozen"):
+        validate_perception_envelope({"frozen": False})
 
 
 def test_authorization_state_rejects_revoked_permit():

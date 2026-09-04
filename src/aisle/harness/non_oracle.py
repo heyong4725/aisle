@@ -23,6 +23,21 @@ def validate_perception_audit(record: dict[str, Any]) -> None:
         raise NonOracleError("perception latency is invalid")
 
 
+def validate_perception_envelope(envelope: dict[str, Any]) -> None:
+    """Require calibration-frozen thresholds and explicit refusal behavior."""
+    required = {
+        "vocabulary", "max_position_error", "min_confidence", "max_latency_ms", "refusal", "frozen"
+    }
+    if set(envelope) != required or envelope.get("frozen") is not True:
+        raise NonOracleError("perception envelope is not frozen")
+    if not isinstance(envelope["vocabulary"], list) or not envelope["vocabulary"]:
+        raise NonOracleError("perception vocabulary is missing")
+    if not 0 <= envelope["min_confidence"] <= 1 or envelope["max_position_error"] < 0:
+        raise NonOracleError("perception thresholds are invalid")
+    if envelope["max_latency_ms"] <= 0 or envelope["refusal"] not in {"explicit", "reject"}:
+        raise NonOracleError("perception refusal or latency is invalid")
+
+
 def validate_oracle_boundary(policy_inputs: list[str], verifier_only: list[str]) -> None:
     """Reject privileged simulator state appearing on the policy path."""
     forbidden = {
