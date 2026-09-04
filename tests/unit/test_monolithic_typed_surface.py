@@ -41,6 +41,7 @@ from aisle.harness.non_oracle import (
     NonOracleError,
     select_pilot_candidate,
     validate_expert_parity,
+    validate_freeze_manifest,
     validate_oracle_boundary,
     validate_perception_audit,
     validate_perception_eligibility,
@@ -157,6 +158,11 @@ def test_pilot_selector_is_deterministic_and_contrast_blind():
 def test_pilot_evidence_rejects_confirmatory_reuse():
     with pytest.raises(NonOracleError, match="provenance"):
         validate_pilot_evidence({"evidence_kind": "confirmatory", "confirmatory": True})
+
+
+def test_freeze_manifest_rejects_unfrozen_protocol():
+    with pytest.raises(NonOracleError, match="not frozen"):
+        validate_freeze_manifest({"frozen": False})
 
 
 def test_authorization_state_rejects_revoked_permit():

@@ -104,6 +104,35 @@ def select_pilot_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any]:
     )
 
 
+def validate_pilot_evidence(record: dict[str, Any]) -> None:
+    """Require provenance and keep unscored pilot records out of confirmatory data."""
+    required = {
+        "evidence_kind", "campaign_id", "session_id", "agent_hash", "model_hash",
+        "config_hash", "candidate_id", "interface", "task_id", "seed",
+        "budget_ledger", "exclusions", "verifier_raw", "trace_raw", "selection_hash",
+    }
+    if not required.issubset(record) or record.get("evidence_kind") != "unscored_pilot":
+        raise NonOracleError("pilot evidence kind or provenance is invalid")
+    if record.get("confirmatory") is True or not record["verifier_raw"] or not record["trace_raw"]:
+        raise NonOracleError("pilot evidence crosses the confirmatory boundary")
+
+
+def validate_freeze_manifest(manifest: dict[str, Any]) -> None:
+    """Require immutable artifact hashes and commands before confirmatory scoring."""
+    required = {
+        "task_hash", "expert_typed_hash", "expert_monolithic_hash", "perception_hash",
+        "registry_hash", "environment_hash", "prompt_hash", "analysis_hash", "seed",
+        "commands", "protocol_review_hash", "pilot_selection_hash", "frozen",
+    }
+    if set(manifest) != required or manifest.get("frozen") is not True:
+        raise NonOracleError("freeze manifest is incomplete or not frozen")
+    hash_keys = required - {"seed", "commands", "frozen"}
+    if any(not isinstance(manifest[key], str) or not manifest[key] for key in hash_keys):
+        raise NonOracleError("freeze manifest hash is missing")
+    if not isinstance(manifest["commands"], list) or not manifest["commands"]:
+        raise NonOracleError("freeze manifest commands are missing")
+
+
 def validate_oracle_boundary(policy_inputs: list[str], verifier_only: list[str]) -> None:
     """Reject privileged simulator state appearing on the policy path."""
     forbidden = {
