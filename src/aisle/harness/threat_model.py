@@ -151,3 +151,18 @@ def validate_evidence_boundary(evidence_kind: str, hardware_available: bool) -> 
         raise ThreatModelError("evidence kind is invalid")
     if evidence_kind == "physical" and hardware_available is not True:
         raise ThreatModelError("physical evidence requires available hardware")
+
+
+def validate_attack_execution(attempts: list[dict[str, Any]]) -> None:
+    """Require exhaustive, evidence-backed dispositions for bypass attempts."""
+    if not attempts:
+        raise ThreatModelError("attack execution ledger is empty")
+    required = {"attack", "attempted", "disposition", "evidence"}
+    if any(set(item) != required for item in attempts):
+        raise ThreatModelError("attack execution record is incomplete")
+    if any(item["attempted"] is not True for item in attempts):
+        raise ThreatModelError("attack attempt was not executed")
+    if any(item["disposition"] not in {"blocked", "allowed", "inconclusive"} for item in attempts):
+        raise ThreatModelError("attack disposition is invalid")
+    if any(not item["evidence"] for item in attempts):
+        raise ThreatModelError("attack evidence is missing")
