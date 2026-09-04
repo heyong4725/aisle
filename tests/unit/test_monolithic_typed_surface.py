@@ -45,6 +45,7 @@ from aisle.harness.safety_exposure import (
     validate_observe_only_mode,
     validate_proposal_accounting,
     validate_source_strata,
+    validate_trace_corpus,
     validate_zero_event_bound,
 )
 from aisle.harness.threat_model import (
@@ -63,6 +64,11 @@ from aisle.harness.threat_model import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_trace_corpus_requires_watchdog_classification():
+    with pytest.raises(SafetyExposureError, match="corpus"):
+        validate_trace_corpus([{"trace_id": "t", "legal": True, "violation": False}])
 
 
 def test_observe_only_mode_rejects_writes():

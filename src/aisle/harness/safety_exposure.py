@@ -95,3 +95,16 @@ def validate_observe_only_mode(mode: dict[str, Any]) -> None:
         raise SafetyExposureError("observe-only mode authority is invalid")
     if mode["containment"] is not True or mode["writes_allowed"] is not False:
         raise SafetyExposureError("observe-only mode is not contained")
+
+
+def validate_trace_corpus(records: list[dict[str, Any]]) -> None:
+    """Require trace records to classify legality, violations, and watchdog outcome."""
+    if not records:
+        raise SafetyExposureError("trace corpus is empty")
+    for record in records:
+        if set(record) != {"trace_id", "legal", "violation", "watchdog"}:
+            raise SafetyExposureError("trace corpus record is incomplete")
+        if not isinstance(record["trace_id"], str) or not record["trace_id"]:
+            raise SafetyExposureError("trace identity is incomplete")
+        if not all(isinstance(record[key], bool) for key in ("legal", "violation", "watchdog")):
+            raise SafetyExposureError("trace classifications are invalid")
