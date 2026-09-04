@@ -1,0 +1,76 @@
+{
+  "schema_version": "aisle.stats.protocol.v1",
+  "protocol_id": "REPLACE_WITH_IMMUTABLE_PROTOCOL_ID",
+  "campaign_id": "REPLACE_WITH_DISTINCT_CONFIRMATORY_CAMPAIGN_ID",
+  "campaign_phase": "confirmatory",
+  "primary_estimand": {
+    "population": "autonomous coding-agent sessions on the frozen task band",
+    "contrast": "treatment minus control",
+    "summary": "risk_difference"
+  },
+  "experimental_unit": "session",
+  "treatment_arms": [
+    "control",
+    "treatment"
+  ],
+  "control_arm": "control",
+  "treatment_arm": "treatment",
+  "outcome": {
+    "field": "session_success",
+    "type": "binary",
+    "direction": "higher"
+  },
+  "smallest_effect": {
+    "measure": "risk_difference",
+    "value": 0.15
+  },
+  "alpha": 0.05,
+  "target_power": 0.8,
+  "allocation_ratio": 1.0,
+  "stopping_rule": {
+    "type": "fixed",
+    "max_sessions_per_arm": 1000
+  },
+  "inclusion_rules": [
+    "retain and classify every randomized assignment",
+    "include a started session unless a predeclared infrastructure rule applies"
+  ],
+  "exclusion_rules": [
+    "exclude only a predeclared infrastructure failure independent of treatment outcome",
+    "retain every exclusion row and reason in the raw records"
+  ],
+  "analysis_seed": 20260901,
+  "decision": {
+    "kind": "superiority",
+    "margin": null,
+    "rationale": "equivalence and non-inferiority are not the primary decision for this template"
+  },
+  "power": {
+    "control_probability": 0.5,
+    "treatment_probability": 0.65,
+    "test_sidedness": "two-sided",
+    "sensitivity_effects": [
+      0.1,
+      0.15,
+      0.2
+    ]
+  },
+  "bootstrap": {
+    "replicates": 10000,
+    "confidence_level": 0.95
+  },
+  "strata": [
+    "agent_system"
+  ],
+  "artifact_claim_threshold": 0.9,
+  "survival": {
+    "event_time_field": "accepted_time_s",
+    "censor_time_field": "wall_s"
+  },
+  "zero_event": {
+    "event_field": "safety_events",
+    "exposure_field": "commands",
+    "exposure_unit": "command",
+    "confidence_level": 0.95
+  }
+}

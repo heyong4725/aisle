@@ -44,8 +44,8 @@ stayed outside it).
 |---|---:|
 | Graphs | 18 |
 | Capability manifests | 39 |
-| CLI command entries | 12 |
-| ADR files | 59 |
+| CLI command entries | 15 |
+| ADR files | 63 |
 
 ## Graphs
 
@@ -146,6 +146,9 @@ stayed outside it).
 | `harness report log` | `--idea`, `--parent`, `--expect`, `--root` |
 | `harness rollout` | `--graph`, `--tier`, `--embodiment`, `--episodes`, `--seeds`, `--reset`, `--verifier`, `--sim-extra`, `--root`, `--no-idea-gate`, `--perception`, `--run-id`, `--per-episode-wall-s`, `--env-baseline`, `--timeout-s` |
 | `harness skill register` | `<skill_dir>`, `--root`, `--sandbox`, `--run-id` |
+| `harness stats analyze` | `--protocol`, `--records`, `--output` |
+| `harness stats power` | `--protocol`, `--output` |
+| `harness stats validate` | `--protocol`, `--purpose`, `--output` |
 | `harness swap` | `--graph`, `--dataflow`, `--replace`, `--with`, `--embodiment`, `--root` |
 | `harness traces query` | `--run`, `--topic`, `--t0`, `--t1`, `--episode`, `--node`, `--format`, `--out`, `--summarize`, `--root` |
 | `harness validate` | `<graph>`, `--root`, `--embodiment`, `--allow-unproven`, `--write-turn-plan` |
@@ -200,8 +203,12 @@ inference.
 | [docs/decisions/ADR-43.md](../decisions/ADR-43.md) | ADR-43 — the budget unit for non-API agents | ACCEPTED 2026-08-18 (issue #282, the gate for the alternative-agent |
 | [docs/decisions/ADR-44.md](../decisions/ADR-44.md) | ADR-44 — the local-agent arm: pre-registered expectations (issue #285 C3/C4) | ACCEPTED (CON-15 — expectations registered BEFORE any local |
 | [docs/decisions/ADR-45.md](../decisions/ADR-45.md) | ADR-45 — the M1 training-dose ladder (pre-registered) | ACCEPTED (CON-15 — registered before any training step runs). |
+| [docs/decisions/ADR-46.md](../decisions/ADR-46.md) | ADR-46 — Session-level confirmatory statistics contract | PROPOSED — requires owner approval and independent statistical review |
+| [docs/decisions/ADR-47.md](../decisions/ADR-47.md) | ADR-47 — Canonical claim catalog and four-zone benchmark narrative | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
+| [docs/decisions/ADR-48.md](../decisions/ADR-48.md) | ADR-48 — Treatment integrity v3 uses an external confinement adapter | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
+| [docs/decisions/ADR-49.md](../decisions/ADR-49.md) | ADR-49 — Instrument validity is a release-blocking mutation gate | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
 | [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | ACCEPTED (owner-ratified 2026-08-03) |
-| [docs/decisions/ADR-59.md](../decisions/ADR-59.md) | ADR-59 — Reproduction starts outside the campaign machine | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
+| [docs/decisions/ADR-50.md](../decisions/ADR-50.md) | ADR-50 — The causal control is a brokered single-module monolith | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
 | [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |
 | [docs/decisions/ADR-7.md](../decisions/ADR-7.md) | ADR-7: T05 bridge interpretations and measured performance (SPEC 030) | ACCEPTED |
 | [docs/decisions/ADR-8.md](../decisions/ADR-8.md) | ADR-8: T06 verifier/reset interpretations (SPEC 040) | ACCEPTED |

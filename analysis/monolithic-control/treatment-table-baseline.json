@@ -1,0 +1,12 @@
+{
+  "schema_version": "aisle.monolithic-treatment.v1",
+  "rows": [],
+  "session_id": "mon1-baseline-20260903T000000Z",
+  "status": "blocked",
+  "blockers": [
+    "typed and monolithic arm artifacts are not yet frozen",
+    "artifact hashes and declared analysis treatment are therefore unresolved"
+  ],
+  "publication_gate": "blocked",
+  "confirmatory_ready": false
+}
