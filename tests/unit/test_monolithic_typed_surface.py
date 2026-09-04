@@ -7,6 +7,7 @@ from aisle.harness.monolithic import (
     validate_broker_route,
     validate_interface_map,
     validate_monolithic_surface,
+    validate_trusted_preflight,
     validate_typed_graph,
     validate_typed_surface,
 )
@@ -47,3 +48,10 @@ def test_interface_map_rejects_semantic_mismatch():
 def test_broker_route_rejects_direct_actuation():
     with pytest.raises(TypedSurfaceError, match="guard"):
         validate_broker_route(["trusted_controller", "primitive_broker", "driver"])
+
+
+def test_trusted_preflight_fails_closed_when_unresolved():
+    with pytest.raises(TypedSurfaceError, match="unresolved"):
+        validate_trusted_preflight(
+            {"hashes": {}, "confinement": False, "route_map": {}, "evidence_sink": ""}
+        )
