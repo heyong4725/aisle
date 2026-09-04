@@ -66,3 +66,18 @@ def validate_submission_bundle(bundle: dict[str, Any]) -> None:
         bundle["resources"].get(key) is not None for key in ("tokens", "wall_seconds", "tool_calls")
     ):
         raise ReproductionError("submission resource accounting is incomplete")
+
+
+def validate_benchmark_version(version: dict[str, Any]) -> None:
+    """Require immutable benchmark surfaces and a sealed hidden-evaluation boundary."""
+    required = {
+        "version", "task_hash", "scorer_hash", "safety_hash", "budget_hash", "analysis_hash",
+        "hidden_sealed",
+    }
+    if set(version) != required or not version["version"]:
+        raise ReproductionError("benchmark version manifest is incomplete")
+    if version["hidden_sealed"] is not True:
+        raise ReproductionError("hidden evaluation is not sealed")
+    hash_keys = required - {"version", "hidden_sealed"}
+    if any(not isinstance(version[key], str) or len(version[key]) != 64 for key in hash_keys):
+        raise ReproductionError("benchmark version hash is invalid")
