@@ -41,6 +41,7 @@ from aisle.harness.threat_model import (
     ThreatModelError,
     validate_attack_catalog,
     validate_authority_audit,
+    validate_conformance_evidence,
     validate_gateway_contract,
     validate_threat_model,
 )
@@ -56,6 +57,18 @@ def test_authority_audit_rejects_unreconciled_receipt():
 def test_attack_catalog_requires_explicit_flags():
     with pytest.raises(ThreatModelError, match="incomplete"):
         validate_attack_catalog([{"name": "direct", "class": "route"}])
+
+
+def test_conformance_evidence_requires_fake_driver_provenance():
+    with pytest.raises(ThreatModelError, match="provenance"):
+        validate_conformance_evidence(
+            {
+                "runner": "production",
+                "evidence_kind": "synthetic",
+                "passed": True,
+                "artifacts": ["a"],
+            }
+        )
 
 
 def test_fault_manifest_requires_diverse_sealed_cells():

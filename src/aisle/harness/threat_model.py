@@ -61,3 +61,18 @@ def validate_attack_catalog(entries: list[dict[str, Any]]) -> None:
             raise ThreatModelError("attack catalog identity is incomplete")
         if not isinstance(entry["oracle"], bool) or not isinstance(entry["negative_control"], bool):
             raise ThreatModelError("attack catalog flags are invalid")
+
+
+def validate_conformance_evidence(evidence: dict[str, Any]) -> None:
+    """Require declared synthetic runner provenance and complete evidence."""
+    required = {"runner", "evidence_kind", "passed", "artifacts"}
+    if set(evidence) != required or evidence["runner"] != "fake-driver":
+        raise ThreatModelError("conformance runner provenance is invalid")
+    if evidence["evidence_kind"] != "synthetic":
+        raise ThreatModelError("conformance evidence kind is not synthetic")
+    if (
+        evidence["passed"] is not True
+        or not isinstance(evidence["artifacts"], list)
+        or not evidence["artifacts"]
+    ):
+        raise ThreatModelError("conformance evidence is incomplete")
