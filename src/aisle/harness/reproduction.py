@@ -54,7 +54,12 @@ def validate_release_manifest(manifest: dict[str, Any]) -> None:
 def validate_submission_bundle(bundle: dict[str, Any]) -> None:
     """Require provenance and resource accounting before public scoring."""
     required = {
-        "submission_id", "benchmark_version", "agent_hash", "treatment", "sessions", "resources"
+        "submission_id",
+        "benchmark_version",
+        "agent_hash",
+        "treatment",
+        "sessions",
+        "resources",
     }
     if set(bundle) != required or not bundle["submission_id"] or not bundle["benchmark_version"]:
         raise ReproductionError("submission bundle is incomplete")
@@ -71,7 +76,12 @@ def validate_submission_bundle(bundle: dict[str, Any]) -> None:
 def validate_benchmark_version(version: dict[str, Any]) -> None:
     """Require immutable benchmark surfaces and a sealed hidden-evaluation boundary."""
     required = {
-        "version", "task_hash", "scorer_hash", "safety_hash", "budget_hash", "analysis_hash",
+        "version",
+        "task_hash",
+        "scorer_hash",
+        "safety_hash",
+        "budget_hash",
+        "analysis_hash",
         "hidden_sealed",
     }
     if set(version) != required or not version["version"]:
@@ -81,3 +91,18 @@ def validate_benchmark_version(version: dict[str, Any]) -> None:
     hash_keys = required - {"version", "hidden_sealed"}
     if any(not isinstance(version[key], str) or len(version[key]) != 64 for key in hash_keys):
         raise ReproductionError("benchmark version hash is invalid")
+
+
+def validate_participant_boundary(paths: list[str], forbidden_tokens: set[str]) -> None:
+    """Reject participant-visible paths that expose held-out evaluation material."""
+    if (
+        not paths
+        or not forbidden_tokens
+        or any(not isinstance(path, str) or not path for path in paths)
+    ):
+        raise ReproductionError("participant boundary manifest is incomplete")
+    lowered_tokens = {token.lower() for token in forbidden_tokens if token}
+    if len(lowered_tokens) != len(forbidden_tokens):
+        raise ReproductionError("participant boundary token is invalid")
+    if any(any(token in path.lower() for token in lowered_tokens) for path in paths):
+        raise ReproductionError("participant boundary exposes hidden evaluation")
