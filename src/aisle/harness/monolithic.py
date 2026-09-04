@@ -15,6 +15,25 @@ class TreatmentTableError(ValueError):
     """A treatment table cannot establish a complete frozen comparison."""
 
 
+class TypedSurfaceError(ValueError):
+    """A typed deliverable escapes its frozen editable surface."""
+
+
+def validate_typed_surface(root, editable_files: list[str], allowlist: list[str]) -> None:
+    """Validate MON-2's authored typed surface without repairing it."""
+    if sorted(editable_files) != sorted(set(editable_files)):
+        raise TypedSurfaceError("allowlist contains duplicate files")
+    if set(editable_files) - set(allowlist):
+        raise TypedSurfaceError("editable files exceed the frozen allowlist")
+    base = root.resolve()
+    for relative in editable_files:
+        path = (base / relative).resolve()
+        if base not in path.parents and path != base:
+            raise TypedSurfaceError("editable file escapes root")
+        if not path.is_file():
+            raise TypedSurfaceError(f"missing editable file: {relative}")
+
+
 def validate_treatment_table(table: dict[str, Any]) -> dict[str, Any]:
     if (
         not isinstance(table, dict)
