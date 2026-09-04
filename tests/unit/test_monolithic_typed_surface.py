@@ -37,7 +37,11 @@ from aisle.harness.monolithic import (
     validate_typed_graph,
     validate_typed_surface,
 )
-from aisle.harness.threat_model import ThreatModelError, validate_threat_model
+from aisle.harness.threat_model import (
+    ThreatModelError,
+    validate_gateway_contract,
+    validate_threat_model,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -275,5 +279,18 @@ def test_threat_model_requires_explicit_scope_registries():
                 "attacker_powers": [],
                 "out_of_scope": [],
                 "claims": [],
+            }
+        )
+
+
+def test_gateway_contract_rejects_non_fail_closed_lease():
+    with pytest.raises(ThreatModelError, match="fail closed"):
+        validate_gateway_contract(
+            {
+                "authority": "actuation-gateway",
+                "endpoint": "/act",
+                "credential_epoch": 1,
+                "lease_seconds": 1,
+                "fail_closed": False,
             }
         )
