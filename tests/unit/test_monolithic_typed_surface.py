@@ -4,6 +4,7 @@ import pytest
 
 from aisle.harness.monolithic import (
     TypedSurfaceError,
+    validate_monolithic_surface,
     validate_typed_graph,
     validate_typed_surface,
 )
@@ -27,3 +28,8 @@ def test_typed_graph_uses_pinned_validator_without_repair(tmp_path: Path):
     report = validate_typed_graph(tmp_path / "missing.yaml", tmp_path, "franka")
     assert report["ok"] is False
     assert report["errors"]
+
+
+def test_monolithic_surface_rejects_typed_facilities():
+    with pytest.raises(TypedSurfaceError, match="forbidden"):
+        validate_monolithic_surface(["control.py", "capability_registry.py"])
