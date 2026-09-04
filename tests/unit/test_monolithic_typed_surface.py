@@ -69,6 +69,7 @@ from aisle.harness.non_oracle import (
 from aisle.harness.reproduction import (
     ReproductionError,
     redact_double_blind,
+    validate_benchmark_version,
     validate_layered_comparison,
     validate_release_manifest,
     validate_submission_bundle,
@@ -147,6 +148,11 @@ def test_layered_comparison_requires_all_con5_layers():
 def test_submission_bundle_rejects_missing_provenance():
     with pytest.raises(ReproductionError, match="incomplete"):
         validate_submission_bundle({"submission_id": "s"})
+
+
+def test_benchmark_version_rejects_unsealed_hidden_evaluation():
+    with pytest.raises(ReproductionError, match="incomplete"):
+        validate_benchmark_version({"version": "1", "hidden_sealed": False})
 
 
 def test_independent_containment_rejects_oracle_policy_field():
