@@ -61,3 +61,9 @@ def validate_source_strata(records: list[dict[str, Any]]) -> None:
             raise SafetyExposureError("source rate is invalid")
         if not isinstance(record["unknown"], bool):
             raise SafetyExposureError("unknown-source flag is invalid")
+
+
+def validate_zero_event_bound(denominator: int, observed: int, refusals: int) -> None:
+    """Require a valid denominator and explicit refusal accounting."""
+    if denominator <= 0 or observed < 0 or refusals < 0 or observed + refusals > denominator:
+        raise SafetyExposureError("zero-event bound denominator is invalid")
