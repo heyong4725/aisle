@@ -37,6 +37,7 @@ def test_fault_manifest_requires_diverse_sealed_cells():
         "mode": "sham",
         "target": "camera",
         "sha256": "a" * 64,
+        "repair": "novel",
     }
     with pytest.raises(FaultBankError, match="diversity"):
         validate_fault_manifest({"schema": "aisle.fault-bank.v1", "version": "v1", "cells": [cell]})

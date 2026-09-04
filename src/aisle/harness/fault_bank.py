@@ -31,20 +31,29 @@ def validate_fault_manifest(manifest: dict[str, Any]) -> None:
     families: set[str] = set()
     modes: set[str] = set()
     targets: set[str] = set()
+    repairs: list[str] = []
     for cell in cells:
-        if set(cell) != {"id", "family", "mode", "target", "sha256"}:
+        if set(cell) != {"id", "family", "mode", "target", "sha256", "repair"}:
             raise FaultBankError("fault cell declaration is incomplete")
         if not all(isinstance(cell[key], str) and cell[key] for key in cell):
             raise FaultBankError("fault cell fields must be non-empty strings")
         if cell["family"] not in _FAMILIES or cell["mode"] not in _MODES:
             raise FaultBankError("unsupported fault family or mode")
+        if cell["repair"] not in {"restoration", "novel", "diagnosis_only"}:
+            raise FaultBankError("unsupported repair class")
         digest = cell["sha256"]
         if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
             raise FaultBankError("fault cell hash is not a sha256 digest")
         families.add(cell["family"])
         modes.add(cell["mode"])
         targets.add(cell["target"])
-    if families != _FAMILIES or not _MODES.issubset(modes) or len(targets) < 2:
+        repairs.append(cell["repair"])
+    if (
+        families != _FAMILIES
+        or not _MODES.issubset(modes)
+        or len(targets) < 2
+        or repairs.count("novel") < 2
+    ):
         raise FaultBankError("fault-bank diversity coverage is incomplete")
 
 
