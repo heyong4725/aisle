@@ -85,6 +85,25 @@ def validate_pilot_sessions(sessions: list[dict[str, Any]]) -> None:
             raise NonOracleError("pilot success rate is saturated")
 
 
+def select_pilot_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    """Select by pooled feasibility only; typed-minus-monolithic data is forbidden."""
+    if not candidates:
+        raise NonOracleError("no eligible pilot candidate")
+    required = {"opaque_id", "pooled_success_rate", "invalid_rate", "content_hash"}
+    if any(set(item) != required for item in candidates):
+        raise NonOracleError("pilot selector input is incomplete")
+    if any("contrast" in item for item in candidates):
+        raise NonOracleError("pilot selector received treatment contrast")
+    return min(
+        candidates,
+        key=lambda item: (
+            abs(item["pooled_success_rate"] - 0.5),
+            item["invalid_rate"],
+            item["content_hash"],
+        ),
+    )
+
+
 def validate_oracle_boundary(policy_inputs: list[str], verifier_only: list[str]) -> None:
     """Reject privileged simulator state appearing on the policy path."""
     forbidden = {

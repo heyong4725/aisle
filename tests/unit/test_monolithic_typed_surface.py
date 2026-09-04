@@ -39,6 +39,7 @@ from aisle.harness.monolithic import (
 )
 from aisle.harness.non_oracle import (
     NonOracleError,
+    select_pilot_candidate,
     validate_expert_parity,
     validate_oracle_boundary,
     validate_perception_audit,
@@ -142,6 +143,14 @@ def test_pilot_sessions_reject_saturated_interface():
     ]
     with pytest.raises(NonOracleError, match="saturated"):
         validate_pilot_sessions(sessions)
+
+
+def test_pilot_selector_is_deterministic_and_contrast_blind():
+    candidates = [
+        {"opaque_id": "b", "pooled_success_rate": 0.4, "invalid_rate": 0.1, "content_hash": "b"},
+        {"opaque_id": "a", "pooled_success_rate": 0.6, "invalid_rate": 0.1, "content_hash": "a"},
+    ]
+    assert select_pilot_candidate(candidates)["opaque_id"] == "a"
 
 
 def test_authorization_state_rejects_revoked_permit():
