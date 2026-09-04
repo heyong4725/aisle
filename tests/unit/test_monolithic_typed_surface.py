@@ -71,6 +71,7 @@ from aisle.harness.reproduction import (
     redact_double_blind,
     validate_benchmark_version,
     validate_layered_comparison,
+    validate_participant_boundary,
     validate_release_manifest,
     validate_submission_bundle,
 )
@@ -155,6 +156,13 @@ def test_benchmark_version_rejects_unsealed_hidden_evaluation():
         validate_benchmark_version({"version": "1", "hidden_sealed": False})
 
 
+def test_participant_boundary_rejects_hidden_path():
+    with pytest.raises(ReproductionError, match="exposes hidden"):
+        validate_participant_boundary(
+            ["tasks/public.json", "evaluator/hidden_faults.json"], {"hidden"}
+        )
+
+
 def test_independent_containment_rejects_oracle_policy_field():
     with pytest.raises(SemanticAuthorizationError, match="containment"):
         validate_independent_containment(["camera", "oracle_pose"], ["verifier_verdict"])
@@ -163,8 +171,13 @@ def test_independent_containment_rejects_oracle_policy_field():
 def test_held_plan_rejects_early_reveal():
     with pytest.raises(SemanticAuthorizationError, match="revealed"):
         validate_held_plan(
-            {"plan_hash": "p", "randomization_hash": "r", "identity_hash": "i",
-             "frozen": True, "revealed": True}
+            {
+                "plan_hash": "p",
+                "randomization_hash": "r",
+                "identity_hash": "i",
+                "frozen": True,
+                "revealed": True,
+            }
         )
 
 
@@ -178,8 +191,13 @@ def test_adversarial_corpus_requires_wrong_target_case():
 def test_authorization_endpoints_reject_false_allow_overflow():
     with pytest.raises(SemanticAuthorizationError, match="false-allow"):
         validate_authorization_endpoints(
-            {"false_allow": 2, "false_block": 0, "allow_denominator": 1,
-             "block_denominator": 1, "interventions": 0}
+            {
+                "false_allow": 2,
+                "false_block": 0,
+                "allow_denominator": 1,
+                "block_denominator": 1,
+                "interventions": 0,
+            }
         )
 
 
@@ -198,8 +216,13 @@ def test_authorization_analysis_rejects_missing_derivation():
 def test_hardware_adapter_rejects_unavailable_nonrefusing_adapter():
     with pytest.raises(SemanticAuthorizationError, match="refuse"):
         validate_hardware_adapter(
-            {"name": "so101", "available": False, "evidence_kind": "hardware_pending",
-             "refusal": False, "telemetry": ["joint"]}
+            {
+                "name": "so101",
+                "available": False,
+                "evidence_kind": "hardware_pending",
+                "refusal": False,
+                "telemetry": ["joint"],
+            }
         )
 
 
@@ -213,8 +236,13 @@ def test_evidence_label_rejects_oracle_physical_claim():
 def test_claim_occurrence_rejects_missing_sources():
     with pytest.raises(SemanticAuthorizationError, match="sources"):
         validate_claim_occurrence(
-            {"claim_id": "h5", "count": 1, "denominator": 2, "source_ids": [],
-             "evidence_kind": "simulation"}
+            {
+                "claim_id": "h5",
+                "count": 1,
+                "denominator": 2,
+                "source_ids": [],
+                "evidence_kind": "simulation",
+            }
         )
 
 
