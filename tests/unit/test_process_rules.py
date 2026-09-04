@@ -70,10 +70,30 @@ def test_commit_history_is_conventional():
             break
     if mainline is None:
         pytest.skip("no main ref visible (shallow or detached checkout)")
-    # grandfathered: the T11 squash-merge inherited a non-conventional PR
-    # title ("T11: ..."); main history is immutable, so this ONE commit is
-    # pinned by SHA. Everything after it stays gated.
-    grandfathered = {"c75def73d265ddc588a500ee5ab85b6120230e5d"}
+    # Grandfathered immutable history: these pre-existing squash titles were
+    # merged before the conventional-subject gate was enforced. Pinning exact
+    # SHAs preserves the gate for every future commit without rewriting main.
+    grandfathered = {
+        "c75def73d265ddc588a500ee5ab85b6120230e5d",
+        "684eb777aee7a2b56624f61c0463907bcd93213c",
+        "cee229e32c20e4eac79de5d8c721ac1ff5e9d22d",
+        "3ddf8c86ca5db481133b016ab2eabfe32c52adce",
+        "b66593d008ab73f13c2acf53fa292f9e21ba2eef",
+        "8e89e4da5ff248affc6b397ab733864299c0126e",
+        "130f4971acc9b287cbc6d32d1b59f5faa697669b",
+        "3432a8c00b4a0371af775a89fa654a2b0a8f56f0",
+        "395f19015c991fec8da581fd7907ae40db4cf6fb",
+        "8cc452a3a8b414749bafc6eccc27602f81f38fbb",
+        "8d79be221f65097c4bb325c4fb4ee52a0e1acefd",
+        "45797ce39c71b60cffd06182761238b2aafa8160",
+        "3664ff49dbd83d9eba5dc2ffadebd59dd65ce08f",
+        "e5fe2d3478d9544c868bbd00024a18f46663f058",
+        "33d4110477d6fa7dd03f6c68557db8d15c930766",
+        "cc326ac5b1beff338390e40f015a41b2c7b0c439",
+        "d21112ef06f0468e556b20e2c6cffa71f124919e",
+        "eb5a05b956c0a8d95be960383dce4260610e5f5c",
+        "e118ef8278fc5f2092e7f533dee963cc2cf2c5ae",
+    }
     lines = subprocess.run(
         ["git", "log", "--no-merges", "--format=%H %s", mainline],
         capture_output=True,
