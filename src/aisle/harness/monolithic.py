@@ -232,3 +232,16 @@ def validate_conformance(checks: dict[str, bool], required: set[str]) -> None:
     """Fail closed unless every declared MON conformance check passes."""
     if set(checks) != required or not required or not all(checks.values()):
         raise TypedSurfaceError("monolithic conformance is incomplete or failed")
+
+
+def validate_freeze_record(record: dict[str, str], required: set[str]) -> None:
+    """Require content-addressed identifiers for every frozen release component."""
+    if set(record) != required or not required:
+        raise TypedSurfaceError("freeze record is incomplete")
+    for name, value in record.items():
+        if (
+            not isinstance(value, str)
+            or not value.startswith("sha256:")
+            or not _HASH.fullmatch(value[7:])
+        ):
+            raise TypedSurfaceError(f"freeze identifier is invalid: {name}")
