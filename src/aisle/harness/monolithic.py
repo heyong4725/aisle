@@ -19,6 +19,17 @@ class TypedSurfaceError(ValueError):
     """A typed deliverable escapes its frozen editable surface."""
 
 
+_MONOLITHIC_FORBIDDEN = ("manifest", "registry", "resolver", "validator", "diagnostic", ".yaml")
+
+
+def validate_monolithic_surface(editable_files: list[str]) -> None:
+    """Reject typed-dataflow facilities from the MON-3 single-module view."""
+    for relative in editable_files:
+        lowered = relative.lower()
+        if any(token in lowered for token in _MONOLITHIC_FORBIDDEN):
+            raise TypedSurfaceError(f"forbidden typed facility in monolithic view: {relative}")
+
+
 def validate_typed_graph(graph_path, root, embodiment: str, allow_unproven: bool = False) -> dict:
     """Run the pinned graph validator; authored deliverables are never repaired."""
     from aisle.harness.validate import validate
