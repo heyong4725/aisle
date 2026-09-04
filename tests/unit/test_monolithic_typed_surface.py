@@ -66,6 +66,7 @@ from aisle.harness.non_oracle import (
     validate_release_task_card,
     validate_task_card,
 )
+from aisle.harness.reproduction import ReproductionError, validate_release_manifest
 from aisle.harness.safety_exposure import (
     SafetyExposureError,
     validate_exposure_analysis,
@@ -119,6 +120,11 @@ pytestmark = pytest.mark.unit
 def test_frozen_thresholds_reject_mutable_envelope():
     with pytest.raises(SemanticAuthorizationError, match="frozen"):
         validate_frozen_thresholds({"max_force": 1, "max_duration": 1, "frozen": False})
+
+
+def test_release_manifest_requires_model_access_metadata():
+    with pytest.raises(ReproductionError, match="incomplete"):
+        validate_release_manifest({"version": "1"})
 
 
 def test_independent_containment_rejects_oracle_policy_field():
