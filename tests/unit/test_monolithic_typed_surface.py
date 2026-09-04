@@ -2,7 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from aisle.harness.causal_study import CausalStudyError, validate_session_record
+from aisle.harness.causal_study import (
+    CausalStudyError,
+    validate_session_record,
+    validate_session_table,
+)
 from aisle.harness.fault_bank import (
     FaultBankError,
     validate_activation_record,
@@ -106,6 +110,13 @@ def test_session_record_rejects_unclassified_exclusion():
               "agent_hash": "a", "raw_evidence": "raw"}
     with pytest.raises(CausalStudyError, match="classified"):
         validate_session_record(record)
+
+
+def test_session_table_rejects_duplicate_units():
+    with pytest.raises(CausalStudyError, match="duplicated"):
+        validate_session_table(
+            [{"session_id": "s", "arm": "typed"}, {"session_id": "s", "arm": "monolithic"}]
+        )
 
 
 def test_task_card_rejects_physical_label_for_simulation():
