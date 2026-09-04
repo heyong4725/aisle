@@ -37,7 +37,12 @@ from aisle.harness.monolithic import (
     validate_typed_graph,
     validate_typed_surface,
 )
-from aisle.harness.non_oracle import NonOracleError, validate_task_card
+from aisle.harness.non_oracle import (
+    NonOracleError,
+    validate_oracle_boundary,
+    validate_perception_audit,
+    validate_task_card,
+)
 from aisle.harness.safety_exposure import (
     SafetyExposureError,
     validate_exposure_analysis,
@@ -93,6 +98,16 @@ def test_task_card_rejects_physical_label_for_simulation():
             "evidence_kind": "physical"}
     with pytest.raises(NonOracleError, match="mislabels"):
         validate_task_card(card)
+
+
+def test_oracle_boundary_rejects_privileged_policy_input():
+    with pytest.raises(NonOracleError, match="crosses"):
+        validate_oracle_boundary(["camera", "simulator_pose"], ["scene_truth"])
+
+
+def test_perception_audit_rejects_exposed_truth():
+    with pytest.raises(NonOracleError, match="truth"):
+        validate_perception_audit({"truth_hidden": False})
 
 
 def test_authorization_state_rejects_revoked_permit():

@@ -7,6 +7,22 @@ class NonOracleError(ValueError):
     """Raised when a task card violates the non-oracle contract."""
 
 
+def validate_perception_audit(record: dict[str, Any]) -> None:
+    """Require independent, stratified perception evidence with raw provenance."""
+    required = {
+        "unit_id", "target_class", "stratum", "prediction", "truth_hidden",
+        "confidence", "latency_ms", "record_hash", "model_hash", "split",
+    }
+    if not required.issubset(record) or record.get("truth_hidden") is not True:
+        raise NonOracleError("perception audit is incomplete or truth is exposed")
+    if record["split"] not in {"calibration", "evaluation"}:
+        raise NonOracleError("perception split is invalid")
+    if not isinstance(record["confidence"], (int, float)) or not 0 <= record["confidence"] <= 1:
+        raise NonOracleError("perception confidence is invalid")
+    if not isinstance(record["latency_ms"], (int, float)) or record["latency_ms"] < 0:
+        raise NonOracleError("perception latency is invalid")
+
+
 def validate_oracle_boundary(policy_inputs: list[str], verifier_only: list[str]) -> None:
     """Reject privileged simulator state appearing on the policy path."""
     forbidden = {
