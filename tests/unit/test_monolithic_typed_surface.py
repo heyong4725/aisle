@@ -42,6 +42,7 @@ from aisle.harness.safety_exposure import (
     validate_exposure_analysis,
     validate_exposure_record,
     validate_fixed_trace_protocol,
+    validate_observe_only_mode,
     validate_proposal_accounting,
     validate_source_strata,
     validate_zero_event_bound,
@@ -62,6 +63,13 @@ from aisle.harness.threat_model import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_observe_only_mode_rejects_writes():
+    with pytest.raises(SafetyExposureError, match="contained"):
+        validate_observe_only_mode(
+            {"authority": "observe-only", "containment": True, "writes_allowed": True}
+        )
 
 
 def test_exposure_analysis_rejects_silent_omission():

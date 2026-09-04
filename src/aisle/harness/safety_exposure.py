@@ -86,3 +86,12 @@ def validate_fixed_trace_protocol(protocol: dict[str, Any]) -> None:
         raise SafetyExposureError("fixed-trace randomization is incomplete")
     if protocol["frozen"] is not True:
         raise SafetyExposureError("fixed-trace identity is not frozen")
+
+
+def validate_observe_only_mode(mode: dict[str, Any]) -> None:
+    """Require exposure observation mode to be non-actuating and contained."""
+    required = {"authority", "containment", "writes_allowed"}
+    if set(mode) != required or mode["authority"] != "observe-only":
+        raise SafetyExposureError("observe-only mode authority is invalid")
+    if mode["containment"] is not True or mode["writes_allowed"] is not False:
+        raise SafetyExposureError("observe-only mode is not contained")
