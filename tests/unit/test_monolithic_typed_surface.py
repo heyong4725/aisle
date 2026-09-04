@@ -10,6 +10,7 @@ from aisle.harness.monolithic import (
     validate_interface_map,
     validate_matched_treatment,
     validate_monolithic_surface,
+    validate_parity_protocol,
     validate_trusted_preflight,
     validate_typed_graph,
     validate_typed_surface,
@@ -80,4 +81,17 @@ def test_expert_artifacts_require_two_arms_and_hashes():
             {"arm": "typed", "author": "expert-a", "path": "typed.py", "sha256": h},
             {"arm": "monolithic", "author": "expert-b", "path": "mono.py", "sha256": h},
         ]
+    )
+
+
+def test_parity_protocol_requires_expert_parity_purpose():
+    validate_parity_protocol(
+        {
+            "purpose": "expert_parity",
+            "tasks": ["t1"],
+            "paired_seeds": ["s1"],
+            "acceptance": "all",
+            "resource_ceiling": "fixed",
+            "stopping_rule": "frozen",
+        }
     )

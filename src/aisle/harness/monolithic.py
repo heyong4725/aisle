@@ -102,6 +102,26 @@ def validate_expert_artifacts(artifacts: list[dict[str, Any]]) -> None:
             raise TypedSurfaceError("expert artifact hash is invalid")
 
 
+def validate_parity_protocol(protocol: dict[str, Any]) -> None:
+    """Require a frozen, non-confirmatory expert-parity protocol."""
+    required = {
+        "purpose",
+        "tasks",
+        "paired_seeds",
+        "acceptance",
+        "resource_ceiling",
+        "stopping_rule",
+    }
+    if set(protocol) != required:
+        raise TypedSurfaceError("parity protocol fields are incomplete")
+    if protocol["purpose"] != "expert_parity":
+        raise TypedSurfaceError("parity protocol purpose must be expert_parity")
+    if not isinstance(protocol["tasks"], list) or not protocol["tasks"]:
+        raise TypedSurfaceError("parity protocol tasks are unresolved")
+    if not isinstance(protocol["paired_seeds"], list) or not protocol["paired_seeds"]:
+        raise TypedSurfaceError("parity protocol paired_seeds are unresolved")
+
+
 def validate_matched_treatment(
     typed: dict[str, Any], monolithic: dict[str, Any], differing: set[str]
 ) -> None:
