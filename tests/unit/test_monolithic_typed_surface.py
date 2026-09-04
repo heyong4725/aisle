@@ -4,6 +4,7 @@ import pytest
 
 from aisle.harness.monolithic import (
     TypedSurfaceError,
+    classify_bypass_attempt,
     validate_broker_route,
     validate_interface_map,
     validate_monolithic_surface,
@@ -55,3 +56,9 @@ def test_trusted_preflight_fails_closed_when_unresolved():
         validate_trusted_preflight(
             {"hashes": {}, "confinement": False, "route_map": {}, "evidence_sink": ""}
         )
+
+
+def test_bypass_attempts_classify_and_unknown_fails_closed():
+    assert classify_bypass_attempt("read hidden seed") == "hidden_seed_access"
+    with pytest.raises(TypedSurfaceError, match="unclassified"):
+        classify_bypass_attempt("invent a new bypass")
