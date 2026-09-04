@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
 
@@ -57,3 +58,14 @@ def validate_opaque_assignment(assignment: dict[str, Any]) -> None:
         raise FaultBankError("assignment handle is not opaque and content-addressed")
     if any(token in assignment["handle"].lower() for token in ("fault", "family", "target")):
         raise FaultBankError("assignment handle leaks fault metadata")
+
+
+def validate_sealed_location(bank_path: Path, worktree: Path) -> None:
+    """Require sealed bank bytes to live outside the participant worktree."""
+    bank = bank_path.resolve()
+    root = worktree.resolve()
+    try:
+        bank.relative_to(root)
+    except ValueError:
+        return
+    raise FaultBankError("sealed fault bank is inside participant worktree")
