@@ -4,6 +4,7 @@ import pytest
 
 from aisle.harness.causal_study import (
     CausalStudyError,
+    validate_exclusion_register,
     validate_session_effect,
     validate_session_record,
     validate_session_table,
@@ -123,6 +124,13 @@ def test_session_table_rejects_duplicate_units():
 def test_session_effect_rejects_missing_arm_count():
     with pytest.raises(CausalStudyError, match="incomplete"):
         validate_session_effect({"typed_n": 1})
+
+
+def test_exclusion_register_rejects_unretained_invalidations():
+    item = {"session_id": "s", "reason": "timeout", "pre_registered": True,
+            "retained": False, "sensitivity_bound": 0.1}
+    with pytest.raises(CausalStudyError, match="retained"):
+        validate_exclusion_register([item])
 
 
 def test_task_card_rejects_physical_label_for_simulation():

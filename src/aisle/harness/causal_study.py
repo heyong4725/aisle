@@ -60,3 +60,16 @@ def validate_session_effect(effect: dict[str, Any]) -> None:
         isinstance(effect[key], (int, float)) for key in ("risk_difference", "ci_low", "ci_high")
     ):
         raise CausalStudyError("session uncertainty interval is invalid")
+
+
+def validate_exclusion_register(register: list[dict[str, Any]]) -> None:
+    """Require every exclusion to be classified and retainable for sensitivity analysis."""
+    if not register:
+        raise CausalStudyError("exclusion register is missing")
+    required = {"session_id", "reason", "pre_registered", "retained", "sensitivity_bound"}
+    if any(set(item) != required for item in register):
+        raise CausalStudyError("exclusion record is incomplete")
+    if any(item["pre_registered"] is not True or item["retained"] is not True for item in register):
+        raise CausalStudyError("exclusion was not retained under the protocol")
+    if any(not isinstance(item["reason"], str) or not item["reason"] for item in register):
+        raise CausalStudyError("exclusion reason is missing")
