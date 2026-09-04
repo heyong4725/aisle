@@ -8,6 +8,7 @@ from aisle.harness.causal_study import (
     validate_exclusion_register,
     validate_fault_evidence_record,
     validate_paired_fault_diagnosis,
+    validate_repair_outcome,
     validate_session_effect,
     validate_session_record,
     validate_session_table,
@@ -165,6 +166,14 @@ def test_paired_fault_diagnosis_rejects_mismatched_faults():
 def test_sham_rates_reject_missing_arm():
     with pytest.raises(CausalStudyError, match="incomplete"):
         validate_sham_rates([])
+
+
+def test_repair_outcome_rejects_unknown_class():
+    with pytest.raises(CausalStudyError, match="class"):
+        validate_repair_outcome(
+            {"session_id": "s", "fault_id": "f", "repair_class": "unknown",
+             "accepted": False, "time_ms": 1, "raw_evidence": "r"}
+        )
 
 
 def test_task_card_rejects_physical_label_for_simulation():
