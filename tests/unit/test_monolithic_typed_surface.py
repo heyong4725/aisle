@@ -55,6 +55,7 @@ from aisle.harness.safety_exposure import (
 from aisle.harness.semantic_authorization import (
     SemanticAuthorizationError,
     validate_permit,
+    validate_stage_gates,
 )
 from aisle.harness.threat_model import (
     ThreatModelError,
@@ -77,6 +78,18 @@ pytestmark = pytest.mark.unit
 def test_semantic_permit_rejects_replay():
     with pytest.raises(SemanticAuthorizationError, match="replayable"):
         validate_permit({"permit_id": "p", "task_id": "t", "credential_epoch": 1, "used": True})
+
+
+def test_stage_gates_require_order_and_renewal():
+    with pytest.raises(SemanticAuthorizationError, match="order"):
+        validate_stage_gates(
+            [
+                {"stage": "carry", "renewed": True},
+                {"stage": "grasp", "renewed": True},
+                {"stage": "delivery", "renewed": True},
+            ],
+            True,
+        )
 
 
 def test_raw_retention_requires_immutable_hash():

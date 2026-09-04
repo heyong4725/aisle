@@ -29,3 +29,14 @@ def validate_permit(permit: dict[str, Any]) -> None:
         raise SemanticAuthorizationError("permit credential epoch is invalid")
     if permit["used"] is not False:
         raise SemanticAuthorizationError("permit is replayable")
+
+
+def validate_stage_gates(stages: list[dict[str, Any]], thresholds_frozen: bool) -> None:
+    """Require ordered stage permits and frozen acceptance thresholds."""
+    required = ["grasp", "carry", "delivery"]
+    if not thresholds_frozen or len(stages) != len(required):
+        raise SemanticAuthorizationError("stage-gate thresholds or stages are incomplete")
+    if [stage.get("stage") for stage in stages] != required:
+        raise SemanticAuthorizationError("stage gates are out of order")
+    if any(stage.get("renewed") is not True for stage in stages):
+        raise SemanticAuthorizationError("stage permit renewal is incomplete")
