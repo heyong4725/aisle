@@ -149,6 +149,21 @@ def validate_heldout_split(split: dict[str, Any]) -> None:
         raise NonOracleError("content identities overlap across splits")
 
 
+def validate_leakage_audit(audit: dict[str, Any]) -> None:
+    """Require explicit access boundaries and a clean pre-disclosure result."""
+    required = {
+        "filesystem", "prompt", "tool", "network", "process", "environment",
+        "cache", "ipc", "heldout_disclosed", "truth_disclosed", "outcome_disclosed",
+    }
+    if set(audit) != required:
+        raise NonOracleError("leakage audit is incomplete")
+    disclosure_keys = {"heldout_disclosed", "truth_disclosed", "outcome_disclosed"}
+    if any(not isinstance(audit[key], list) for key in required - disclosure_keys):
+        raise NonOracleError("leakage boundaries are invalid")
+    if any(audit[key] is True for key in disclosure_keys):
+        raise NonOracleError("held-out information was disclosed early")
+
+
 def validate_oracle_boundary(policy_inputs: list[str], verifier_only: list[str]) -> None:
     """Reject privileged simulator state appearing on the policy path."""
     forbidden = {
