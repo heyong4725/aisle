@@ -4,6 +4,7 @@ import pytest
 
 from aisle.harness.fault_bank import (
     FaultBankError,
+    validate_activation_record,
     validate_calibration_records,
     validate_fault_manifest,
     validate_injection_request,
@@ -103,6 +104,14 @@ def test_safety_assets_reject_oracle_access():
                 "frozen": True,
                 "oracle_access": True,
             }
+        )
+
+
+def test_activation_record_rejects_assignment_drift():
+    with pytest.raises(FaultBankError, match="drifted"):
+        validate_activation_record(
+            {"session": "s", "handle": "assignment:" + "b" * 64, "activated": True},
+            {"session": "s", "handle": "assignment:" + "a" * 64},
         )
 
 
