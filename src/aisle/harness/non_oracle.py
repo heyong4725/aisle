@@ -190,3 +190,19 @@ def validate_task_card(card: dict[str, Any]) -> None:
         raise NonOracleError("excluded privileges must be explicit")
     if not isinstance(card["episode_budget"], (int, float)) or card["episode_budget"] <= 0:
         raise NonOracleError("episode budget must be positive")
+
+
+def validate_release_task_card(card: dict[str, Any]) -> None:
+    """Require release-facing scope, evidence, licensing, and regeneration fields."""
+    required = {
+        "portability_limits", "known_failure_modes", "expert_parity", "pilot_evidence",
+        "heldout_commitment", "hardware_status", "license", "raw_evidence", "regenerate_command",
+    }
+    if not required.issubset(card):
+        raise NonOracleError("release task card is incomplete")
+    if card["hardware_status"] not in {"simulation", "hardware_pending", "physical_verified"}:
+        raise NonOracleError("hardware status is invalid")
+    if not all(card[key] for key in ("portability_limits", "known_failure_modes", "raw_evidence")):
+        raise NonOracleError("release task card omits scope or evidence")
+    if not isinstance(card["regenerate_command"], str) or not card["regenerate_command"].strip():
+        raise NonOracleError("regeneration command is missing")

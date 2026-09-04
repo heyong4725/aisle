@@ -42,12 +42,15 @@ from aisle.harness.non_oracle import (
     select_pilot_candidate,
     validate_expert_parity,
     validate_freeze_manifest,
+    validate_heldout_split,
+    validate_leakage_audit,
     validate_oracle_boundary,
     validate_perception_audit,
     validate_perception_eligibility,
     validate_perception_envelope,
     validate_pilot_evidence,
     validate_pilot_sessions,
+    validate_release_task_card,
     validate_task_card,
 )
 from aisle.harness.safety_exposure import (
@@ -107,6 +110,11 @@ def test_task_card_rejects_physical_label_for_simulation():
         validate_task_card(card)
 
 
+def test_release_task_card_requires_regeneration_command():
+    with pytest.raises(NonOracleError, match="incomplete"):
+        validate_release_task_card({"hardware_status": "simulation"})
+
+
 def test_oracle_boundary_rejects_privileged_policy_input():
     with pytest.raises(NonOracleError, match="crosses"):
         validate_oracle_boundary(["camera", "simulator_pose"], ["scene_truth"])
@@ -163,6 +171,19 @@ def test_pilot_evidence_rejects_confirmatory_reuse():
 def test_freeze_manifest_rejects_unfrozen_protocol():
     with pytest.raises(NonOracleError, match="not frozen"):
         validate_freeze_manifest({"frozen": False})
+
+
+def test_heldout_split_rejects_short_bank():
+    split = {key: [key] for key in ("development", "calibration", "evaluation", "pilot")}
+    split["heldout"] = list(range(31))
+    split["salted_commitment"] = "digest"
+    with pytest.raises(NonOracleError, match="too few"):
+        validate_heldout_split(split)
+
+
+def test_leakage_audit_rejects_early_seed_disclosure():
+    with pytest.raises(NonOracleError, match="incomplete"):
+        validate_leakage_audit({"heldout_disclosed": True})
 
 
 def test_authorization_state_rejects_revoked_permit():
