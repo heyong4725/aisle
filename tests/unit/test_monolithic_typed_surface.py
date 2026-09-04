@@ -43,6 +43,7 @@ from aisle.harness.safety_exposure import (
     validate_exposure_record,
     validate_proposal_accounting,
     validate_source_strata,
+    validate_zero_event_bound,
 )
 from aisle.harness.threat_model import (
     ThreatModelError,
@@ -70,6 +71,11 @@ def test_exposure_analysis_rejects_silent_omission():
 def test_source_strata_requires_provenance_and_rate():
     with pytest.raises(SafetyExposureError, match="stratum"):
         validate_source_strata([{"source": "sensor"}])
+
+
+def test_zero_event_bound_rejects_invalid_denominator():
+    with pytest.raises(SafetyExposureError, match="denominator"):
+        validate_zero_event_bound(0, 0, 0)
 
 
 def test_exposure_record_requires_layer_and_unit():
