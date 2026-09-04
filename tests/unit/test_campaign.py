@@ -40,10 +40,15 @@ def test_historical_worktree_gets_recorded_baseline_compat(tmp_path):
     rollout.write_text("def resolve_trusted_baseline(root): pass\ndef run_gates(root): pass\n")
     session = tmp_path / "session_00"
     session.mkdir()
-    env = {"PYTHONPATH": "/ambient/operator/path"}
+    from aisle.harness.treatment_ambient import build_declared_environment
+
+    env, ambient = build_declared_environment(
+        (session / "agent_home").resolve(),
+        source_env={"PATH": "/usr/bin:/bin", "PYTHONPATH": "/ambient/operator/path"},
+    )
     pin = "a" * 40
 
-    record = attach_historical_baseline_compat(wt, session, pin, env)
+    record = attach_historical_baseline_compat(wt, session, pin, env, ambient)
 
     compat_dir = session / "baseline_compat"
     assert env["PYTHONPATH"] == str(compat_dir)  # ambient path is not a treatment input
@@ -55,7 +60,7 @@ def test_historical_worktree_gets_recorded_baseline_compat(tmp_path):
         "sha256": record["sha256"],
     }
     assert len(record["sha256"]) == 64
-    assert attach_historical_baseline_compat(wt, session, pin, env) == record
+    assert attach_historical_baseline_compat(wt, session, pin, env, ambient) == record
 
 
 def test_native_worktree_needs_no_baseline_compat(tmp_path):
@@ -69,9 +74,13 @@ def test_native_worktree_needs_no_baseline_compat(tmp_path):
     rollout.write_text(
         "_COMMIT_OID = object()\ndef resolve_trusted_baseline(root, baseline): pass\n"
     )
-    env = {}
+    from aisle.harness.treatment_ambient import build_declared_environment
 
-    assert attach_historical_baseline_compat(wt, tmp_path / "session", "b" * 40, env) == {
+    env, ambient = build_declared_environment(
+        (tmp_path / "session" / "agent_home").resolve(), source_env={"PATH": "/usr/bin:/bin"}
+    )
+
+    assert attach_historical_baseline_compat(wt, tmp_path / "session", "b" * 40, env, ambient) == {
         "mode": "native",
         "pin": "b" * 40,
     }
@@ -682,13 +691,13 @@ def test_isolated_session_env_points_home_at_scratch(tmp_path):
     assert not any(Path(env["CLAUDE_CONFIG_DIR"]).iterdir())
     assert env["AISLE_ENV_BASELINE"] == pin
     assert os.environ.get("HOME") == before_home  # parent untouched
-    assert rec == {
-        "home": env["HOME"],
-        "claude_config_dir": env["CLAUDE_CONFIG_DIR"],
-        "codex_home": env["CODEX_HOME"],
-        "xdg_rebound": True,
-        "env_baseline_oid": pin,
-    }
+    assert rec["home"] == env["HOME"]
+    assert rec["claude_config_dir"] == env["CLAUDE_CONFIG_DIR"]
+    assert rec["codex_home"] == env["CODEX_HOME"]
+    assert rec["xdg_rebound"] is True
+    assert rec["env_baseline_oid"] == pin
+    assert rec["ambient_baseline"]["environment_keys"] == sorted(env)
+    assert rec["ambient_baseline"]["env_baseline_oid"] == pin
 
 
 def test_run_session_spawns_with_the_isolated_env(tmp_path):
@@ -699,7 +708,7 @@ def test_run_session_spawns_with_the_isolated_env(tmp_path):
 
     out = tmp_path / "out"
     out.mkdir()
-    env, _ = c.isolated_session_env(out)
+    env, isolation = c.isolated_session_env(out)
     probe = "import os; print(os.environ['HOME']); print(os.environ['CLAUDE_CONFIG_DIR'])"
     c.run_session(
         "claude",
@@ -713,10 +722,39 @@ def test_run_session_spawns_with_the_isolated_env(tmp_path):
             "wall_ceiling_s": 30.0,
         },
         env=env,
+        environment_record=isolation["ambient_baseline"],
     )
     log = (out / "session.jsonl").read_text().splitlines()
     assert log[0] == str(out / "agent_home")
     assert log[1] == str(out / "agent_home" / ".claude")
+
+
+def test_run_session_refuses_environment_drift_before_spawn(tmp_path):
+    """TRT-7: the campaign launch binds the exact recorded environment."""
+    import campaign as c
+
+    from aisle.harness.treatment_ambient import AmbientIsolationError
+
+    out = tmp_path / "out"
+    out.mkdir()
+    env, isolation = c.isolated_session_env(out)
+    env["SSH_AUTH_SOCK"] = "/tmp/operator-agent.sock"
+
+    with pytest.raises(AmbientIsolationError, match="environment drift"):
+        c.run_session(
+            "claude",
+            [sys.executable, "-c", "raise SystemExit('must not spawn')"],
+            tmp_path,
+            out,
+            {
+                "prior_tokens": 0,
+                "prior_wall_s": 0.0,
+                "token_ceiling": 10_000,
+                "wall_ceiling_s": 30.0,
+            },
+            env=env,
+            environment_record=isolation["ambient_baseline"],
+        )
 
 
 def test_resume_refuses_prior_session_policies(tmp_path):
@@ -726,8 +764,8 @@ def test_resume_refuses_prior_session_policies(tmp_path):
     import campaign as c
 
     current = c.campaign_treatment("claude", "m", "abc", "0..4", "100..103")
-    assert current["session_isolation_policy"] == "isolated-home-baseline-compat-v2"
-    for policy in (None, "isolated-home-v1"):
+    assert current["session_isolation_policy"] == "declared-ambient-baseline-compat-v3"
+    for policy in (None, "isolated-home-v1", "isolated-home-baseline-compat-v2"):
         prior = {k: current[k] for k in c.TREATMENT_IDENTITY}
         if policy is None:
             del prior["session_isolation_policy"]
@@ -1026,6 +1064,29 @@ def test_isolation_pins_agent_home_overrides(tmp_path, monkeypatch):
     for var in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
         assert env[var].startswith(str(scratch)), var
     assert rec["codex_home"] == str(scratch / ".codex")
+
+
+def test_campaign_isolation_removes_unrelated_environment_and_records_trt7_policy(
+    tmp_path, monkeypatch
+):
+    """TRT-7: the real campaign path uses the declared environment baseline."""
+    import campaign as c
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "operator-secret")
+    monkeypatch.setenv("OPENAI_API_KEY", "operator-secret")
+    monkeypatch.setenv("SSH_AUTH_SOCK", "/tmp/operator-agent.sock")
+    monkeypatch.setenv("AISLE_UNRELATED_SENTINEL", "operator-memory")
+
+    env, record = c.isolated_session_env(tmp_path / "out", env_baseline_oid="a" * 40)
+
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "OPENAI_API_KEY" not in env
+    assert "SSH_AUTH_SOCK" not in env
+    assert "AISLE_UNRELATED_SENTINEL" not in env
+    ambient = record["ambient_baseline"]
+    assert ambient["schema_version"] == "aisle.ambient-baseline.v1"
+    assert ambient["environment_keys"] == sorted(env)
+    assert ambient["inherited_fd_policy"] == "close-all-nonstandard"
 
 
 def test_credential_seed_copies_only_the_campaign_login(tmp_path, monkeypatch):

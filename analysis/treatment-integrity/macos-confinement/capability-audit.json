@@ -1,0 +1,154 @@
+{
+  "adapter": {
+    "compiled_profile_sha256": "a847f2218c0ff7fbc1fd2decf5eee63a145dea3caf621c68af882c6efb34cd8a",
+    "imported_system_profile": "/System/Library/Sandbox/Profiles/system.sb",
+    "imported_system_profile_sha256": "1b2c4487f32fba48f29ba871bd1fec4f8d74af9543074c8805c3bc7094b9846f",
+    "path": "/usr/bin/sandbox-exec",
+    "policy_id": "acbd29f9f4546130de1970e23bfa92795f5dd86442120aa1256b6a3154ddf1d8",
+    "sha256": "e3d7a792c58a5d3783d2f7274c82d70062393830d8cb1ded713ca554a470bd2f"
+  },
+  "capability_pass": true,
+  "cases": [
+    {
+      "denied": false,
+      "expected": "baseline-exposure",
+      "id": "unrestricted_hidden_baseline",
+      "passed": true,
+      "returncode": 0,
+      "sentinel_exposed": true,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "e48766bbd4945ee42b410fbbd233d7346455d03a3f23e9f848e0866e412d9e14"
+    },
+    {
+      "denied": false,
+      "expected": "allow",
+      "id": "visible_read",
+      "passed": true,
+      "returncode": 0,
+      "sentinel_exposed": false,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "8066a750a422f10d70e26c908c62a427bf0ead5629c9c230e42d78141442a566"
+    },
+    {
+      "denied": false,
+      "expected": "allow",
+      "id": "subprocess_visible_read",
+      "passed": true,
+      "returncode": 0,
+      "sentinel_exposed": false,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "8066a750a422f10d70e26c908c62a427bf0ead5629c9c230e42d78141442a566"
+    },
+    {
+      "denied": true,
+      "expected": "deny",
+      "id": "absolute_hidden_read",
+      "passed": true,
+      "returncode": 1,
+      "sentinel_exposed": false,
+      "stderr_sha256": "58207e556e494351b8bcf18c8fb8b5d29971a18e21af9e05dce5c0be38855810",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "denied": true,
+      "expected": "deny",
+      "id": "parent_traversal_hidden_read",
+      "passed": true,
+      "returncode": 1,
+      "sentinel_exposed": false,
+      "stderr_sha256": "daf1ec291c27b424b00205e8a09ba4d7485bae6f70b0cc0f86299401823c0fdf",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "denied": true,
+      "expected": "deny",
+      "id": "symlink_hidden_read",
+      "passed": true,
+      "returncode": 1,
+      "sentinel_exposed": false,
+      "stderr_sha256": "f89c1da0507112037e8362f867fef595a3f5fb3c76fd5e278cdd1b73d07643ca",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "denied": true,
+      "expected": "deny",
+      "id": "subprocess_hidden_read",
+      "passed": true,
+      "returncode": 1,
+      "sentinel_exposed": false,
+      "stderr_sha256": "58207e556e494351b8bcf18c8fb8b5d29971a18e21af9e05dce5c0be38855810",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "denied": false,
+      "expected": "allow",
+      "id": "declared_output_write",
+      "passed": true,
+      "returncode": 0,
+      "sentinel_exposed": false,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "denied": true,
+      "expected": "deny",
+      "id": "hidden_write",
+      "passed": true,
+      "returncode": 1,
+      "sentinel_exposed": false,
+      "stderr_sha256": "03976bace080c46ac215494bcfafe287ef449edc71315002f3fc7d98144eb395",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "confirmatory_ready": false,
+  "ephemeral_profile_path": "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-confinement-capability-uottz6h_/controller-profile.sb",
+  "evidence_class": "synthetic_unscored_capability",
+  "limitations": [
+    "macOS-only capability; no Linux adapter evaluated",
+    "synthetic filesystem sentinels; no benchmark fault identities",
+    "no vendor network or credential path evaluated",
+    "no Claude/Codex end-to-end parity evaluated",
+    "Apple system.sb is a private interface and is hashed per audit"
+  ],
+  "platform": {
+    "build": "25G76",
+    "machine": "arm64",
+    "macos_version": "26.6.1",
+    "python": "3.13.5"
+  },
+  "policy": {
+    "allowed_executables": [
+      "/bin/bash",
+      "/bin/cat"
+    ],
+    "hidden_roots": [
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-confinement-capability-uottz6h_/hidden"
+    ],
+    "network_policy": "deny-external",
+    "output_roots": [
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-confinement-capability-uottz6h_/output"
+    ],
+    "runtime_read_roots": [
+      "/Library/Apple",
+      "/System",
+      "/bin",
+      "/usr/bin",
+      "/usr/lib",
+      "/usr/share"
+    ],
+    "visible_roots": [
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-confinement-capability-uottz6h_/visible"
+    ]
+  },
+  "recorded_at": "2026-09-01T13:27:04.971200+00:00",
+  "schema_version": "aisle.macos-confinement-capability.v1",
+  "session_id": "macos-capability-20260901T132704971200Z-a847f2218c0f",
+  "summary": {
+    "baseline_tests": 1,
+    "capability_pass": true,
+    "declared_allow_tests": 3,
+    "denial_detection_rate": 1.0,
+    "denial_tests": 5,
+    "false_alarm_rate": 0.0
+  }
+}

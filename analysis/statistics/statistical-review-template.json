@@ -1,0 +1,26 @@
+{
+  "schema_version": "aisle.stats.review.v1",
+  "review_status": "pending_external_review",
+  "reviewer_id": null,
+  "reviewer_role": "independent statistical reviewer",
+  "independent_from_analyzer_author": null,
+  "signed_at": null,
+  "signature": null,
+  "external_timestamp": null,
+  "reviewed_artifacts": {
+    "protocol_core_sha256": null,
+    "analysis_implementation_sha256": null,
+    "synthetic_fixtures_sha256": null,
+    "power_output_sha256": null
+  },
+  "checks": {
+    "estimand_and_experimental_unit": "pending",
+    "power_assumptions_and_sensitivity": "pending",
+    "interval_and_decision_methods": "pending",
+    "synthetic_edge_cases": "pending",
+    "known_limitations": "pending"
+  },
+  "findings": [],
+  "limitations_reviewed": null,
+  "overall_disposition": "pending"
+}
