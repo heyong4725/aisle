@@ -66,6 +66,28 @@ def validate_trusted_preflight(state: dict[str, Any]) -> None:
         raise TypedSurfaceError("confinement is not attested")
 
 
+_BYPASS_TOKENS = {
+    "driver": "direct_driver",
+    "unguarded": "unguarded_motion",
+    "reset": "out_of_band_reset",
+    "scorer": "scorer_access",
+    "verifier": "verifier_access",
+    "seed": "hidden_seed_access",
+    "socket": "network_access",
+    "subprocess": "process_access",
+    "traversal": "path_traversal",
+}
+
+
+def classify_bypass_attempt(attempt: str) -> str:
+    """Classify a MON-7 bypass attempt; unknown attempts fail closed."""
+    lowered = attempt.strip().lower()
+    for token, category in _BYPASS_TOKENS.items():
+        if token in lowered:
+            return category
+    raise TypedSurfaceError("unclassified bypass attempt")
+
+
 def validate_typed_graph(graph_path, root, embodiment: str, allow_unproven: bool = False) -> dict:
     """Run the pinned graph validator; authored deliverables are never repaired."""
     from aisle.harness.validate import validate
