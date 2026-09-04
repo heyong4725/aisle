@@ -9,6 +9,7 @@ from aisle.harness.monolithic import (
     validate_broker_route,
     validate_campaign_purpose,
     validate_common_evidence,
+    validate_conformance,
     validate_expert_artifacts,
     validate_interface_map,
     validate_matched_treatment,
@@ -92,6 +93,13 @@ def test_artifact_hashes_fail_closed_on_drift():
     validate_artifact_hashes({"broker": h}, {"broker": h})
     with pytest.raises(TypedSurfaceError, match="drift"):
         validate_artifact_hashes({"broker": h}, {"broker": "b" * 64})
+
+
+def test_conformance_requires_all_component_checks():
+    required = {"surface", "route", "identity"}
+    validate_conformance(dict.fromkeys(required, True), required)
+    with pytest.raises(TypedSurfaceError, match="conformance"):
+        validate_conformance({"surface": True}, required)
 
 
 def test_parity_protocol_requires_expert_parity_purpose():
