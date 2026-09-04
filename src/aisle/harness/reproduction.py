@@ -106,3 +106,16 @@ def validate_participant_boundary(paths: list[str], forbidden_tokens: set[str]) 
         raise ReproductionError("participant boundary token is invalid")
     if any(any(token in path.lower() for token in lowered_tokens) for path in paths):
         raise ReproductionError("participant boundary exposes hidden evaluation")
+
+
+def validate_rotation_policy(policy: dict[str, Any]) -> None:
+    """Require an auditable post-release rotation and contamination response policy."""
+    required = {"release_id", "rotate_after_sessions", "heldout_disjoint", "contamination_action"}
+    if set(policy) != required or not policy["release_id"]:
+        raise ReproductionError("rotation policy is incomplete")
+    if not isinstance(policy["rotate_after_sessions"], int) or policy["rotate_after_sessions"] <= 0:
+        raise ReproductionError("rotation session threshold is invalid")
+    if policy["heldout_disjoint"] is not True:
+        raise ReproductionError("held-out rotation is not disjoint")
+    if policy["contamination_action"] not in {"quarantine", "retire", "rotate"}:
+        raise ReproductionError("contamination action is invalid")
