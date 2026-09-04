@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from aisle.harness.fault_bank import FaultBankError, validate_fault_manifest
 from aisle.harness.monolithic import (
     TypedSurfaceError,
     classify_bypass_attempt,
@@ -22,6 +23,18 @@ from aisle.harness.monolithic import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_fault_manifest_requires_diverse_sealed_cells():
+    cell = {
+        "id": "a",
+        "family": "perception",
+        "mode": "sham",
+        "target": "camera",
+        "sha256": "a" * 64,
+    }
+    with pytest.raises(FaultBankError, match="diversity"):
+        validate_fault_manifest({"schema": "aisle.fault-bank.v1", "version": "v1", "cells": [cell]})
 
 
 def test_typed_surface_rejects_unallowlisted_files(tmp_path: Path):
