@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -11,6 +12,7 @@ class FaultBankError(ValueError):
 
 _FAMILIES = {"perception", "decision", "motion"}
 _MODES = {"persistent", "intermittent", "coupled", "sham"}
+_HANDLE = re.compile(r"^assignment:[0-9a-f]{64}$")
 
 
 def validate_fault_manifest(manifest: dict[str, Any]) -> None:
@@ -43,3 +45,15 @@ def validate_fault_manifest(manifest: dict[str, Any]) -> None:
         targets.add(cell["target"])
     if families != _FAMILIES or not _MODES.issubset(modes) or len(targets) < 2:
         raise FaultBankError("fault-bank diversity coverage is incomplete")
+
+
+def validate_opaque_assignment(assignment: dict[str, Any]) -> None:
+    """Reject operator-selected cells and fault metadata outside the sealed view."""
+    if set(assignment) != {"session", "seed", "handle"}:
+        raise FaultBankError("assignment exposes sealed fault metadata")
+    if not all(isinstance(assignment[key], str) and assignment[key] for key in assignment):
+        raise FaultBankError("assignment fields must be non-empty strings")
+    if not _HANDLE.fullmatch(assignment["handle"]):
+        raise FaultBankError("assignment handle is not opaque and content-addressed")
+    if any(token in assignment["handle"].lower() for token in ("fault", "family", "target")):
+        raise FaultBankError("assignment handle leaks fault metadata")
