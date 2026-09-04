@@ -78,3 +78,14 @@ def validate_sealed_location(bank_path: Path, worktree: Path) -> None:
     except ValueError:
         return
     raise FaultBankError("sealed fault bank is inside participant worktree")
+
+
+def validate_participant_surface(values: list[str]) -> None:
+    """Reject bank identifiers and metadata from participant-visible surfaces."""
+    forbidden = ("fault-", "fault_", "perception", "decision", "motion", "target=")
+    for value in values:
+        if not isinstance(value, str):
+            raise FaultBankError("participant surface values must be strings")
+        lowered = value.lower()
+        if any(token in lowered for token in forbidden):
+            raise FaultBankError("participant surface leaks sealed fault metadata")
