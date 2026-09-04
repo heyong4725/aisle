@@ -491,7 +491,11 @@ def run_scenario(
     # memory/config is not a treatment channel; recorded per scenario
     session_env, session_isolation = isolated_session_env(session_dir, env_baseline_oid=oid)
     session_isolation["baseline_compat"] = attach_historical_baseline_compat(
-        wt, session_dir, oid, session_env
+        wt,
+        session_dir,
+        oid,
+        session_env,
+        session_isolation["ambient_baseline"],
     )
     seed_rec, seed_error = seed_session_credentials(agent, session_env)
     if seed_error:
@@ -513,6 +517,7 @@ def run_scenario(
                 "wall_ceiling_s": scenario["wall_h"] * 3600.0,
             },
             env=session_env,
+            environment_record=session_isolation["ambient_baseline"],
         )
     finally:
         # PR #100 review P1: the seeded token must not outlive the

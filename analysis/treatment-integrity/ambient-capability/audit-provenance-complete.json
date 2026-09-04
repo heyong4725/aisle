@@ -1,0 +1,113 @@
+{
+  "capability_pass": true,
+  "cases": [
+    {
+      "false_alarm_control": false,
+      "id": "home_rebound",
+      "passed": true
+    },
+    {
+      "false_alarm_control": false,
+      "id": "agent_config_homes_rebound",
+      "passed": true
+    },
+    {
+      "false_alarm_control": false,
+      "id": "xdg_and_tmp_rebound",
+      "passed": true
+    },
+    {
+      "false_alarm_control": false,
+      "id": "unrelated_environment_removed",
+      "passed": true
+    },
+    {
+      "false_alarm_control": false,
+      "id": "credential_environment_removed",
+      "passed": true
+    },
+    {
+      "false_alarm_control": false,
+      "id": "socket_endpoint_environment_removed",
+      "passed": true
+    },
+    {
+      "false_alarm_control": false,
+      "id": "inherited_fd_closed",
+      "passed": true
+    },
+    {
+      "false_alarm_control": true,
+      "id": "declared_path_forwarded",
+      "passed": true
+    }
+  ],
+  "confirmatory_ready": false,
+  "environment_record": {
+    "env_baseline_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "environment_keys": [
+      "AISLE_ENV_BASELINE",
+      "CLAUDE_CONFIG_DIR",
+      "CODEX_HOME",
+      "HOME",
+      "LANG",
+      "LC_CTYPE",
+      "PATH",
+      "TEMP",
+      "TMP",
+      "TMPDIR",
+      "XDG_CACHE_HOME",
+      "XDG_CONFIG_HOME",
+      "XDG_DATA_HOME",
+      "XDG_STATE_HOME",
+      "__CF_USER_TEXT_ENCODING"
+    ],
+    "environment_sha256": "20d95d53017a5c6f5da01092aa7073a095e8ef5f8db21b1325ed63af2d45f14a",
+    "forwarded_variables": [
+      "LANG",
+      "LC_CTYPE",
+      "PATH"
+    ],
+    "home": "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-bonrjoo0/session/agent_home",
+    "immutable_id": "sha256:59f436d26ff09736573ade9469d0ce46e185a48d5c7fd9efd6547b41361b696f",
+    "inherited_fd_policy": "close-all-nonstandard",
+    "local_endpoint_policy": "no-ambient-endpoint-variables",
+    "removed_endpoint_key_count": 2,
+    "removed_source_key_count": 5,
+    "schema_version": "aisle.ambient-baseline.v1",
+    "state_directories": [
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-bonrjoo0/session/agent_home",
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-bonrjoo0/session/agent_home/.cache",
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-bonrjoo0/session/agent_home/.claude",
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-bonrjoo0/session/agent_home/.codex",
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-bonrjoo0/session/agent_home/.config",
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-bonrjoo0/session/agent_home/.local/share",
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-bonrjoo0/session/agent_home/.local/state",
+      "/private/var/folders/bq/b6wzvn1x04950p05md3w8crr0000gn/T/aisle-ambient-capability-bonrjoo0/session/agent_home/.tmp"
+    ]
+  },
+  "evidence_class": "synthetic_unscored_ambient_capability",
+  "implementation_sha256": "13dce400a649bc0d01749661517138f8ad1f8cde106caceaedb9f33af6f6d856",
+  "limitations": [
+    "synthetic process only; no Claude or Codex vendor session",
+    "environment endpoint removal does not replace filesystem/network confinement",
+    "credential-file seeding and post-session scrubbing are audited separately"
+  ],
+  "platform": {
+    "machine": "arm64",
+    "python": "3.13.5",
+    "release": "25.6.0",
+    "system": "Darwin"
+  },
+  "randomization_seed": null,
+  "randomization_status": "not-applicable-synthetic-capability",
+  "recorded_at": "2026-09-01T15:39:05.193096+00:00",
+  "schema_version": "aisle.ambient-capability.v1",
+  "session_id": "ambient-capability-20260901T153905193096Z",
+  "summary": {
+    "checks": 8,
+    "detection_rate": 1.0,
+    "false_alarm_checks": 1,
+    "false_alarm_rate": 0.0
+  }
+}

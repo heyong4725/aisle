@@ -71,6 +71,7 @@ def run_arm(agent: str, oid: str, out: Path, budget_scale: float) -> dict:
                 "wall_ceiling_s": wall_h * 3600.0,
             },
             env=env,
+            environment_record=isolation["ambient_baseline"],
         )
         record |= {
             "session": session,

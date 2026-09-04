@@ -1,0 +1,102 @@
+{
+  "coverage": {
+    "categories": [
+      {
+        "disposition": "unresolved",
+        "id": "category:verifier-scorer-boundary"
+      },
+      {
+        "disposition": "unresolved",
+        "id": "category:validator-false-accept"
+      },
+      {
+        "disposition": "unresolved",
+        "id": "category:validator-false-reject"
+      },
+      {
+        "disposition": "unresolved",
+        "id": "category:analyzer-arithmetic"
+      },
+      {
+        "disposition": "unresolved",
+        "id": "category:analyzer-provenance"
+      },
+      {
+        "disposition": "unresolved",
+        "id": "category:inclusion-exclusion"
+      },
+      {
+        "disposition": "unresolved",
+        "id": "category:stopping-credit-windows"
+      },
+      {
+        "disposition": "unresolved",
+        "id": "category:safety-exposure-accounting"
+      },
+      {
+        "disposition": "unresolved",
+        "id": "category:hidden-leakage-treatment-contamination"
+      },
+      {
+        "disposition": "unresolved",
+        "id": "category:figure-table-derivation"
+      }
+    ],
+    "exclusion_rules": [
+      {
+        "id": "exclusion:infrastructure-integrity",
+        "protocol_id": "protocol:confirmatory-statistics",
+        "status": "unresolved"
+      },
+      {
+        "id": "exclusion:post-stopping-rule",
+        "protocol_id": "protocol:confirmatory-statistics",
+        "status": "unresolved"
+      },
+      {
+        "id": "exclusion:mixed-campaign-or-pilot",
+        "protocol_id": "protocol:confirmatory-statistics",
+        "status": "unresolved"
+      },
+      {
+        "id": "exclusion:treatment-drift-or-hidden-access",
+        "protocol_id": "protocol:confirmatory-statistics",
+        "status": "unresolved"
+      }
+    ],
+    "primary_estimands": [
+      {
+        "id": "estimand:typed-dataflow-causal",
+        "protocol_id": "protocol:confirmatory-statistics",
+        "status": "unresolved"
+      },
+      {
+        "id": "estimand:typed-evidence-causal",
+        "protocol_id": "protocol:confirmatory-statistics",
+        "status": "unresolved"
+      }
+    ]
+  },
+  "entries": [],
+  "inventory_id": "inventory:current-unfrozen-gap-2026-09-01",
+  "protocol_freeze": {
+    "protocols": [
+      {
+        "frozen_id": "not_frozen",
+        "id": "protocol:confirmatory-statistics",
+        "path": "specs/400-benchmark-statistics.md",
+        "sha256": "440824102b89a2c7956c968bdb83a902f46bbdb5dca65a69884a421e27ac0ae1",
+        "status": "proposed"
+      },
+      {
+        "frozen_id": "not_frozen",
+        "id": "protocol:claim-catalog",
+        "path": "docs/claim-evidence.yaml",
+        "sha256": "3ff90e63380b4f9605141d6a724bcef5351b80781352aabfbfd451dc38368c61",
+        "status": "proposed"
+      }
+    ],
+    "status": "proposed"
+  },
+  "schema_version": "aisle.instrument-inventory.v1"
+}
