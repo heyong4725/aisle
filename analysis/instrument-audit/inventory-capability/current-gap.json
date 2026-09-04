@@ -1,0 +1,78 @@
+{
+  "confirmatory_ready": false,
+  "coverage": {
+    "categories_covered": 0,
+    "categories_not_applicable": 0,
+    "categories_total": 10,
+    "exclusion_rules_covered": 0,
+    "exclusion_rules_total": 4,
+    "primary_estimands_covered": 0,
+    "primary_estimands_total": 2
+  },
+  "environment": {
+    "machine": "arm64",
+    "os": "Darwin",
+    "python_implementation": "CPython",
+    "python_version": "3.13.5"
+  },
+  "errors": [
+    "exclusion rule exclusion:infrastructure-integrity status must be frozen",
+    "exclusion rule exclusion:mixed-campaign-or-pilot status must be frozen",
+    "exclusion rule exclusion:post-stopping-rule status must be frozen",
+    "exclusion rule exclusion:treatment-drift-or-hidden-access status must be frozen",
+    "instrument category category:analyzer-arithmetic disposition is unresolved",
+    "instrument category category:analyzer-provenance disposition is unresolved",
+    "instrument category category:figure-table-derivation disposition is unresolved",
+    "instrument category category:hidden-leakage-treatment-contamination disposition is unresolved",
+    "instrument category category:inclusion-exclusion disposition is unresolved",
+    "instrument category category:safety-exposure-accounting disposition is unresolved",
+    "instrument category category:stopping-credit-windows disposition is unresolved",
+    "instrument category category:validator-false-accept disposition is unresolved",
+    "instrument category category:validator-false-reject disposition is unresolved",
+    "instrument category category:verifier-scorer-boundary disposition is unresolved",
+    "instrument entries must not be empty",
+    "primary estimand estimand:typed-dataflow-causal status must be frozen",
+    "primary estimand estimand:typed-evidence-causal status must be frozen",
+    "protocol freeze status must be frozen",
+    "protocol protocol:claim-catalog frozen_id is invalid",
+    "protocol protocol:claim-catalog status must be frozen",
+    "protocol protocol:confirmatory-statistics frozen_id is invalid",
+    "protocol protocol:confirmatory-statistics status must be frozen",
+    "required coverage id is uncovered: estimand:typed-dataflow-causal",
+    "required coverage id is uncovered: estimand:typed-evidence-causal",
+    "required coverage id is uncovered: exclusion:infrastructure-integrity",
+    "required coverage id is uncovered: exclusion:mixed-campaign-or-pilot",
+    "required coverage id is uncovered: exclusion:post-stopping-rule",
+    "required coverage id is uncovered: exclusion:treatment-drift-or-hidden-access"
+  ],
+  "inventory_file_sha256": "cd802c1479afdee9d5aaa731ae2d29a411e188e8c1adf38f0e4789a83faf58fa",
+  "inventory_id": "inventory:current-unfrozen-gap-2026-09-01",
+  "inventory_sha256": "26d9f78d124a10337108ba7b91bdc9967140aa22cec96f446d875c6e089af5b6",
+  "inventory_valid": false,
+  "limitations": [
+    "inventory validation does not execute mutation cases",
+    "inventory validation does not provide outside-authorship review",
+    "a valid inventory remains blocked pending AUD-3 through AUD-12"
+  ],
+  "protocol_ids": [
+    "protocol:claim-catalog",
+    "protocol:confirmatory-statistics"
+  ],
+  "publication_gate": "blocked",
+  "recorded_at": "2026-09-01T22:21:06.411763Z",
+  "referenced_artifacts": [
+    {
+      "kind": "protocol protocol:claim-catalog",
+      "path": "docs/claim-evidence.yaml",
+      "sha256": "3ff90e63380b4f9605141d6a724bcef5351b80781352aabfbfd451dc38368c61"
+    },
+    {
+      "kind": "protocol protocol:confirmatory-statistics",
+      "path": "specs/400-benchmark-statistics.md",
+      "sha256": "440824102b89a2c7956c968bdb83a902f46bbdb5dca65a69884a421e27ac0ae1"
+    }
+  ],
+  "schema_version": "aisle.instrument-inventory-validation.v1",
+  "session_id": "instrument-inventory-20260901T222106411763Z",
+  "source_sha256": "e6cae162dfa73e96829d144691b8db4e94ce25f2b4b5407d44c7ac841e7930ed"
+}

@@ -14,6 +14,7 @@ measurement that people most often get wrong, and **Appendix C** is a graded
 set of exercises and hackathon tracks — several of which are genuinely open
 problems (**Appendix D** lists them with issue numbers).
 
+<!-- claim:typed-composition/readme -->
 *AISLE is an **environment** in the reinforcement-learning sense — a simulated
 world with tasks, dynamics, and a frozen scorer that agents act in — and the
 **infrastructure** around it: the typed contract, registry, validator, safety
@@ -25,7 +26,9 @@ execution is the intended path.*
 Agentic auto-research for robot manipulation on open infrastructure:
 coding agents (Claude Code / Codex) compose and evolve **typed dora-rs
 dataflows** against a **Genesis** physics scene, with frozen
-verification/reset and hard safety structure. The claim under test: a
+verification/reset and scoped safety structure.
+<!-- claim:typed-dataflow-causal/readme -->
+The **UNRUN confirmatory claim under test** is whether a
 typed dataflow substrate makes agentic robotics faster, safer, more
 auditable, and more reusable than script-level iteration — reproducible
 on a MacBook.
@@ -74,6 +77,7 @@ the plan, its ratification, and the per-item ledger are
 the whole measured record is
 **[docs/paper/aisle-paper.md](docs/paper/aisle-paper.md)** (v1.0).
 
+<!-- current-status:canonical -->
 ## Status
 
 **This table is the single current status page** (issue #142). Other overview
@@ -82,6 +86,12 @@ context, but must identify their snapshot and defer to this table on conflict.
 Status as of **2026-08-28**, commit `93de5e0`. Each row states the verdict its
 committed evidence supports, with that evidence's own qualifications — a
 hypothesis with no admissible data says so rather than reading as progress.
+
+<!-- claim:development-ledger/readme -->
+**SUPPORTED structural status, not a confirmatory result:** this is the dated
+development-evidence ledger. Its empirical rows retain their own attestation,
+sample, and scope qualifications; the ledger does not combine them into a
+benchmark treatment effect.
 
 ### Phase status (design doc §8)
 
@@ -95,7 +105,8 @@ Full record: [`analysis/reports/phase2_phase3_report.md`](analysis/reports/phase
 | **Phase 2** — the full autoresearch loop | 8 items | **complete** — pass@k curves T1/T2, verifier fidelity, iteration latency, A1/A3/A7, zero unclamped guard violations, post-mortems |
 | **Phase 3** — skills, fleet, cross-embodiment | 6 items | **closed: 5 met, 1 NOT MET** — the skill library reached 3 evalcarded skills against a DoD of ≥5 at close (see the library note below: the two refused skills later cleared the floor) |
 | **Phase 5** — the model tier (next-phases §5) | 5.1/5.1b/5.2/5.3 | **CLOSED 2026-08-27** at measured end-states; every remainder explicitly GPU- or design-gated ([ledger](docs/next-phases.md)) |
-| Phase 6 — hardware | entry criteria + prep | **prepared, not open**: SO-101 driver node (loopback-tested) + VER-8 hardware calibration parity landed (ADR-phase6-prep); entry gates unwaived (M5 met; M1 + judge fidelity gated) |
+<!-- claim:hardware-so101-validation/readme -->
+| Phase 6 — hardware | entry criteria + prep | **HARDWARE PENDING — prepared, not open**: SO-101 driver node (loopback-tested) + VER-8 hardware calibration parity landed (ADR-phase6-prep); entry gates unwaived (M5 met; M1 + judge fidelity gated) |
 
 The one unmet row is stated plainly rather than rounded, and dated: at the
 2026-08-16 close the library held `s1-driver-v2`, `s3-driver-v1`, and
@@ -127,8 +138,10 @@ Orientation for contributors: [`docs/contributor-wiki.md`](docs/contributor-wiki
 | H2 — iteration to ≥90% | claude arm **met** held-out (1.0 pass@1); codex arm 0.875 held-out at N=8 (one `dropped`), with dev-side evidence of a ≥0.9 system — see `analysis/h2/` for the full verdict |
 | H3 — skill accumulation | **UNDECIDED on both suites; no speedup measured.** Retail (S1→S3): `met: null`, every library-arm cell lost to drift. Desk (T1→T4, `analysis/h3/desk/`): `met: null` under strict admissibility, 13 caveats. The interpretable direction, stated with that caveat — on T4, the only tier where both arms produced clean first-success numbers, the ratio is **~1.03** (L 894 s vs W 872 s: parity, not ≤0.5); T2/T3 the library did not rescue what wiped sessions could not do either. **The finding is the ladder's difficulty spacing, not the library**: T1/T4 are easy for both arms (no headroom for a speedup) and T2/T3 are beyond both (no success to speed up), so the transfer curve never got a tier that could show an effect. The sharpest admissible follow-up (T2-only differential, #306): both arms 0.25 holdout, **library arm 35% cheaper** (451k vs 696k tokens) with verified reuse — accumulation bought economy, not ceiling. Skill reuse itself is verified live |
 | H4 — hot-swap vs relaunch iteration | **measured at T0**, phase-randomized (ADR-h4 rev 2): hot-swap median iteration latency 32.4 s vs relaunch 41.8 s (ratio 1.29), n=6 per path, zero infra failures. Extremes overlap; no significance or equivalence claim at n=6. UNATTESTED dev measurement. **Scope note (H6 finding, measured 2/2):** live swap of a turn participant kills an ADR-30 lockstep dataflow — this table holds for pre-barrier free-run graphs only; turn-aware swap is a filed substrate follow-up (`analysis/h4/`) |
-| H5 — zero wrong-object under free iteration | **holding, and the denominator has grown substantially.** 0 wrong-object in 224/224 episodes across the three H2 campaign runs (`analysis/h2/`), and 0 across every subsequent campaign: the desk-H3 ladder, A3's two arms, A4's two agent CLIs, and **all 13 A5 fleet lanes under 8-way concurrent agent-authored iteration** — then every campaign after the 08-16 close: all H6 operation cells (agents repairing live faults), every M1 VLA-driven episode (learned motion under the M5 halt discipline), the T4 inc-2 recovery chains, and every T2 re-measure. Roughly 45 agent sessions have now authored or driven motion freely without one wrong-medicine delivery. Still a denominator, not an absolute — the structural argument is the guard's, and this corroborates it |
-| H6 — agent operates a running system | **SUPPORTED, 3/3 cells** (2026-08-26, pre-registered ADR-h6 + five measured amendments): per fault tier (perception/decision/motion), an operator agent given only live evidence detected the induced degradation (299–447 s), localized the correct node with cited evidence (audited transcripts; one cell exonerated the upstream node by recomputing the planner's output from probed inputs), and restored 1.0 with a validated repair. Zero `wrong_object`, zero guard bypass, no out-of-space action. n=1 per fault class — an existence result, reported as one (`analysis/h6/`) |
+<!-- claim:safety-observed-outcomes/readme -->
+| H5 — zero wrong-object under free iteration | **WEAKENED observational claim:** 0 wrong-object in the retained development denominator, including 224/224 episodes across the three H2 campaign runs (`analysis/h2/`) and subsequent campaign summaries. The repository does not yet expose one session-level, independently audited denominator spanning the historical “roughly 45 sessions” statement, so this is neither a prevention claim nor confirmatory safety evidence |
+<!-- claim:live-fault-feasibility/readme -->
+| H6 — agent operates a running system | **SUPPORTED as a bounded feasibility result, 3/3 cells** (2026-08-26, pre-registered ADR-h6 + five measured amendments): per fault tier (perception/decision/motion), an operator agent given only live evidence detected the induced degradation (299–447 s), localized the correct node with cited evidence, and restored 1.0 with a validated repair. Zero `wrong_object`, zero declared-graph guard bypass, no out-of-space action. n=1 per fault class; this is not a typed-evidence-versus-logs effect estimate (`analysis/h6/`) |
 | Retail suite S1–S3 (mobile, long-horizon) | implemented: store scene, planogram verifier, mobility contract, S1 expert graph |
 | Perception ladder L0/L1/L2 (TC-9) | implemented: L0 oracle poses, L1 segmentation + depth (`segmented-pose`), L2 RGB identity + same-stamp sensor-depth geometry (`l2-pose`); the rung rides the graph and is asserted per run (`--perception`) |
 | Tier curves T1/T2 (Phase-2 DoD) | T1 expert **1.0** per rung. T2: the original expert measured **0.08** (the deliberate perception wall); the fleet-authored far-first read ladder broke through to **0.375** holdout (#299), and the registered stack holds **0.5** on the pre-registered n=8 suite across four re-measures. The residual failure class is traced to three named transit-collision mechanisms — one fixed (#314), one mitigated at the solve (#328, after a measured filter regression 0.5→0.375→0.5), one structural (tray-descent link sweep) (`analysis/t2/`, `analysis/t2_breakthrough/`, `analysis/transit_collisions/`). **0 `wrong_object` across every T2 episode ever run** |
