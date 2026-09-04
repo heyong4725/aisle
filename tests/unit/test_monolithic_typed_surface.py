@@ -9,6 +9,7 @@ from aisle.harness.fault_bank import (
     validate_opaque_assignment,
     validate_participant_surface,
     validate_sealed_location,
+    validate_sham_parity,
 )
 from aisle.harness.monolithic import (
     TypedSurfaceError,
@@ -69,6 +70,14 @@ def test_injector_requires_atomic_content_addressed_request():
                 "postimage_sha256": "c" * 64,
                 "atomic": False,
             }
+        )
+
+
+def test_sham_parity_rejects_different_timing_surface():
+    with pytest.raises(FaultBankError, match="differ"):
+        validate_sham_parity(
+            {"surface": "controller", "timing": "t1", "retention": "sealed"},
+            {"surface": "controller", "timing": "t2", "retention": "sealed"},
         )
 
 
