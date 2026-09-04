@@ -37,6 +37,7 @@ from aisle.harness.monolithic import (
     validate_typed_graph,
     validate_typed_surface,
 )
+from aisle.harness.non_oracle import NonOracleError, validate_task_card
 from aisle.harness.safety_exposure import (
     SafetyExposureError,
     validate_exposure_analysis,
@@ -80,6 +81,18 @@ pytestmark = pytest.mark.unit
 def test_frozen_thresholds_reject_mutable_envelope():
     with pytest.raises(SemanticAuthorizationError, match="frozen"):
         validate_frozen_thresholds({"max_force": 1, "max_duration": 1, "frozen": False})
+
+
+def test_task_card_rejects_physical_label_for_simulation():
+    card = {"task_id": "t", "role": "engineering", "physical_capability": "grasp",
+            "sensor_inputs": ["camera"], "action_outputs": ["gripper"],
+            "embodiment": "sim", "workspace": "bench", "episode_budget": 60,
+            "success_semantics": "done", "failure_semantics": "timeout",
+            "permitted_feedback": [], "installed_capabilities": [],
+            "agent_edit_authority": "workspace", "excluded_privileges": ["oracle_pose"],
+            "evidence_kind": "physical"}
+    with pytest.raises(NonOracleError, match="mislabels"):
+        validate_task_card(card)
 
 
 def test_authorization_state_rejects_revoked_permit():
