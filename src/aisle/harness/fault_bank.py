@@ -145,3 +145,15 @@ def validate_safety_assets(asset: dict[str, Any]) -> None:
         raise FaultBankError("safety allowlist is incomplete")
     if asset["frozen"] is not True or asset["oracle_access"] is not False:
         raise FaultBankError("safety assets are mutable or oracle-bearing")
+
+
+def validate_activation_record(record: dict[str, Any], assignment: dict[str, Any]) -> None:
+    """Require runtime activation to reference the exact frozen assignment."""
+    if set(record) != {"session", "handle", "activated"}:
+        raise FaultBankError("activation record is invalid")
+    if record["session"] != assignment.get("session") or record["handle"] != assignment.get(
+        "handle"
+    ):
+        raise FaultBankError("activation record drifted from assignment")
+    if record["activated"] is not True:
+        raise FaultBankError("activation was not attested")
