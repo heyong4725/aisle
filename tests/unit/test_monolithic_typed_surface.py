@@ -45,6 +45,7 @@ from aisle.harness.safety_exposure import (
     validate_observe_only_mode,
     validate_paired_analysis,
     validate_proposal_accounting,
+    validate_raw_retention,
     validate_source_strata,
     validate_trace_corpus,
     validate_zero_event_bound,
@@ -65,6 +66,11 @@ from aisle.harness.threat_model import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_raw_retention_requires_immutable_hash():
+    with pytest.raises(SafetyExposureError, match="retention"):
+        validate_raw_retention([{"record_id": "r", "sha256": "bad", "retained": True}])
 
 
 def test_trace_corpus_requires_watchdog_classification():
