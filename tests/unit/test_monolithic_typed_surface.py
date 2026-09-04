@@ -7,6 +7,7 @@ from aisle.harness.monolithic import (
     classify_bypass_attempt,
     validate_broker_route,
     validate_campaign_purpose,
+    validate_common_evidence,
     validate_expert_artifacts,
     validate_interface_map,
     validate_matched_treatment,
@@ -102,3 +103,10 @@ def test_campaign_purpose_isolated_from_pooling():
     validate_campaign_purpose({"campaign_purpose": "expert_parity", "pooled": False})
     with pytest.raises(TypedSurfaceError, match="isolated"):
         validate_campaign_purpose({"campaign_purpose": "confirmatory"})
+
+
+def test_common_evidence_requires_same_base_keys():
+    required = {"session_id", "treatment", "timestamps"}
+    validate_common_evidence(dict.fromkeys(required), dict.fromkeys(required), required)
+    with pytest.raises(TypedSurfaceError, match="asymmetric"):
+        validate_common_evidence({"session_id": 1}, {"session_id": 1, "treatment": 2}, required)

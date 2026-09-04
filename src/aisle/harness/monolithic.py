@@ -130,6 +130,14 @@ def validate_campaign_purpose(record: dict[str, Any]) -> None:
         raise TypedSurfaceError("expert-parity record cannot be pooled")
 
 
+def validate_common_evidence(
+    typed: dict[str, Any], monolithic: dict[str, Any], required: set[str]
+) -> None:
+    """Require identical common-evidence envelope keys across both arms."""
+    if set(typed) != required or set(monolithic) != required:
+        raise TypedSurfaceError("common evidence envelope keys are incomplete or asymmetric")
+
+
 def validate_matched_treatment(
     typed: dict[str, Any], monolithic: dict[str, Any], differing: set[str]
 ) -> None:
