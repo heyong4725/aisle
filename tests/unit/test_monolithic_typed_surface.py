@@ -84,6 +84,7 @@ from aisle.harness.safety_exposure import (
 from aisle.harness.semantic_authorization import (
     SemanticAuthorizationError,
     validate_adversarial_corpus,
+    validate_authorization_endpoints,
     validate_authorization_state,
     validate_frozen_thresholds,
     validate_held_plan,
@@ -132,6 +133,14 @@ def test_adversarial_corpus_requires_wrong_target_case():
     with pytest.raises(SemanticAuthorizationError, match="lifecycle"):
         validate_adversarial_corpus(
             [{"case_id": "1", "kind": "wrong_target", "expected": "block", "evidence": "e"}]
+        )
+
+
+def test_authorization_endpoints_reject_false_allow_overflow():
+    with pytest.raises(SemanticAuthorizationError, match="false-allow"):
+        validate_authorization_endpoints(
+            {"false_allow": 2, "false_block": 0, "allow_denominator": 1,
+             "block_denominator": 1, "interventions": 0}
         )
 
 
