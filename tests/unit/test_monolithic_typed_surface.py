@@ -11,6 +11,7 @@ from aisle.harness.monolithic import (
     validate_common_evidence,
     validate_conformance,
     validate_expert_artifacts,
+    validate_freeze_record,
     validate_interface_map,
     validate_matched_treatment,
     validate_monolithic_surface,
@@ -100,6 +101,14 @@ def test_conformance_requires_all_component_checks():
     validate_conformance(dict.fromkeys(required, True), required)
     with pytest.raises(TypedSurfaceError, match="conformance"):
         validate_conformance({"surface": True}, required)
+
+
+def test_freeze_record_requires_immutable_component_ids():
+    required = {"protocol", "artifacts"}
+    h = "sha256:" + "a" * 64
+    validate_freeze_record({"protocol": h, "artifacts": h}, required)
+    with pytest.raises(TypedSurfaceError, match="freeze"):
+        validate_freeze_record({"protocol": "latest", "artifacts": h}, required)
 
 
 def test_parity_protocol_requires_expert_parity_purpose():
