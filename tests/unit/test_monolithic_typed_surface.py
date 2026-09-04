@@ -4,6 +4,7 @@ import pytest
 
 from aisle.harness.monolithic import (
     TypedSurfaceError,
+    validate_interface_map,
     validate_monolithic_surface,
     validate_typed_graph,
     validate_typed_surface,
@@ -33,3 +34,10 @@ def test_typed_graph_uses_pinned_validator_without_repair(tmp_path: Path):
 def test_monolithic_surface_rejects_typed_facilities():
     with pytest.raises(TypedSurfaceError, match="forbidden"):
         validate_monolithic_surface(["control.py", "capability_registry.py"])
+
+
+def test_interface_map_rejects_semantic_mismatch():
+    with pytest.raises(TypedSurfaceError, match="mismatch"):
+        validate_interface_map(
+            [{"name": "action", "typed": "cmd", "monolithic": "other", "authority": "task"}]
+        )

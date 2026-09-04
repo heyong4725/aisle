@@ -19,6 +19,25 @@ class TypedSurfaceError(ValueError):
     """A typed deliverable escapes its frozen editable surface."""
 
 
+def validate_interface_map(fields: list[dict[str, Any]]) -> None:
+    """Require exact semantic field/authority parity across both arms."""
+    if not fields:
+        raise TypedSurfaceError("interface map is empty")
+    seen: set[str] = set()
+    for field in fields:
+        required = {"name", "typed", "monolithic", "authority"}
+        if set(field) != required:
+            raise TypedSurfaceError("interface field declaration is incomplete")
+        name = field["name"]
+        if not isinstance(name, str) or not name or name in seen:
+            raise TypedSurfaceError("interface field names must be unique")
+        seen.add(name)
+        if field["typed"] != field["monolithic"]:
+            raise TypedSurfaceError(f"semantic field mismatch: {name}")
+        if field["authority"] not in {"task", "transport"}:
+            raise TypedSurfaceError(f"invalid authority class: {name}")
+
+
 _MONOLITHIC_FORBIDDEN = ("manifest", "registry", "resolver", "validator", "diagnostic", ".yaml")
 
 
