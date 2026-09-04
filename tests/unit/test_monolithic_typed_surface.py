@@ -2,6 +2,14 @@ from pathlib import Path
 
 import pytest
 
+from aisle.harness.causal_study import (
+    CausalStudyError,
+    validate_claim_disposition,
+    validate_exclusion_register,
+    validate_session_effect,
+    validate_session_record,
+    validate_session_table,
+)
 from aisle.harness.fault_bank import (
     FaultBankError,
     validate_activation_record,
@@ -97,6 +105,40 @@ pytestmark = pytest.mark.unit
 def test_frozen_thresholds_reject_mutable_envelope():
     with pytest.raises(SemanticAuthorizationError, match="frozen"):
         validate_frozen_thresholds({"max_force": 1, "max_duration": 1, "frozen": False})
+
+
+def test_session_record_rejects_unclassified_exclusion():
+    record = {"session_id": "s", "arm": "typed", "randomized": True, "success": False,
+              "exclusion": 3, "outcome_kind": "session_success", "protocol_hash": "p",
+              "agent_hash": "a", "raw_evidence": "raw"}
+    with pytest.raises(CausalStudyError, match="classified"):
+        validate_session_record(record)
+
+
+def test_session_table_rejects_duplicate_units():
+    with pytest.raises(CausalStudyError, match="duplicated"):
+        validate_session_table(
+            [{"session_id": "s", "arm": "typed"}, {"session_id": "s", "arm": "monolithic"}]
+        )
+
+
+def test_session_effect_rejects_missing_arm_count():
+    with pytest.raises(CausalStudyError, match="incomplete"):
+        validate_session_effect({"typed_n": 1})
+
+
+def test_exclusion_register_rejects_unretained_invalidations():
+    item = {"session_id": "s", "reason": "timeout", "pre_registered": True,
+            "retained": False, "sensitivity_bound": 0.1}
+    with pytest.raises(CausalStudyError, match="retained"):
+        validate_exclusion_register([item])
+
+
+def test_claim_disposition_allows_null_result():
+    validate_claim_disposition(
+        {"status": "null", "estimand": "success", "effect": 0,
+         "interval": [-0.1, 0.1], "evidence_hash": "digest"}
+    )
 
 
 def test_task_card_rejects_physical_label_for_simulation():
