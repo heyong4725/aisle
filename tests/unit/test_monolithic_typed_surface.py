@@ -84,6 +84,7 @@ from aisle.harness.safety_exposure import (
 from aisle.harness.semantic_authorization import (
     SemanticAuthorizationError,
     validate_adversarial_corpus,
+    validate_authorization_analysis,
     validate_authorization_endpoints,
     validate_authorization_state,
     validate_frozen_thresholds,
@@ -150,6 +151,11 @@ def test_metric_layers_reject_overlap():
         validate_metric_layers(
             {"policy": ["success"], "intervention": ["success"], "verifier": ["stage"]}
         )
+
+
+def test_authorization_analysis_rejects_missing_derivation():
+    with pytest.raises(SemanticAuthorizationError, match="exhaustive"):
+        validate_authorization_analysis(["raw-1"], {})
 
 
 def test_session_record_rejects_unclassified_exclusion():
