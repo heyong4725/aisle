@@ -88,6 +88,17 @@ def classify_bypass_attempt(attempt: str) -> str:
     raise TypedSurfaceError("unclassified bypass attempt")
 
 
+def validate_matched_treatment(
+    typed: dict[str, Any], monolithic: dict[str, Any], differing: set[str]
+) -> None:
+    """Require shared treatment identity; only declared fields may differ."""
+    if set(typed) != set(monolithic):
+        raise TypedSurfaceError("treatment identity fields differ")
+    for key in typed:
+        if key not in differing and typed[key] != monolithic[key]:
+            raise TypedSurfaceError(f"undeclared treatment difference: {key}")
+
+
 def validate_typed_graph(graph_path, root, embodiment: str, allow_unproven: bool = False) -> dict:
     """Run the pinned graph validator; authored deliverables are never repaired."""
     from aisle.harness.validate import validate

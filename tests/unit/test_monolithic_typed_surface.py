@@ -7,6 +7,7 @@ from aisle.harness.monolithic import (
     classify_bypass_attempt,
     validate_broker_route,
     validate_interface_map,
+    validate_matched_treatment,
     validate_monolithic_surface,
     validate_trusted_preflight,
     validate_typed_graph,
@@ -62,3 +63,10 @@ def test_bypass_attempts_classify_and_unknown_fails_closed():
     assert classify_bypass_attempt("read hidden seed") == "hidden_seed_access"
     with pytest.raises(TypedSurfaceError, match="unclassified"):
         classify_bypass_attempt("invent a new bypass")
+
+
+def test_matched_treatment_rejects_undeclared_difference():
+    with pytest.raises(TypedSurfaceError, match="undeclared"):
+        validate_matched_treatment(
+            {"budget": 1, "arm": "typed"}, {"budget": 2, "arm": "mono"}, {"arm"}
+        )
