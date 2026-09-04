@@ -127,3 +127,12 @@ def validate_paired_efficacy(records: list[dict[str, Any]]) -> None:
         grouped.setdefault(record["cell"], set()).add(record["condition"])
     if any(conditions != {"clean", "degraded"} for conditions in grouped.values()):
         raise FaultBankError("paired clean/degraded efficacy evidence is incomplete")
+
+
+def validate_calibration_records(campaign_purpose: str, records: list[dict[str, Any]]) -> None:
+    """Keep calibration explicitly excluded and retain every attempted run."""
+    if campaign_purpose != "excluded_pilot" or not records:
+        raise FaultBankError("calibration must be an excluded pilot with retained records")
+    for record in records:
+        if set(record) != {"attempt", "outcome"} or not isinstance(record["attempt"], str):
+            raise FaultBankError("calibration record is incomplete")

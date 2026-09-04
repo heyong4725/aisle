@@ -4,6 +4,7 @@ import pytest
 
 from aisle.harness.fault_bank import (
     FaultBankError,
+    validate_calibration_records,
     validate_fault_manifest,
     validate_injection_request,
     validate_opaque_assignment,
@@ -85,6 +86,11 @@ def test_sham_parity_rejects_different_timing_surface():
 def test_paired_efficacy_requires_clean_and_degraded_records():
     with pytest.raises(FaultBankError, match="paired"):
         validate_paired_efficacy([{"cell": "c1", "condition": "clean", "outcome": "ok"}])
+
+
+def test_calibration_requires_excluded_pilot_purpose():
+    with pytest.raises(FaultBankError, match="excluded"):
+        validate_calibration_records("scoring", [{"attempt": "a", "outcome": "ok"}])
 
 
 def test_typed_surface_rejects_unallowlisted_files(tmp_path: Path):
