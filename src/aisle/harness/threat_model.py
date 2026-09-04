@@ -85,3 +85,17 @@ def validate_matched_profiles(left: dict[str, Any], right: dict[str, Any]) -> No
         raise ThreatModelError("matched parity profile is incomplete")
     if left != right:
         raise ThreatModelError("matched parity profiles differ")
+
+
+def validate_bypass_report(entries: list[dict[str, Any]]) -> None:
+    """Require exhaustive accounting of bypass attempts and dispositions."""
+    if not entries:
+        raise ThreatModelError("bypass report is empty")
+    for entry in entries:
+        if set(entry) != {"attempt", "disposition", "evidence"}:
+            raise ThreatModelError("bypass report entry is incomplete")
+        if (
+            entry["disposition"] not in {"blocked", "allowed", "inconclusive"}
+            or not entry["evidence"]
+        ):
+            raise ThreatModelError("bypass report accounting is incomplete")
