@@ -36,3 +36,11 @@ def validate_proposal_accounting(records: list[dict[str, Any]]) -> None:
             raise SafetyExposureError("proposal decision is invalid")
         if not isinstance(record["correlation"], bool):
             raise SafetyExposureError("proposal correlation flag is invalid")
+
+
+def validate_exposure_analysis(raw_ids: list[str], derived_ids: list[str]) -> None:
+    """Require analyzer output to account for every raw exposure identifier."""
+    if not raw_ids or len(set(raw_ids)) != len(raw_ids):
+        raise SafetyExposureError("raw exposure identifiers are incomplete")
+    if set(raw_ids) != set(derived_ids) or len(derived_ids) != len(set(derived_ids)):
+        raise SafetyExposureError("exposure analysis is not exhaustive")
