@@ -44,6 +44,7 @@ from aisle.harness.non_oracle import (
     validate_perception_audit,
     validate_perception_eligibility,
     validate_perception_envelope,
+    validate_pilot_sessions,
     validate_task_card,
 )
 from aisle.harness.safety_exposure import (
@@ -131,6 +132,16 @@ def test_expert_parity_rejects_asymmetric_surface():
     other = dict(surface, budget="different")
     with pytest.raises(NonOracleError, match="asymmetric"):
         validate_expert_parity(surface, other, {"success_delta": 0.1, "completion_time_delta": 1})
+
+
+def test_pilot_sessions_reject_saturated_interface():
+    sessions = [
+        {"interface": interface, "success": index < 13}
+        for interface in ("typed", "monolithic")
+        for index in range(16)
+    ]
+    with pytest.raises(NonOracleError, match="saturated"):
+        validate_pilot_sessions(sessions)
 
 
 def test_authorization_state_rejects_revoked_permit():

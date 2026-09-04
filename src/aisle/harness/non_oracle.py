@@ -65,6 +65,26 @@ def validate_expert_parity(
             raise NonOracleError("expert parity margin is invalid")
 
 
+def validate_pilot_sessions(sessions: list[dict[str, Any]]) -> None:
+    """Require complete, session-unit pilot strata within the pre-registered band."""
+    if not sessions:
+        raise NonOracleError("pilot sessions are missing")
+    interfaces = {item.get("interface") for item in sessions}
+    if interfaces != {"typed", "monolithic"}:
+        raise NonOracleError("pilot interfaces are incomplete")
+    for interface in interfaces:
+        subset = [item for item in sessions if item.get("interface") == interface]
+        if len(subset) < 16:
+            raise NonOracleError("pilot has fewer than 16 randomized sessions")
+        successes = sum(item.get("success") is True for item in subset)
+        failures = sum(item.get("success") is False for item in subset)
+        if successes < 3 or failures < 3:
+            raise NonOracleError("pilot success/failure floor is unmet")
+        rate = successes / len(subset)
+        if not 0.20 <= rate <= 0.80:
+            raise NonOracleError("pilot success rate is saturated")
+
+
 def validate_oracle_boundary(policy_inputs: list[str], verifier_only: list[str]) -> None:
     """Reject privileged simulator state appearing on the policy path."""
     forbidden = {
