@@ -43,6 +43,7 @@ from aisle.harness.threat_model import (
     validate_authority_audit,
     validate_bypass_report,
     validate_conformance_evidence,
+    validate_evidence_boundary,
     validate_gateway_contract,
     validate_matched_profiles,
     validate_residual_paths,
@@ -57,6 +58,11 @@ pytestmark = pytest.mark.unit
 def test_residual_paths_require_disposition():
     with pytest.raises(ThreatModelError, match="disposition"):
         validate_residual_paths([{"path": "alternate", "disposition": "unknown", "rationale": "x"}])
+
+
+def test_evidence_boundary_rejects_physical_without_hardware():
+    with pytest.raises(ThreatModelError, match="hardware"):
+        validate_evidence_boundary("physical", False)
 
 
 def test_matched_profiles_reject_different_seed_sets():

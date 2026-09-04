@@ -143,3 +143,11 @@ def validate_residual_paths(paths: list[dict[str, Any]]) -> None:
             raise ThreatModelError("residual path record is incomplete")
         if path["disposition"] not in {"covered", "deviation"}:
             raise ThreatModelError("residual path disposition is invalid")
+
+
+def validate_evidence_boundary(evidence_kind: str, hardware_available: bool) -> None:
+    """Reject physical evidence labels when hardware is unavailable."""
+    if evidence_kind not in {"unit", "synthetic", "simulation", "physical"}:
+        raise ThreatModelError("evidence kind is invalid")
+    if evidence_kind == "physical" and hardware_available is not True:
+        raise ThreatModelError("physical evidence requires available hardware")
