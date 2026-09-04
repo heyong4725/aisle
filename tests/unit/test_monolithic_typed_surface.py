@@ -69,6 +69,7 @@ from aisle.harness.non_oracle import (
 from aisle.harness.reproduction import (
     ReproductionError,
     redact_double_blind,
+    validate_layered_comparison,
     validate_release_manifest,
 )
 from aisle.harness.safety_exposure import (
@@ -135,6 +136,11 @@ def test_double_blind_redaction_removes_heldout_truth():
     view = redact_double_blind({"artifact": "x", "seed": 1, "truth": "pose", "outcome": True})
     assert "seed" not in view and "truth" not in view and "outcome" not in view
     assert len(view["redaction_hash"]) == 64
+
+
+def test_layered_comparison_requires_all_con5_layers():
+    with pytest.raises(ReproductionError, match="incomplete"):
+        validate_layered_comparison({"artifact": {"result": "same", "evidence": "e"}})
 
 
 def test_independent_containment_rejects_oracle_policy_field():

@@ -16,6 +16,15 @@ def redact_double_blind(manifest: dict[str, Any]) -> dict[str, Any]:
     return view
 
 
+def validate_layered_comparison(layers: dict[str, dict[str, Any]]) -> None:
+    """Require independent CON-5 comparison layers with evidence for each."""
+    required = {"artifact", "cadence", "physics", "statistics"}
+    if set(layers) != required or any(not isinstance(layers[key], dict) for key in required):
+        raise ReproductionError("layered comparison is incomplete")
+    if any(not layer.get("evidence") or "result" not in layer for layer in layers.values()):
+        raise ReproductionError("layered comparison evidence is missing")
+
+
 def validate_release_manifest(manifest: dict[str, Any]) -> None:
     """Require machine-readable release metadata and immutable artifact hashes."""
     required = {"version", "artifacts", "licenses", "model_access", "compute", "commands"}
