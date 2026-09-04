@@ -44,3 +44,20 @@ def validate_exposure_analysis(raw_ids: list[str], derived_ids: list[str]) -> No
         raise SafetyExposureError("raw exposure identifiers are incomplete")
     if set(raw_ids) != set(derived_ids) or len(derived_ids) != len(set(derived_ids)):
         raise SafetyExposureError("exposure analysis is not exhaustive")
+
+
+def validate_source_strata(records: list[dict[str, Any]]) -> None:
+    """Require each exposure source stratum to include provenance and rate."""
+    if not records:
+        raise SafetyExposureError("source strata are empty")
+    for record in records:
+        if set(record) != {"source", "provenance", "rate", "unknown"}:
+            raise SafetyExposureError("source stratum is incomplete")
+        if not all(
+            isinstance(record[key], str) and record[key] for key in ("source", "provenance")
+        ):
+            raise SafetyExposureError("source provenance is incomplete")
+        if not isinstance(record["rate"], (int, float)) or record["rate"] < 0:
+            raise SafetyExposureError("source rate is invalid")
+        if not isinstance(record["unknown"], bool):
+            raise SafetyExposureError("unknown-source flag is invalid")
