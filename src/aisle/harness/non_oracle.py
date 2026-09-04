@@ -206,3 +206,16 @@ def validate_release_task_card(card: dict[str, Any]) -> None:
         raise NonOracleError("release task card omits scope or evidence")
     if not isinstance(card["regenerate_command"], str) or not card["regenerate_command"].strip():
         raise NonOracleError("regeneration command is missing")
+
+
+def validate_non_oracle_audit(report: dict[str, Any]) -> None:
+    """Require reproducible audit outputs and fail closed on integrity defects."""
+    required = {"ok", "raw_records", "reports", "input_hash", "byte_reproducible", "errors"}
+    if set(report) != required or report["ok"] is not True:
+        raise NonOracleError("non-oracle audit is not successful")
+    if not isinstance(report["raw_records"], list) or not report["raw_records"]:
+        raise NonOracleError("audit raw records are missing")
+    if not isinstance(report["reports"], list) or not report["reports"] or not report["input_hash"]:
+        raise NonOracleError("audit outputs are incomplete")
+    if report["byte_reproducible"] is not True or report["errors"]:
+        raise NonOracleError("audit is not byte-reproducible")

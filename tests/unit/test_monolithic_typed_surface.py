@@ -44,6 +44,7 @@ from aisle.harness.non_oracle import (
     validate_freeze_manifest,
     validate_heldout_split,
     validate_leakage_audit,
+    validate_non_oracle_audit,
     validate_oracle_boundary,
     validate_perception_audit,
     validate_perception_eligibility,
@@ -113,6 +114,11 @@ def test_task_card_rejects_physical_label_for_simulation():
 def test_release_task_card_requires_regeneration_command():
     with pytest.raises(NonOracleError, match="incomplete"):
         validate_release_task_card({"hardware_status": "simulation"})
+
+
+def test_non_oracle_audit_rejects_nonreproducible_report():
+    with pytest.raises(NonOracleError, match="successful"):
+        validate_non_oracle_audit({"ok": False})
 
 
 def test_oracle_boundary_rejects_privileged_policy_input():
