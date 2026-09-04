@@ -37,6 +37,23 @@ from aisle.harness.monolithic import (
     validate_typed_graph,
     validate_typed_surface,
 )
+from aisle.harness.non_oracle import (
+    NonOracleError,
+    select_pilot_candidate,
+    validate_expert_parity,
+    validate_freeze_manifest,
+    validate_heldout_split,
+    validate_leakage_audit,
+    validate_non_oracle_audit,
+    validate_oracle_boundary,
+    validate_perception_audit,
+    validate_perception_eligibility,
+    validate_perception_envelope,
+    validate_pilot_evidence,
+    validate_pilot_sessions,
+    validate_release_task_card,
+    validate_task_card,
+)
 from aisle.harness.safety_exposure import (
     SafetyExposureError,
     validate_exposure_analysis,
@@ -80,6 +97,99 @@ pytestmark = pytest.mark.unit
 def test_frozen_thresholds_reject_mutable_envelope():
     with pytest.raises(SemanticAuthorizationError, match="frozen"):
         validate_frozen_thresholds({"max_force": 1, "max_duration": 1, "frozen": False})
+
+
+def test_task_card_rejects_physical_label_for_simulation():
+    card = {"task_id": "t", "role": "engineering", "physical_capability": "grasp",
+            "sensor_inputs": ["camera"], "action_outputs": ["gripper"],
+            "embodiment": "sim", "workspace": "bench", "episode_budget": 60,
+            "success_semantics": "done", "failure_semantics": "timeout",
+            "permitted_feedback": [], "installed_capabilities": [],
+            "agent_edit_authority": "workspace", "excluded_privileges": ["oracle_pose"],
+            "evidence_kind": "physical"}
+    with pytest.raises(NonOracleError, match="mislabels"):
+        validate_task_card(card)
+
+
+def test_release_task_card_requires_regeneration_command():
+    with pytest.raises(NonOracleError, match="incomplete"):
+        validate_release_task_card({"hardware_status": "simulation"})
+
+
+def test_non_oracle_audit_rejects_nonreproducible_report():
+    with pytest.raises(NonOracleError, match="successful"):
+        validate_non_oracle_audit({"ok": False})
+
+
+def test_oracle_boundary_rejects_privileged_policy_input():
+    with pytest.raises(NonOracleError, match="crosses"):
+        validate_oracle_boundary(["camera", "simulator_pose"], ["scene_truth"])
+
+
+def test_perception_audit_rejects_exposed_truth():
+    with pytest.raises(NonOracleError, match="truth"):
+        validate_perception_audit({"truth_hidden": False})
+
+
+def test_perception_envelope_rejects_unfrozen_thresholds():
+    with pytest.raises(NonOracleError, match="not frozen"):
+        validate_perception_envelope({"frozen": False})
+
+
+def test_perception_eligibility_rejects_failed_stratum():
+    item = {"name": "occluded", "accuracy": 0.9, "max_error": 1,
+            "latency_ms": 10, "refusal_rate": 0.1, "eligible": False}
+    with pytest.raises(NonOracleError, match="stratum"):
+        validate_perception_eligibility([item])
+
+
+def test_expert_parity_rejects_asymmetric_surface():
+    surface = {key: key for key in
+               ("sensors", "feedback", "actuation", "verifier", "reset", "budget", "authority")}
+    other = dict(surface, budget="different")
+    with pytest.raises(NonOracleError, match="asymmetric"):
+        validate_expert_parity(surface, other, {"success_delta": 0.1, "completion_time_delta": 1})
+
+
+def test_pilot_sessions_reject_saturated_interface():
+    sessions = [
+        {"interface": interface, "success": index < 13}
+        for interface in ("typed", "monolithic")
+        for index in range(16)
+    ]
+    with pytest.raises(NonOracleError, match="saturated"):
+        validate_pilot_sessions(sessions)
+
+
+def test_pilot_selector_is_deterministic_and_contrast_blind():
+    candidates = [
+        {"opaque_id": "b", "pooled_success_rate": 0.4, "invalid_rate": 0.1, "content_hash": "b"},
+        {"opaque_id": "a", "pooled_success_rate": 0.6, "invalid_rate": 0.1, "content_hash": "a"},
+    ]
+    assert select_pilot_candidate(candidates)["opaque_id"] == "a"
+
+
+def test_pilot_evidence_rejects_confirmatory_reuse():
+    with pytest.raises(NonOracleError, match="provenance"):
+        validate_pilot_evidence({"evidence_kind": "confirmatory", "confirmatory": True})
+
+
+def test_freeze_manifest_rejects_unfrozen_protocol():
+    with pytest.raises(NonOracleError, match="not frozen"):
+        validate_freeze_manifest({"frozen": False})
+
+
+def test_heldout_split_rejects_short_bank():
+    split = {key: [key] for key in ("development", "calibration", "evaluation", "pilot")}
+    split["heldout"] = list(range(31))
+    split["salted_commitment"] = "digest"
+    with pytest.raises(NonOracleError, match="too few"):
+        validate_heldout_split(split)
+
+
+def test_leakage_audit_rejects_early_seed_disclosure():
+    with pytest.raises(NonOracleError, match="incomplete"):
+        validate_leakage_audit({"heldout_disclosed": True})
 
 
 def test_authorization_state_rejects_revoked_permit():
