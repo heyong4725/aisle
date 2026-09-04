@@ -67,6 +67,14 @@ def validate_submission_bundle(bundle: dict[str, Any]) -> None:
         raise ReproductionError("submission treatment is invalid")
     if not isinstance(bundle["sessions"], list) or not bundle["sessions"]:
         raise ReproductionError("submission sessions are missing")
+    for session in bundle["sessions"]:
+        if (
+            not isinstance(session, dict)
+            or not session.get("session_id")
+            or not session.get("provenance")
+            or session.get("treatment") != bundle["treatment"]
+        ):
+            raise ReproductionError("submission session provenance or treatment is incomplete")
     if not isinstance(bundle["resources"], dict) or not all(
         bundle["resources"].get(key) is not None for key in ("tokens", "wall_seconds", "tool_calls")
     ):
