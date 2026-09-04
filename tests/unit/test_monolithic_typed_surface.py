@@ -6,6 +6,7 @@ from aisle.harness.fault_bank import (
     FaultBankError,
     validate_fault_manifest,
     validate_opaque_assignment,
+    validate_sealed_location,
 )
 from aisle.harness.monolithic import (
     TypedSurfaceError,
@@ -44,6 +45,11 @@ def test_fault_manifest_requires_diverse_sealed_cells():
 def test_opaque_assignment_rejects_fault_metadata():
     with pytest.raises(FaultBankError, match="opaque"):
         validate_opaque_assignment({"session": "s", "seed": "1", "handle": "fault-camera"})
+
+
+def test_sealed_location_rejects_worktree_path(tmp_path: Path):
+    with pytest.raises(FaultBankError, match="worktree"):
+        validate_sealed_location(tmp_path / "bank.json", tmp_path)
 
 
 def test_typed_surface_rejects_unallowlisted_files(tmp_path: Path):
