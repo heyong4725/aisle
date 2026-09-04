@@ -10,8 +10,16 @@ class NonOracleError(ValueError):
 def validate_perception_audit(record: dict[str, Any]) -> None:
     """Require independent, stratified perception evidence with raw provenance."""
     required = {
-        "unit_id", "target_class", "stratum", "prediction", "truth_hidden",
-        "confidence", "latency_ms", "record_hash", "model_hash", "split",
+        "unit_id",
+        "target_class",
+        "stratum",
+        "prediction",
+        "truth_hidden",
+        "confidence",
+        "latency_ms",
+        "record_hash",
+        "model_hash",
+        "split",
     }
     if not required.issubset(record) or record.get("truth_hidden") is not True:
         raise NonOracleError("perception audit is incomplete or truth is exposed")
@@ -26,7 +34,12 @@ def validate_perception_audit(record: dict[str, Any]) -> None:
 def validate_perception_envelope(envelope: dict[str, Any]) -> None:
     """Require calibration-frozen thresholds and explicit refusal behavior."""
     required = {
-        "vocabulary", "max_position_error", "min_confidence", "max_latency_ms", "refusal", "frozen"
+        "vocabulary",
+        "max_position_error",
+        "min_confidence",
+        "max_latency_ms",
+        "refusal",
+        "frozen",
     }
     if set(envelope) != required or envelope.get("frozen") is not True:
         raise NonOracleError("perception envelope is not frozen")
@@ -107,9 +120,21 @@ def select_pilot_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any]:
 def validate_pilot_evidence(record: dict[str, Any]) -> None:
     """Require provenance and keep unscored pilot records out of confirmatory data."""
     required = {
-        "evidence_kind", "campaign_id", "session_id", "agent_hash", "model_hash",
-        "config_hash", "candidate_id", "interface", "task_id", "seed",
-        "budget_ledger", "exclusions", "verifier_raw", "trace_raw", "selection_hash",
+        "evidence_kind",
+        "campaign_id",
+        "session_id",
+        "agent_hash",
+        "model_hash",
+        "config_hash",
+        "candidate_id",
+        "interface",
+        "task_id",
+        "seed",
+        "budget_ledger",
+        "exclusions",
+        "verifier_raw",
+        "trace_raw",
+        "selection_hash",
     }
     if not required.issubset(record) or record.get("evidence_kind") != "unscored_pilot":
         raise NonOracleError("pilot evidence kind or provenance is invalid")
@@ -120,9 +145,19 @@ def validate_pilot_evidence(record: dict[str, Any]) -> None:
 def validate_freeze_manifest(manifest: dict[str, Any]) -> None:
     """Require immutable artifact hashes and commands before confirmatory scoring."""
     required = {
-        "task_hash", "expert_typed_hash", "expert_monolithic_hash", "perception_hash",
-        "registry_hash", "environment_hash", "prompt_hash", "analysis_hash", "seed",
-        "commands", "protocol_review_hash", "pilot_selection_hash", "frozen",
+        "task_hash",
+        "expert_typed_hash",
+        "expert_monolithic_hash",
+        "perception_hash",
+        "registry_hash",
+        "environment_hash",
+        "prompt_hash",
+        "analysis_hash",
+        "seed",
+        "commands",
+        "protocol_review_hash",
+        "pilot_selection_hash",
+        "frozen",
     }
     if set(manifest) != required or manifest.get("frozen") is not True:
         raise NonOracleError("freeze manifest is incomplete or not frozen")
@@ -152,8 +187,17 @@ def validate_heldout_split(split: dict[str, Any]) -> None:
 def validate_leakage_audit(audit: dict[str, Any]) -> None:
     """Require explicit access boundaries and a clean pre-disclosure result."""
     required = {
-        "filesystem", "prompt", "tool", "network", "process", "environment",
-        "cache", "ipc", "heldout_disclosed", "truth_disclosed", "outcome_disclosed",
+        "filesystem",
+        "prompt",
+        "tool",
+        "network",
+        "process",
+        "environment",
+        "cache",
+        "ipc",
+        "heldout_disclosed",
+        "truth_disclosed",
+        "outcome_disclosed",
     }
     if set(audit) != required:
         raise NonOracleError("leakage audit is incomplete")
@@ -167,7 +211,11 @@ def validate_leakage_audit(audit: dict[str, Any]) -> None:
 def validate_oracle_boundary(policy_inputs: list[str], verifier_only: list[str]) -> None:
     """Reject privileged simulator state appearing on the policy path."""
     forbidden = {
-        "simulator_pose", "segmentation_mask", "object_id", "attachment_state", "scene_truth"
+        "simulator_pose",
+        "segmentation_mask",
+        "object_id",
+        "attachment_state",
+        "scene_truth",
     }
     leaked = forbidden.intersection(policy_inputs)
     if leaked or not verifier_only:
@@ -177,10 +225,21 @@ def validate_oracle_boundary(policy_inputs: list[str], verifier_only: list[str])
 def validate_task_card(card: dict[str, Any]) -> None:
     """Require an explicit, bounded task capability and privilege boundary."""
     required = {
-        "task_id", "role", "physical_capability", "sensor_inputs", "action_outputs",
-        "embodiment", "workspace", "episode_budget", "success_semantics",
-        "failure_semantics", "permitted_feedback", "installed_capabilities",
-        "agent_edit_authority", "excluded_privileges", "evidence_kind",
+        "task_id",
+        "role",
+        "physical_capability",
+        "sensor_inputs",
+        "action_outputs",
+        "embodiment",
+        "workspace",
+        "episode_budget",
+        "success_semantics",
+        "failure_semantics",
+        "permitted_feedback",
+        "installed_capabilities",
+        "agent_edit_authority",
+        "excluded_privileges",
+        "evidence_kind",
     }
     if not required.issubset(card) or card.get("evidence_kind") == "physical":
         raise NonOracleError("task card is incomplete or mislabels simulation evidence")
@@ -195,8 +254,15 @@ def validate_task_card(card: dict[str, Any]) -> None:
 def validate_release_task_card(card: dict[str, Any]) -> None:
     """Require release-facing scope, evidence, licensing, and regeneration fields."""
     required = {
-        "portability_limits", "known_failure_modes", "expert_parity", "pilot_evidence",
-        "heldout_commitment", "hardware_status", "license", "raw_evidence", "regenerate_command",
+        "portability_limits",
+        "known_failure_modes",
+        "expert_parity",
+        "pilot_evidence",
+        "heldout_commitment",
+        "hardware_status",
+        "license",
+        "raw_evidence",
+        "regenerate_command",
     }
     if not required.issubset(card):
         raise NonOracleError("release task card is incomplete")

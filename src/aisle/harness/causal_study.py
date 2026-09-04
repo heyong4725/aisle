@@ -10,8 +10,15 @@ class CausalStudyError(ValueError):
 def validate_session_record(record: dict[str, Any]) -> None:
     """Require one retained randomized session and an analyzer classification."""
     required = {
-        "session_id", "arm", "randomized", "success", "exclusion", "outcome_kind",
-        "protocol_hash", "agent_hash", "raw_evidence",
+        "session_id",
+        "arm",
+        "randomized",
+        "success",
+        "exclusion",
+        "outcome_kind",
+        "protocol_hash",
+        "agent_hash",
+        "raw_evidence",
     }
     if set(record) != required:
         raise CausalStudyError("session record is incomplete")
@@ -45,16 +52,22 @@ def validate_session_table(records: list[dict[str, Any]]) -> None:
 def validate_session_effect(effect: dict[str, Any]) -> None:
     """Require session-unit arm counts and a finite uncertainty interval."""
     required = {
-        "typed_n", "monolithic_n", "typed_success", "monolithic_success",
-        "risk_difference", "ci_low", "ci_high",
+        "typed_n",
+        "monolithic_n",
+        "typed_success",
+        "monolithic_success",
+        "risk_difference",
+        "ci_low",
+        "ci_high",
     }
     if set(effect) != required:
         raise CausalStudyError("session effect is incomplete")
     if effect["typed_n"] <= 0 or effect["monolithic_n"] <= 0:
         raise CausalStudyError("session arm count is invalid")
-    if not 0 <= effect["typed_success"] <= effect["typed_n"] or not 0 <= effect[
-        "monolithic_success"
-    ] <= effect["monolithic_n"]:
+    if (
+        not 0 <= effect["typed_success"] <= effect["typed_n"]
+        or not 0 <= effect["monolithic_success"] <= effect["monolithic_n"]
+    ):
         raise CausalStudyError("session success count is invalid")
     if effect["ci_low"] > effect["ci_high"] or not all(
         isinstance(effect[key], (int, float)) for key in ("risk_difference", "ci_low", "ci_high")
@@ -91,7 +104,13 @@ def validate_claim_disposition(disposition: dict[str, Any]) -> None:
 def validate_fault_evidence_record(record: dict[str, Any]) -> None:
     """Require matched typed-evidence/logs-only surfaces and hidden-fault provenance."""
     required = {
-        "session_id", "arm", "fault_id", "fault_hidden", "diagnosis", "repair", "raw_evidence"
+        "session_id",
+        "arm",
+        "fault_id",
+        "fault_hidden",
+        "diagnosis",
+        "repair",
+        "raw_evidence",
     }
     if set(record) != required:
         raise CausalStudyError("fault evidence record is incomplete")
@@ -124,8 +143,7 @@ def validate_sham_rates(rows: list[dict[str, Any]]) -> None:
     if any(set(row) != required for row in rows):
         raise CausalStudyError("sham rate row is incomplete")
     if any(
-        row["denominator"] <= 0
-        or not 0 <= row["false_alarms"] <= row["denominator"]
+        row["denominator"] <= 0 or not 0 <= row["false_alarms"] <= row["denominator"]
         for row in rows
     ):
         raise CausalStudyError("sham rate denominator is invalid")

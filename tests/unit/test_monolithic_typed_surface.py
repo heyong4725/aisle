@@ -112,9 +112,17 @@ def test_frozen_thresholds_reject_mutable_envelope():
 
 
 def test_session_record_rejects_unclassified_exclusion():
-    record = {"session_id": "s", "arm": "typed", "randomized": True, "success": False,
-              "exclusion": 3, "outcome_kind": "session_success", "protocol_hash": "p",
-              "agent_hash": "a", "raw_evidence": "raw"}
+    record = {
+        "session_id": "s",
+        "arm": "typed",
+        "randomized": True,
+        "success": False,
+        "exclusion": 3,
+        "outcome_kind": "session_success",
+        "protocol_hash": "p",
+        "agent_hash": "a",
+        "raw_evidence": "raw",
+    }
     with pytest.raises(CausalStudyError, match="classified"):
         validate_session_record(record)
 
@@ -132,16 +140,26 @@ def test_session_effect_rejects_missing_arm_count():
 
 
 def test_exclusion_register_rejects_unretained_invalidations():
-    item = {"session_id": "s", "reason": "timeout", "pre_registered": True,
-            "retained": False, "sensitivity_bound": 0.1}
+    item = {
+        "session_id": "s",
+        "reason": "timeout",
+        "pre_registered": True,
+        "retained": False,
+        "sensitivity_bound": 0.1,
+    }
     with pytest.raises(CausalStudyError, match="retained"):
         validate_exclusion_register([item])
 
 
 def test_claim_disposition_allows_null_result():
     validate_claim_disposition(
-        {"status": "null", "estimand": "success", "effect": 0,
-         "interval": [-0.1, 0.1], "evidence_hash": "digest"}
+        {
+            "status": "null",
+            "estimand": "success",
+            "effect": 0,
+            "interval": [-0.1, 0.1],
+            "evidence_hash": "digest",
+        }
     )
 
 
@@ -154,10 +172,20 @@ def test_fault_evidence_rejects_visible_fault():
 
 def test_paired_fault_diagnosis_rejects_mismatched_faults():
     pair = [
-        {"arm": "typed_evidence", "session_id": "s", "fault_id": "f1",
-         "fault_hidden": True, "fault_class": "novel"},
-        {"arm": "logs_only", "session_id": "s", "fault_id": "f2",
-         "fault_hidden": True, "fault_class": "novel"},
+        {
+            "arm": "typed_evidence",
+            "session_id": "s",
+            "fault_id": "f1",
+            "fault_hidden": True,
+            "fault_class": "novel",
+        },
+        {
+            "arm": "logs_only",
+            "session_id": "s",
+            "fault_id": "f2",
+            "fault_hidden": True,
+            "fault_class": "novel",
+        },
     ]
     with pytest.raises(CausalStudyError, match="matched"):
         validate_paired_fault_diagnosis(pair)
@@ -171,19 +199,35 @@ def test_sham_rates_reject_missing_arm():
 def test_repair_outcome_rejects_unknown_class():
     with pytest.raises(CausalStudyError, match="class"):
         validate_repair_outcome(
-            {"session_id": "s", "fault_id": "f", "repair_class": "unknown",
-             "accepted": False, "time_ms": 1, "raw_evidence": "r"}
+            {
+                "session_id": "s",
+                "fault_id": "f",
+                "repair_class": "unknown",
+                "accepted": False,
+                "time_ms": 1,
+                "raw_evidence": "r",
+            }
         )
 
 
 def test_task_card_rejects_physical_label_for_simulation():
-    card = {"task_id": "t", "role": "engineering", "physical_capability": "grasp",
-            "sensor_inputs": ["camera"], "action_outputs": ["gripper"],
-            "embodiment": "sim", "workspace": "bench", "episode_budget": 60,
-            "success_semantics": "done", "failure_semantics": "timeout",
-            "permitted_feedback": [], "installed_capabilities": [],
-            "agent_edit_authority": "workspace", "excluded_privileges": ["oracle_pose"],
-            "evidence_kind": "physical"}
+    card = {
+        "task_id": "t",
+        "role": "engineering",
+        "physical_capability": "grasp",
+        "sensor_inputs": ["camera"],
+        "action_outputs": ["gripper"],
+        "embodiment": "sim",
+        "workspace": "bench",
+        "episode_budget": 60,
+        "success_semantics": "done",
+        "failure_semantics": "timeout",
+        "permitted_feedback": [],
+        "installed_capabilities": [],
+        "agent_edit_authority": "workspace",
+        "excluded_privileges": ["oracle_pose"],
+        "evidence_kind": "physical",
+    }
     with pytest.raises(NonOracleError, match="mislabels"):
         validate_task_card(card)
 
@@ -214,15 +258,23 @@ def test_perception_envelope_rejects_unfrozen_thresholds():
 
 
 def test_perception_eligibility_rejects_failed_stratum():
-    item = {"name": "occluded", "accuracy": 0.9, "max_error": 1,
-            "latency_ms": 10, "refusal_rate": 0.1, "eligible": False}
+    item = {
+        "name": "occluded",
+        "accuracy": 0.9,
+        "max_error": 1,
+        "latency_ms": 10,
+        "refusal_rate": 0.1,
+        "eligible": False,
+    }
     with pytest.raises(NonOracleError, match="stratum"):
         validate_perception_eligibility([item])
 
 
 def test_expert_parity_rejects_asymmetric_surface():
-    surface = {key: key for key in
-               ("sensors", "feedback", "actuation", "verifier", "reset", "budget", "authority")}
+    surface = {
+        key: key
+        for key in ("sensors", "feedback", "actuation", "verifier", "reset", "budget", "authority")
+    }
     other = dict(surface, budget="different")
     with pytest.raises(NonOracleError, match="asymmetric"):
         validate_expert_parity(surface, other, {"success_delta": 0.1, "completion_time_delta": 1})
