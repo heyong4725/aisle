@@ -226,3 +226,9 @@ def validate_artifact_hashes(declared: dict[str, str], observed: dict[str, str])
     for name, digest in declared.items():
         if not _HASH.fullmatch(digest) or observed[name] != digest:
             raise TypedSurfaceError(f"artifact hash drift: {name}")
+
+
+def validate_conformance(checks: dict[str, bool], required: set[str]) -> None:
+    """Fail closed unless every declared MON conformance check passes."""
+    if set(checks) != required or not required or not all(checks.values()):
+        raise TypedSurfaceError("monolithic conformance is incomplete or failed")
