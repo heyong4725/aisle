@@ -302,7 +302,15 @@ def run_cell(cell: str, out_dir: Path, seed: int, agent: str = "claude") -> dict
 
         def _session() -> None:
             session_result.update(
-                run_session(agent, cmd, REPO_ROOT, agent_out, ceilings, env=session_env)
+                run_session(
+                    agent,
+                    cmd,
+                    REPO_ROOT,
+                    agent_out,
+                    ceilings,
+                    env=session_env,
+                    environment_record=isolation["ambient_baseline"],
+                )
             )
 
         session_thread = threading.Thread(target=_session)

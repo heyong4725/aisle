@@ -12,6 +12,10 @@ uv run python tools/trace_check.py
 # Contributor reference is source-derived; graph, manifest, CLI, ADR, and
 # test changes must regenerate docs/generated/project-inventory.md.
 uv run python tools/docs_inventory.py --check
+# SPEC 410: public headline markers, evidence links, and the generated claim
+# matrix must agree. Pending CLM-12 review remains visible but does not make
+# ordinary development CI impersonate the later release-readiness gate.
+uv run python tools/claim_evidence.py --check
 # CON-7/HAR-2: the committed env hash must match the frozen set — any PR
 # touching frozen files regenerates it with tools/env_hash.py --write
 uv run python tools/env_hash.py --check

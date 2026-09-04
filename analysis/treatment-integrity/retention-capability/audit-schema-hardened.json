@@ -1,0 +1,57 @@
+{
+  "capability_pass": true,
+  "checks": {
+    "all_required_artifacts_retained": true,
+    "atomic_publication_left_no_staging": true,
+    "corruption_detected": true,
+    "missing_source_refused_before_publish": true,
+    "overwrite_refused": true,
+    "published_archive_verifies": true,
+    "synthetic_outcome_rejected_from_estimate": true,
+    "unstarted_assignment_rejected_from_estimate": true,
+    "unstarted_assignment_retained": true
+  },
+  "checks_passed": 9,
+  "checks_total": 9,
+  "configuration": {
+    "archive_schema": "aisle.treatment-retention.v1",
+    "lifecycles": [
+      "assigned_not_started",
+      "started"
+    ],
+    "required_artifacts": [
+      "budget_samples",
+      "deliverable_tree",
+      "exclusion_reason",
+      "idea_ledger",
+      "postflight_manifest",
+      "preflight_manifest",
+      "randomization_record",
+      "stderr",
+      "stdout",
+      "tool_audit_log",
+      "tool_policy"
+    ]
+  },
+  "confirmatory_ready": false,
+  "environment": {
+    "machine": "arm64",
+    "os": "Darwin",
+    "python_implementation": "CPython",
+    "python_version": "3.13.5"
+  },
+  "evidence_class": "synthetic_unscored_retention_capability",
+  "limitations": [
+    "synthetic fixtures only",
+    "not integrated into Claude or Codex launchers",
+    "does not authorize cleanup or confirmatory estimation"
+  ],
+  "randomization": {
+    "seed": null,
+    "status": "not_applicable_synthetic_capability"
+  },
+  "recorded_at": "2026-09-01T16:42:49.923291Z",
+  "schema_version": "aisle.retention-capability.v1",
+  "session_id": "retention-capability-20260901T164249923291Z",
+  "source_sha256": "1ce69fdcdc24ef82908e3412bc9a8f2382c2eca1450ca9c2b5eeaf52cb97f8bb"
+}
