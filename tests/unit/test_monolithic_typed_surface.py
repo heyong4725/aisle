@@ -41,6 +41,7 @@ from aisle.harness.safety_exposure import (
     SafetyExposureError,
     validate_exposure_analysis,
     validate_exposure_record,
+    validate_fixed_trace_protocol,
     validate_proposal_accounting,
     validate_source_strata,
     validate_zero_event_bound,
@@ -76,6 +77,13 @@ def test_source_strata_requires_provenance_and_rate():
 def test_zero_event_bound_rejects_invalid_denominator():
     with pytest.raises(SafetyExposureError, match="denominator"):
         validate_zero_event_bound(0, 0, 0)
+
+
+def test_fixed_trace_protocol_requires_frozen_identity():
+    with pytest.raises(SafetyExposureError, match="frozen"):
+        validate_fixed_trace_protocol(
+            {"trace_id": "t", "seeds": [1], "randomized": True, "frozen": False}
+        )
 
 
 def test_exposure_record_requires_layer_and_unit():
