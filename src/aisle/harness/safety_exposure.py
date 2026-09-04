@@ -67,3 +67,22 @@ def validate_zero_event_bound(denominator: int, observed: int, refusals: int) ->
     """Require a valid denominator and explicit refusal accounting."""
     if denominator <= 0 or observed < 0 or refusals < 0 or observed + refusals > denominator:
         raise SafetyExposureError("zero-event bound denominator is invalid")
+
+
+def validate_fixed_trace_protocol(protocol: dict[str, Any]) -> None:
+    """Require immutable trace identity and explicit randomized seeds."""
+    required = {"trace_id", "seeds", "randomized", "frozen"}
+    if (
+        set(protocol) != required
+        or not isinstance(protocol["trace_id"], str)
+        or not protocol["trace_id"]
+    ):
+        raise SafetyExposureError("fixed-trace protocol is incomplete")
+    if (
+        not isinstance(protocol["seeds"], list)
+        or not protocol["seeds"]
+        or protocol["randomized"] is not True
+    ):
+        raise SafetyExposureError("fixed-trace randomization is incomplete")
+    if protocol["frozen"] is not True:
+        raise SafetyExposureError("fixed-trace identity is not frozen")
