@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+_HASH = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ThreatModelError(ValueError):
@@ -99,3 +102,16 @@ def validate_bypass_report(entries: list[dict[str, Any]]) -> None:
             or not entry["evidence"]
         ):
             raise ThreatModelError("bypass report accounting is incomplete")
+
+
+def validate_review_record(record: dict[str, Any]) -> None:
+    """Require an independently attributable, hash-bound review disposition."""
+    required = {"reviewer", "artifact_sha256", "disposition"}
+    if set(record) != required or not isinstance(record["reviewer"], str) or not record["reviewer"]:
+        raise ThreatModelError("review record is incomplete")
+    if not isinstance(record["artifact_sha256"], str) or not _HASH.fullmatch(
+        record["artifact_sha256"]
+    ):
+        raise ThreatModelError("review artifact hash is invalid")
+    if record["disposition"] not in {"accepted", "weakened", "rejected"}:
+        raise ThreatModelError("review disposition is invalid")
