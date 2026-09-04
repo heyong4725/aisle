@@ -99,3 +99,35 @@ def validate_fault_evidence_record(record: dict[str, Any]) -> None:
         raise CausalStudyError("fault evidence arm or concealment is invalid")
     if not record["fault_id"] or not record["raw_evidence"]:
         raise CausalStudyError("fault evidence provenance is missing")
+
+
+def validate_paired_fault_diagnosis(pair: list[dict[str, Any]]) -> None:
+    """Require one matched pair without exposing fault truth to either arm."""
+    if len(pair) != 2 or {item.get("arm") for item in pair} != {"typed_evidence", "logs_only"}:
+        raise CausalStudyError("fault diagnosis pair is incomplete")
+    if (
+        len({item.get("session_id") for item in pair}) != 1
+        or len({item.get("fault_id") for item in pair}) != 1
+    ):
+        raise CausalStudyError("fault diagnosis pair is not matched")
+    if any(item.get("fault_hidden") is not True for item in pair):
+        raise CausalStudyError("fault diagnosis pair reveals truth")
+    if any(item.get("fault_class") not in {"novel", "sham", "public"} for item in pair):
+        raise CausalStudyError("fault class is invalid")
+
+
+def validate_sham_rates(rows: list[dict[str, Any]]) -> None:
+    """Require arm-complete sham denominators and bounded false-alarm rates."""
+    if {row.get("arm") for row in rows} != {"typed_evidence", "logs_only"}:
+        raise CausalStudyError("sham arms are incomplete")
+    required = {"arm", "denominator", "false_alarms", "interventions"}
+    if any(set(row) != required for row in rows):
+        raise CausalStudyError("sham rate row is incomplete")
+    if any(
+        row["denominator"] <= 0
+        or not 0 <= row["false_alarms"] <= row["denominator"]
+        for row in rows
+    ):
+        raise CausalStudyError("sham rate denominator is invalid")
+    if any(row["interventions"] < 0 for row in rows):
+        raise CausalStudyError("sham intervention count is invalid")
