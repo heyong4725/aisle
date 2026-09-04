@@ -2,7 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from aisle.harness.fault_bank import FaultBankError, validate_fault_manifest
+from aisle.harness.fault_bank import (
+    FaultBankError,
+    validate_fault_manifest,
+    validate_opaque_assignment,
+)
 from aisle.harness.monolithic import (
     TypedSurfaceError,
     classify_bypass_attempt,
@@ -35,6 +39,11 @@ def test_fault_manifest_requires_diverse_sealed_cells():
     }
     with pytest.raises(FaultBankError, match="diversity"):
         validate_fault_manifest({"schema": "aisle.fault-bank.v1", "version": "v1", "cells": [cell]})
+
+
+def test_opaque_assignment_rejects_fault_metadata():
+    with pytest.raises(FaultBankError, match="opaque"):
+        validate_opaque_assignment({"session": "s", "seed": "1", "handle": "fault-camera"})
 
 
 def test_typed_surface_rejects_unallowlisted_files(tmp_path: Path):
