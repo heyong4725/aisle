@@ -1,0 +1,98 @@
+{
+  "agent": {
+    "cli_binary_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "cli_revision": "synthetic-codex-cli-1",
+    "kind": "codex"
+  },
+  "assignment": {
+    "arm": "typed",
+    "randomization_seed_commitment": "0000000000000000000000000000000000000000000000000000000000000000",
+    "temporal_block": "synthetic-block-001"
+  },
+  "budget": {
+    "ceiling": 200000,
+    "unit": "provider_reported_tokens"
+  },
+  "confinement": {
+    "adapter_binary_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "policy_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "profile_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "environment": {
+    "fingerprint_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+    "platform": "synthetic-macos-arm64",
+    "simulator_backend": "synthetic-genesis-cpu"
+  },
+  "host_load": {
+    "baseline": {
+      "load_1m": 1.25,
+      "logical_cpus": 10
+    },
+    "sampling_rule_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "immutable_id": "sha256:3bbb07968c7d1161f0a70410b44934a16cc46a1ec9500a5c8271de584e7e26c2",
+  "model": {
+    "requested_identity": "synthetic-codex-frontier",
+    "served_identity": "synthetic-codex-frontier-2026-08-31"
+  },
+  "policy": {
+    "allowed_external_tools": [
+      "git",
+      "uv"
+    ],
+    "approval": "never",
+    "network": "synthetic-vendor-api-only",
+    "tool_policy_sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+  },
+  "prior_context": {
+    "context_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "findings_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "skills_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "prompts": {
+    "research_contract_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "system_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "repository": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "visible_allowlist": [
+      "AGENTS.md",
+      "src/worker.py"
+    ],
+    "visible_files": [
+      {
+        "path": "AGENTS.md",
+        "sha256": "052bb603b3c54e39d741348fd2b652cca486527cf07d7ae1e81bf867a5c9166d"
+      },
+      {
+        "path": "src/worker.py",
+        "sha256": "25ab7a4ade5956301490747bf88fe22a715c5ee92b9969a57a40c340188b5d18"
+      }
+    ]
+  },
+  "runtime_binaries": [
+    {
+      "name": "dora",
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    {
+      "name": "vendor-api",
+      "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+    }
+  ],
+  "sampling": {
+    "seed": 1729,
+    "temperature": 0
+  },
+  "schema_version": "aisle.treatment.v1",
+  "state": {
+    "cache_baseline_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "config_baseline_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "credential_policy_sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+    "credential_provenance": "synthetic campaign auth probe; values not retained",
+    "credential_source_class": "synthetic-isolated-session-keychain",
+    "environment_baseline_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "home_baseline_sha256": "9999999999999999999999999999999999999999999999999999999999999999"
+  }
+}

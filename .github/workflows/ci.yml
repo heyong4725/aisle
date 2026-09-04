@@ -23,6 +23,7 @@ jobs:
       - run: uv run pytest -m unit
       - run: uv run python tools/trace_check.py
       - run: uv run python tools/docs_inventory.py --check
+      - run: uv run python tools/claim_evidence.py --check
 
   # Linux unit PORTABILITY coverage (PR #83 review: this is NOT a CON-1
   # runtime check — CON-1's Metal/MPS runtime half needs a macOS arm64

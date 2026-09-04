@@ -1,0 +1,6 @@
+{
+  "catalog_id": "catalog:current-unimplemented-gap-2026-09-01",
+  "inventory_sha256": "26d9f78d124a10337108ba7b91bdc9967140aa22cec96f446d875c6e089af5b6",
+  "mutations": [],
+  "schema_version": "aisle.instrument-mutation-catalog.v1"
+}
