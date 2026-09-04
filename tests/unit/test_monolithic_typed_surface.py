@@ -91,6 +91,7 @@ from aisle.harness.semantic_authorization import (
 from aisle.harness.threat_model import (
     ThreatModelError,
     validate_attack_catalog,
+    validate_attack_execution,
     validate_authority_audit,
     validate_bypass_report,
     validate_conformance_evidence,
@@ -720,4 +721,11 @@ def test_gateway_contract_rejects_non_fail_closed_lease():
                 "lease_seconds": 1,
                 "fail_closed": False,
             }
+        )
+
+
+def test_attack_execution_rejects_unattempted_bypass():
+    with pytest.raises(ThreatModelError, match="not executed"):
+        validate_attack_execution(
+            [{"attack": "env", "attempted": False, "disposition": "blocked", "evidence": "log"}]
         )
