@@ -19,6 +19,16 @@ class TypedSurfaceError(ValueError):
     """A typed deliverable escapes its frozen editable surface."""
 
 
+def validate_typed_graph(graph_path, root, embodiment: str, allow_unproven: bool = False) -> dict:
+    """Run the pinned graph validator; authored deliverables are never repaired."""
+    from aisle.harness.validate import validate
+
+    report = validate(graph_path, root, embodiment, allow_unproven)
+    if not isinstance(report, dict) or "ok" not in report or "errors" not in report:
+        raise TypedSurfaceError("typed validator returned an invalid report")
+    return report
+
+
 def validate_typed_surface(root, editable_files: list[str], allowlist: list[str]) -> None:
     """Validate MON-2's authored typed surface without repairing it."""
     if sorted(editable_files) != sorted(set(editable_files)):
