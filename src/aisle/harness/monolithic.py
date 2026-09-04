@@ -122,6 +122,14 @@ def validate_parity_protocol(protocol: dict[str, Any]) -> None:
         raise TypedSurfaceError("parity protocol paired_seeds are unresolved")
 
 
+def validate_campaign_purpose(record: dict[str, Any]) -> None:
+    """Keep expert-parity records out of pilot and confirmatory analyses."""
+    if record.get("campaign_purpose") != "expert_parity":
+        raise TypedSurfaceError("record is not isolated to expert_parity campaign")
+    if record.get("pooled", False) is not False:
+        raise TypedSurfaceError("expert-parity record cannot be pooled")
+
+
 def validate_matched_treatment(
     typed: dict[str, Any], monolithic: dict[str, Any], differing: set[str]
 ) -> None:
