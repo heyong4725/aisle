@@ -27,6 +27,25 @@ FT-2 = "gated by PW-0 ADR; impedance-reject test lands with T21 (SPEC 310)"
 BAL-1 = "gated by PW-0 ADR; balance settling test lands with T21 (SPEC 310)"
 TOOL-1 = "gated by PW-0 ADR; tool-change lifecycle test lands with T21 (SPEC 310)"
 
+# SPEC 450 sealed fault bank — proposed in the #348 spec-change PR.
+# The tests-first implementation PR MUST remove every FLT waiver before merge.
+FLT-1 = "proposed private bank schema; lifecycle/manifest tests land after human spec review"
+FLT-2 = "proposed diversity gate; family/mode/coupled/sham coverage tests land after human spec review"
+FLT-3 = "proposed repair classes; novel/restoration mix tests land after human spec review"
+FLT-4 = "proposed external storage; confinement path-denial tests land after human spec review"
+FLT-5 = "proposed seeded assignments; commitment/reuse/refusal tests land after human spec review"
+FLT-6 = "proposed leak gate; participant-surface canary tests land after human spec review"
+FLT-7 = "proposed generic injector; atomic containment/preimage tests land after human spec review"
+FLT-8 = "proposed sham parity; start-surface and classifier tests land after human spec review"
+FLT-9 = "proposed efficacy gate; paired baseline/degradation tests land after human spec review"
+FLT-10 = "proposed excluded calibration; selection/freeze tests land after human spec review"
+FLT-11 = "proposed safety allowlist; frozen-asset and hazard tests land after human spec review"
+FLT-12 = "proposed runtime audit; activation/drift/invalid-record tests land after human spec review"
+FLT-13 = "proposed sealed ledger; completeness/participant-redaction tests land after human spec review"
+FLT-14 = "proposed reveal/replay; commitment and exact reconstruction tests land after human spec review"
+FLT-15 = "proposed synthetic conformance suite; route and corruption tests land after human spec review"
+FLT-16 = "proposed lifecycle rotation; transition/reveal/reuse tests land after human spec review"
+
 # SPEC 440 monolithic control — proposed in the #344 spec-change PR.
 # The tests-first implementation PR MUST remove every MON waiver before merge.
 MON-1 = "proposed treatment table; completeness/rendering tests land after human spec review"
