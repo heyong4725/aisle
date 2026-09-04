@@ -45,6 +45,7 @@ from aisle.harness.threat_model import (
     validate_conformance_evidence,
     validate_gateway_contract,
     validate_matched_profiles,
+    validate_review_record,
     validate_threat_model,
 )
 
@@ -65,6 +66,13 @@ def test_matched_profiles_reject_different_seed_sets():
 def test_bypass_report_requires_disposition_and_evidence():
     with pytest.raises(ThreatModelError, match="accounting"):
         validate_bypass_report([{"attempt": "direct", "disposition": "blocked", "evidence": ""}])
+
+
+def test_review_record_requires_hash_and_disposition():
+    with pytest.raises(ThreatModelError, match="hash"):
+        validate_review_record(
+            {"reviewer": "independent", "artifact_sha256": "bad", "disposition": "accepted"}
+        )
 
 
 def test_authority_audit_rejects_unreconciled_receipt():
