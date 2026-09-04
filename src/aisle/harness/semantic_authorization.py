@@ -88,3 +88,17 @@ def validate_held_plan(plan: dict[str, Any]) -> None:
         for key in ("plan_hash", "randomization_hash", "identity_hash")
     ):
         raise SemanticAuthorizationError("held plan hashes are missing")
+
+
+def validate_adversarial_corpus(cases: list[dict[str, Any]]) -> None:
+    """Require wrong-object and authorization-lifecycle cases with expected verdicts."""
+    if not cases:
+        raise SemanticAuthorizationError("adversarial corpus is empty")
+    required = {"case_id", "kind", "expected", "evidence"}
+    if any(set(case) != required for case in cases):
+        raise SemanticAuthorizationError("adversarial case is incomplete")
+    kinds = {case["kind"] for case in cases}
+    if not {"wrong_target", "stale_permit", "revoked_permit"}.issubset(kinds):
+        raise SemanticAuthorizationError("adversarial corpus lacks lifecycle coverage")
+    if any(case["expected"] not in {"block", "allow"} or not case["evidence"] for case in cases):
+        raise SemanticAuthorizationError("adversarial expected outcome is invalid")

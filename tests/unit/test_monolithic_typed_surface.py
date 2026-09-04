@@ -83,6 +83,7 @@ from aisle.harness.safety_exposure import (
 )
 from aisle.harness.semantic_authorization import (
     SemanticAuthorizationError,
+    validate_adversarial_corpus,
     validate_authorization_state,
     validate_frozen_thresholds,
     validate_held_plan,
@@ -124,6 +125,13 @@ def test_held_plan_rejects_early_reveal():
         validate_held_plan(
             {"plan_hash": "p", "randomization_hash": "r", "identity_hash": "i",
              "frozen": True, "revealed": True}
+        )
+
+
+def test_adversarial_corpus_requires_wrong_target_case():
+    with pytest.raises(SemanticAuthorizationError, match="lifecycle"):
+        validate_adversarial_corpus(
+            [{"case_id": "1", "kind": "wrong_target", "expected": "block", "evidence": "e"}]
         )
 
 
