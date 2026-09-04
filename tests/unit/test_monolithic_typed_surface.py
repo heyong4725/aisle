@@ -41,6 +41,7 @@ from aisle.harness.non_oracle import (
     NonOracleError,
     validate_oracle_boundary,
     validate_perception_audit,
+    validate_perception_eligibility,
     validate_perception_envelope,
     validate_task_card,
 )
@@ -114,6 +115,13 @@ def test_perception_audit_rejects_exposed_truth():
 def test_perception_envelope_rejects_unfrozen_thresholds():
     with pytest.raises(NonOracleError, match="not frozen"):
         validate_perception_envelope({"frozen": False})
+
+
+def test_perception_eligibility_rejects_failed_stratum():
+    item = {"name": "occluded", "accuracy": 0.9, "max_error": 1,
+            "latency_ms": 10, "refusal_rate": 0.1, "eligible": False}
+    with pytest.raises(NonOracleError, match="stratum"):
+        validate_perception_eligibility([item])
 
 
 def test_authorization_state_rejects_revoked_permit():
