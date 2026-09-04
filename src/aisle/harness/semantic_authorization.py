@@ -88,3 +88,34 @@ def validate_held_plan(plan: dict[str, Any]) -> None:
         for key in ("plan_hash", "randomization_hash", "identity_hash")
     ):
         raise SemanticAuthorizationError("held plan hashes are missing")
+
+
+def validate_adversarial_corpus(cases: list[dict[str, Any]]) -> None:
+    """Require wrong-object and authorization-lifecycle cases with expected verdicts."""
+    if not cases:
+        raise SemanticAuthorizationError("adversarial corpus is empty")
+    required = {"case_id", "kind", "expected", "evidence"}
+    if any(set(case) != required for case in cases):
+        raise SemanticAuthorizationError("adversarial case is incomplete")
+    kinds = {case["kind"] for case in cases}
+    if not {"wrong_target", "stale_permit", "revoked_permit"}.issubset(kinds):
+        raise SemanticAuthorizationError("adversarial corpus lacks lifecycle coverage")
+    if any(case["expected"] not in {"block", "allow"} or not case["evidence"] for case in cases):
+        raise SemanticAuthorizationError("adversarial expected outcome is invalid")
+
+
+def validate_authorization_endpoints(endpoints: dict[str, Any]) -> None:
+    """Require bounded false-allow/false-block counts and intervention accounting."""
+    required = {
+        "false_allow", "false_block", "allow_denominator", "block_denominator", "interventions"
+    }
+    if set(endpoints) != required:
+        raise SemanticAuthorizationError("authorization endpoints are incomplete")
+    if endpoints["allow_denominator"] <= 0 or endpoints["block_denominator"] <= 0:
+        raise SemanticAuthorizationError("authorization endpoint denominators are invalid")
+    if not 0 <= endpoints["false_allow"] <= endpoints["allow_denominator"]:
+        raise SemanticAuthorizationError("false-allow endpoint is invalid")
+    if not 0 <= endpoints["false_block"] <= endpoints["block_denominator"]:
+        raise SemanticAuthorizationError("false-block endpoint is invalid")
+    if endpoints["interventions"] < 0:
+        raise SemanticAuthorizationError("authorization intervention count is invalid")
