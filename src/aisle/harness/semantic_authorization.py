@@ -119,3 +119,19 @@ def validate_authorization_endpoints(endpoints: dict[str, Any]) -> None:
         raise SemanticAuthorizationError("false-block endpoint is invalid")
     if endpoints["interventions"] < 0:
         raise SemanticAuthorizationError("authorization intervention count is invalid")
+
+
+def validate_metric_layers(layers: dict[str, list[str]]) -> None:
+    """Require disjoint policy, intervention, and verifier metric namespaces."""
+    required = {"policy", "intervention", "verifier"}
+    if set(layers) != required or any(not isinstance(layers[key], list) for key in required):
+        raise SemanticAuthorizationError("metric layers are incomplete")
+    sets = [set(layers[key]) for key in required]
+    if any(not values for values in sets):
+        raise SemanticAuthorizationError("metric layer is empty")
+    if any(
+        left.intersection(right)
+        for index, left in enumerate(sets)
+        for right in sets[index + 1 :]
+    ):
+        raise SemanticAuthorizationError("metric layers overlap")

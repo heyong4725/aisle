@@ -89,6 +89,7 @@ from aisle.harness.semantic_authorization import (
     validate_frozen_thresholds,
     validate_held_plan,
     validate_independent_containment,
+    validate_metric_layers,
     validate_permit,
     validate_stage_gates,
 )
@@ -141,6 +142,13 @@ def test_authorization_endpoints_reject_false_allow_overflow():
         validate_authorization_endpoints(
             {"false_allow": 2, "false_block": 0, "allow_denominator": 1,
              "block_denominator": 1, "interventions": 0}
+        )
+
+
+def test_metric_layers_reject_overlap():
+    with pytest.raises(SemanticAuthorizationError, match="overlap"):
+        validate_metric_layers(
+            {"policy": ["success"], "intervention": ["success"], "verifier": ["stage"]}
         )
 
 
