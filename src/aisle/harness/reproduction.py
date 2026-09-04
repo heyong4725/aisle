@@ -1,10 +1,19 @@
 """Fail-closed validation for independent-reproduction release bundles."""
 
+import hashlib
 from typing import Any
 
 
 class ReproductionError(ValueError):
     """Raised when a reproduction bundle is not self-describing."""
+
+
+def redact_double_blind(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Produce deterministic participant view without held-out truth or outcomes."""
+    forbidden = {"seed", "truth", "outcome", "oracle_state"}
+    view = {key: value for key, value in manifest.items() if key not in forbidden}
+    view["redaction_hash"] = hashlib.sha256(str(sorted(view.items())).encode()).hexdigest()
+    return view
 
 
 def validate_release_manifest(manifest: dict[str, Any]) -> None:
