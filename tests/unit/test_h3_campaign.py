@@ -744,7 +744,7 @@ def test_scenario_session_runs_under_the_isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", f"{_fake_dora(tmp_path, 'host', 'rev x')}:/usr/bin:/bin")
     seen = {}
 
-    def fake_run_session(agent, cmd, wt, out, ceilings, env=None):
+    def fake_run_session(agent, cmd, wt, out, ceilings, env=None, environment_record=None):
         seen["env"] = env
         return {"stopped": "agent_done", "rc": 0, "tokens": 1, "wall_s": 1.0}
 
@@ -765,7 +765,7 @@ def test_scenario_session_runs_under_the_isolated_home(tmp_path, monkeypatch):
     monkeypatch.setattr(
         h3,
         "attach_historical_baseline_compat",
-        lambda wt, session, pin, env: {"mode": "native", "pin": pin},
+        lambda wt, session, pin, env, ambient_record: {"mode": "native", "pin": pin},
     )
     launch = h3.host_dora_runtime()
     pin = "d" * 40

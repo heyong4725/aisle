@@ -4,6 +4,30 @@ A newcomer-altitude walk through the system. Depth on any topic: the
 design doc (`Project_AISLE_Experiment_Design.md`, §2–§5) and the spec
 that owns it (`specs/`).
 
+## External benchmark trust boundary
+
+<!-- claim:architecture/four-zone-boundary -->
+The **coding-agent session** is the benchmark experimental unit. AISLE names
+four trust zones so “the agent cannot” is never used where the repository only
+says “the protocol forbids”:
+
+1. **Mutable participant** — the coding agent, its workspace, declared robot
+   graph, participant nodes, and allowed configuration.
+2. **Frozen evaluator** — tracked task, scorer, admissibility, and analysis
+   artifacts whose hashes are checked at session start and audit time.
+3. **Trusted actuation** — the scoped validator and command guard boundary that
+   gates declared graph paths and clamps commands; it is not yet a claim about
+   arbitrary process, socket, or driver side channels.
+4. **Hidden controller** — task selection, randomization, seeds, sealed faults,
+   and treatment assignment kept outside the participant-visible workspace.
+
+Sealed task/fault contents and held-out assignments are intended to be
+**inaccessible** to the participant. Direct actuation outside declared
+participant interfaces is **forbidden** by protocol but is not yet proven
+inaccessible. The broader bypass boundary and attack classes are deferred to
+issue **#350**; until that threat model is ratified and evaluated, AISLE claims
+declared-topology gating only.
+
 ## The stack in one picture
 
 ```
