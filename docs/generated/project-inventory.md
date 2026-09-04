@@ -45,7 +45,7 @@ stayed outside it).
 | Graphs | 18 |
 | Capability manifests | 39 |
 | CLI command entries | 15 |
-| ADR files | 63 |
+| ADR files | 73 |
 
 ## Graphs
 
@@ -209,7 +209,17 @@ inference.
 | [docs/decisions/ADR-49.md](../decisions/ADR-49.md) | ADR-49 — Instrument validity is a release-blocking mutation gate | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
 | [docs/decisions/ADR-5.md](../decisions/ADR-5.md) | ADR-5: consolidated interpretations from the T03 audit (CON-15) | ACCEPTED (owner-ratified 2026-08-03) |
 | [docs/decisions/ADR-50.md](../decisions/ADR-50.md) | ADR-50 — The causal control is a brokered single-module monolith | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
+| [docs/decisions/ADR-51.md](../decisions/ADR-51.md) | ADR-51 — Hidden faults live in a sealed external bank | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
+| [docs/decisions/ADR-52.md](../decisions/ADR-52.md) | ADR-52 — One frozen `actuation-gateway` owns driver authority | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
+| [docs/decisions/ADR-53.md](../decisions/ADR-53.md) | ADR-53 — Safety evidence uses exact exposures and fixed proposals | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
+| [docs/decisions/ADR-54.md](../decisions/ADR-54.md) | ADR-54 — Semantic prevention requires a separate trusted authorizer | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
+| [docs/decisions/ADR-55.md](../decisions/ADR-55.md) | ADR-55 — Select two non-oracle tasks by blinded unscored pilots | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
+| [docs/decisions/ADR-56.md](../decisions/ADR-56.md) | ADR-56 — Use a replicated block-randomized session trial for H4 | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
+| [docs/decisions/ADR-57.md](../decisions/ADR-57.md) | ADR-57 — Compare diagnostic evidence with sealed paired fault sessions | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
+| [docs/decisions/ADR-58.md](../decisions/ADR-58.md) | ADR-58 — Hardware evidence begins at a pinned physical station | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
+| [docs/decisions/ADR-59.md](../decisions/ADR-59.md) | ADR-59 — Reproduction starts outside the campaign machine | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
 | [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |
+| [docs/decisions/ADR-60.md](../decisions/ADR-60.md) | ADR-60 — Benchmark v1 is a versioned trust boundary | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
 | [docs/decisions/ADR-7.md](../decisions/ADR-7.md) | ADR-7: T05 bridge interpretations and measured performance (SPEC 030) | ACCEPTED |
 | [docs/decisions/ADR-8.md](../decisions/ADR-8.md) | ADR-8: T06 verifier/reset interpretations (SPEC 040) | ACCEPTED |
 | [docs/decisions/ADR-9.md](../decisions/ADR-9.md) | ADR-9: T07 budget-guard interpretations (SPEC 080) | ACCEPTED |
