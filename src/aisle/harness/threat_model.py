@@ -42,3 +42,9 @@ def validate_gateway_contract(contract: dict[str, Any]) -> None:
         raise ThreatModelError("lease is invalid")
     if contract["fail_closed"] is not True:
         raise ThreatModelError("gateway must fail closed")
+
+
+def validate_authority_audit(actions: list[str], receipts: list[str]) -> None:
+    """Require a one-to-one reconciled authority audit stream."""
+    if not actions or set(actions) != set(receipts) or len(receipts) != len(set(receipts)):
+        raise ThreatModelError("authority audit stream is unreconciled")
