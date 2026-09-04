@@ -43,10 +43,22 @@ from aisle.harness.threat_model import (
     validate_authority_audit,
     validate_conformance_evidence,
     validate_gateway_contract,
+    validate_matched_profiles,
     validate_threat_model,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_matched_profiles_reject_different_seed_sets():
+    profile = {
+        "tasks": ["t1"],
+        "seeds": [1],
+        "resource_ceiling": "fixed",
+        "access_boundary": "sealed",
+    }
+    with pytest.raises(ThreatModelError, match="differ"):
+        validate_matched_profiles(profile, {**profile, "seeds": [2]})
 
 
 def test_authority_audit_rejects_unreconciled_receipt():

@@ -76,3 +76,12 @@ def validate_conformance_evidence(evidence: dict[str, Any]) -> None:
         or not evidence["artifacts"]
     ):
         raise ThreatModelError("conformance evidence is incomplete")
+
+
+def validate_matched_profiles(left: dict[str, Any], right: dict[str, Any]) -> None:
+    """Require Claude/Codex parity profiles to match before comparison."""
+    required = {"tasks", "seeds", "resource_ceiling", "access_boundary"}
+    if set(left) != required or set(right) != required:
+        raise ThreatModelError("matched parity profile is incomplete")
+    if left != right:
+        raise ThreatModelError("matched parity profiles differ")
