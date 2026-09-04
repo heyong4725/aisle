@@ -48,3 +48,16 @@ def validate_authority_audit(actions: list[str], receipts: list[str]) -> None:
     """Require a one-to-one reconciled authority audit stream."""
     if not actions or set(actions) != set(receipts) or len(receipts) != len(set(receipts)):
         raise ThreatModelError("authority audit stream is unreconciled")
+
+
+def validate_attack_catalog(entries: list[dict[str, Any]]) -> None:
+    """Require classified attacks with explicit oracle and negative-control flags."""
+    if not entries:
+        raise ThreatModelError("attack catalog is empty")
+    for entry in entries:
+        if set(entry) != {"name", "class", "oracle", "negative_control"}:
+            raise ThreatModelError("attack catalog entry is incomplete")
+        if not all(isinstance(entry[key], str) and entry[key] for key in ("name", "class")):
+            raise ThreatModelError("attack catalog identity is incomplete")
+        if not isinstance(entry["oracle"], bool) or not isinstance(entry["negative_control"], bool):
+            raise ThreatModelError("attack catalog flags are invalid")
