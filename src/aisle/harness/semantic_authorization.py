@@ -135,3 +135,11 @@ def validate_metric_layers(layers: dict[str, list[str]]) -> None:
         for right in sets[index + 1 :]
     ):
         raise SemanticAuthorizationError("metric layers overlap")
+
+
+def validate_authorization_analysis(raw_ids: list[str], derived: dict[str, str]) -> None:
+    """Require exhaustive metric derivation with stable source identifiers."""
+    if not raw_ids or len(set(raw_ids)) != len(raw_ids):
+        raise SemanticAuthorizationError("authorization raw IDs are incomplete")
+    if set(derived) != set(raw_ids) or any(not value for value in derived.values()):
+        raise SemanticAuthorizationError("authorization derivation is not exhaustive")
