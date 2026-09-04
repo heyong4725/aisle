@@ -86,3 +86,16 @@ def validate_claim_disposition(disposition: dict[str, Any]) -> None:
         raise CausalStudyError("claim disposition evidence is missing")
     if not isinstance(disposition["interval"], (list, tuple)) or len(disposition["interval"]) != 2:
         raise CausalStudyError("claim disposition interval is invalid")
+
+
+def validate_fault_evidence_record(record: dict[str, Any]) -> None:
+    """Require matched typed-evidence/logs-only surfaces and hidden-fault provenance."""
+    required = {
+        "session_id", "arm", "fault_id", "fault_hidden", "diagnosis", "repair", "raw_evidence"
+    }
+    if set(record) != required:
+        raise CausalStudyError("fault evidence record is incomplete")
+    if record["arm"] not in {"typed_evidence", "logs_only"} or record["fault_hidden"] is not True:
+        raise CausalStudyError("fault evidence arm or concealment is invalid")
+    if not record["fault_id"] or not record["raw_evidence"]:
+        raise CausalStudyError("fault evidence provenance is missing")

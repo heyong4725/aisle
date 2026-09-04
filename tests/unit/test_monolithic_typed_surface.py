@@ -6,6 +6,7 @@ from aisle.harness.causal_study import (
     CausalStudyError,
     validate_claim_disposition,
     validate_exclusion_register,
+    validate_fault_evidence_record,
     validate_session_effect,
     validate_session_record,
     validate_session_table,
@@ -139,6 +140,13 @@ def test_claim_disposition_allows_null_result():
         {"status": "null", "estimand": "success", "effect": 0,
          "interval": [-0.1, 0.1], "evidence_hash": "digest"}
     )
+
+
+def test_fault_evidence_rejects_visible_fault():
+    with pytest.raises(CausalStudyError, match="incomplete"):
+        validate_fault_evidence_record(
+            {"session_id": "s", "arm": "logs_only", "fault_hidden": False}
+        )
 
 
 def test_task_card_rejects_physical_label_for_simulation():
