@@ -57,6 +57,15 @@ def validate_broker_route(route: list[str], *, motion: bool = True) -> None:
         raise TypedSurfaceError("motion route must traverse budget guard")
 
 
+def validate_trusted_preflight(state: dict[str, Any]) -> None:
+    """Fail closed when trusted hashes, confinement, routing, or sink are unresolved."""
+    required = ("hashes", "confinement", "route_map", "evidence_sink")
+    if any(state.get(key) in (None, False, {}, "") for key in required):
+        raise TypedSurfaceError("trusted preflight is unresolved")
+    if state["confinement"] is not True:
+        raise TypedSurfaceError("confinement is not attested")
+
+
 def validate_typed_graph(graph_path, root, embodiment: str, allow_unproven: bool = False) -> dict:
     """Run the pinned graph validator; authored deliverables are never repaired."""
     from aisle.harness.validate import validate
