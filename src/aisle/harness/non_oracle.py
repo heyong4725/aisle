@@ -133,6 +133,22 @@ def validate_freeze_manifest(manifest: dict[str, Any]) -> None:
         raise NonOracleError("freeze manifest commands are missing")
 
 
+def validate_heldout_split(split: dict[str, Any]) -> None:
+    """Require content-disjoint splits and at least 32 committed held-out records."""
+    required = {"development", "calibration", "evaluation", "pilot", "heldout", "salted_commitment"}
+    if set(split) != required or not split["salted_commitment"]:
+        raise NonOracleError("held-out split manifest is incomplete")
+    groups = [set(group) for key, group in split.items() if key != "salted_commitment"]
+    if any(not group for group in groups) or len(split["heldout"]) < 32:
+        raise NonOracleError("held-out split has too few records")
+    if any(
+        left.intersection(right)
+        for index, left in enumerate(groups)
+        for right in groups[index + 1 :]
+    ):
+        raise NonOracleError("content identities overlap across splits")
+
+
 def validate_oracle_boundary(policy_inputs: list[str], verifier_only: list[str]) -> None:
     """Reject privileged simulator state appearing on the policy path."""
     forbidden = {
