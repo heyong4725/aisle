@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from aisle.harness.causal_study import CausalStudyError, validate_session_record
 from aisle.harness.fault_bank import (
     FaultBankError,
     validate_activation_record,
@@ -97,6 +98,14 @@ pytestmark = pytest.mark.unit
 def test_frozen_thresholds_reject_mutable_envelope():
     with pytest.raises(SemanticAuthorizationError, match="frozen"):
         validate_frozen_thresholds({"max_force": 1, "max_duration": 1, "frozen": False})
+
+
+def test_session_record_rejects_unclassified_exclusion():
+    record = {"session_id": "s", "arm": "typed", "randomized": True, "success": False,
+              "exclusion": 3, "outcome_kind": "session_success", "protocol_hash": "p",
+              "agent_hash": "a", "raw_evidence": "raw"}
+    with pytest.raises(CausalStudyError, match="classified"):
+        validate_session_record(record)
 
 
 def test_task_card_rejects_physical_label_for_simulation():
