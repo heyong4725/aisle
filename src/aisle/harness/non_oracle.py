@@ -38,6 +38,33 @@ def validate_perception_envelope(envelope: dict[str, Any]) -> None:
         raise NonOracleError("perception refusal or latency is invalid")
 
 
+def validate_perception_eligibility(strata: list[dict[str, Any]]) -> None:
+    """Require every registered stratum to pass, without aggregate masking."""
+    if not strata or any(not isinstance(item, dict) for item in strata):
+        raise NonOracleError("perception strata are missing")
+    required = {"name", "accuracy", "max_error", "latency_ms", "refusal_rate", "eligible"}
+    if any(set(item) != required for item in strata):
+        raise NonOracleError("perception stratum is incomplete")
+    if any(item["eligible"] is not True for item in strata):
+        raise NonOracleError("perception eligibility failed in a stratum")
+    if any(not 0 <= item["accuracy"] <= 1 or not 0 <= item["refusal_rate"] <= 1 for item in strata):
+        raise NonOracleError("perception stratum rates are invalid")
+
+
+def validate_expert_parity(
+    typed: dict[str, Any], monolithic: dict[str, Any], margins: dict[str, float]
+) -> None:
+    """Require matched expert surfaces and success/time equivalence margins."""
+    surface = {"sensors", "feedback", "actuation", "verifier", "reset", "budget", "authority"}
+    if set(typed) != surface or set(monolithic) != surface:
+        raise NonOracleError("expert parity surface is incomplete")
+    if any(typed[key] != monolithic[key] for key in surface):
+        raise NonOracleError("expert parity surface is asymmetric")
+    for key in ("success_delta", "completion_time_delta"):
+        if key not in margins or margins[key] < 0:
+            raise NonOracleError("expert parity margin is invalid")
+
+
 def validate_oracle_boundary(policy_inputs: list[str], verifier_only: list[str]) -> None:
     """Reject privileged simulator state appearing on the policy path."""
     forbidden = {

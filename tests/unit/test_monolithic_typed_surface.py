@@ -39,6 +39,7 @@ from aisle.harness.monolithic import (
 )
 from aisle.harness.non_oracle import (
     NonOracleError,
+    validate_expert_parity,
     validate_oracle_boundary,
     validate_perception_audit,
     validate_perception_eligibility,
@@ -122,6 +123,14 @@ def test_perception_eligibility_rejects_failed_stratum():
             "latency_ms": 10, "refusal_rate": 0.1, "eligible": False}
     with pytest.raises(NonOracleError, match="stratum"):
         validate_perception_eligibility([item])
+
+
+def test_expert_parity_rejects_asymmetric_surface():
+    surface = {key: key for key in
+               ("sensors", "feedback", "actuation", "verifier", "reset", "budget", "authority")}
+    other = dict(surface, budget="different")
+    with pytest.raises(NonOracleError, match="asymmetric"):
+        validate_expert_parity(surface, other, {"success_delta": 0.1, "completion_time_delta": 1})
 
 
 def test_authorization_state_rejects_revoked_permit():
