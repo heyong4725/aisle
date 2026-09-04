@@ -45,6 +45,7 @@ from aisle.harness.non_oracle import (
     validate_perception_audit,
     validate_perception_eligibility,
     validate_perception_envelope,
+    validate_pilot_evidence,
     validate_pilot_sessions,
     validate_task_card,
 )
@@ -151,6 +152,11 @@ def test_pilot_selector_is_deterministic_and_contrast_blind():
         {"opaque_id": "a", "pooled_success_rate": 0.6, "invalid_rate": 0.1, "content_hash": "a"},
     ]
     assert select_pilot_candidate(candidates)["opaque_id"] == "a"
+
+
+def test_pilot_evidence_rejects_confirmatory_reuse():
+    with pytest.raises(NonOracleError, match="provenance"):
+        validate_pilot_evidence({"evidence_kind": "confirmatory", "confirmatory": True})
 
 
 def test_authorization_state_rejects_revoked_permit():
