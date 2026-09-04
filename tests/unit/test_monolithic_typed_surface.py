@@ -85,6 +85,7 @@ from aisle.harness.semantic_authorization import (
     SemanticAuthorizationError,
     validate_authorization_state,
     validate_frozen_thresholds,
+    validate_independent_containment,
     validate_permit,
     validate_stage_gates,
 )
@@ -110,6 +111,11 @@ pytestmark = pytest.mark.unit
 def test_frozen_thresholds_reject_mutable_envelope():
     with pytest.raises(SemanticAuthorizationError, match="frozen"):
         validate_frozen_thresholds({"max_force": 1, "max_duration": 1, "frozen": False})
+
+
+def test_independent_containment_rejects_oracle_policy_field():
+    with pytest.raises(SemanticAuthorizationError, match="containment"):
+        validate_independent_containment(["camera", "oracle_pose"], ["verifier_verdict"])
 
 
 def test_session_record_rejects_unclassified_exclusion():

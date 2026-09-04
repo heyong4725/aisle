@@ -65,3 +65,12 @@ def validate_frozen_thresholds(thresholds: dict[str, Any]) -> None:
         for key in ("max_force", "max_duration")
     ):
         raise SemanticAuthorizationError("threshold envelope is invalid")
+
+
+def validate_independent_containment(policy_fields: list[str], verifier_fields: list[str]) -> None:
+    """Require privileged authorization state to remain independently masked."""
+    privileged = {"oracle_pose", "scene_truth", "object_id", "permit_secret", "verifier_verdict"}
+    if not verifier_fields or privileged.intersection(policy_fields):
+        raise SemanticAuthorizationError("authorization containment boundary is violated")
+    if not privileged.intersection(verifier_fields):
+        raise SemanticAuthorizationError("verifier-only containment is not declared")
