@@ -4,6 +4,7 @@ import pytest
 
 from aisle.harness.monolithic import (
     TypedSurfaceError,
+    validate_broker_route,
     validate_interface_map,
     validate_monolithic_surface,
     validate_typed_graph,
@@ -41,3 +42,8 @@ def test_interface_map_rejects_semantic_mismatch():
         validate_interface_map(
             [{"name": "action", "typed": "cmd", "monolithic": "other", "authority": "task"}]
         )
+
+
+def test_broker_route_rejects_direct_actuation():
+    with pytest.raises(TypedSurfaceError, match="guard"):
+        validate_broker_route(["trusted_controller", "primitive_broker", "driver"])

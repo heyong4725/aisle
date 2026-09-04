@@ -49,6 +49,14 @@ def validate_monolithic_surface(editable_files: list[str]) -> None:
             raise TypedSurfaceError(f"forbidden typed facility in monolithic view: {relative}")
 
 
+def validate_broker_route(route: list[str], *, motion: bool = True) -> None:
+    """Require trusted controller, broker, and guard routing before actuation."""
+    if not route or route[0] != "trusted_controller" or "primitive_broker" not in route:
+        raise TypedSurfaceError("action route must enter trusted controller and primitive broker")
+    if motion and "budget_guard" not in route:
+        raise TypedSurfaceError("motion route must traverse budget guard")
+
+
 def validate_typed_graph(graph_path, root, embodiment: str, allow_unproven: bool = False) -> dict:
     """Run the pinned graph validator; authored deliverables are never repaired."""
     from aisle.harness.validate import validate
