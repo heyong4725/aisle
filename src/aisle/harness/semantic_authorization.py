@@ -102,3 +102,20 @@ def validate_adversarial_corpus(cases: list[dict[str, Any]]) -> None:
         raise SemanticAuthorizationError("adversarial corpus lacks lifecycle coverage")
     if any(case["expected"] not in {"block", "allow"} or not case["evidence"] for case in cases):
         raise SemanticAuthorizationError("adversarial expected outcome is invalid")
+
+
+def validate_authorization_endpoints(endpoints: dict[str, Any]) -> None:
+    """Require bounded false-allow/false-block counts and intervention accounting."""
+    required = {
+        "false_allow", "false_block", "allow_denominator", "block_denominator", "interventions"
+    }
+    if set(endpoints) != required:
+        raise SemanticAuthorizationError("authorization endpoints are incomplete")
+    if endpoints["allow_denominator"] <= 0 or endpoints["block_denominator"] <= 0:
+        raise SemanticAuthorizationError("authorization endpoint denominators are invalid")
+    if not 0 <= endpoints["false_allow"] <= endpoints["allow_denominator"]:
+        raise SemanticAuthorizationError("false-allow endpoint is invalid")
+    if not 0 <= endpoints["false_block"] <= endpoints["block_denominator"]:
+        raise SemanticAuthorizationError("false-block endpoint is invalid")
+    if endpoints["interventions"] < 0:
+        raise SemanticAuthorizationError("authorization intervention count is invalid")
