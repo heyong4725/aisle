@@ -34,9 +34,18 @@ import time
 import tomllib
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).parent))
 from env_hash import FROZEN_DIRS, FROZEN_FILES, FROZEN_GLOBS  # noqa: E402
 from h1_protocol import DEFAULT_MODELS, InfraError, make_worktree  # noqa: E402
+
+from aisle.harness.treatment_ambient import (  # noqa: E402
+    AmbientIsolationError,
+    amend_declared_environment,
+    build_declared_environment,
+    spawn_isolated_process,
+    verify_declared_environment,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DELIVERABLE = "graphs/agent_campaign.yaml"
@@ -268,7 +277,7 @@ def campaign_treatment(
         # treatment — resuming an unisolated (pre-#98) campaign with an
         # isolated runner would mix two treatments in one record. Old
         # records carry no key (None) and fail the resume identity check.
-        "session_isolation_policy": "isolated-home-baseline-compat-v2",
+        "session_isolation_policy": "declared-ambient-baseline-compat-v3",
     }
 
 
@@ -417,7 +426,13 @@ def resolve_commit(repo: Path, rev: str | None) -> str:
     return proc.stdout.strip()
 
 
-def attach_historical_baseline_compat(wt: Path, session_dir: Path, pin: str, env: dict) -> dict:
+def attach_historical_baseline_compat(
+    wt: Path,
+    session_dir: Path,
+    pin: str,
+    env: dict,
+    ambient_record: dict,
+) -> dict:
     """Make the immutable campaign selector work in pre-PR-166 checkouts.
 
     The research agent runs ``uv run harness`` FROM the pinned worktree, so
@@ -427,6 +442,7 @@ def attach_historical_baseline_compat(wt: Path, session_dir: Path, pin: str, env
     OID.  The historical tree remains byte-exact.  Unknown old interfaces fail
     before budget spend instead of silently following moving main.
     """
+    verify_declared_environment(env, ambient_record)
     if not re.fullmatch(r"[0-9a-f]{40}", pin):
         raise InfraError(f"campaign compatibility requires a full commit OID, got {pin!r}")
     cli_path = wt / "src" / "aisle" / "harness" / "cli.py"
@@ -462,7 +478,16 @@ def attach_historical_baseline_compat(wt: Path, session_dir: Path, pin: str, env
         raise InfraError(f"cannot install historical baseline compatibility: {error}") from error
     # Replace, do not append, an ambient operator PYTHONPATH: it is not part of
     # the treatment and could shadow the historical worktree's package.
-    env["PYTHONPATH"] = str(compat_dir)
+    compat_pythonpath = str(compat_dir)
+    already_attested = env.get("PYTHONPATH") == compat_pythonpath
+    env["PYTHONPATH"] = compat_pythonpath
+    if not already_attested:
+        amend_declared_environment(
+            env,
+            ambient_record,
+            added_keys=("PYTHONPATH",),
+            reason="historical-baseline-compat",
+        )
     return {
         "mode": "injected",
         "pin": pin,
@@ -591,35 +616,20 @@ def isolated_session_env(out: Path, env_baseline_oid: str | None = None) -> tupl
         # seed — scrub it NOW; audit artifacts persist, tokens do not
         scrub_session_credentials(dest)
         rotated = str(dest)
-    config = home / ".claude"
-    config.mkdir(parents=True, exist_ok=True)
-    codex_home = home / ".codex"
-    codex_home.mkdir(parents=True, exist_ok=True)
-    env = os.environ.copy()
-    env["HOME"] = str(home)
-    env["CLAUDE_CONFIG_DIR"] = str(config)
-    # PR #98 review round 2: agent CLIs honor explicit home overrides
-    # that BYPASS the HOME rebind — an operator-exported CODEX_HOME (or
-    # XDG_* base dirs) would expose the operator's directories despite
-    # the isolation record. Pin every such override into the scratch.
-    env["CODEX_HOME"] = str(codex_home)
-    env["XDG_CONFIG_HOME"] = str(home / ".config")
-    env["XDG_DATA_HOME"] = str(home / ".local" / "share")
-    env["XDG_CACHE_HOME"] = str(home / ".cache")
-    env["XDG_STATE_HOME"] = str(home / ".local" / "state")
-    # Issue #91: the runner, not each rollout, selects the campaign's
-    # immutable trust anchor.  The harness CLI consumes this as its
-    # default while an explicit flag remains available for human dev
-    # runs.  Never inherit an unrelated operator pin into a probe.
-    if env_baseline_oid is None:
-        env.pop("AISLE_ENV_BASELINE", None)
-    else:
-        env["AISLE_ENV_BASELINE"] = env_baseline_oid
+    # SPEC 420 TRT-7: build from a narrow allowlist rather than copying
+    # os.environ.  The controller separately seeds only the canonical
+    # credential file after this non-secret baseline has been attested.
+    env, ambient_baseline = build_declared_environment(
+        home.resolve(), source_env=os.environ, env_baseline_oid=env_baseline_oid
+    )
+    config = Path(env["CLAUDE_CONFIG_DIR"])
+    codex_home = Path(env["CODEX_HOME"])
     record = {
         "home": str(home),
         "claude_config_dir": str(config),
         "codex_home": str(codex_home),
         "xdg_rebound": True,
+        "ambient_baseline": ambient_baseline,
     }
     if env_baseline_oid is not None:
         record["env_baseline_oid"] = env_baseline_oid
@@ -726,6 +736,7 @@ def run_session(
     out: Path,
     ceilings: dict,
     env: dict | None = None,
+    environment_record: dict | None = None,
 ) -> dict:
     """Spawn the session, count token spend from the LIVE stdout pipe
     (issue #42: the on-disk log is a tee, never the count's source), kill
@@ -742,19 +753,35 @@ def run_session(
     counter = UsageCounter(agent)
     tee_failure: list[str] = []
     with open(log_path, "w") as log, open(stderr_path, "w") as err:
-        proc = subprocess.Popen(
-            cmd,
-            cwd=wt,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=err,
+        stream_options = {
+            "stdin": subprocess.DEVNULL,
+            "stdout": subprocess.PIPE,
+            "stderr": err,
             # errors="replace": non-UTF8 session bytes must never kill the
             # reader — strict decode was a silent fail-OPEN (PR #43 review)
-            encoding="utf-8",
-            errors="replace",
-            start_new_session=True,
-        )
+            "encoding": "utf-8",
+            "errors": "replace",
+        }
+        if env is None:
+            if environment_record is not None:
+                raise AmbientIsolationError("ambient record supplied without an environment")
+            proc = subprocess.Popen(
+                cmd,
+                cwd=wt,
+                close_fds=True,
+                start_new_session=True,
+                **stream_options,
+            )
+        else:
+            if environment_record is None:
+                raise AmbientIsolationError("isolated session requires its ambient record")
+            proc = spawn_isolated_process(
+                cmd,
+                cwd=wt,
+                environment=env,
+                environment_record=environment_record,
+                **stream_options,
+            )
 
         def tee() -> None:
             # FAIL CLOSED (PR #43 review): if the tee dies (disk full,
@@ -974,7 +1001,11 @@ def main() -> int:
     t0_epoch = time.time()
     session_env, session_isolation = isolated_session_env(session_dir, env_baseline_oid=oid)
     session_isolation["baseline_compat"] = attach_historical_baseline_compat(
-        wt, session_dir, oid, session_env
+        wt,
+        session_dir,
+        oid,
+        session_env,
+        session_isolation["ambient_baseline"],
     )
     seed_rec, seed_error = seed_session_credentials(args.agent, session_env)
     if seed_error:
@@ -994,6 +1025,7 @@ def main() -> int:
                 "wall_ceiling_s": wall_h * 3600.0,
             },
             env=session_env,
+            environment_record=session_isolation["ambient_baseline"],
         )
     finally:
         # PR #100 review P1: the seeded token must not outlive the

@@ -31,11 +31,12 @@ word, and only the last is the conventional one:
    the SmolVLA bring-up, and inference-only: weights pinned by revision hash,
    loaded under `torch.no_grad()`.
 
-**"Safe" is structural, not aspirational.** Whatever is learning, the things
-that judge and constrain it are frozen and unbypassable: the verifier and reset
-(CON-7), oracle isolation (VAL-6), motion gating (VAL-5), the registry floor
-(ADR-37), and held-out seeds. The last two encode a rule specific to learning —
-*a learner may not self-certify what it accumulates.*
+**"Safe" is structural, not aspirational.** Whatever is learning, the tracked
+verifier and reset artifacts are frozen (CON-7), while oracle isolation
+(VAL-6) and declared motion-path gating (VAL-5) are statically checked. The
+registry floor (ADR-37) and held-out seeds encode a rule specific to learning:
+*a learner may not self-certify what it accumulates.* None of these statements
+alone establishes a process-wide bypass boundary.
 
 The operating definition:
 

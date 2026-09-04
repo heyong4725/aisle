@@ -1,0 +1,375 @@
+{
+  "analysis_seed": 8142,
+  "artifact_outcomes": [
+    {
+      "artifact_id": "held-out-8-of-8",
+      "claim_above_threshold": false,
+      "claim_threshold": 0.9,
+      "interval": {
+        "confidence_level": 0.95,
+        "lower": 0.6876560219336321,
+        "method": "Clopper-Pearson exact",
+        "sidedness": "lower",
+        "upper": 1.0
+      },
+      "n": 8,
+      "observation_unit": "nested artifact outcome",
+      "rate": 1.0,
+      "successes": 8,
+      "treatment": "typed",
+      "treatment_replication": false
+    }
+  ],
+  "assumptions": {
+    "experimental_unit": "session",
+    "interval_methods": {
+      "binomial": "Clopper-Pearson exact",
+      "continuous": "treatment-stratified seeded session bootstrap",
+      "risk_difference": "Newcombe score",
+      "survival": "Kaplan-Meier"
+    },
+    "limitations": [
+      "analysis cannot repair biased tasks, treatment leakage, or informative failures",
+      "small-session bootstrap intervals can be coarse",
+      "power results depend on declared assumptions"
+    ],
+    "nested_observations_are_not_independent_replicates": true
+  },
+  "binary_effect": {
+    "arms": {
+      "monolithic": {
+        "interval": {
+          "confidence_level": 0.95,
+          "lower": 0.00840375865961257,
+          "method": "Clopper-Pearson exact",
+          "sidedness": "two-sided",
+          "upper": 0.9057006759497539
+        },
+        "n": 3,
+        "rate": 0.3333333333333333,
+        "successes": 1
+      },
+      "typed": {
+        "interval": {
+          "confidence_level": 0.95,
+          "lower": 0.19412044968324332,
+          "method": "Clopper-Pearson exact",
+          "sidedness": "two-sided",
+          "upper": 0.9936905367902902
+        },
+        "n": 4,
+        "rate": 0.75,
+        "successes": 3
+      }
+    },
+    "contrast": "typed minus monolithic",
+    "estimate": 0.4166666666666667,
+    "experimental_unit": "session",
+    "interval": {
+      "confidence_level": 0.95,
+      "lower": -0.2256807783748664,
+      "method": "Newcombe score",
+      "sidedness": "two-sided",
+      "upper": 0.7567876870495462
+    },
+    "session_points": [
+      {
+        "agent_system": "agent-a",
+        "outcome": false,
+        "session_id": "syn-m-001",
+        "temporal_block": "block-1",
+        "treatment": "monolithic"
+      },
+      {
+        "agent_system": "agent-a",
+        "outcome": true,
+        "session_id": "syn-m-002",
+        "temporal_block": "block-2",
+        "treatment": "monolithic"
+      },
+      {
+        "agent_system": "agent-b",
+        "outcome": false,
+        "session_id": "syn-m-003",
+        "temporal_block": "block-1",
+        "treatment": "monolithic"
+      },
+      {
+        "agent_system": "agent-a",
+        "outcome": true,
+        "session_id": "syn-t-001",
+        "temporal_block": "block-1",
+        "treatment": "typed"
+      },
+      {
+        "agent_system": "agent-a",
+        "outcome": true,
+        "session_id": "syn-t-002",
+        "temporal_block": "block-2",
+        "treatment": "typed"
+      },
+      {
+        "agent_system": "agent-b",
+        "outcome": true,
+        "session_id": "syn-t-003",
+        "temporal_block": "block-1",
+        "treatment": "typed"
+      },
+      {
+        "agent_system": "agent-b",
+        "outcome": false,
+        "session_id": "syn-t-004",
+        "temporal_block": "block-2",
+        "treatment": "typed"
+      }
+    ],
+    "strata": {
+      "agent-a": {
+        "arms": {
+          "monolithic": {
+            "interval": {
+              "confidence_level": 0.95,
+              "lower": 0.012579117093425018,
+              "method": "Clopper-Pearson exact",
+              "sidedness": "two-sided",
+              "upper": 0.9874208829065749
+            },
+            "n": 2,
+            "rate": 0.5,
+            "successes": 1
+          },
+          "typed": {
+            "interval": {
+              "confidence_level": 0.95,
+              "lower": 0.15811388300841894,
+              "method": "Clopper-Pearson exact",
+              "sidedness": "two-sided",
+              "upper": 1.0
+            },
+            "n": 2,
+            "rate": 1.0,
+            "successes": 2
+          }
+        },
+        "estimate": 0.5,
+        "interval": {
+          "confidence_level": 0.95,
+          "lower": -0.2725727851131814,
+          "method": "Newcombe score",
+          "sidedness": "two-sided",
+          "upper": 0.9054687942657693
+        },
+        "stratum_field": "agent_system"
+      },
+      "agent-b": {
+        "arms": {
+          "monolithic": {
+            "interval": {
+              "confidence_level": 0.95,
+              "lower": 0.0,
+              "method": "Clopper-Pearson exact",
+              "sidedness": "two-sided",
+              "upper": 0.9749999999999999
+            },
+            "n": 1,
+            "rate": 0.0,
+            "successes": 0
+          },
+          "typed": {
+            "interval": {
+              "confidence_level": 0.95,
+              "lower": 0.012579117093425018,
+              "method": "Clopper-Pearson exact",
+              "sidedness": "two-sided",
+              "upper": 0.9874208829065749
+            },
+            "n": 2,
+            "rate": 0.5,
+            "successes": 1
+          }
+        },
+        "estimate": 0.5,
+        "interval": {
+          "confidence_level": 0.95,
+          "lower": -0.39104934410983583,
+          "method": "Newcombe score",
+          "sidedness": "two-sided",
+          "upper": 0.9054687942657693
+        },
+        "stratum_field": "agent_system"
+      }
+    }
+  },
+  "campaign_id": "sta-synthetic-campaign-v1",
+  "campaign_phase": "synthetic",
+  "decision": {
+    "decision": "not_evaluated_by_equivalence_rule",
+    "kind": "superiority"
+  },
+  "execution_environment": {
+    "analysis_implementation_sha256": "22cde3e9d7c5cc80874c7eec30aa2898e30476d6c939c94ab3009e8b12af641e",
+    "machine": "arm64",
+    "python": "3.13.5",
+    "python_implementation": "CPython",
+    "release": "25.6.0",
+    "system": "Darwin"
+  },
+  "input_hashes": {
+    "protocol_sha256": "5c6bb33ffb824acb2e7a3f1b25a52a203292ec8fc3ec3f2f68e103c7b4eb541b",
+    "records_sha256": "60d1063a47922808d5b2d80862cfa3b94f9320bf24569ea3c6cf2babf1a71738"
+  },
+  "ok": true,
+  "protocol_core_sha256": "593d81e9eb7ad78ec74faabea8c574f785c402ffa3972bbb2d7146ed1a0d2b15",
+  "protocol_id": "sta-synthetic-v1",
+  "schema_version": "aisle.stats.result.v1",
+  "session_flow": {
+    "by_arm": {
+      "monolithic": {
+        "analyzed": 3,
+        "censored": 1,
+        "completed": 3,
+        "included": 4,
+        "infrastructure_excluded": 0,
+        "randomized": 5,
+        "started": 4
+      },
+      "typed": {
+        "analyzed": 4,
+        "censored": 0,
+        "completed": 4,
+        "included": 4,
+        "infrastructure_excluded": 1,
+        "randomized": 5,
+        "started": 5
+      }
+    },
+    "censor_reasons": {
+      "synthetic fixed wall budget": 1
+    },
+    "overall": {
+      "analyzed": 7,
+      "censored": 1,
+      "completed": 7,
+      "included": 8,
+      "infrastructure_excluded": 1,
+      "randomized": 10,
+      "started": 9
+    },
+    "reasons": {
+      "synthetic runner crash": 1,
+      "synthetic service outage": 1
+    }
+  },
+  "survival": {
+    "monolithic": {
+      "censored": 3,
+      "events": 1,
+      "n": 4,
+      "points": [
+        {
+          "survival": 0.75,
+          "time": 40.0
+        },
+        {
+          "survival": 0.75,
+          "time": 60.0
+        },
+        {
+          "survival": 0.75,
+          "time": 70.0
+        },
+        {
+          "survival": 0.75,
+          "time": 100.0
+        }
+      ],
+      "table": [
+        {
+          "at_risk": 4,
+          "censored": 0,
+          "events": 1,
+          "time": 40.0
+        },
+        {
+          "at_risk": 3,
+          "censored": 1,
+          "events": 0,
+          "time": 60.0
+        },
+        {
+          "at_risk": 2,
+          "censored": 1,
+          "events": 0,
+          "time": 70.0
+        },
+        {
+          "at_risk": 1,
+          "censored": 1,
+          "events": 0,
+          "time": 100.0
+        }
+      ]
+    },
+    "typed": {
+      "censored": 1,
+      "events": 3,
+      "n": 4,
+      "points": [
+        {
+          "survival": 0.75,
+          "time": 20.0
+        },
+        {
+          "survival": 0.5,
+          "time": 25.0
+        },
+        {
+          "survival": 0.25,
+          "time": 30.0
+        },
+        {
+          "survival": 0.25,
+          "time": 55.0
+        }
+      ],
+      "table": [
+        {
+          "at_risk": 4,
+          "censored": 0,
+          "events": 1,
+          "time": 20.0
+        },
+        {
+          "at_risk": 3,
+          "censored": 0,
+          "events": 1,
+          "time": 25.0
+        },
+        {
+          "at_risk": 2,
+          "censored": 0,
+          "events": 1,
+          "time": 30.0
+        },
+        {
+          "at_risk": 1,
+          "censored": 1,
+          "events": 0,
+          "time": 55.0
+        }
+      ]
+    }
+  },
+  "warnings": [
+    "1 included censored session(s) are retained in flow/survival but excluded from the primary effect"
+  ],
+  "zero_event": {
+    "confidence_level": 0.95,
+    "events": 0,
+    "exposure": 800,
+    "exposure_unit": "command",
+    "method": "Clopper-Pearson exact",
+    "sidedness": "upper",
+    "upper": 0.0037376628261006073
+  }
+}

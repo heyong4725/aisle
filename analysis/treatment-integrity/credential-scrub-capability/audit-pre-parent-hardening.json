@@ -1,0 +1,45 @@
+{
+  "capability_pass": true,
+  "checks": {
+    "aborted_launch_scrubbed": true,
+    "already_absent_proof_verified": true,
+    "both_canonical_locations_absent": true,
+    "credential_bytes_absent_from_proof": true,
+    "interrupted_session_scrubbed": true,
+    "nonsecret_evidence_preserved": true,
+    "normal_scrub_verified": true,
+    "record_overwrite_refused": true,
+    "symlink_target_preserved": true,
+    "unexpected_path_shape_excluded": true
+  },
+  "checks_passed": 10,
+  "checks_total": 10,
+  "configuration": {
+    "canonical_locations": [
+      ".claude/.credentials.json",
+      ".codex/auth.json"
+    ],
+    "scrub_schema": "aisle.credential-scrub.v1"
+  },
+  "confirmatory_ready": false,
+  "environment": {
+    "machine": "arm64",
+    "os": "Darwin",
+    "python_implementation": "CPython",
+    "python_version": "3.13.5"
+  },
+  "evidence_class": "synthetic_unscored_credential_scrub_capability",
+  "limitations": [
+    "synthetic credential sentinels only",
+    "not integrated into every Claude or Codex launcher path",
+    "does not exercise a real vendor refresh token"
+  ],
+  "randomization": {
+    "seed": null,
+    "status": "not_applicable_synthetic_capability"
+  },
+  "recorded_at": "2026-09-01T17:03:52.913166Z",
+  "schema_version": "aisle.credential-scrub-capability.v1",
+  "session_id": "credential-scrub-capability-20260901T170352913166Z",
+  "source_sha256": "e5b8384c45f64b4f5ab7bf33e80bd2c3122b39858135b75c0305b446152dd16c"
+}
