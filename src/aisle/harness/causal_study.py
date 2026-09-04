@@ -99,3 +99,18 @@ def validate_fault_evidence_record(record: dict[str, Any]) -> None:
         raise CausalStudyError("fault evidence arm or concealment is invalid")
     if not record["fault_id"] or not record["raw_evidence"]:
         raise CausalStudyError("fault evidence provenance is missing")
+
+
+def validate_paired_fault_diagnosis(pair: list[dict[str, Any]]) -> None:
+    """Require one matched pair without exposing fault truth to either arm."""
+    if len(pair) != 2 or {item.get("arm") for item in pair} != {"typed_evidence", "logs_only"}:
+        raise CausalStudyError("fault diagnosis pair is incomplete")
+    if (
+        len({item.get("session_id") for item in pair}) != 1
+        or len({item.get("fault_id") for item in pair}) != 1
+    ):
+        raise CausalStudyError("fault diagnosis pair is not matched")
+    if any(item.get("fault_hidden") is not True for item in pair):
+        raise CausalStudyError("fault diagnosis pair reveals truth")
+    if any(item.get("fault_class") not in {"novel", "sham", "public"} for item in pair):
+        raise CausalStudyError("fault class is invalid")

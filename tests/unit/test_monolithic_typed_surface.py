@@ -7,6 +7,7 @@ from aisle.harness.causal_study import (
     validate_claim_disposition,
     validate_exclusion_register,
     validate_fault_evidence_record,
+    validate_paired_fault_diagnosis,
     validate_session_effect,
     validate_session_record,
     validate_session_table,
@@ -147,6 +148,17 @@ def test_fault_evidence_rejects_visible_fault():
         validate_fault_evidence_record(
             {"session_id": "s", "arm": "logs_only", "fault_hidden": False}
         )
+
+
+def test_paired_fault_diagnosis_rejects_mismatched_faults():
+    pair = [
+        {"arm": "typed_evidence", "session_id": "s", "fault_id": "f1",
+         "fault_hidden": True, "fault_class": "novel"},
+        {"arm": "logs_only", "session_id": "s", "fault_id": "f2",
+         "fault_hidden": True, "fault_class": "novel"},
+    ]
+    with pytest.raises(CausalStudyError, match="matched"):
+        validate_paired_fault_diagnosis(pair)
 
 
 def test_task_card_rejects_physical_label_for_simulation():
