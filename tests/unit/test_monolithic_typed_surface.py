@@ -6,6 +6,7 @@ from aisle.harness.fault_bank import (
     FaultBankError,
     validate_activation_record,
     validate_calibration_records,
+    validate_conformance_matrix,
     validate_fault_manifest,
     validate_injection_request,
     validate_opaque_assignment,
@@ -136,6 +137,13 @@ def test_reveal_replay_rejects_commitment_mismatch():
     with pytest.raises(FaultBankError, match="reconstruct"):
         validate_reveal_replay(
             "assignment:" + "a" * 64, "assignment:" + "b" * 64, "assignment:" + "b" * 64
+        )
+
+
+def test_conformance_matrix_requires_corruption_case():
+    with pytest.raises(FaultBankError, match="conformance"):
+        validate_conformance_matrix(
+            {"route": True, "corruption": False, "leakage": True, "ledger": True}
         )
 
 
