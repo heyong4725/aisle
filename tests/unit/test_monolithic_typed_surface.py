@@ -46,6 +46,7 @@ from aisle.harness.threat_model import (
     validate_gateway_contract,
     validate_matched_profiles,
     validate_review_record,
+    validate_scoped_claim,
     validate_threat_model,
 )
 
@@ -331,6 +332,13 @@ def test_threat_model_requires_explicit_scope_registries():
                 "out_of_scope": [],
                 "claims": [],
             }
+        )
+
+
+def test_scoped_claim_rejects_unobserved_physical_evidence():
+    with pytest.raises(ThreatModelError, match="physical"):
+        validate_scoped_claim(
+            {"statement": "stop latency", "scope": "hardware_pending", "evidence_kind": "physical"}
         )
 
 
