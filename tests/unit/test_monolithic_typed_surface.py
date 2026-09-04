@@ -11,6 +11,7 @@ from aisle.harness.causal_study import (
     validate_session_effect,
     validate_session_record,
     validate_session_table,
+    validate_sham_rates,
 )
 from aisle.harness.fault_bank import (
     FaultBankError,
@@ -159,6 +160,11 @@ def test_paired_fault_diagnosis_rejects_mismatched_faults():
     ]
     with pytest.raises(CausalStudyError, match="matched"):
         validate_paired_fault_diagnosis(pair)
+
+
+def test_sham_rates_reject_missing_arm():
+    with pytest.raises(CausalStudyError, match="incomplete"):
+        validate_sham_rates([])
 
 
 def test_task_card_rejects_physical_label_for_simulation():
