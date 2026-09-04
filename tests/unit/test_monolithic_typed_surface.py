@@ -55,6 +55,7 @@ from aisle.harness.safety_exposure import (
 from aisle.harness.semantic_authorization import (
     SemanticAuthorizationError,
     validate_authorization_state,
+    validate_frozen_thresholds,
     validate_permit,
     validate_stage_gates,
 )
@@ -74,6 +75,11 @@ from aisle.harness.threat_model import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_frozen_thresholds_reject_mutable_envelope():
+    with pytest.raises(SemanticAuthorizationError, match="frozen"):
+        validate_frozen_thresholds({"max_force": 1, "max_duration": 1, "frozen": False})
 
 
 def test_authorization_state_rejects_revoked_permit():

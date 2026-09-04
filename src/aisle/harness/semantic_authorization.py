@@ -53,3 +53,15 @@ def validate_authorization_state(state: dict[str, Any]) -> None:
         or state["agreement"] is not True
     ):
         raise SemanticAuthorizationError("authorization state is not fail closed")
+
+
+def validate_frozen_thresholds(thresholds: dict[str, Any]) -> None:
+    """Require positive, frozen authorization envelope thresholds."""
+    required = {"max_force", "max_duration", "frozen"}
+    if set(thresholds) != required or thresholds["frozen"] is not True:
+        raise SemanticAuthorizationError("threshold envelope is not frozen")
+    if not all(
+        isinstance(thresholds[key], (int, float)) and thresholds[key] > 0
+        for key in ("max_force", "max_duration")
+    ):
+        raise SemanticAuthorizationError("threshold envelope is invalid")
