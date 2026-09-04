@@ -143,3 +143,16 @@ def validate_authorization_analysis(raw_ids: list[str], derived: dict[str, str])
         raise SemanticAuthorizationError("authorization raw IDs are incomplete")
     if set(derived) != set(raw_ids) or any(not value for value in derived.values()):
         raise SemanticAuthorizationError("authorization derivation is not exhaustive")
+
+
+def validate_hardware_adapter(adapter: dict[str, Any]) -> None:
+    """Require explicit adapter capability and fail-closed unavailable behavior."""
+    required = {"name", "available", "evidence_kind", "refusal", "telemetry"}
+    if set(adapter) != required or not adapter["name"]:
+        raise SemanticAuthorizationError("hardware adapter declaration is incomplete")
+    if adapter["evidence_kind"] not in {"simulation", "hardware_pending", "physical"}:
+        raise SemanticAuthorizationError("hardware adapter evidence kind is invalid")
+    if adapter["available"] is not True and adapter["refusal"] is not True:
+        raise SemanticAuthorizationError("unavailable hardware adapter must refuse")
+    if not isinstance(adapter["telemetry"], list) or not adapter["telemetry"]:
+        raise SemanticAuthorizationError("hardware adapter telemetry is missing")

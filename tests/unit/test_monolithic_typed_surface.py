@@ -88,6 +88,7 @@ from aisle.harness.semantic_authorization import (
     validate_authorization_endpoints,
     validate_authorization_state,
     validate_frozen_thresholds,
+    validate_hardware_adapter,
     validate_held_plan,
     validate_independent_containment,
     validate_metric_layers,
@@ -156,6 +157,14 @@ def test_metric_layers_reject_overlap():
 def test_authorization_analysis_rejects_missing_derivation():
     with pytest.raises(SemanticAuthorizationError, match="exhaustive"):
         validate_authorization_analysis(["raw-1"], {})
+
+
+def test_hardware_adapter_rejects_unavailable_nonrefusing_adapter():
+    with pytest.raises(SemanticAuthorizationError, match="refuse"):
+        validate_hardware_adapter(
+            {"name": "so101", "available": False, "evidence_kind": "hardware_pending",
+             "refusal": False, "telemetry": ["joint"]}
+        )
 
 
 def test_session_record_rejects_unclassified_exclusion():
