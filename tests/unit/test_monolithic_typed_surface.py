@@ -37,7 +37,11 @@ from aisle.harness.monolithic import (
     validate_typed_graph,
     validate_typed_surface,
 )
-from aisle.harness.safety_exposure import SafetyExposureError, validate_exposure_record
+from aisle.harness.safety_exposure import (
+    SafetyExposureError,
+    validate_exposure_record,
+    validate_proposal_accounting,
+)
 from aisle.harness.threat_model import (
     ThreatModelError,
     validate_attack_catalog,
@@ -59,6 +63,11 @@ pytestmark = pytest.mark.unit
 def test_exposure_record_requires_layer_and_unit():
     with pytest.raises(SafetyExposureError, match="incomplete"):
         validate_exposure_record({"session_id": "s", "layer": "claim", "unit": "episode"})
+
+
+def test_proposal_accounting_requires_decision_and_correlation():
+    with pytest.raises(SafetyExposureError, match="accounting"):
+        validate_proposal_accounting([{"proposal_id": "p", "decision": "accepted"}])
 
 
 def test_residual_paths_require_disposition():
