@@ -73,3 +73,16 @@ def validate_exclusion_register(register: list[dict[str, Any]]) -> None:
         raise CausalStudyError("exclusion was not retained under the protocol")
     if any(not isinstance(item["reason"], str) or not item["reason"] for item in register):
         raise CausalStudyError("exclusion reason is missing")
+
+
+def validate_claim_disposition(disposition: dict[str, Any]) -> None:
+    """Require an evidence-backed, direction-neutral causal disposition."""
+    required = {"status", "estimand", "effect", "interval", "evidence_hash"}
+    if set(disposition) != required:
+        raise CausalStudyError("claim disposition is incomplete")
+    if disposition["status"] not in {"typed_favoring", "monolithic_favoring", "null", "rejected"}:
+        raise CausalStudyError("claim disposition status is invalid")
+    if not disposition["estimand"] or not disposition["evidence_hash"]:
+        raise CausalStudyError("claim disposition evidence is missing")
+    if not isinstance(disposition["interval"], (list, tuple)) or len(disposition["interval"]) != 2:
+        raise CausalStudyError("claim disposition interval is invalid")

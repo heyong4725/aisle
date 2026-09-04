@@ -4,6 +4,7 @@ import pytest
 
 from aisle.harness.causal_study import (
     CausalStudyError,
+    validate_claim_disposition,
     validate_exclusion_register,
     validate_session_effect,
     validate_session_record,
@@ -131,6 +132,13 @@ def test_exclusion_register_rejects_unretained_invalidations():
             "retained": False, "sensitivity_bound": 0.1}
     with pytest.raises(CausalStudyError, match="retained"):
         validate_exclusion_register([item])
+
+
+def test_claim_disposition_allows_null_result():
+    validate_claim_disposition(
+        {"status": "null", "estimand": "success", "effect": 0,
+         "interval": [-0.1, 0.1], "evidence_hash": "digest"}
+    )
 
 
 def test_task_card_rejects_physical_label_for_simulation():
