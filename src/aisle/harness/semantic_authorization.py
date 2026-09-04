@@ -74,3 +74,17 @@ def validate_independent_containment(policy_fields: list[str], verifier_fields: 
         raise SemanticAuthorizationError("authorization containment boundary is violated")
     if not privileged.intersection(verifier_fields):
         raise SemanticAuthorizationError("verifier-only containment is not declared")
+
+
+def validate_held_plan(plan: dict[str, Any]) -> None:
+    """Require a frozen, identity-bound held plan before confirmatory execution."""
+    required = {"plan_hash", "randomization_hash", "identity_hash", "frozen", "revealed"}
+    if set(plan) != required or plan["frozen"] is not True:
+        raise SemanticAuthorizationError("held plan is incomplete or not frozen")
+    if plan["revealed"] is not False:
+        raise SemanticAuthorizationError("held plan was revealed early")
+    if not all(
+        isinstance(plan[key], str) and plan[key]
+        for key in ("plan_hash", "randomization_hash", "identity_hash")
+    ):
+        raise SemanticAuthorizationError("held plan hashes are missing")
