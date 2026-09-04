@@ -49,3 +49,20 @@ def validate_release_manifest(manifest: dict[str, Any]) -> None:
         manifest["compute"].get(key) for key in ("expected_time", "expected_resources")
     ):
         raise ReproductionError("compute expectations are missing")
+
+
+def validate_submission_bundle(bundle: dict[str, Any]) -> None:
+    """Require provenance and resource accounting before public scoring."""
+    required = {
+        "submission_id", "benchmark_version", "agent_hash", "treatment", "sessions", "resources"
+    }
+    if set(bundle) != required or not bundle["submission_id"] or not bundle["benchmark_version"]:
+        raise ReproductionError("submission bundle is incomplete")
+    if bundle["treatment"] not in {"typed", "monolithic"}:
+        raise ReproductionError("submission treatment is invalid")
+    if not isinstance(bundle["sessions"], list) or not bundle["sessions"]:
+        raise ReproductionError("submission sessions are missing")
+    if not isinstance(bundle["resources"], dict) or not all(
+        bundle["resources"].get(key) is not None for key in ("tokens", "wall_seconds", "tool_calls")
+    ):
+        raise ReproductionError("submission resource accounting is incomplete")

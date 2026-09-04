@@ -71,6 +71,7 @@ from aisle.harness.reproduction import (
     redact_double_blind,
     validate_layered_comparison,
     validate_release_manifest,
+    validate_submission_bundle,
 )
 from aisle.harness.safety_exposure import (
     SafetyExposureError,
@@ -141,6 +142,11 @@ def test_double_blind_redaction_removes_heldout_truth():
 def test_layered_comparison_requires_all_con5_layers():
     with pytest.raises(ReproductionError, match="incomplete"):
         validate_layered_comparison({"artifact": {"result": "same", "evidence": "e"}})
+
+
+def test_submission_bundle_rejects_missing_provenance():
+    with pytest.raises(ReproductionError, match="incomplete"):
+        validate_submission_bundle({"submission_id": "s"})
 
 
 def test_independent_containment_rejects_oracle_policy_field():
