@@ -11,6 +11,7 @@ from aisle.harness.fault_bank import (
     validate_opaque_assignment,
     validate_paired_efficacy,
     validate_participant_surface,
+    validate_reveal_replay,
     validate_safety_assets,
     validate_sealed_ledger,
     validate_sealed_location,
@@ -128,6 +129,13 @@ def test_sealed_ledger_requires_every_assignment():
                 }
             ],
             {"assignment:" + "a" * 64, "assignment:" + "b" * 64},
+        )
+
+
+def test_reveal_replay_rejects_commitment_mismatch():
+    with pytest.raises(FaultBankError, match="reconstruct"):
+        validate_reveal_replay(
+            "assignment:" + "a" * 64, "assignment:" + "b" * 64, "assignment:" + "b" * 64
         )
 
 
