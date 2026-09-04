@@ -12,6 +12,7 @@ from aisle.harness.fault_bank import (
     validate_paired_efficacy,
     validate_participant_surface,
     validate_safety_assets,
+    validate_sealed_ledger,
     validate_sealed_location,
     validate_sham_parity,
 )
@@ -112,6 +113,21 @@ def test_activation_record_rejects_assignment_drift():
         validate_activation_record(
             {"session": "s", "handle": "assignment:" + "b" * 64, "activated": True},
             {"session": "s", "handle": "assignment:" + "a" * 64},
+        )
+
+
+def test_sealed_ledger_requires_every_assignment():
+    with pytest.raises(FaultBankError, match="incomplete"):
+        validate_sealed_ledger(
+            [
+                {
+                    "session": "s",
+                    "handle": "assignment:" + "a" * 64,
+                    "activated": True,
+                    "append_only": True,
+                }
+            ],
+            {"assignment:" + "a" * 64, "assignment:" + "b" * 64},
         )
 
 

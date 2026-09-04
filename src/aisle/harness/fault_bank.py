@@ -157,3 +157,20 @@ def validate_activation_record(record: dict[str, Any], assignment: dict[str, Any
         raise FaultBankError("activation record drifted from assignment")
     if record["activated"] is not True:
         raise FaultBankError("activation was not attested")
+
+
+def validate_sealed_ledger(records: list[dict[str, Any]], assignment_handles: set[str]) -> None:
+    """Require one complete append-only record for every opaque assignment."""
+    if not records or not assignment_handles:
+        raise FaultBankError("sealed ledger is empty")
+    seen: set[str] = set()
+    for record in records:
+        if set(record) != {"session", "handle", "activated", "append_only"}:
+            raise FaultBankError("sealed ledger record is incomplete")
+        if record["handle"] in seen or record["handle"] not in assignment_handles:
+            raise FaultBankError("sealed ledger assignment is duplicated or unknown")
+        if record["append_only"] is not True:
+            raise FaultBankError("sealed ledger is not append-only")
+        seen.add(record["handle"])
+    if seen != assignment_handles:
+        raise FaultBankError("sealed ledger is incomplete")
