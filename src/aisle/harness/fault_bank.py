@@ -103,3 +103,12 @@ def validate_injection_request(request: dict[str, Any]) -> None:
             raise FaultBankError("injector image is not content-addressed")
     if request["atomic"] is not True:
         raise FaultBankError("injector must apply atomically")
+
+
+def validate_sham_parity(sham: dict[str, Any], fault: dict[str, Any]) -> None:
+    """Require sham/fault starts to share the same public execution envelope."""
+    required = {"surface", "timing", "retention"}
+    if set(sham) != required or set(fault) != required:
+        raise FaultBankError("sham and fault execution surfaces are incomplete")
+    if any(sham[key] != fault[key] for key in required):
+        raise FaultBankError("sham and fault execution surfaces differ")
