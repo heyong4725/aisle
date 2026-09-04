@@ -39,6 +39,7 @@ from aisle.harness.monolithic import (
 )
 from aisle.harness.safety_exposure import (
     SafetyExposureError,
+    validate_exposure_analysis,
     validate_exposure_record,
     validate_proposal_accounting,
 )
@@ -58,6 +59,11 @@ from aisle.harness.threat_model import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_exposure_analysis_rejects_silent_omission():
+    with pytest.raises(SafetyExposureError, match="exhaustive"):
+        validate_exposure_analysis(["e1", "e2"], ["e1"])
 
 
 def test_exposure_record_requires_layer_and_unit():
