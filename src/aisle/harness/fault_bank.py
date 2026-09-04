@@ -191,3 +191,12 @@ def validate_conformance_matrix(matrix: dict[str, bool]) -> None:
     required = {"route", "corruption", "leakage", "ledger"}
     if set(matrix) != required or not all(matrix.values()):
         raise FaultBankError("synthetic conformance coverage is incomplete")
+
+
+def validate_bank_lifecycle(states: list[str]) -> None:
+    """Require monotonic bank lifecycle through reveal and retirement."""
+    order = ["draft", "calibration", "sealed", "scoring", "closed", "revealed", "retired"]
+    if not states or any(state not in order for state in states):
+        raise FaultBankError("invalid bank lifecycle state")
+    if states != sorted(states, key=order.index) or len(set(states)) != len(states):
+        raise FaultBankError("bank lifecycle is not monotonic")
