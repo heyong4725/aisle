@@ -184,3 +184,10 @@ def validate_reveal_replay(revealed_handle: str, committed_handle: str, replay_h
         raise FaultBankError("reveal handle is invalid")
     if revealed_handle != committed_handle or replay_handle != committed_handle:
         raise FaultBankError("replay does not reconstruct committed assignment")
+
+
+def validate_conformance_matrix(matrix: dict[str, bool]) -> None:
+    """Require synthetic conformance to cover route and corruption refusal cases."""
+    required = {"route", "corruption", "leakage", "ledger"}
+    if set(matrix) != required or not all(matrix.values()):
+        raise FaultBankError("synthetic conformance coverage is incomplete")
