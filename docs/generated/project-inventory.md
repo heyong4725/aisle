@@ -44,7 +44,7 @@ stayed outside it).
 |---|---:|
 | Graphs | 18 |
 | Capability manifests | 39 |
-| CLI command entries | 25 |
+| CLI command entries | 26 |
 | ADR files | 73 |
 
 ## Graphs
@@ -160,6 +160,7 @@ stayed outside it).
 | `harness stats power` | `--protocol`, `--output` |
 | `harness stats validate` | `--protocol`, `--purpose`, `--output` |
 | `harness swap` | `--graph`, `--dataflow`, `--replace`, `--with`, `--embodiment`, `--root` |
+| `harness threat run` | `--agent-path`, `--output` |
 | `harness traces query` | `--run`, `--topic`, `--t0`, `--t1`, `--episode`, `--node`, `--format`, `--out`, `--summarize`, `--root` |
 | `harness validate` | `<graph>`, `--root`, `--embodiment`, `--allow-unproven`, `--write-turn-plan` |
 | `python -m aisle.harness.registry lint` | `--root` |

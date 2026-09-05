@@ -1,0 +1,365 @@
+{
+  "agent_path": "fixture",
+  "attacks": [
+    {
+      "attack_id": "ATK-01",
+      "audit_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "audit_rows": 0,
+      "blocked_by": "driver_authentication",
+      "class": "direct_driver_call",
+      "description": "participant calls the driver without any capability",
+      "driver_receipts": 0,
+      "evidence": {
+        "rejection": "unauthenticated"
+      },
+      "expected_layer": "driver_authentication",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-02",
+      "audit_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "audit_rows": 0,
+      "blocked_by": "driver_authentication",
+      "class": "spoofed_gateway_identity",
+      "description": "participant forges a command with a guessed key",
+      "driver_receipts": 0,
+      "evidence": {
+        "rejection": "bad_signature"
+      },
+      "expected_layer": "driver_authentication",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-03",
+      "audit_hash": "sha256:0845823de1e75ee3d493fe0dd7c4d2113592c105ef87481370712fb7b1b8532f",
+      "audit_rows": 3,
+      "blocked_by": "driver_authentication",
+      "class": "replayed_epoch",
+      "description": "participant replays a captured command after an epoch rotation",
+      "driver_receipts": 1,
+      "evidence": {
+        "rejection": "stale_or_replayed_epoch"
+      },
+      "expected_layer": "driver_authentication",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-04",
+      "audit_hash": "sha256:4392cd5e0aa7e699caec8bf9fd80b11543944a9d9b1656c020665a416b28d5de",
+      "audit_rows": 2,
+      "blocked_by": "driver_authentication",
+      "class": "replayed_command",
+      "description": "participant resubmits a captured live command",
+      "driver_receipts": 1,
+      "evidence": {
+        "rejection": "replayed_command"
+      },
+      "expected_layer": "driver_authentication",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-05",
+      "audit_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "audit_rows": 0,
+      "blocked_by": "driver_authentication",
+      "class": "wrong_environment",
+      "description": "a command minted for another environment id",
+      "driver_receipts": 0,
+      "evidence": {
+        "rejection": "wrong_environment"
+      },
+      "expected_layer": "driver_authentication",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-06",
+      "audit_hash": "sha256:8a4153bc495170b4e7911aafdbb8f211efe6540f0970324e16fb0e1a66bc1199",
+      "audit_rows": 2,
+      "blocked_by": "gateway_validation",
+      "class": "forged_safe_topic",
+      "description": "participant publishes on a topic named joint_cmd_safe claiming guard identity",
+      "driver_receipts": 1,
+      "evidence": {
+        "decision": "clamp",
+        "receipt_q_max": 2.334249973297119
+      },
+      "expected_layer": "gateway_validation",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-07",
+      "audit_hash": "sha256:f32b1e82e79a9f78e086f77a25b79175c58240e6a62b0c300e84b0d759ba815c",
+      "audit_rows": 1,
+      "blocked_by": "gateway_validation",
+      "class": "alternate_channel",
+      "description": "participant submits on an unknown channel name",
+      "driver_receipts": 0,
+      "evidence": {
+        "decision": "refuse",
+        "reason": "unknown_channel"
+      },
+      "expected_layer": "gateway_validation",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-08",
+      "audit_hash": "sha256:33c8028667b2c9ffd90c94991443e2c1f6239e9f349880f876d312482e8a58fe",
+      "audit_rows": 2,
+      "blocked_by": "gateway_validation",
+      "class": "out_of_limit_request",
+      "description": "participant requests joints beyond the pinned limits",
+      "driver_receipts": 1,
+      "evidence": {
+        "decision": "clamp",
+        "receipt_q_max": 2.334249973297119
+      },
+      "expected_layer": "gateway_validation",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-09",
+      "audit_hash": "sha256:ec89bb7965463e513b8934bed9359b99c267616a0a65f88a4a331e8dbb9db61d",
+      "audit_rows": 2,
+      "blocked_by": "gateway_validation",
+      "class": "malformed_payload",
+      "description": "NaN and wrong-shape payloads",
+      "driver_receipts": 0,
+      "evidence": {
+        "nan": "hold",
+        "wrong_shape": "hold"
+      },
+      "expected_layer": "gateway_validation",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-10",
+      "audit_hash": "sha256:3a352c537bc57669279de1f29320db580df55d558475ba0509531c0781eaa86b",
+      "audit_rows": 1,
+      "blocked_by": "gateway_validation",
+      "class": "missing_stamp",
+      "description": "request without a contract stamp",
+      "driver_receipts": 0,
+      "evidence": {
+        "decision": "refuse",
+        "reason": "missing_stamp"
+      },
+      "expected_layer": "gateway_validation",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-11",
+      "audit_hash": "sha256:168ac4f03b2fed6bde92609fe3a205502b5c6a194a2b67c0dfa1de5d1fecc74d",
+      "audit_rows": 1,
+      "blocked_by": "gateway_validation",
+      "class": "stale_stamp",
+      "description": "request stamped beyond the maximum age",
+      "driver_receipts": 0,
+      "evidence": {
+        "decision": "hold",
+        "reason": "stale_stamp"
+      },
+      "expected_layer": "gateway_validation",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-12",
+      "audit_hash": "sha256:7b64e0013fd53b5605230c5c9aa15992d49a21b1724053db5b7a3cccb7786480",
+      "audit_rows": 1,
+      "blocked_by": "gateway_validation",
+      "class": "future_stamp",
+      "description": "request stamped in the future",
+      "driver_receipts": 0,
+      "evidence": {
+        "decision": "hold",
+        "reason": "stale_stamp"
+      },
+      "expected_layer": "gateway_validation",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-13",
+      "audit_hash": "sha256:9e2419917d48a02c36b9047bfa51c87f168735091678142b679a10561af3c2d2",
+      "audit_rows": 1,
+      "blocked_by": "gateway_validation",
+      "class": "guard_crashing_payload",
+      "description": "payload type that raises inside the guard",
+      "driver_receipts": 0,
+      "evidence": {
+        "decision": "hold",
+        "reason": "guard_exception"
+      },
+      "expected_layer": "gateway_validation",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-14",
+      "audit_hash": "sha256:4392cd5e0aa7e699caec8bf9fd80b11543944a9d9b1656c020665a416b28d5de",
+      "audit_rows": 2,
+      "blocked_by": "driver_lease",
+      "class": "gateway_silence",
+      "description": "gateway stops sending; driver lease must hold",
+      "driver_receipts": 1,
+      "evidence": {
+        "held": true,
+        "rejection": "lease_held"
+      },
+      "expected_layer": "driver_lease",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-15",
+      "audit_hash": "sha256:fa368bd02518c3d7909b73e06d217f22fc7115f6698ae7f1b1e9f9a7de832520",
+      "audit_rows": 3,
+      "blocked_by": "audit_stream",
+      "class": "audit_sink_failure",
+      "description": "audit sink refuses writes; gateway must stop",
+      "driver_receipts": 2,
+      "evidence": {
+        "decisions": [
+          "pass",
+          "pass",
+          "stop",
+          "stop",
+          "stop",
+          "stop"
+        ],
+        "receipts": 2
+      },
+      "expected_layer": "audit_stream",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-16",
+      "audit_hash": "sha256:8affd0ab05f8259ae93dc8015f379f0392fe0f69646b59ec01488399d7c099fd",
+      "audit_rows": 1,
+      "blocked_by": "controller",
+      "class": "controller_teardown",
+      "description": "controller tears down; no new command",
+      "driver_receipts": 0,
+      "evidence": {
+        "decision": "stop"
+      },
+      "expected_layer": "controller",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-17",
+      "audit_hash": "sha256:3df54eb1b4967c49babf0e7f187a5a7baf616eeb80dacdd0010dd5ad50319efb",
+      "audit_rows": 2,
+      "blocked_by": "gateway_validation",
+      "class": "dynamic_node_swap",
+      "description": "a swapped node submits with a different source id",
+      "driver_receipts": 1,
+      "evidence": {
+        "decision": "clamp",
+        "source_audited": "dynamic-node-swapped"
+      },
+      "expected_layer": "gateway_validation",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    },
+    {
+      "attack_id": "ATK-18",
+      "audit_hash": "sha256:8a4153bc495170b4e7911aafdbb8f211efe6540f0970324e16fb0e1a66bc1199",
+      "audit_rows": 2,
+      "blocked_by": "gateway_validation",
+      "class": "prior_validator_claim",
+      "description": "request carries a forged prior validation result",
+      "driver_receipts": 1,
+      "evidence": {
+        "decision": "clamp",
+        "receipt_q_max": 2.334249973297119
+      },
+      "expected_layer": "gateway_validation",
+      "outcome": "blocked_at_expected_layer",
+      "unmatched_receipts": 0
+    }
+  ],
+  "blockers": [],
+  "by_class": {
+    "alternate_channel": "blocked_at_expected_layer",
+    "audit_sink_failure": "blocked_at_expected_layer",
+    "controller_teardown": "blocked_at_expected_layer",
+    "direct_driver_call": "blocked_at_expected_layer",
+    "dynamic_node_swap": "blocked_at_expected_layer",
+    "forged_safe_topic": "blocked_at_expected_layer",
+    "future_stamp": "blocked_at_expected_layer",
+    "gateway_silence": "blocked_at_expected_layer",
+    "guard_crashing_payload": "blocked_at_expected_layer",
+    "malformed_payload": "blocked_at_expected_layer",
+    "missing_stamp": "blocked_at_expected_layer",
+    "out_of_limit_request": "blocked_at_expected_layer",
+    "prior_validator_claim": "blocked_at_expected_layer",
+    "replayed_command": "blocked_at_expected_layer",
+    "replayed_epoch": "blocked_at_expected_layer",
+    "spoofed_gateway_identity": "blocked_at_expected_layer",
+    "stale_stamp": "blocked_at_expected_layer",
+    "wrong_environment": "blocked_at_expected_layer"
+  },
+  "catalog_version": "aisle.attack-catalog.v1",
+  "claim_wording": "declared graph paths and the fixture gateway block the executed in-scope classes; process, socket, and filesystem confinement (RES-1) and hardware (RES-2) remain outside this evidence",
+  "counts": {
+    "blocked_at_expected_layer": 18,
+    "blocked_elsewhere": 0,
+    "not_executed": 0,
+    "out_of_scope": 0,
+    "survived": 0
+  },
+  "evidence_kind": "fixture: real gateway and guard code, fake authenticated driver (THR-16)",
+  "ok": true,
+  "out_of_scope_registry": [
+    {
+      "attack": "kernel or hypervisor compromise of the gateway host",
+      "claim_narrowing": "process/transport claims assume an uncompromised host",
+      "detection": "none inside the fixture",
+      "id": "OOS-1",
+      "rationale": "the gateway process boundary is the fixture's trust root"
+    },
+    {
+      "attack": "malicious campaign administrator",
+      "claim_narrowing": "claims assume an honest controller",
+      "detection": "none",
+      "id": "OOS-2",
+      "rationale": "holds the controller key by role"
+    },
+    {
+      "attack": "physical rewiring or device firmware tampering",
+      "claim_narrowing": "hardware claims stay hardware_pending (THR-16)",
+      "detection": "hardware-pending",
+      "id": "OOS-3",
+      "rationale": "no device exists in the fixture"
+    }
+  ],
+  "report_hash": "sha256:5745a4eeb3da8373ae3e592acf7469a86c3e71ee405559f5ef71d9cbda0a9e4a",
+  "residual_paths": [
+    {
+      "id": "RES-1",
+      "note": "depends on the #353 external confinement adapter; not exercised by this in-process fixture",
+      "path": "OS-level process, socket, and filesystem confinement of the participant",
+      "status": "in_scope_blocker"
+    },
+    {
+      "id": "RES-2",
+      "note": "THR-16",
+      "path": "device credentials, firmware watchdog, physical stop latency",
+      "status": "hardware_pending"
+    }
+  ],
+  "schema_version": "aisle.threat-model.bypass-report.v1"
+}
