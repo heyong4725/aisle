@@ -1,6 +1,6 @@
 {
   "benchmark_version": "aisle-benchmark-v1-draft",
-  "manifest_sha256": "5b48c67185da3b1c6c6a29b7068d16493292c5f7b4bb2bd49a4a4786653ff695",
+  "manifest_sha256": "6777230c5bee74b3186a7c639b5d24df97e45cbf097b516240808be717425d93",
   "missing_surfaces": [],
   "schema_version": "aisle.benchmark.version-manifest.v1",
   "status": "draft",
@@ -31,7 +31,7 @@
     },
     "hidden_bank_commitment": {
       "path": "analysis/fault-bank/commitment.json",
-      "sha256": null
+      "sha256": "sha256:8048b90e32d3d78cd10f8275e1d78263c4bfca71288e225667019c7cda455c85"
     },
     "leaderboard_schema": {
       "path": "docs/benchmark/v1/leaderboard.schema.json",

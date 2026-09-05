@@ -272,6 +272,34 @@ def build_parser() -> argparse.ArgumentParser:
     perception_audit.add_argument("--run", type=Path, required=True)
     perception_audit.add_argument("--envelope", type=Path, required=True)
     perception_audit.add_argument("--output", type=Path, default=None)
+    fault = subparsers.add_parser(
+        "fault", help="sealed fault bank: validate, calibrate, assign (SPEC 450)"
+    )
+    fault_sub = fault.add_subparsers(dest="fault_command", required=True)
+    fault_validate = fault_sub.add_parser("validate", help="FLT-1/2/3/11 manifest coverage")
+    fault_validate.add_argument("--bank", type=Path, required=True)
+    fault_calibrate = fault_sub.add_parser("calibrate", help="FLT-9/10 severity calibration")
+    fault_calibrate.add_argument("--bank", type=Path, required=True)
+    fault_calibrate.add_argument("--clean-run", type=Path, required=True)
+    fault_calibrate.add_argument("--clean-commit", required=True)
+    fault_calibrate.add_argument("--graph", default="graphs/expert_t1.yaml")
+    fault_calibrate.add_argument("--seeds", default="0..7")
+    fault_calibrate.add_argument("--tier", default="T1")
+    fault_calibrate.add_argument("--embodiment", default="franka")
+    fault_calibrate.add_argument("--perception", default="L1")
+    fault_calibrate.add_argument("--staging", type=Path, required=True)
+    fault_calibrate.add_argument("--raw-store", type=Path, required=True)
+    fault_calibrate.add_argument("--campaign-id", required=True)
+    fault_calibrate.add_argument("--only", default=None, help="comma list of opaque ids")
+    fault_calibrate.add_argument("--output", type=Path, default=None)
+    fault_calibrate.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    fault_assign = fault_sub.add_parser("assign", help="FLT-5 deterministic opaque assignment")
+    fault_assign.add_argument("--bank", type=Path, required=True)
+    fault_assign.add_argument("--seed-file", type=Path, required=True)
+    fault_assign.add_argument("--block", required=True)
+    fault_assign.add_argument("--session", action="append", required=True)
+    fault_assign.add_argument("--cells", required=True, help="comma list of opaque ids")
+    fault_assign.add_argument("--output", type=Path, default=None)
     return parser
 
 
@@ -398,6 +426,46 @@ def main() -> int:
         except (OSError, json.JSONDecodeError, KeyError, ValueError) as refused:
             report = {"ok": False, "error": "semantic replay refused", "details": [repr(refused)]}
         summary = {k: v for k, v in report.items() if k not in ("plans", "runs")}
+        print(json.dumps(summary, sort_keys=True))
+        return 0 if report["ok"] else 1
+
+    if args.command == "fault":
+        from aisle.harness import fault_injector as fi
+
+        try:
+            bank = json.loads(args.bank.read_bytes())
+            if args.fault_command == "validate":
+                errors = fi.validate_manifest(bank)
+                report = {
+                    "ok": not errors,
+                    "bank_id": bank.get("bank_id"),
+                    "lifecycle_state": bank.get("lifecycle_state"),
+                    "instances": len(bank.get("instances", [])),
+                    "families": sorted({i.get("family") for i in bank.get("instances", [])}),
+                    "errors": errors,
+                }
+            elif args.fault_command == "assign":
+                seed = args.seed_file.read_bytes()
+                cells = [c for c in args.cells.split(",") if c]
+                report = {
+                    "ok": True,
+                    "assignments": [
+                        fi.assign(seed, bank["bank_id"], args.block, s, cells) for s in args.session
+                    ],
+                }
+            else:
+                from aisle.harness.fault_calibration import calibrate_bank
+
+                report = calibrate_bank(args, bank)
+            output = getattr(args, "output", None)
+            if output is not None:
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        except fi.FaultInjectorError as refused:
+            report = {"ok": False, "error": str(refused), "details": refused.details}
+        except (OSError, json.JSONDecodeError, KeyError, ValueError) as refused:
+            report = {"ok": False, "error": "fault command refused", "details": [repr(refused)]}
+        summary = {k: v for k, v in report.items() if k != "rungs"}
         print(json.dumps(summary, sort_keys=True))
         return 0 if report["ok"] else 1
 

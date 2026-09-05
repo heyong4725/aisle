@@ -1,0 +1,441 @@
+{
+  "bank_id": "aisle-fault-bank-v1-draft",
+  "campaign_id": "flt-cal-v1",
+  "campaign_purpose": "excluded_pilot",
+  "clean_run_id": "sfe-exposure-pilot-01",
+  "coverage_after_calibration": {
+    "clocking": 0,
+    "coupled": 0,
+    "decision": 0,
+    "motion": 0,
+    "perception": 0,
+    "runtime": 1,
+    "schema_metadata": 1
+  },
+  "disposition": "bank v1 cannot be sealed: only the schema_metadata and runtime instances degrade the clean baseline under the frozen rule; perception, decision, motion, clocking, and coupled candidates are ineffective at their authored severities; sham at parity. A v2 candidate round with stronger severities is required before any scored use (FLT-9, FLT-10).",
+  "evidence_kind": "simulation",
+  "private_report_hash": "sha256:e5585b95c6a3038ab185d3f6f92b212f84d09ad610a6e97c2a34c337777a0b23",
+  "rule": {
+    "confidence_level": 0.95,
+    "direction": "fault lower than clean",
+    "minimum_discordant_pairs": 3,
+    "minimum_meaningful_degradation": 0.25,
+    "outcome": "episode_success",
+    "saturation": "a clean baseline with zero successes cannot calibrate anything",
+    "selection": "paired difference point estimate >= minimum, at least the minimum number of discordant pairs, and the exact 95% lower bound on the clean-only share of discordant pairs above 0.5 (paired binomial); sham must not degrade by the same rule",
+    "unit": "seed_pair"
+  },
+  "rungs": [
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "perception",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-a1",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "perception",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-a1",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 1,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "perception",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-a2",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "decision",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-d1",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "decision",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-d1",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 1,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 1,
+        "fault_only": 0
+      },
+      "family": "motion",
+      "fault_failure_classes": {
+        "collision": 1,
+        "success": 7
+      },
+      "fault_successes": 7,
+      "opaque_id": "i-m1",
+      "paired_difference": 0.125,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 1,
+        "fault_only": 0
+      },
+      "family": "motion",
+      "fault_failure_classes": {
+        "collision": 1,
+        "success": 7
+      },
+      "fault_successes": 7,
+      "opaque_id": "i-m1",
+      "paired_difference": 0.125,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 1,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "motion",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-m2",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "motion",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-m2",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 1,
+      "sham": false
+    },
+    {
+      "clean_successes": 7,
+      "decision": "selected",
+      "discordant_pairs": {
+        "clean_only": 7,
+        "fault_only": 0
+      },
+      "family": "schema_metadata",
+      "fault_failure_classes": {
+        "wall_clamp": 7
+      },
+      "fault_successes": 0,
+      "opaque_id": "i-s1",
+      "paired_difference": 1.0,
+      "pairs": 7,
+      "reason": "meets the frozen degradation rule",
+      "rollout_ok": false,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "clocking",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-c1",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 7,
+      "decision": "selected",
+      "discordant_pairs": {
+        "clean_only": 7,
+        "fault_only": 0
+      },
+      "family": "runtime",
+      "fault_failure_classes": {
+        "wall_clamp": 7
+      },
+      "fault_successes": 0,
+      "opaque_id": "i-r1",
+      "paired_difference": 1.0,
+      "pairs": 7,
+      "reason": "meets the frozen degradation rule",
+      "rollout_ok": false,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 1,
+        "fault_only": 0
+      },
+      "family": "coupled",
+      "fault_failure_classes": {
+        "collision": 1,
+        "success": 7
+      },
+      "fault_successes": 7,
+      "opaque_id": "i-x1",
+      "paired_difference": 0.125,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "coupled",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-x2",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "parity",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "sham",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-sham",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "sham indistinguishable from clean",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": true
+    }
+  ],
+  "schema_version": "aisle.fault-bank.calibration-summary.v1",
+  "sealable": false,
+  "selection": {
+    "i-a1": {
+      "disposition": "rejected",
+      "reasons": [
+        "degradation below the minimum or interval overlap"
+      ],
+      "rungs": [
+        0,
+        1
+      ]
+    },
+    "i-a2": {
+      "disposition": "rejected",
+      "reasons": [
+        "degradation below the minimum or interval overlap"
+      ],
+      "rungs": [
+        0
+      ]
+    },
+    "i-c1": {
+      "disposition": "rejected",
+      "reasons": [
+        "degradation below the minimum or interval overlap"
+      ],
+      "rungs": [
+        0
+      ]
+    },
+    "i-d1": {
+      "disposition": "rejected",
+      "reasons": [
+        "degradation below the minimum or interval overlap"
+      ],
+      "rungs": [
+        0,
+        1
+      ]
+    },
+    "i-m1": {
+      "disposition": "rejected",
+      "reasons": [
+        "degradation below the minimum or interval overlap"
+      ],
+      "rungs": [
+        0,
+        1
+      ]
+    },
+    "i-m2": {
+      "disposition": "rejected",
+      "reasons": [
+        "degradation below the minimum or interval overlap"
+      ],
+      "rungs": [
+        0,
+        1
+      ]
+    },
+    "i-r1": {
+      "disposition": "selected",
+      "rule": "least severe rung that meets the frozen degradation rule",
+      "rungs": [
+        0
+      ],
+      "severity_index": 0
+    },
+    "i-s1": {
+      "disposition": "selected",
+      "rule": "least severe rung that meets the frozen degradation rule",
+      "rungs": [
+        0
+      ],
+      "severity_index": 0
+    },
+    "i-sham": {
+      "disposition": "control",
+      "rungs": [
+        0
+      ]
+    },
+    "i-x1": {
+      "disposition": "rejected",
+      "reasons": [
+        "degradation below the minimum or interval overlap"
+      ],
+      "rungs": [
+        0
+      ]
+    },
+    "i-x2": {
+      "disposition": "rejected",
+      "reasons": [
+        "degradation below the minimum or interval overlap"
+      ],
+      "rungs": [
+        0
+      ]
+    }
+  },
+  "withheld": [
+    "targets",
+    "operators",
+    "severity values",
+    "activation rules"
+  ]
+}
