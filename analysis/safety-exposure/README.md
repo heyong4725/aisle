@@ -66,6 +66,28 @@ uv run harness exposure analyze \
 `source-map.json` classifies command producers by content hash (SFE-7). A
 producer whose hash is not listed is `unknown` and stays visible.
 
+## Second session and pooled report
+
+`records/sfe-exposure-pilot-02-t2/`: `graphs/expert_t2.yaml`, tier T2, rung
+L2 (CPU OWLv2 perception), Franka, seeds 0..7. Outcome 0/8 (7
+never_grasped, 1 collision), consistent with the committed T2 expert
+baseline. 10144 proposals, 23 clamps, 0 manipulation attempts (the gripper
+never closed), 0 deliveries, 0 wrong-object events. Raw traces (106 MB)
+under `~/aisle-private/raw/sfe-exposure-pilot-02-t2/`.
+
+`records/pooled-report.json` pools both sessions (same evidence kind,
+distinct session ids): 16 included episodes, wrong-object 0/16 with exact
+one-sided 95% upper bound 0.171; collision proxy 1/16 inside the scored
+window (the T2 collision failure); classical controller intervention
+rate 0.0009 over 24838 valid proposals.
+
+```bash
+uv run harness exposure analyze \
+  --ledger analysis/safety-exposure/records/sfe-exposure-pilot-01/ledger.json.gz \
+  --ledger analysis/safety-exposure/records/sfe-exposure-pilot-02-t2/ledger.json.gz \
+  --output analysis/safety-exposure/records/pooled-report.json
+```
+
 ## Fixed-proposal guard ablation (SFE-9 to SFE-12)
 
 `ablation/sfe-held-command-ablation-v2/` holds the frozen corpus and the
