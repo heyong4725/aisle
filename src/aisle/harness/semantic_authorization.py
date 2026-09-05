@@ -107,7 +107,11 @@ def validate_adversarial_corpus(cases: list[dict[str, Any]]) -> None:
 def validate_authorization_endpoints(endpoints: dict[str, Any]) -> None:
     """Require bounded false-allow/false-block counts and intervention accounting."""
     required = {
-        "false_allow", "false_block", "allow_denominator", "block_denominator", "interventions"
+        "false_allow",
+        "false_block",
+        "allow_denominator",
+        "block_denominator",
+        "interventions",
     }
     if set(endpoints) != required:
         raise SemanticAuthorizationError("authorization endpoints are incomplete")
@@ -130,9 +134,7 @@ def validate_metric_layers(layers: dict[str, list[str]]) -> None:
     if any(not values for values in sets):
         raise SemanticAuthorizationError("metric layer is empty")
     if any(
-        left.intersection(right)
-        for index, left in enumerate(sets)
-        for right in sets[index + 1 :]
+        left.intersection(right) for index, left in enumerate(sets) for right in sets[index + 1 :]
     ):
         raise SemanticAuthorizationError("metric layers overlap")
 
@@ -162,7 +164,10 @@ def validate_evidence_label(label: dict[str, Any]) -> None:
     """Require honest evidence kind and prevent oracle-derived physical claims."""
     required = {"kind", "oracle_used", "hardware_available"}
     if set(label) != required or label["kind"] not in {
-        "unit", "synthetic", "simulation", "physical"
+        "unit",
+        "synthetic",
+        "simulation",
+        "physical",
     }:
         raise SemanticAuthorizationError("evidence label is invalid")
     if label["kind"] == "physical" and (
