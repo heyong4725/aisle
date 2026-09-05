@@ -268,8 +268,15 @@ nodes:
   path: ../src/aisle/nodes/turn_barrier.py
   env:
     AISLE_TURN_PLAN: 'turn_plans/expert_t1_l2.json'
-    AISLE_TURN_WATCHDOG_S: '10'
-    AISLE_VERDICT_TURN_WATCHDOG_S: '15'
+    # Widened as eval_t2_stack.yaml already is: the perception rung runs
+    # OWLv2 INSIDE the turn on the CPU (D2, ADR-realistic-verifier — MPS/
+    # CUDA would reintroduce the nondeterminism D2 forbids), measured at
+    # ~1.6 s/inference on a Linux x86-64 host (#391). The 10 s default
+    # afforded ~6 inferences per turn, so the barrier expired on any host
+    # slower than the campaign Mac. Liveness-only (BRG-1): it still
+    # catches a genuine hang and never advances physics.
+    AISLE_TURN_WATCHDOG_S: '60'
+    AISLE_VERDICT_TURN_WATCHDOG_S: '90'
   inputs:
     tick: dora/timer/millis/100
     sim_turn:
