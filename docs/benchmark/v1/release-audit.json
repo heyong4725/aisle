@@ -35,9 +35,11 @@
     {
       "criterion": "BMK-4",
       "evidence": [
-        "docs/benchmark/v1/parity-declaration.json"
+        "docs/benchmark/v1/parity-declaration.json",
+        "docs/monolithic/treatment-table.json",
+        "docs/monolithic/interface-map.json"
       ],
-      "note": "no monolithic surface exists (#344)",
+      "note": "monolithic surface built (SPEC 440 broker, graphs/monolithic_t1.yaml); expert parity blocked until an independent author and operator exist (MON-9)",
       "status": "dependency_pending"
     },
     {
@@ -46,7 +48,7 @@
         "docs/benchmark/v1/baselines.json",
         "tools/agent_adapters.py"
       ],
-      "note": "adapters and prompts exist for two hosted agents; zero of four baseline cells run; monolithic treatment missing",
+      "note": "adapters and prompts exist for two hosted agents; zero of four baseline cells run; monolithic treatment exists but has no agent-session adapter yet",
       "status": "dependency_pending"
     },
     {
@@ -54,9 +56,10 @@
       "evidence": [
         "graphs/expert_t1_l2.yaml",
         "graphs/expert_t2.yaml",
-        "tools/local_baseline.py"
+        "tools/local_baseline.py",
+        "experts/monolithic/expert_t1.py"
       ],
-      "note": "typed expert artifacts and deterministic fixture exist; monolithic experts missing",
+      "note": "typed expert artifacts and deterministic fixture exist; a monolithic T1 expert exists (same author as the typed expert, shakeout only; T2 monolithic expert missing)",
       "status": "dependency_pending"
     },
     {
@@ -181,7 +184,7 @@
       "status": "passed"
     }
   ],
-  "manifest_sha256": "6777230c5bee74b3186a7c639b5d24df97e45cbf097b516240808be717425d93",
+  "manifest_sha256": "3784868a1d08395e76d74adf626fe107658d219d1fc03709ef2f10f856ea9e70",
   "release_ready": false,
   "schema_version": "aisle.benchmark.release-audit.v1",
   "wording": "#357 stays open until every applicable criterion has reviewable evidence; internal dry runs never pass the external criteria"

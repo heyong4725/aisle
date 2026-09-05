@@ -1,0 +1,30 @@
+{
+  "id": "mon-experts-v1",
+  "artifacts": [
+    {
+      "arm": "typed",
+      "author": "AISLE maintainers (typed graph developed with full repository access; predates SPEC 440)",
+      "path": "graphs/expert_t1.yaml",
+      "components": [
+        "graphs/expert_t1.yaml",
+        "graphs/turn_plans/expert_t1.json",
+        "src/aisle/nodes/segmented_pose.py",
+        "src/aisle/nodes/grasp_topdown.py",
+        "src/aisle/nodes/ik_trajectory.py",
+        "src/aisle/nodes/task_state_machine.py"
+      ],
+      "blind": false
+    },
+    {
+      "arm": "monolithic",
+      "author": "AISLE maintainers, written against docs/monolithic/primitive-api.md by the same author as the typed expert",
+      "path": "experts/monolithic/expert_t1.py",
+      "components": [
+        "experts/monolithic/expert_t1.py"
+      ],
+      "blind": false
+    }
+  ],
+  "frozen": false,
+  "note": "MON-9 requires one human-authored deliverable per arm with independent authorship and a separate operator for the parity seeds. Neither holds yet; hashes are computed by `harness monolith table --write` and the freeze registry when the experts are frozen."
+}

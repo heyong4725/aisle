@@ -6,7 +6,7 @@
   localization and repair, under a frozen safety boundary.
 - Unit: the coding-agent session. Seeds, episodes, and events are nested.
 - Tasks: `task-distributions.json` (draft; final ids await #346).
-- Treatments: typed (available), monolithic (dependency pending, #344).
+- Treatments: typed (available), monolithic (surface built, SPEC 440; expert parity dependency pending on independent authorship, MON-9).
 - Baselines: `baselines.json` (adapters for two hosted agents and a local
   model exist; zero of four baseline cells have run under the contract).
 - Safety boundary: validator topology (VAL-5), kinematic guard (SPEC 080),

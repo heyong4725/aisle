@@ -264,6 +264,39 @@ def build_parser() -> argparse.ArgumentParser:
     threat_run = threat_sub.add_parser("run", help="THR-10 conformance run; bypass report")
     threat_run.add_argument("--agent-path", default="fixture")
     threat_run.add_argument("--output", type=Path, default=None)
+    monolith = subparsers.add_parser(
+        "monolith", help="monolithic control surface: launcher, table, map, parity (SPEC 440)"
+    )
+    monolith_sub = monolith.add_subparsers(dest="monolith_command", required=True)
+    mono_run = monolith_sub.add_parser("run", help="roll a monolithic module out (MON-3 launcher)")
+    mono_run.add_argument("--module", type=Path, required=True)
+    mono_run.add_argument("--tier", default="T1")
+    mono_run.add_argument("--embodiment", default="franka", choices=["franka", "so101"])
+    mono_run.add_argument("--episodes", type=int, required=True)
+    mono_run.add_argument("--seeds", required=True, help="a..b or comma list")
+    mono_run.add_argument("--run-id", default=None)
+    mono_run.add_argument("--timeout-s", type=float, default=None)
+    mono_run.add_argument(
+        "--no-idea-gate",
+        action="store_true",
+        help="engineering shakeout without an open HAR-8 idea (never a measured run)",
+    )
+    mono_run.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    mono_check = monolith_sub.add_parser("check", help="compile/construct the module; no sim")
+    mono_check.add_argument("--module", type=Path, required=True)
+    mono_check.add_argument("--embodiment", default="franka", choices=["franka", "so101"])
+    mono_desc = monolith_sub.add_parser("describe", help="print the primitive API (MON-3)")
+    mono_desc.add_argument("--embodiment", default="franka", choices=["franka", "so101"])
+    mono_table = monolith_sub.add_parser("table", help="MON-1 treatment table render/check")
+    mono_table.add_argument("--write", action="store_true")
+    mono_table.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    mono_iface = monolith_sub.add_parser("interface", help="MON-4 interface map exactness")
+    mono_iface.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    mono_parity = monolith_sub.add_parser("parity", help="MON-10 parity gate over two runs")
+    mono_parity.add_argument("--typed", type=Path, required=True, help="typed episodes.jsonl")
+    mono_parity.add_argument("--monolithic", type=Path, required=True)
+    mono_parity.add_argument("--output", type=Path, default=None)
+    mono_parity.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     perception = subparsers.add_parser(
         "perception", help="independent perception audit with hidden truth (SPEC 490)"
     )
@@ -367,6 +400,44 @@ def main() -> int:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
         print(json.dumps({k: v for k, v in report.items() if k != "attacks"}, sort_keys=True))
+        return 0 if report["ok"] else 1
+
+    if args.command == "monolith":
+        from aisle.harness import monolith as mono
+
+        try:
+            if args.monolith_command == "run":
+                from aisle.harness.rollout import parse_seed_range
+
+                report = mono.run(
+                    root=args.root,
+                    module=args.module,
+                    seeds=parse_seed_range(args.seeds),
+                    episodes=args.episodes,
+                    tier=args.tier,
+                    embodiment=args.embodiment,
+                    run_id=args.run_id,
+                    timeout_s=args.timeout_s,
+                    no_idea_gate=args.no_idea_gate,
+                )
+            elif args.monolith_command == "check":
+                report = mono.check_module(args.module, args.embodiment)
+            elif args.monolith_command == "describe":
+                from aisle.monolith.primitives import Primitives
+
+                report = {"ok": True, **Primitives._load(args.embodiment).describe()}
+            elif args.monolith_command == "table":
+                report = mono.table_report(args.root, write=args.write)
+            elif args.monolith_command == "interface":
+                report = mono.interface_report(args.root)
+            else:
+                report = mono.parity_report(args.root, args.typed, args.monolithic)
+                if args.output is not None:
+                    args.output.parent.mkdir(parents=True, exist_ok=True)
+                    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        except (OSError, json.JSONDecodeError, KeyError, ValueError) as refused:
+            report = {"ok": False, "error": "monolith command refused", "details": [repr(refused)]}
+        print(json.dumps(report, sort_keys=True, default=str))
         return 0 if report["ok"] else 1
 
     if args.command == "perception":
