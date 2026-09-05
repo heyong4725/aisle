@@ -1,0 +1,97 @@
+{
+  "benchmark_version": "aisle-benchmark-v1-draft",
+  "manifest_sha256": "5b48c67185da3b1c6c6a29b7068d16493292c5f7b4bb2bd49a4a4786653ff695",
+  "missing_surfaces": [],
+  "schema_version": "aisle.benchmark.version-manifest.v1",
+  "status": "draft",
+  "surfaces": {
+    "analyzer": {
+      "path": "src/aisle/harness/benchmark_statistics.py",
+      "sha256": "sha256:22cde3e9d7c5cc80874c7eec30aa2898e30476d6c939c94ab3009e8b12af641e"
+    },
+    "baselines": {
+      "path": "docs/benchmark/v1/baselines.json",
+      "sha256": "sha256:3ed83c2d483ef9af9a201d71dda146c81c0c3291c3a366f7a46c2b50621acb21"
+    },
+    "benchmark_card": {
+      "path": "docs/benchmark/v1/benchmark-card.md",
+      "sha256": "sha256:e37f773a888689161185d23fa50f6e6d311d8ce4899ecb1632e7928739abeff5"
+    },
+    "budgets": {
+      "path": "harness/budget.toml",
+      "sha256": "sha256:bcbb79aa146afed1d877da18093175ae144b4607db50119022ef4f8173122cda"
+    },
+    "contamination_rotation": {
+      "path": "docs/benchmark/v1/contamination-rotation.md",
+      "sha256": "sha256:02332a8e08fd9ac4eb7aefaba2774c1d4810a86aa9ea97a1895a34ae671c2e91"
+    },
+    "governance": {
+      "path": "docs/benchmark/v1/governance.md",
+      "sha256": "sha256:9b03053ec5498624713352fedf3d92489bb4f3d4709d595c91bc532635c87bd9"
+    },
+    "hidden_bank_commitment": {
+      "path": "analysis/fault-bank/commitment.json",
+      "sha256": null
+    },
+    "leaderboard_schema": {
+      "path": "docs/benchmark/v1/leaderboard.schema.json",
+      "sha256": "sha256:c818ebfc513d3648e37488e9ad25d834494dde5d40ef9dc8fa431ac664083a26"
+    },
+    "parity_declaration": {
+      "path": "docs/benchmark/v1/parity-declaration.json",
+      "sha256": "sha256:cccca035cfc9bb3203c6571be652712d372befee340be077fd718fdfe58df8bd"
+    },
+    "participant_contract": {
+      "path": "docs/benchmark/v1/participant-contract.md",
+      "sha256": "sha256:fc24a298079e6bf7d27d21e8d4d67d5e05f60d4bedf7965ed1237017a423ebc2"
+    },
+    "quickstart": {
+      "path": "tools/quickstart.py",
+      "sha256": "sha256:ff46f68ee15eaaf9b6061e3c7fca3905073d8477f948e35ee307c4fdc10dce70"
+    },
+    "resource_accounting": {
+      "path": "docs/benchmark/v1/resource-accounting.md",
+      "sha256": "sha256:f6118edd25f252a53caddc63504a0aab34b8aaf0a91466fc2b2a987da1fb5825"
+    },
+    "safety_boundary_guard": {
+      "path": "src/aisle/nodes/budget_guard.py",
+      "sha256": "sha256:e15bc5f70b295e7dfd32f72e4a5cf72dffca9da50e9e8f6bb18360fb38069abf"
+    },
+    "safety_boundary_limits": {
+      "path": "env/limits.toml",
+      "sha256": "sha256:1ab1f4fd5d52e7949b81d21933daaa2c66e80ef07fdedf8217280468e0142edc"
+    },
+    "safety_boundary_validator": {
+      "path": "src/aisle/harness/validate.py",
+      "sha256": "sha256:ed82967e800af6ec4d1f5336374343df38a5ba437771dd94e24b06c7dc64f481"
+    },
+    "scorer": {
+      "path": "src/aisle/verifier",
+      "sha256": "sha256:a3a904f9fa148c33b7e29d3fe7df8a70364737290d2a9fed73a3025cad45ff60"
+    },
+    "semantic_authorization": {
+      "path": "src/aisle/harness/semantic_shield.py",
+      "sha256": "sha256:0c730e116022c6b092d88b58c6251e8f73ddffe7cfa09a3e1e26973c3191aaf5"
+    },
+    "submission_schema": {
+      "path": "docs/benchmark/v1/submission.schema.json",
+      "sha256": "sha256:851ac3b7d4e5204e67803a68f748f38ce55dc69393fe0265041d11b635fbb3cb"
+    },
+    "submission_validator": {
+      "path": "src/aisle/harness/reproduction.py",
+      "sha256": "sha256:4874c3403a27704f3b8eff999817eb4fb1ea0778af2ef40e35b3ccb130b13fc6"
+    },
+    "task_distributions": {
+      "path": "docs/benchmark/v1/task-distributions.json",
+      "sha256": "sha256:f5f1344e56b93696a114574a09ddbd92695f9f1dbf0c066a5332437eae754a26"
+    },
+    "typed_surface_graphs": {
+      "path": "graphs",
+      "sha256": "sha256:56052a12b6ed33b3f83ae21df790aa76d75d0c79d580beddc8c7084e38be4e78"
+    },
+    "typed_surface_registry": {
+      "path": "registry/manifests",
+      "sha256": "sha256:f116e1e0c6b5d0c4460536a8220aa53b756e99c73877a7f6422b252b6f4e81fa"
+    }
+  }
+}

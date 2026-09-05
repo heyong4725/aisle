@@ -1,0 +1,9 @@
+{
+  "schema_version": "aisle.benchmark.parity.v1",
+  "benchmark_version": "aisle-benchmark-v1-draft",
+  "status": "dependency_pending",
+  "reason": "SPEC 440 monolithic control surface is not built; analysis/monolithic-control/treatment-table-baseline.json is an empty blocked table",
+  "dimensions": ["observations", "actions", "authority", "prompts_task_information", "dependencies", "budgets", "safety_boundary", "instrumentation", "scorer"],
+  "declared_differences": [],
+  "validator": "src/aisle/harness/monolithic.py::validate_treatment_table"
+}

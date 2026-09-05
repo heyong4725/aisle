@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "aisle.benchmark.submission.v1",
+  "title": "AISLE benchmark v1 submission bundle (BMK-13)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "submission_id", "benchmark_version", "agent", "contract_hashes", "treatment", "artifacts", "environment", "sessions", "resources", "evidence", "transcript", "attestation", "declared_score"],
+  "properties": {
+    "schema_version": {"const": "aisle.benchmark.submission.v1"},
+    "submission_id": {"type": "string", "minLength": 1},
+    "benchmark_version": {"type": "string", "minLength": 1},
+    "agent": {"type": "object", "required": ["provider", "model_id", "requested_parameters", "client_version", "access_date", "nondeterminism"], "additionalProperties": false,
+      "properties": {"provider": {"type": "string"}, "model_id": {"type": "string"}, "requested_parameters": {"type": "object"}, "client_version": {"type": "string"}, "access_date": {"type": "string"}, "nondeterminism": {"type": "string"}, "agent_hash": {"type": "string"}}},
+    "contract_hashes": {"type": "object", "required": ["participant_contract", "prompt", "tool_contract"], "additionalProperties": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}},
+    "treatment": {"enum": ["typed", "monolithic"]},
+    "artifacts": {"type": "object", "required": ["authored_hash", "executed_hash"], "properties": {"authored_hash": {"type": "string"}, "executed_hash": {"type": "string"}}},
+    "environment": {"type": "object", "required": ["lock_hash", "env_hash", "platform"], "properties": {"lock_hash": {"type": "string"}, "env_hash": {"type": "string"}, "platform": {"type": "string"}}},
+    "sessions": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["session_id", "attempt_id", "treatment", "provenance", "budget", "outcome", "exclusion"],
+      "properties": {"session_id": {"type": "string"}, "attempt_id": {"type": "string"}, "treatment": {"enum": ["typed", "monolithic"]}, "provenance": {"type": "object"}, "budget": {"type": "object"}, "outcome": {"type": "object"}, "exclusion": {"type": ["object", "null"]}}}},
+    "resources": {"type": "object", "required": ["tokens", "cached_tokens", "wall_seconds", "tool_calls", "api_cost", "retries", "parallel_agents"], "properties": {"tokens": {"type": "number"}, "cached_tokens": {"type": ["number", "null"]}, "wall_seconds": {"type": "number"}, "tool_calls": {"type": "integer"}, "api_cost": {"type": ["object", "null"]}, "retries": {"type": "integer"}, "parallel_agents": {"type": "integer"}}},
+    "evidence": {"type": "object", "required": ["commands", "receipts", "interventions", "outcomes"], "additionalProperties": false, "properties": {"commands": {"type": "string"}, "receipts": {"type": "string"}, "interventions": {"type": "string"}, "outcomes": {"type": "string"}}},
+    "transcript": {"type": "object", "required": ["kind", "path"], "properties": {"kind": {"enum": ["full", "provider_limited_substitute"]}, "path": {"type": "string"}}},
+    "attestation": {"type": "object", "required": ["signed_by", "signature", "integrity_controller"], "properties": {"signed_by": {"type": "string"}, "signature": {"type": "string"}, "integrity_controller": {"type": "string"}}},
+    "declared_score": {"const": null, "description": "participants never supply a score (BMK-14)"}
+  }
+}

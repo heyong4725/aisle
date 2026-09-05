@@ -1,0 +1,188 @@
+{
+  "benchmark_version": "aisle-benchmark-v1-draft",
+  "counts": {
+    "dependency_pending": 7,
+    "external_pending": 3,
+    "failed": 1,
+    "not_applicable": 0,
+    "passed": 11
+  },
+  "criteria": [
+    {
+      "criterion": "BMK-1",
+      "evidence": [
+        "docs/benchmark/v1/version-manifest.json"
+      ],
+      "note": "version manifest binds every listed surface by hash",
+      "status": "passed"
+    },
+    {
+      "criterion": "BMK-2",
+      "evidence": [
+        "docs/benchmark/v1/participant-contract.md"
+      ],
+      "note": "contract enumerates grants, forbids the rest, documents refusal",
+      "status": "passed"
+    },
+    {
+      "criterion": "BMK-3",
+      "evidence": [
+        "docs/benchmark/v1/task-distributions.json"
+      ],
+      "note": "public dev and qualification pinned; final task ids await #346 (BND-1)",
+      "status": "dependency_pending"
+    },
+    {
+      "criterion": "BMK-4",
+      "evidence": [
+        "docs/benchmark/v1/parity-declaration.json"
+      ],
+      "note": "no monolithic surface exists (#344)",
+      "status": "dependency_pending"
+    },
+    {
+      "criterion": "BMK-5",
+      "evidence": [
+        "docs/benchmark/v1/baselines.json",
+        "tools/agent_adapters.py"
+      ],
+      "note": "adapters and prompts exist for two hosted agents; zero of four baseline cells run; monolithic treatment missing",
+      "status": "dependency_pending"
+    },
+    {
+      "criterion": "BMK-6",
+      "evidence": [
+        "graphs/expert_t1_l2.yaml",
+        "graphs/expert_t2.yaml",
+        "tools/local_baseline.py"
+      ],
+      "note": "typed expert artifacts and deterministic fixture exist; monolithic experts missing",
+      "status": "dependency_pending"
+    },
+    {
+      "criterion": "BMK-7",
+      "evidence": [
+        "tools/quickstart.py"
+      ],
+      "note": "non-interactive clean-clone command with CON-8 record exists; fresh-clone execution is BMK-8",
+      "status": "passed"
+    },
+    {
+      "criterion": "BMK-8",
+      "evidence": [],
+      "note": "must be exercised from a fresh clone on every release platform with measured time and storage; not done",
+      "status": "external_pending"
+    },
+    {
+      "criterion": "BMK-9",
+      "evidence": [
+        "docs/benchmark/v1/task-distributions.json"
+      ],
+      "note": "development_public role and the same validator are declared",
+      "status": "passed"
+    },
+    {
+      "criterion": "BMK-10",
+      "evidence": [
+        "specs/420-treatment-integrity.md"
+      ],
+      "note": "blind sandbox and independent controller depend on #353 confinement and #348 sealing",
+      "status": "dependency_pending"
+    },
+    {
+      "criterion": "BMK-11",
+      "evidence": [],
+      "note": "isolation audit with canaries in every private class not performed",
+      "status": "external_pending"
+    },
+    {
+      "criterion": "BMK-12",
+      "evidence": [
+        "analysis/fault-bank/commitment.json"
+      ],
+      "note": "bank commitment exists in draft; roles, access log, and qualification split pending",
+      "status": "dependency_pending"
+    },
+    {
+      "criterion": "BMK-13",
+      "evidence": [
+        "docs/benchmark/v1/submission.schema.json"
+      ],
+      "note": "submission schema retains every required field and forbids a participant score",
+      "status": "passed"
+    },
+    {
+      "criterion": "BMK-14",
+      "evidence": [
+        "src/aisle/harness/reproduction.py",
+        "tests/unit/test_benchmark_release.py"
+      ],
+      "note": "deterministic fail-closed validation of the schema; leaked-marker and budget checks are unit-level",
+      "status": "passed"
+    },
+    {
+      "criterion": "BMK-15",
+      "evidence": [],
+      "note": "evaluator receipt signing and private-hash binding await the blind path",
+      "status": "dependency_pending"
+    },
+    {
+      "criterion": "BMK-16",
+      "evidence": [
+        "docs/benchmark/v1/leaderboard.schema.json"
+      ],
+      "note": "report schema carries units, denominators, effects, exclusions, integrity, safety, resources, claim status; no ranking scalar",
+      "status": "passed"
+    },
+    {
+      "criterion": "BMK-17",
+      "evidence": [
+        "docs/benchmark/v1/resource-accounting.md"
+      ],
+      "note": "token, cache, pricing, retry, parallel, utilization, and amortization rules defined",
+      "status": "passed"
+    },
+    {
+      "criterion": "BMK-18",
+      "evidence": [
+        "docs/benchmark/v1/governance.md"
+      ],
+      "note": "maintainers, compatibility, migration, leak response, appeals, withdrawal, errata defined",
+      "status": "passed"
+    },
+    {
+      "criterion": "BMK-19",
+      "evidence": [
+        "docs/benchmark/v1/contamination-rotation.md"
+      ],
+      "note": "release dates, cutoffs, disclosures, quarantine, rotation, comparability defined",
+      "status": "passed"
+    },
+    {
+      "criterion": "BMK-20",
+      "evidence": [
+        "docs/benchmark/v1/benchmark-card.md"
+      ],
+      "note": "no LICENSE or CITATION file; license selection is an owner decision; no DOI (#355)",
+      "status": "failed"
+    },
+    {
+      "criterion": "BMK-21",
+      "evidence": [],
+      "note": "no external person or group has completed the clean-clone cell",
+      "status": "external_pending"
+    },
+    {
+      "criterion": "BMK-22",
+      "evidence": [
+        "docs/benchmark/v1/release-audit.json"
+      ],
+      "note": "this report",
+      "status": "passed"
+    }
+  ],
+  "manifest_sha256": "5b48c67185da3b1c6c6a29b7068d16493292c5f7b4bb2bd49a4a4786653ff695",
+  "release_ready": false,
+  "schema_version": "aisle.benchmark.release-audit.v1",
+  "wording": "#357 stays open until every applicable criterion has reviewable evidence; internal dry runs never pass the external criteria"
+}
