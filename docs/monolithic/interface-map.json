@@ -1,0 +1,318 @@
+{
+  "id": "mon-interface-map-v1",
+  "typed": {
+    "graph": "graphs/expert_t1.yaml",
+    "agent_nodes": [
+      "segmented-pose",
+      "grasp-planner-topdown",
+      "ik-trajectory",
+      "task-state-machine"
+    ]
+  },
+  "monolithic": {
+    "graph": "graphs/monolithic_t1.yaml",
+    "broker": "monolith-broker"
+  },
+  "fields": [
+    {
+      "name": "bridge_info",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "scene calibration and segmentation ids (JSON object)"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "scene calibration and segmentation ids (JSON object)"
+      }
+    },
+    {
+      "name": "seg_overhead",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "overhead instance mask, int32 (h, w), sim-time stamped"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "overhead instance mask, int32 (h, w), sim-time stamped"
+      }
+    },
+    {
+      "name": "depth_overhead",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "overhead depth in metres, float32 (h, w), same stamp as its mask"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "overhead depth in metres, float32 (h, w), same stamp as its mask"
+      }
+    },
+    {
+      "name": "joint_state",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "measured joint vector, float32 n_dof, 100 Hz"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "measured joint vector, float32 n_dof, 100 Hz"
+      }
+    },
+    {
+      "name": "episode_goal",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "episode goal object with goal id (target_med, tier)"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "episode goal object with goal id (target_med, tier)"
+      }
+    },
+    {
+      "name": "episode_result",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "evaluator verdict closing the episode"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "evaluator verdict closing the episode"
+      }
+    },
+    {
+      "name": "violation",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "guard clamp/refusal record"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "guard clamp/refusal record"
+      }
+    },
+    {
+      "name": "reset_done",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "episode boundary: scene reset completed"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "episode boundary: scene reset completed"
+      }
+    },
+    {
+      "name": "tick",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "1 Hz sim-clock tick since the goal"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "1 Hz sim-clock tick since the goal"
+      }
+    },
+    {
+      "name": "joint_cmd",
+      "authority": "task",
+      "typed": {
+        "role": "act",
+        "privileged": false,
+        "semantics": "target joint vector, n_dof finite floats, into budget-guard"
+      },
+      "monolithic": {
+        "role": "act",
+        "privileged": false,
+        "semantics": "target joint vector, n_dof finite floats, into budget-guard"
+      }
+    },
+    {
+      "name": "gripper_cmd",
+      "authority": "task",
+      "typed": {
+        "role": "act",
+        "privileged": false,
+        "semantics": "gripper target, finite float, into budget-guard"
+      },
+      "monolithic": {
+        "role": "act",
+        "privileged": false,
+        "semantics": "gripper target, finite float, into budget-guard"
+      }
+    },
+    {
+      "name": "episode_feedback",
+      "authority": "task",
+      "typed": {
+        "role": "feedback",
+        "privileged": false,
+        "semantics": "progress object (t, phase, retries) to rollout-client at 1 Hz"
+      },
+      "monolithic": {
+        "role": "feedback",
+        "privileged": false,
+        "semantics": "progress object (t, phase, retries) to rollout-client at 1 Hz"
+      }
+    }
+  ],
+  "envelopes": {
+    "bridge_info": {
+      "typed": {
+        "edge": "dora-genesis/bridge_info",
+        "schema": "json_utf8"
+      },
+      "monolithic": {
+        "event": "bridge_info",
+        "payload": "dict (calibration, segmentation_ids, ...)"
+      }
+    },
+    "seg_overhead": {
+      "typed": {
+        "edge": "dora-genesis/seg_overhead",
+        "schema": "seg_i32"
+      },
+      "monolithic": {
+        "event": "seg_overhead",
+        "payload": "int32 array (h, w) with sim_time_ns"
+      }
+    },
+    "depth_overhead": {
+      "typed": {
+        "edge": "dora-genesis/depth_overhead",
+        "schema": "depth_f32"
+      },
+      "monolithic": {
+        "event": "depth_overhead",
+        "payload": "float32 array (h, w) with sim_time_ns"
+      }
+    },
+    "joint_state": {
+      "typed": {
+        "edge": "dora-genesis/joint_state",
+        "schema": "jointvec_f32"
+      },
+      "monolithic": {
+        "event": "joint_state",
+        "payload": "float32 vector"
+      }
+    },
+    "episode_goal": {
+      "typed": {
+        "edge": "rollout-client/episode_goal",
+        "schema": "json_utf8"
+      },
+      "monolithic": {
+        "event": "episode_goal",
+        "payload": "dict (target_med, tier, ...) with goal_id"
+      }
+    },
+    "episode_result": {
+      "typed": {
+        "edge": "verifier-oracle/episode_result",
+        "schema": "json_utf8"
+      },
+      "monolithic": {
+        "event": "episode_result",
+        "payload": "dict (verdict)"
+      }
+    },
+    "violation": {
+      "typed": {
+        "edge": "budget-guard/violation",
+        "schema": "json_utf8"
+      },
+      "monolithic": {
+        "event": "violation",
+        "payload": "dict"
+      }
+    },
+    "reset_done": {
+      "typed": {
+        "edge": "reset/reset_done",
+        "schema": "reset_done_u32"
+      },
+      "monolithic": {
+        "event": "reset_done",
+        "payload": "None"
+      }
+    },
+    "tick": {
+      "typed": {
+        "edge": "turn-derived 1 Hz tick (task-state-machine)",
+        "schema": "timer_tick"
+      },
+      "monolithic": {
+        "event": "tick",
+        "payload": "int ticks since goal"
+      }
+    },
+    "joint_cmd": {
+      "typed": {
+        "edge": "ik-trajectory/joint_cmd -> budget-guard",
+        "schema": "jointvec_f32"
+      },
+      "monolithic": {
+        "action": "joint_cmd",
+        "payload": "n_dof finite floats -> budget-guard"
+      }
+    },
+    "gripper_cmd": {
+      "typed": {
+        "edge": "ik-trajectory/gripper_cmd -> budget-guard",
+        "schema": "scalar_f32"
+      },
+      "monolithic": {
+        "action": "gripper_cmd",
+        "payload": "finite float -> budget-guard"
+      }
+    },
+    "episode_feedback": {
+      "typed": {
+        "edge": "task-state-machine/episode_feedback -> rollout-client",
+        "schema": "json_utf8"
+      },
+      "monolithic": {
+        "action": "feedback",
+        "payload": "JSON object, stamped with goal_id by the broker"
+      }
+    }
+  },
+  "transport_only": {
+    "declared_in": "docs/monolithic/treatment-table.json#mon1-10",
+    "items": [
+      "turn clock",
+      "seq",
+      "env_id",
+      "turn stamps",
+      "h/w/enc frame keys"
+    ]
+  }
+}

@@ -44,20 +44,12 @@ FLT-12 = "proposed runtime audit; activation/drift/invalid-record tests land aft
 
 # SPEC 440 monolithic control — proposed in the #344 spec-change PR.
 # The tests-first implementation PR MUST remove every MON waiver before merge.
-MON-1 = "proposed treatment table; completeness/rendering tests land after human spec review"
-MON-2 = "proposed typed surface; deliverable/validator tests land after human spec review"
-MON-3 = "proposed monolithic surface; single-file and typed-facility denial tests land after human spec review"
-MON-4 = "proposed interface parity; field/authority mapping tests land after human spec review"
-MON-5 = "proposed trusted broker; common primitive/guard route tests land after human spec review"
-MON-6 = "proposed trusted boundary; frozen endpoint/refusal tests land after human spec review"
-MON-7 = "proposed bypass suite; adversarial route tests land after human spec review"
-MON-8 = "proposed matched treatment; manifest equality/difference tests land after human spec review"
-MON-9 = "proposed expert pair; provenance/view/freeze tests land after human spec review"
-MON-11 = "proposed parity isolation; campaign-purpose/exclusion tests land after human spec review"
-MON-12 = "proposed common evidence; envelope equivalence tests land after human spec review"
-MON-13 = "proposed identity audit; drift/cross-arm/resume refusal tests land after human spec review"
-MON-14 = "proposed conformance acceptance; complete suite lands after human spec review"
-MON-15 = "proposed freeze/release record; hash/invalidation/retention tests land after human spec review"
+MON-2 = "typed deliverable allowlist is declared (docs/monolithic/allowlist.json); no-repair harness tests land with the #345 session protocol"
+MON-6 = "in-process denial layer shipped (aisle.monolith.confinement); OS-level filesystem/process/network/git denial waits on issue #353"
+MON-8 = "session preflight tuple extends the #353 treatment tuple; lands with the #345 session protocol"
+MON-12 = "common evidence envelope is session-level (#345); the typed-validator absence is already a declared MON-1 row"
+MON-13 = "preflight/postflight hash audit lands with the #345/#353 session runner"
+MON-15 = "protocol freeze registers through harness freeze after CON-14 approval of SPEC 440 and an independent parity author (MON-9)"
 
 # SPEC 430 instrument audit — proposed in the #354 spec-change PR.
 # The tests-first implementation PR MUST remove every AUD waiver before merge.

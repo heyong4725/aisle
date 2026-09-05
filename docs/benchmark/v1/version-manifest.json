@@ -1,6 +1,6 @@
 {
   "benchmark_version": "aisle-benchmark-v1-draft",
-  "manifest_sha256": "6777230c5bee74b3186a7c639b5d24df97e45cbf097b516240808be717425d93",
+  "manifest_sha256": "3784868a1d08395e76d74adf626fe107658d219d1fc03709ef2f10f856ea9e70",
   "missing_surfaces": [],
   "schema_version": "aisle.benchmark.version-manifest.v1",
   "status": "draft",
@@ -15,7 +15,7 @@
     },
     "benchmark_card": {
       "path": "docs/benchmark/v1/benchmark-card.md",
-      "sha256": "sha256:e37f773a888689161185d23fa50f6e6d311d8ce4899ecb1632e7928739abeff5"
+      "sha256": "sha256:b408bf9f43f1dbc6fcc0e92c055a1255f74a353ddc21ff0ff3f6c63f3e6aa4fb"
     },
     "budgets": {
       "path": "harness/budget.toml",
@@ -39,7 +39,7 @@
     },
     "parity_declaration": {
       "path": "docs/benchmark/v1/parity-declaration.json",
-      "sha256": "sha256:cccca035cfc9bb3203c6571be652712d372befee340be077fd718fdfe58df8bd"
+      "sha256": "sha256:daea037b22cf4c775293cf9ff56052eab51f8983826781fe8a92c3305758091c"
     },
     "participant_contract": {
       "path": "docs/benchmark/v1/participant-contract.md",
@@ -87,11 +87,11 @@
     },
     "typed_surface_graphs": {
       "path": "graphs",
-      "sha256": "sha256:56052a12b6ed33b3f83ae21df790aa76d75d0c79d580beddc8c7084e38be4e78"
+      "sha256": "sha256:443f424ea876f00fd3a20d520a04cc71ba3b484a017e69fd037b5cec7d7ca273"
     },
     "typed_surface_registry": {
       "path": "registry/manifests",
-      "sha256": "sha256:f116e1e0c6b5d0c4460536a8220aa53b756e99c73877a7f6422b252b6f4e81fa"
+      "sha256": "sha256:3eb40db6b23baf3163a9bc356940f2bc1dbb2ce13dc8cb3282c70e724ffbf680"
     }
   }
 }

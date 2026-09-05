@@ -127,19 +127,30 @@ def release_audit(root: Path, manifest: dict) -> dict:
         ),
         "BMK-4": (
             "dependency_pending",
-            [f"{v1}/parity-declaration.json"],
-            "no monolithic surface exists (#344)",
+            [
+                f"{v1}/parity-declaration.json",
+                "docs/monolithic/treatment-table.json",
+                "docs/monolithic/interface-map.json",
+            ],
+            "monolithic surface built (SPEC 440 broker, graphs/monolithic_t1.yaml); "
+            "expert parity blocked until an independent author and operator exist (MON-9)",
         ),
         "BMK-5": (
             "dependency_pending",
             [f"{v1}/baselines.json", "tools/agent_adapters.py"],
             "adapters and prompts exist for two hosted agents; zero of four "
-            "baseline cells run; monolithic treatment missing",
+            "baseline cells run; monolithic treatment exists but has no agent-session adapter yet",
         ),
         "BMK-6": (
             "dependency_pending",
-            ["graphs/expert_t1_l2.yaml", "graphs/expert_t2.yaml", "tools/local_baseline.py"],
-            "typed expert artifacts and deterministic fixture exist; monolithic experts missing",
+            [
+                "graphs/expert_t1_l2.yaml",
+                "graphs/expert_t2.yaml",
+                "tools/local_baseline.py",
+                "experts/monolithic/expert_t1.py",
+            ],
+            "typed expert artifacts and deterministic fixture exist; a monolithic T1 expert "
+            "exists (same author as the typed expert, shakeout only; T2 monolithic expert missing)",
         ),
         "BMK-7": (
             "passed" if _exists(root, "tools/quickstart.py") else "failed",

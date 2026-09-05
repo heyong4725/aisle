@@ -2,8 +2,20 @@
   "schema_version": "aisle.benchmark.parity.v1",
   "benchmark_version": "aisle-benchmark-v1-draft",
   "status": "dependency_pending",
-  "reason": "SPEC 440 monolithic control surface is not built; analysis/monolithic-control/treatment-table-baseline.json is an empty blocked table",
-  "dimensions": ["observations", "actions", "authority", "prompts_task_information", "dependencies", "budgets", "safety_boundary", "instrumentation", "scorer"],
-  "declared_differences": [],
-  "validator": "src/aisle/harness/monolithic.py::validate_treatment_table"
+  "reason": "SPEC 440 monolithic control surface is built (monolith-broker, graphs/monolithic_t1.yaml, docs/monolithic/treatment-table.json with 14 declared rows); expert parity is blocked because both experts share an author and no separate operator revealed the seeds (MON-9)",
+  "dimensions": [
+    "observations",
+    "actions",
+    "authority",
+    "prompts_task_information",
+    "dependencies",
+    "budgets",
+    "safety_boundary",
+    "instrumentation",
+    "scorer"
+  ],
+  "declared_differences": [
+    "docs/monolithic/treatment-table.json"
+  ],
+  "validator": "src/aisle/harness/monolithic.py::validate_treatment_table via `harness monolith table`"
 }

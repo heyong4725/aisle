@@ -296,7 +296,7 @@ Typed dataflow engineering improves coding-agent outcomes relative to an equal-c
 - Uncertainty: {"rationale": "No treatment estimate exists before the controlled campaign.", "value": "not_applicable"}
 - Attestation: {"rationale": "No confirmatory treatment records exist.", "status": "not_applicable"}
 - Evidence: [{"rationale": "Issue #347 remains dependent on controls and protocol freeze.", "value": "not_applicable"}]
-- Counterevidence: ["Historical single-session ablations do not isolate typed dataflow structure.", "The monolithic equal-capability control has not run."]
+- Counterevidence: ["Historical single-session ablations do not isolate typed dataflow structure.", "The monolithic equal-capability control exists (SPEC 440 surface, docs/monolithic/) and passed an 8/8 seeds 0..7 engineering shakeout, but expert parity is blocked on independent authorship (MON-9) and no agent session has used it."]
 - Limitations: ["No superiority, equivalence, or non-inferiority conclusion is currently allowed."]
 - Allowed wording: {"focused_paper": "UNRUN: no typed-dataflow treatment effect is reported.", "readme": "UNRUN: typed-versus-monolithic superiority is the confirmatory claim under test.", "technical_report": "UNRUN: historical development results do not establish the causal effect."}
 - Headline markers: [{"marker": "typed-dataflow-causal/readme", "path": "README.md"}, {"marker": "typed-dataflow-causal/paper-abstract", "path": "docs/paper/aisle-paper.md"}, {"marker": "typed-dataflow-causal/paper-introduction", "path": "docs/paper/aisle-paper.md"}, {"marker": "typed-dataflow-causal/paper-contributions", "path": "docs/paper/aisle-paper.md"}]

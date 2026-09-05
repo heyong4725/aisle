@@ -165,7 +165,7 @@ claims:
         rationale: "Issue #347 remains dependent on controls and protocol freeze."
     counterevidence:
       - Historical single-session ablations do not isolate typed dataflow structure.
-      - The monolithic equal-capability control has not run.
+      - The monolithic equal-capability control exists (SPEC 440 surface, docs/monolithic/) and passed an 8/8 seeds 0..7 engineering shakeout, but expert parity is blocked on independent authorship (MON-9) and no agent session has used it.
     limitations:
       - No superiority, equivalence, or non-inferiority conclusion is currently allowed.
     allowed_wording:

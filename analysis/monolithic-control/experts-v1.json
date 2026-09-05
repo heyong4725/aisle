@@ -1,0 +1,20 @@
+{
+  "artifacts": [
+    {
+      "arm": "typed",
+      "author": "AISLE maintainers (typed graph developed with full repository access; predates SPEC 440)",
+      "blind": false,
+      "path": "graphs/expert_t1.yaml",
+      "sha256": "041d0f4dc44f13c40002214e31a0f7d9c10fbf599bbd4bdcf481f708653de31d"
+    },
+    {
+      "arm": "monolithic",
+      "author": "AISLE maintainers, written against docs/monolithic/primitive-api.md by the same author as the typed expert",
+      "blind": false,
+      "path": "experts/monolithic/expert_t1.py",
+      "sha256": "4981f50146344791f5f15e158cb73d50fa2df56aaf3b9a9ba6f12fbc5998be44"
+    }
+  ],
+  "frozen": false,
+  "id": "mon-experts-v1"
+}

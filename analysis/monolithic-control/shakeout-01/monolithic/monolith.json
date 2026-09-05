@@ -1,0 +1,6 @@
+{
+  "api_version": "1.0",
+  "embodiment": "franka",
+  "module": "/Users/yonghe/src/aisle-runner/experts/monolithic/expert_t1.py",
+  "module_sha256": "97ac76fcec0d0da174c1336abfc24dfadd5001f9af487b82f62f3ed6cebd9187"
+}

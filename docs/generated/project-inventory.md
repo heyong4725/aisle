@@ -26,6 +26,7 @@ stayed outside it).
 | `assets/` | robot/scene assets (so101 URDF) | `assets/so101` |
 | `docs/` | guides, design doc, ADRs, this generated appendix | — |
 | `env/` | topic CONTRACT.md and guard limits (config, not code) | `env` |
+| `experts/` |  | — |
 | `graphs/` | dataflow YAMLs + committed ADR-30 turn plans | `graphs/eval_*.yaml`, `graphs/expert_*.yaml`, `graphs/turn_plans/eval_*.json`, `graphs/turn_plans/expert_*.json` |
 | `harness/` | the research-agent contract and budget ledger | `harness/budget.toml` |
 | `registry/` | capability schema and typed node manifests | — |
@@ -42,10 +43,10 @@ stayed outside it).
 
 | Surface | Count |
 |---|---:|
-| Graphs | 18 |
-| Capability manifests | 39 |
-| CLI command entries | 30 |
-| ADR files | 73 |
+| Graphs | 19 |
+| Capability manifests | 40 |
+| CLI command entries | 36 |
+| ADR files | 74 |
 
 ## Graphs
 
@@ -69,6 +70,7 @@ stayed outside it).
 | [graphs/expert_t3.yaml](../../graphs/expert_t3.yaml) | pharmacy (default) / — | franka (default) | L1 | 10 |
 | [graphs/expert_t4.yaml](../../graphs/expert_t4.yaml) | pharmacy (default) / — | franka (default) | L1 | 11 |
 | [graphs/expert_t4_inc2.yaml](../../graphs/expert_t4_inc2.yaml) | pharmacy (default) / — | franka (default) | L1 | 12 |
+| [graphs/monolithic_t1.yaml](../../graphs/monolithic_t1.yaml) | pharmacy (default) / — | franka (default) | L1 | 7 |
 
 ### Graph node membership
 
@@ -90,6 +92,7 @@ stayed outside it).
 - **graphs/expert_t3.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/expert_t4.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `human-sim`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/expert_t4_inc2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `human-sim`, `task-state-machine`, `rollout-client`, `turn-barrier`, `return-planner`
+- **graphs/monolithic_t1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `monolith-broker`, `verifier-oracle`, `rollout-client`, `turn-barrier`
 
 ## Capability manifests
 
@@ -108,6 +111,7 @@ stayed outside it).
 | [registry/manifests/ik-trajectory.yaml](../../registry/manifests/ik-trajectory.yaml) | trajectory_generation | franka, so101 | motion | hub | `src/aisle/nodes/ik_trajectory.py` |
 | [registry/manifests/ik-transfer-v2.yaml](../../registry/manifests/ik-transfer-v2.yaml) | trajectory_generation | franka, so101 | motion | agent-authored | `skills/ik-transfer-v2/ik_transfer_v2.py` |
 | [registry/manifests/misplacement-detector.yaml](../../registry/manifests/misplacement-detector.yaml) | misplacement_detection | franka | perception | hub | `src/aisle/nodes/misplacement_detector.py` |
+| [registry/manifests/monolith-broker.yaml](../../registry/manifests/monolith-broker.yaml) | monolithic_control | franka, so101 | motion | agent-authored | `src/aisle/nodes/monolith_broker.py` |
 | [registry/manifests/nav-action.yaml](../../registry/manifests/nav-action.yaml) | navigation | franka | motion | hub | `src/aisle/nodes/nav_action.py` |
 | [registry/manifests/ocr-label.yaml](../../registry/manifests/ocr-label.yaml) | label_text | franka | perception | hub | `src/aisle/nodes/label_reader.py` |
 | [registry/manifests/oracle-pose.yaml](../../registry/manifests/oracle-pose.yaml) | object_pose | franka, so101 | perception | hub | `src/aisle/nodes/oracle_pose.py` |
@@ -152,6 +156,12 @@ stayed outside it).
 | `harness freeze check` | `--manifest`, `--root`, `--allow-withheld-seeds` |
 | `harness hardware dry-run` | `--seed`, `--output` |
 | `harness hardware report` | `--station`, `--output` |
+| `harness monolith check` | `--module`, `--embodiment` |
+| `harness monolith describe` | `--embodiment` |
+| `harness monolith interface` | `--root` |
+| `harness monolith parity` | `--typed`, `--monolithic`, `--output`, `--root` |
+| `harness monolith run` | `--module`, `--tier`, `--embodiment`, `--episodes`, `--seeds`, `--run-id`, `--timeout-s`, `--no-idea-gate`, `--root` |
+| `harness monolith table` | `--write`, `--root` |
 | `harness perception audit` | `--run`, `--envelope`, `--output` |
 | `harness probe` | `--dataflow`, `--topic`, `--for`, `--root` |
 | `harness report close` | `--id`, `--observed`, `--verdict`, `--root` |
@@ -235,6 +245,7 @@ inference.
 | [docs/decisions/ADR-59.md](../decisions/ADR-59.md) | ADR-59 — Reproduction starts outside the campaign machine | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
 | [docs/decisions/ADR-6.md](../decisions/ADR-6.md) | ADR-6: T04 scene interpretations (SPEC 020) | ACCEPTED |
 | [docs/decisions/ADR-60.md](../decisions/ADR-60.md) | ADR-60 — Benchmark v1 is a versioned trust boundary | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
+| [docs/decisions/ADR-61.md](../decisions/ADR-61.md) | ADR-61 — The monolithic control surface is an in-process broker over the typed nodes' own primitives | PROPOSED — owner review required under CON-14 (SPEC 440 is itself |
 | [docs/decisions/ADR-7.md](../decisions/ADR-7.md) | ADR-7: T05 bridge interpretations and measured performance (SPEC 030) | ACCEPTED |
 | [docs/decisions/ADR-8.md](../decisions/ADR-8.md) | ADR-8: T06 verifier/reset interpretations (SPEC 040) | ACCEPTED |
 | [docs/decisions/ADR-9.md](../decisions/ADR-9.md) | ADR-9: T07 budget-guard interpretations (SPEC 080) | ACCEPTED |

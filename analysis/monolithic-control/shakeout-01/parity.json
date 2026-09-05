@@ -1,0 +1,88 @@
+{
+  "campaign_purpose": "expert_parity",
+  "gate": "blocked",
+  "inputs": {
+    "monolithic": "runs/mon-shakeout-01/episodes.jsonl",
+    "typed": "runs/typed-shakeout-01/episodes.jsonl"
+  },
+  "ok": true,
+  "pairs": [
+    {
+      "excluded": [],
+      "monolithic": true,
+      "monolithic_failure": null,
+      "seed": 0,
+      "typed": true,
+      "typed_failure": null
+    },
+    {
+      "excluded": [],
+      "monolithic": true,
+      "monolithic_failure": null,
+      "seed": 1,
+      "typed": true,
+      "typed_failure": null
+    },
+    {
+      "excluded": [],
+      "monolithic": true,
+      "monolithic_failure": null,
+      "seed": 2,
+      "typed": true,
+      "typed_failure": null
+    },
+    {
+      "excluded": [],
+      "monolithic": true,
+      "monolithic_failure": null,
+      "seed": 3,
+      "typed": true,
+      "typed_failure": null
+    },
+    {
+      "excluded": [],
+      "monolithic": true,
+      "monolithic_failure": null,
+      "seed": 4,
+      "typed": true,
+      "typed_failure": null
+    },
+    {
+      "excluded": [],
+      "monolithic": true,
+      "monolithic_failure": null,
+      "seed": 5,
+      "typed": true,
+      "typed_failure": null
+    },
+    {
+      "excluded": [],
+      "monolithic": true,
+      "monolithic_failure": null,
+      "seed": 6,
+      "typed": true,
+      "typed_failure": null
+    },
+    {
+      "excluded": [],
+      "monolithic": true,
+      "monolithic_failure": null,
+      "seed": 7,
+      "typed": true,
+      "typed_failure": null
+    }
+  ],
+  "pooled": false,
+  "protocol": "mon-parity-protocol-v1",
+  "protocol_sha256": "f65055561bf8867d31ab0bcc8ea6589a25dbe6adefb96a9f91dc16fa77728210",
+  "reasons": [
+    "precondition not attested: MON-9 independent blind authorship of both experts",
+    "precondition not attested: MON-9 parity seeds revealed by a separate operator"
+  ],
+  "success_rate": {
+    "difference": 0.0,
+    "monolithic": 1.0,
+    "typed": 1.0
+  },
+  "valid_pairs": 8
+}
