@@ -1,13 +1,1 @@
-{
-  "catalog": "docs/claim-evidence.yaml",
-  "claims": 14,
-  "errors": [],
-  "ok": false,
-  "output": "docs/generated/claim-evidence.md",
-  "reason": "release_blocked",
-  "release_blockers": [
-    "CLM-12"
-  ],
-  "release_ready": false,
-  "sha256": "60d906643f7a82f8cd11935cab889df36e3fee5a61763dec48b0d2dd61f0fb6e"
-}
+{"catalog":"docs/claim-evidence.yaml","claims":18,"errors":[],"ok":false,"output":"docs/generated/claim-evidence.md","reason":"release_blocked","release_blockers":["CLM-12"],"release_ready":false,"sha256":"f90ec2ee72812173816ae0b931f7c35d719d4e2fe2fa09c33934ae640ae3c0ea"}
