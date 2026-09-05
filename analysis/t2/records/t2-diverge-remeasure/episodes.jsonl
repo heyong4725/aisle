@@ -1,0 +1,8 @@
+{"episode": 0, "seed": 8, "status": "fail", "failure": "dropped", "t_end": 33.06, "goal_id": "ep-0000", "verifier": "oracle", "retries": 0}
+{"episode": 1, "seed": 9, "status": "success", "failure": null, "t_end": 46.5, "goal_id": "ep-0001", "verifier": "oracle", "retries": 0}
+{"episode": 2, "seed": 10, "status": "fail", "failure": "collision", "t_end": 40.16, "goal_id": "ep-0002", "verifier": "oracle", "retries": 0}
+{"episode": 3, "seed": 11, "status": "success", "failure": null, "t_end": 44.3, "goal_id": "ep-0003", "verifier": "oracle", "retries": 0}
+{"episode": 4, "seed": 12, "status": "success", "failure": null, "t_end": 25.86, "goal_id": "ep-0004", "verifier": "oracle", "retries": 0}
+{"episode": 5, "seed": 13, "status": "fail", "failure": "never_grasped", "t_end": 150.0, "goal_id": "ep-0005", "verifier": "oracle", "retries": 0}
+{"episode": 6, "seed": 14, "status": "success", "failure": null, "t_end": 32.1, "goal_id": "ep-0006", "verifier": "oracle", "retries": 0}
+{"episode": 7, "seed": 15, "status": "fail", "failure": "collision", "t_end": 29.73, "goal_id": "ep-0007", "verifier": "oracle", "retries": 0}

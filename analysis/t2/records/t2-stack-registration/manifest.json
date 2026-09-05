@@ -1,0 +1,60 @@
+{
+ "run_id": "t2-stack-registration",
+ "git_sha": "710f0a41813e108025928ba2a424e70f277cd033",
+ "env_hash": "461d115324f7ca4a50cc331870997f10524dc4878693ee2b49e2aae7be31d418",
+ "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+ "graph": "graphs/eval_t2_stack.yaml",
+ "graph_hash": "1d80d8399c05ba6c5d1c816fbe88087d392903db93df9098633d323bde4cff77",
+ "graph_snapshot": "runs/t2-stack-registration/authored-graph.yaml",
+ "exec_graph_hashes": [
+  "4f0f41e5a689df517da8f26e66d9ffa69b362a130cb45fb2aa767bf747e87831"
+ ],
+ "tier": "T2",
+ "perception": "L2",
+ "embodiment": "franka",
+ "sim_extra": "sim",
+ "sim_backend": "metal",
+ "sim_device": "mps",
+ "seeds": [
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15
+ ],
+ "reset": "teleport",
+ "verifier": "oracle",
+ "idea": null,
+ "no_idea_gate": true,
+ "env_baseline": "local",
+ "env_baseline_oid": null,
+ "env_fingerprint": "a0bc566c576474ed9e9f5d7718de488fe552dd7984067d969e0bd19053b0eccf",
+ "env_attested": false,
+ "dist_problems": [
+  "environment out of sync with the locked selection (uv sync --locked --check:  - torchcodec==0.16.0\n - torchvision==0.28.0\n - urllib3==2.7.0\n - wandb==0.28.2\n - werkzeug==3.1.8\n - xxhash==4.0.0\n - yarl==1.24.5\nThe environment is outdated; run `uv sync` to update the environment)"
+ ],
+ "post_run_audit": null,
+ "budget_reservation": null,
+ "tokens_log": null,
+ "wall_clamped": [],
+ "relaunches": 0,
+ "guard_divergence": {
+  "commands": 45378,
+  "clamped_commands": 58305,
+  "violation_records": 58305,
+  "divergence_rate": 1.284874,
+  "labels_coincide": false,
+  "by_reason": {
+   "velocity": 50571,
+   "workspace": 7734
+  },
+  "max_abs_delta": 5.512817,
+  "mean_abs_delta": 1.168112,
+  "records_without_delta": 0,
+  "skipped_rows": 0,
+  "run_dir": "/Users/yonghe/src/aisle-runner/runs/t2-stack-registration"
+ }
+}
