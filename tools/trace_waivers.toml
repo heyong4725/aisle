@@ -37,9 +37,8 @@ SFE-14 = "proposed H5 wording; occurrence-audit tests land after human spec revi
 
 # SPEC 450 sealed fault bank — proposed in the #348 spec-change PR.
 # The tests-first implementation PR MUST remove every FLT waiver before merge.
-FLT-4 = "proposed external storage; confinement path-denial tests land after human spec review"
+FLT-4 = "residency half shipped (harness fault validate refuses a bank inside any worktree, git namespace, HOME cache, temp or tool root); the denial proof waits on the issue #353 confinement adapter"
 FLT-6 = "proposed leak gate; participant-surface canary tests land after human spec review"
-FLT-8 = "proposed sham parity; start-surface and classifier tests land after human spec review"
 FLT-12 = "proposed runtime audit; activation/drift/invalid-record tests land after human spec review"
 
 # SPEC 440 monolithic control — proposed in the #344 spec-change PR.

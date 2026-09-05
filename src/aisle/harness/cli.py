@@ -311,6 +311,14 @@ def build_parser() -> argparse.ArgumentParser:
     fault_sub = fault.add_subparsers(dest="fault_command", required=True)
     fault_validate = fault_sub.add_parser("validate", help="FLT-1/2/3/11 manifest coverage")
     fault_validate.add_argument("--bank", type=Path, required=True)
+    fault_validate.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    fault_validate.add_argument(
+        "--tool-root",
+        type=Path,
+        action="append",
+        default=[],
+        help="FLT-4: an allowed participant tool root the bank must not reside under",
+    )
     fault_calibrate = fault_sub.add_parser("calibrate", help="FLT-9/10 severity calibration")
     fault_calibrate.add_argument("--bank", type=Path, required=True)
     fault_calibrate.add_argument("--clean-run", type=Path, required=True)
@@ -326,6 +334,10 @@ def build_parser() -> argparse.ArgumentParser:
     fault_calibrate.add_argument("--only", default=None, help="comma list of opaque ids")
     fault_calibrate.add_argument("--output", type=Path, default=None)
     fault_calibrate.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    fault_leakage = fault_sub.add_parser("leakage", help="FLT-8 sham-vs-fault leakage probe")
+    fault_leakage.add_argument("--report", type=Path, required=True, help="calibration report")
+    fault_leakage.add_argument("--probe", type=Path, required=True, help="frozen probe declaration")
+    fault_leakage.add_argument("--output", type=Path, default=None)
     fault_assign = fault_sub.add_parser("assign", help="FLT-5 deterministic opaque assignment")
     fault_assign.add_argument("--bank", type=Path, required=True)
     fault_assign.add_argument("--seed-file", type=Path, required=True)
@@ -504,9 +516,11 @@ def main() -> int:
         from aisle.harness import fault_injector as fi
 
         try:
-            bank = json.loads(args.bank.read_bytes())
+            bank = json.loads(args.bank.read_bytes()) if getattr(args, "bank", None) else None
             if args.fault_command == "validate":
-                errors = fi.validate_manifest(bank)
+                errors = fi.validate_manifest(bank) + fi.residency_errors(
+                    args.bank, args.root, tuple(args.tool_root)
+                )
                 report = {
                     "ok": not errors,
                     "bank_id": bank.get("bank_id"),
@@ -515,6 +529,15 @@ def main() -> int:
                     "families": sorted({i.get("family") for i in bank.get("instances", [])}),
                     "errors": errors,
                 }
+            elif args.fault_command == "leakage":
+                from aisle.harness import fault_leakage as fl
+
+                probe = json.loads(args.probe.read_bytes())
+                calibration = json.loads(args.report.expanduser().read_bytes())
+                report = {"ok": True, **fl.probe_cells(probe, fl.receipts_from_report(calibration))}
+                if args.output is not None:
+                    args.output.parent.mkdir(parents=True, exist_ok=True)
+                    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
             elif args.fault_command == "assign":
                 seed = args.seed_file.read_bytes()
                 cells = [c for c in args.cells.split(",") if c]

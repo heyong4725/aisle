@@ -27,12 +27,19 @@ from pathlib import Path
 from typing import Any
 
 BANK_SCHEMA = "aisle.fault-bank.manifest.v1"
-INJECTOR_VERSION = "aisle.fault-injector.v1"
+INJECTOR_VERSION = "aisle.fault-injector.v2"  # v2: FLT-8 visible-size pad, fixed mtime, visible_metadata receipts
 FAMILIES = ("perception", "decision", "motion", "schema_metadata", "clocking", "runtime")
 PERSISTENCE = ("persistent", "intermittent")
 REPAIR_CLASSES = ("novel_repair", "restoration", "diagnosis_only")
 LIFECYCLE = ("draft", "calibration", "sealed", "scoring", "closed", "revealed", "retired")
 OPERATORS = ("replace", "sham")
+#: FLT-8 participant-visible normalization: every staged target (sham or
+#: fault) is padded with a trailing comment block to exactly PAD_BYTES more
+#: than its preimage, and stamped with one fixed mtime, so size, mode and
+#: timestamp cannot separate sham from fault cells. A replacement that grows
+#: a file by more than PAD_BYTES is refused rather than leaked.
+PAD_BYTES = 512
+STAGED_MTIME = 1_600_000_000  # 2020-09-13T12:26:40Z, fixed for every staged file
 #: FLT-11 positive allowlist: participant-authored node sources only.
 TARGET_ALLOWLIST = (
     "src/aisle/nodes/segmented_pose.py",
@@ -104,6 +111,43 @@ def clean_baseline_hash(root: Path) -> str:
     """Hash of every allowlisted target and every frozen asset at clean."""
     parts = {rel: sha256_path(root / rel) for rel in TARGET_ALLOWLIST + FROZEN_ASSETS}
     return content_hash(parts)
+
+
+def residency_errors(bank_path: Path, root: Path, tool_roots: tuple[Path, ...] = ()) -> list[str]:
+    """FLT-4 residency half: the private bank must live outside the
+    participant worktree, outside every git worktree / object namespace
+    the repository knows, outside HOME cache/temp views, and outside every
+    allowed tool root. This proves WHERE the bytes are, not that a
+    participant is denied reaching them — that denial is issue #353's
+    confinement adapter, which the controller must run before a session."""
+    import subprocess
+    import tempfile
+
+    bank = bank_path.expanduser().resolve()
+    errors: list[str] = []
+    if not bank.is_file():
+        return [f"bank not found: {bank}"]
+    forbidden: list[tuple[str, Path]] = [("participant worktree", root.resolve())]
+    listing = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"], capture_output=True, text=True, cwd=root
+    )
+    for line in listing.stdout.splitlines():
+        if line.startswith("worktree "):
+            forbidden.append(("git worktree", Path(line.split(" ", 1)[1]).resolve()))
+    common = subprocess.run(
+        ["git", "rev-parse", "--git-common-dir"], capture_output=True, text=True, cwd=root
+    ).stdout.strip()
+    if common:
+        forbidden.append(("git object namespace", (root / common).resolve()))
+    home = Path.home().resolve()
+    for name in (".cache", "Library/Caches", ".local/share/uv", ".claude"):
+        forbidden.append((f"HOME cache view {name}", home / name))
+    forbidden.append(("temp view", Path(tempfile.gettempdir()).resolve()))
+    forbidden.extend(("tool root", p.resolve()) for p in tool_roots)
+    for label, base in forbidden:
+        if bank == base or base in bank.parents:
+            errors.append(f"bank resides inside the {label}: {base}")
+    return errors
 
 
 def validate_manifest(manifest: dict) -> list[str]:
@@ -234,15 +278,21 @@ def materialize(
             raise FaultInjectorError("unknown operator", [edit["operator"]])
         plan[edit["target"]] = (original, after)
     written = []
+    visible: dict[str, dict] = {}
     try:
-        for rel, (_before, after) in plan.items():  # atomic: temp files then rename all
+        for rel, (before, after) in plan.items():  # atomic: temp files then rename all
             dest = _safe_join(staging, rel)
             dest.parent.mkdir(parents=True, exist_ok=True)
             tmp = dest.with_suffix(dest.suffix + ".tmp")
-            tmp.write_bytes(after)
+            tmp.write_bytes(pad_to_visible_size(before, after))
+            src = _safe_join(root, rel)
+            os.chmod(tmp, src.stat().st_mode & 0o777)
+            os.utime(tmp, (STAGED_MTIME, STAGED_MTIME))
             written.append((tmp, dest))
         for tmp, dest in written:
             os.replace(tmp, dest)
+        for rel in plan:
+            visible[rel] = visible_metadata(_safe_join(staging, rel))
     except OSError as exc:
         for tmp, _dest in written:
             tmp.unlink(missing_ok=True)
@@ -266,7 +316,28 @@ def materialize(
         ],
         "frozen_assets_identical": True,
         "sham": all(a == b for b, a in plan.values()),
+        # FLT-8: what a participant can observe about the staged files before
+        # any outcome; the leakage probe classifies sham vs fault on these
+        "visible_metadata": visible,
     }
+
+
+def pad_to_visible_size(before: bytes, after: bytes) -> bytes:
+    """FLT-8: the staged bytes of a target, padded with a trailing Python
+    comment so `len(result) == len(before) + PAD_BYTES` whether the edit was
+    a sham or a fault. Refuses an edit that grows the file past the pad."""
+    room = len(before) + PAD_BYTES - len(after)
+    if room < 2:
+        raise FaultInjectorError("edit grows the target beyond the visible-size pad", [str(room)])
+    tail = b"\n#" + b" " * (room - 2)
+    return after + tail
+
+
+def visible_metadata(path: Path) -> dict:
+    """The FLT-8 feature allowlist for one staged file: size, mode bits and
+    mtime — the metadata a participant sees without opening the file."""
+    st = path.stat()
+    return {"size_bytes": st.st_size, "mode": st.st_mode & 0o777, "mtime": int(st.st_mtime)}
 
 
 def stage_graph(graph_path: Path, receipt: dict, root: Path, staging: Path, out: Path) -> str:
