@@ -1,0 +1,36 @@
+{
+  "artifacts": {
+    "analysis/freeze/cse-causal-study-v1/power.json": "sha256:e88e0522f9f98735ab9d8f016e156f993cfd53e6b0a515e8504521a2dc18928f",
+    "analysis/freeze/cse-causal-study-v1/protocol.json": "sha256:459ce9961e3f5c7975ca38463e1807ca447f4463b0c9ad3e8eab1831b06b1d58",
+    "analysis/freeze/fel-fault-evidence-study-v1/power.json": "sha256:e10b6b6f9aded19076ff07314023b7334eb23856c0e4f670ca468dc7146303e9",
+    "analysis/freeze/fel-fault-evidence-study-v1/protocol.json": "sha256:3ea71653f01ab43db539d712c11a414a0b90b3d9a0f585d7e773b6c4a1e7d58d",
+    "analysis/statistics/README.md": "sha256:9fa61b8038bc286ff09b97a9c5bab5316a033535e6d2af8bc068bb4eba899a75",
+    "analysis/statistics/statistical-review-template.json": "sha256:9cbe01a8dcefe08cbd9b861d47795407d8b99eb5d589ed40eca1ffc52c33825b",
+    "analysis/statistics/synthetic-records.json": "sha256:60d1063a47922808d5b2d80862cfa3b94f9320bf24569ea3c6cf2babf1a71738",
+    "src/aisle/harness/benchmark_statistics.py": "sha256:22cde3e9d7c5cc80874c7eec30aa2898e30476d6c939c94ab3009e8b12af641e",
+    "tests/unit/test_benchmark_statistics.py": "sha256:d77b66e073a96d0ce7bbfeea226c7531e8cdba21d0519554f328c5b08250c5db"
+  },
+  "gate": "STA-12 (SPEC 400)",
+  "independence_requirement": "did not author src/aisle/harness/benchmark_statistics.py or any protocol",
+  "request_id": "sta-12-statistical-review",
+  "retained_record": "docs/reviews/records/sta-12-statistical-review.json (absent until a real reviewer signs)",
+  "reviewer_role": "independent statistician",
+  "reviewer_tasks": [
+    "inspect estimand and session unit",
+    "inspect power assumptions and sensitivity (control 0.40 is an assumption; pilots pending)",
+    "inspect interval and equivalence decision methods",
+    "run the synthetic fixtures and check the 8/8 counterexample",
+    "review known limitations",
+    "record every finding with a disposition"
+  ],
+  "schema_version": "aisle.review-request.v1",
+  "self_attestation": "forbidden: owner self-review, synthetic signatures, and admin merges do not satisfy this gate",
+  "status": "open: no reviewer engaged; nothing here is a review",
+  "title": "Independent statistical review of the confirmatory protocols",
+  "what_the_maintainer_may_do": "answer documented questions; never edit the reviewer's environment, record, or result in place",
+  "what_the_reviewer_signs": "analysis/statistics/statistical-review-template.json completed with reviewer id, role, signature, external timestamp, reviewed artifact hashes, and resolved findings; placed in each protocol's freeze.review block",
+  "what_this_unblocks": [
+    "freeze of cse-causal-study-v1 and fel-fault-evidence-study-v1 (after pilot-derived power re-issue)",
+    "any confirmatory session (CSE-10, FEL-18)"
+  ]
+}

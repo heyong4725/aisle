@@ -1,0 +1,29 @@
+{
+  "artifacts": {
+    "README.md": "sha256:114f6012e984b8df6ba9a44a2ba96c3bcc68e5778adbbdbbe6a60dc64a1f60a1",
+    "analysis/freeze/README.md": "sha256:fd6c27f7db6506a7c3d41c5c05bf9885b505b00a0da5bbaecae9df4383971191",
+    "specs/530-independent-reproduction-archive.md": "sha256:9ac8fd58d4a589b00b5a566fb43767221859d3b5954c03e6e50b0018f4a8f68f",
+    "tools/paper_figures.py": "sha256:13aef563c9d85e4c4aee2a207c72d599ad701b78fdcb1e5922678916f0e1eea7"
+  },
+  "gate": "RPR-10, RPR-11 (SPEC 530)",
+  "independence_requirement": "no prior access to runs/, private raw stores, or repair notes; starts from the public or double-blind bundle",
+  "request_id": "rpr-10-external-reproduction",
+  "retained_record": "docs/reviews/records/rpr-10-external-reproduction.json (absent until a real reviewer signs)",
+  "reviewer_role": "operator who did not conduct, curate, analyze, or package the original sessions, on a machine that is not the campaign machine",
+  "reviewer_tasks": [
+    "sign the RPR-10 declaration of roles, prior access, conflicts, bundle id, host and environment id",
+    "bootstrap from the bundle and retain logs, inventory, attestation, commands, downloads, overrides, retries, failures, final hashes (RPR-11)",
+    "regenerate main tables and figures with one command and report each CON-5 layer separately (bit-exact, cadence, physics tolerance, statistical outcome)",
+    "report documentation gaps and support contacts"
+  ],
+  "schema_version": "aisle.review-request.v1",
+  "self_attestation": "forbidden: owner self-review, synthetic signatures, and admin merges do not satisfy this gate",
+  "status": "open: no reviewer engaged; nothing here is a review",
+  "title": "Independent reproduction of the primary cells on a second machine",
+  "what_the_maintainer_may_do": "answer documented questions; never edit the reviewer's environment, record, or result in place",
+  "what_the_reviewer_signs": "a machine-readable reproduction record per SPEC 530 with layered comparison results and the signed declaration",
+  "what_this_unblocks": [
+    "external-reproduction claim row",
+    "DOI-bearing archive (#355)"
+  ]
+}
