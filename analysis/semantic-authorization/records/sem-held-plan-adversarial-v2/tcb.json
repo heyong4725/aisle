@@ -1,0 +1,29 @@
+{
+  "schema_version": "aisle.semantic-authorization.tcb.v1",
+  "campaign_id": "sem-held-plan-adversarial-v2",
+  "evidence_kind": "synthetic",
+  "trusted_computing_base": {
+    "task_assignment_source": "scripted held plan (corpus.json), signed by content hash",
+    "identity_adapters": {
+      "sensor_shield": ["sha256:sensor-adapter-a", "sha256:sensor-adapter-b"],
+      "oracle_sim_shield": ["sha256:simulation_oracle"],
+      "no_shield": ["sha256:sensor-adapter-a", "sha256:sensor-adapter-b"]
+    },
+    "carrier_association": "assertion.carrier field bound per assertion",
+    "authorization_state_machine": "src/aisle/harness/semantic_shield.py::SemanticAuthorizer",
+    "protected_key": "caller-provided bytes; the corpus key is a public synthetic constant",
+    "clock": "contract time injected per event; no wall clock",
+    "permit_verifier": "src/aisle/harness/semantic_shield.py::PermitGateway"
+  },
+  "principals_and_authority": {
+    "participant_write_authority_over_tcb": "none in this replay; no agent process exists",
+    "launch_debug_authority": "evaluator only",
+    "ipc_routes": "in-process function calls; no sockets",
+    "os_process_isolation": "single evaluator process; not a deployment claim"
+  },
+  "limits": [
+    "no simulator or hardware executed a transition",
+    "sensor assertions are scripted, not rendered perception",
+    "emergency containment and the kinematic guard are not modelled in this replay (SEM-8 pending)"
+  ]
+}

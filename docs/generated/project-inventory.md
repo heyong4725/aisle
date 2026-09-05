@@ -44,7 +44,7 @@ stayed outside it).
 |---|---:|
 | Graphs | 18 |
 | Capability manifests | 39 |
-| CLI command entries | 21 |
+| CLI command entries | 23 |
 | ADR files | 73 |
 
 ## Graphs
@@ -151,6 +151,8 @@ stayed outside it).
 | `harness report close` | `--id`, `--observed`, `--verdict`, `--root` |
 | `harness report log` | `--idea`, `--parent`, `--expect`, `--root` |
 | `harness rollout` | `--graph`, `--tier`, `--embodiment`, `--episodes`, `--seeds`, `--reset`, `--verifier`, `--sim-extra`, `--root`, `--no-idea-gate`, `--perception`, `--run-id`, `--per-episode-wall-s`, `--env-baseline`, `--timeout-s` |
+| `harness semantic corpus` | `--seed`, `--per-condition`, `--output` |
+| `harness semantic run` | `--corpus`, `--analysis-seed`, `--output` |
 | `harness skill register` | `<skill_dir>`, `--root`, `--sandbox`, `--run-id` |
 | `harness stats analyze` | `--protocol`, `--records`, `--output` |
 | `harness stats power` | `--protocol`, `--output` |

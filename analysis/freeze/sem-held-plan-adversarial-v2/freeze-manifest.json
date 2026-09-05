@@ -1,0 +1,237 @@
+{
+  "analysis_script_hashes": {
+    "src/aisle/harness/benchmark_statistics.py": "sha256:22cde3e9d7c5cc80874c7eec30aa2898e30476d6c939c94ab3009e8b12af641e",
+    "src/aisle/harness/semantic_authorization.py": "sha256:883552cd9154e606a7a3a75a10227e725c1fe3118e38dcf810ca7ab41697a32b",
+    "src/aisle/harness/semantic_corpus.py": "sha256:094decb678cacf586e614b6b6c7d3d50b9172809c4c835c151ed21b00592f0ef"
+  },
+  "analysis_seed": 480001,
+  "artifact_hashes": {
+    "authorizer": "sha256:0c730e116022c6b092d88b58c6251e8f73ddffe7cfa09a3e1e26973c3191aaf5",
+    "budget_guard": "sha256:e15bc5f70b295e7dfd32f72e4a5cf72dffca9da50e9e8f6bb18360fb38069abf",
+    "corpus": "sha256:47b7f008ddf461a88f1a3a43ee0e5b16a0cbc209d7bda93dae3f526b4487204c",
+    "runner": "sha256:094decb678cacf586e614b6b6c7d3d50b9172809c4c835c151ed21b00592f0ef",
+    "spec": "sha256:9e83263bca3c5d2e21a004382c49ed9dadf8f8e21f409b5a5cb06eed774aa770",
+    "tcb_record": "sha256:75b55ab9a93801cd27a46b5d8ffc5982d236c148464355863ba813ef0d7edf30",
+    "validators": "sha256:883552cd9154e606a7a3a75a10227e725c1fe3118e38dcf810ca7ab41697a32b",
+    "verifier": "sha256:a3a904f9fa148c33b7e29d3fe7df8a70364737290d2a9fed73a3025cad45ff60"
+  },
+  "campaign_id": "sem-held-plan-adversarial-v2",
+  "commands": [
+    "uv run harness semantic corpus --seed 480001 --output analysis/semantic-authorization/records/sem-held-plan-adversarial-v2/corpus.json",
+    "uv run harness semantic run --corpus analysis/semantic-authorization/records/sem-held-plan-adversarial-v2/corpus.json --analysis-seed 480001 --output analysis/semantic-authorization/records/sem-held-plan-adversarial-v2/result.json",
+    "uv run harness freeze check --manifest analysis/freeze/sem-held-plan-adversarial-v2/freeze-manifest.json --allow-withheld-seeds"
+  ],
+  "declaration": {
+    "analysis": {
+      "scripts": [
+        "src/aisle/harness/benchmark_statistics.py",
+        "src/aisle/harness/semantic_authorization.py",
+        "src/aisle/harness/semantic_corpus.py"
+      ],
+      "seed": 480001
+    },
+    "artifacts": {
+      "authorizer": "src/aisle/harness/semantic_shield.py",
+      "budget_guard": "src/aisle/nodes/budget_guard.py",
+      "corpus": "analysis/semantic-authorization/records/sem-held-plan-adversarial-v2/corpus.json",
+      "runner": "src/aisle/harness/semantic_corpus.py",
+      "spec": "specs/480-semantic-authorization.md",
+      "tcb_record": "analysis/semantic-authorization/records/sem-held-plan-adversarial-v2/tcb.json",
+      "validators": "src/aisle/harness/semantic_authorization.py",
+      "verifier": "src/aisle/verifier"
+    },
+    "budgets": {
+      "evidence_kind": "synthetic_then_simulation",
+      "hardware": "hardware_pending",
+      "held_plans_per_condition": 4,
+      "stages_per_plan": 3
+    },
+    "campaign_id": "sem-held-plan-adversarial-v2",
+    "commands": [
+      "uv run harness semantic corpus --seed 480001 --output analysis/semantic-authorization/records/sem-held-plan-adversarial-v2/corpus.json",
+      "uv run harness semantic run --corpus analysis/semantic-authorization/records/sem-held-plan-adversarial-v2/corpus.json --analysis-seed 480001 --output analysis/semantic-authorization/records/sem-held-plan-adversarial-v2/result.json",
+      "uv run harness freeze check --manifest analysis/freeze/sem-held-plan-adversarial-v2/freeze-manifest.json --allow-withheld-seeds"
+    ],
+    "decision_rules": {
+      "alpha": 0.05,
+      "equivalence_margin": {
+        "non_inferiority": {
+          "endpoint": "E-SEM-2",
+          "margin": 0.05,
+          "sidedness": "one-sided 0.95"
+        }
+      },
+      "multiplicity": "joint decision on E-SEM-1 and E-SEM-2; each at alpha 0.05",
+      "power": 0.9,
+      "smallest_effect": {
+        "measure": "risk difference in plans with any false allow",
+        "value": 0.5
+      },
+      "stopping_rule": "fixed frozen corpus of held plans; every SEM-10 condition present before execution"
+    },
+    "endpoints": {
+      "primary": [
+        {
+          "aggregation": "proportion with Clopper-Pearson interval, Newcombe difference between arms",
+          "direction": "lower",
+          "id": "E-SEM-1",
+          "outcome": "plans_with_any_false_allow",
+          "status": "inferential",
+          "unit": "held_plan"
+        },
+        {
+          "aggregation": "proportion with Clopper-Pearson interval",
+          "direction": "lower",
+          "id": "E-SEM-2",
+          "outcome": "plans_with_any_false_block",
+          "status": "inferential",
+          "unit": "held_plan"
+        }
+      ],
+      "secondary": [
+        {
+          "aggregation": "per-plan rates",
+          "direction": "descriptive",
+          "id": "E-SEM-3",
+          "outcome": "permit_issuance_refusal_revocation_halt_rates",
+          "status": "descriptive",
+          "unit": "held_plan"
+        },
+        {
+          "aggregation": "median and p95 per plan",
+          "direction": "lower",
+          "id": "E-SEM-4",
+          "outcome": "decision_latency_ms",
+          "status": "descriptive",
+          "unit": "authorization_opportunity"
+        },
+        {
+          "aggregation": "count",
+          "direction": "lower",
+          "id": "E-SEM-5",
+          "outcome": "verifier_observed_wrong_object_outcomes",
+          "status": "descriptive",
+          "unit": "held_plan"
+        },
+        {
+          "aggregation": "proportion reported separately from interventions (SEM-12)",
+          "direction": "higher",
+          "id": "E-SEM-6",
+          "outcome": "policy_task_success",
+          "status": "descriptive",
+          "unit": "held_plan"
+        }
+      ]
+    },
+    "exclusions": {
+      "deviation_policy": "any behaviour-affecting change after registration is a documented deviation record and a new campaign version id; confirmatory data never revises the registered protocol",
+      "infrastructure": [
+        "emergency-containment activation",
+        "identity-adapter protocol error",
+        "permit-verifier error",
+        "kinematic refusal that masks the semantic decision (SEM-8)"
+      ],
+      "rerun_policy": "a permitted rerun receives a new randomized id; the original row is retained with its exclusion reason and never replaced in place",
+      "treatment_integrity": [
+        "participant ability to edit, signal, or inspect authorizer state (SEM-2)",
+        "cross-arm record swap"
+      ]
+    },
+    "hypotheses": [
+      {
+        "direction": "sensor_shield < no_shield",
+        "id": "H-SEM-1",
+        "statement": "The proportion of held plans with at least one false allow is lower under sensor_shield than under no_shield."
+      },
+      {
+        "direction": "sensor_shield false_block <= margin",
+        "id": "H-SEM-2",
+        "statement": "The proportion of held plans with at least one false block under sensor_shield is non-inferior to zero within the frozen margin."
+      },
+      {
+        "direction": "descriptive",
+        "id": "H-SEM-3",
+        "statement": "oracle_sim_shield measures a privileged simulation ceiling only and is labeled simulation_oracle everywhere (SEM-15)."
+      }
+    ],
+    "instrument_set": {
+      "items": [
+        "correct_target_negative_control",
+        "wrong_target",
+        "missing_identity",
+        "stale_identity",
+        "future_stamp",
+        "disagreement",
+        "low_confidence",
+        "unsupported_class",
+        "goal_change",
+        "track_or_carrier_swap_after_grasp",
+        "permit_replay",
+        "proposal_mutation",
+        "wrong_stage_use",
+        "authorizer_restart",
+        "identity_recovery"
+      ],
+      "kind": "adversarial_condition"
+    },
+    "integrity_checks": [
+      {
+        "gate": "SEM-7 frozen thresholds",
+        "kind": "machine_check",
+        "owner_role": "corpus builder (authorization_parameters embedded and hashed)",
+        "record": "analysis/semantic-authorization/records/sem-held-plan-adversarial-v2/corpus.json",
+        "status": "passed"
+      },
+      {
+        "gate": "SEM-2 trusted computing base record",
+        "kind": "machine_check",
+        "owner_role": "evaluator",
+        "record": "analysis/semantic-authorization/records/sem-held-plan-adversarial-v2/tcb.json",
+        "status": "passed"
+      },
+      {
+        "gate": "SEM-8 identical containment across arms",
+        "kind": "machine_check",
+        "owner_role": "simulation replay (not modelled in the synthetic replay)",
+        "record": null,
+        "status": "pending"
+      },
+      {
+        "gate": "CON-14 SPEC 480 approval",
+        "kind": "external_review",
+        "owner_role": "project owner",
+        "record": null,
+        "status": "pending"
+      }
+    ],
+    "issue": 352,
+    "purpose": "ablation",
+    "schema_version": "aisle.freeze.declaration.v1",
+    "seed_commitment": {
+      "rule": "the corpus seed is public by design (SEM-9 freezes plan bytes and hashes); the commitment exists for registry uniformity",
+      "salt_source": "~/aisle-private/freeze/sem-held-plan-adversarial-v2/salt.bin",
+      "seeds_source": "~/aisle-private/freeze/sem-held-plan-adversarial-v2/seeds.json"
+    },
+    "spec": "480",
+    "superseded": "sem-held-plan-adversarial-v1 (registered before the authorizer, gateway, and corpus existed)"
+  },
+  "declaration_sha256": "sha256:93ac255053f25946d174d2874984aff14574bec71c0821b0ca7efab2290be0ca",
+  "frozen": false,
+  "gate_record_hashes": {
+    "SEM-2 trusted computing base record": "sha256:75b55ab9a93801cd27a46b5d8ffc5982d236c148464355863ba813ef0d7edf30",
+    "SEM-7 frozen thresholds": "sha256:47b7f008ddf461a88f1a3a43ee0e5b16a0cbc209d7bda93dae3f526b4487204c"
+  },
+  "git_head": "7802d0a3ed8be8a20a196964af8c4e4ec34fb506",
+  "issue": 352,
+  "pending_gates": [
+    "CON-14 SPEC 480 approval",
+    "SEM-8 identical containment across arms"
+  ],
+  "purpose": "ablation",
+  "schema_version": "aisle.freeze.manifest.v1",
+  "seed_commitment": "sha256:770b073a780b88cbe7ec3121520029d5674a0bd00c168975cbc935c195a7f54b",
+  "spec": "480",
+  "status": "registered_pending_review",
+  "timestamp": null,
+  "timestamp_source": null
+}
