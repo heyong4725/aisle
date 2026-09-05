@@ -1,0 +1,241 @@
+{
+  "analysis_script_hashes": {
+    "src/aisle/harness/benchmark_statistics.py": "sha256:22cde3e9d7c5cc80874c7eec30aa2898e30476d6c939c94ab3009e8b12af641e",
+    "src/aisle/harness/causal_study.py": "sha256:1b1c53d6389881c146726d865a741a681f3d5039c9bf99558a53ee368250971e"
+  },
+  "analysis_seed": 500001,
+  "artifact_hashes": {
+    "agent_adapters": "sha256:848f8f7da5ad978e53712991a688eb74f56c7a77deabee8afae717ad712666ca",
+    "analyzer": "sha256:22cde3e9d7c5cc80874c7eec30aa2898e30476d6c939c94ab3009e8b12af641e",
+    "budget_ceiling": "sha256:bcbb79aa146afed1d877da18093175ae144b4607db50119022ef4f8173122cda",
+    "monolithic_validators": "sha256:1983ed8c26b2371c993c571f33f5c7e4ee81ea2597f9468b43d53c9970465ccf",
+    "protocol": "sha256:459ce9961e3f5c7975ca38463e1807ca447f4463b0c9ad3e8eab1831b06b1d58",
+    "protocol_template": "sha256:9d636f3dc462a2e051ee0b3ded565aff1c5be86331e5b1b6692988509ccf088e",
+    "research_prompt": "sha256:e736bbd6caa7236dbfafe92ae42c0c7f13088764af1b753f6685d398c111b7c0",
+    "session_runner": "sha256:78e407978e371ea592349c280b86ff8133c6106fc882d6faa5eaabe17f3deb12",
+    "session_validators": "sha256:1b1c53d6389881c146726d865a741a681f3d5039c9bf99558a53ee368250971e",
+    "spec": "sha256:f5096c587cd9687859f2dc80ec807d1bbf959cb4e05c152154e71e47bdc1f593",
+    "treatment_integrity": "sha256:2c7d1a3a1221f809cd0b09d9246850afa17e11feee4768c989608664eda13744"
+  },
+  "campaign_id": "cse-causal-study-v1",
+  "commands": [
+    "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-v1/protocol.json --purpose power",
+    "uv run harness stats power --protocol analysis/freeze/cse-causal-study-v1/protocol.json --output analysis/freeze/cse-causal-study-v1/power.json",
+    "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-v1/protocol.json --purpose freeze --output analysis/freeze/cse-causal-study-v1/protocol-freeze-refusal.json",
+    "uv run harness freeze check --manifest analysis/freeze/cse-causal-study-v1/freeze-manifest.json --allow-withheld-seeds"
+  ],
+  "declaration": {
+    "analysis": {
+      "scripts": [
+        "src/aisle/harness/benchmark_statistics.py",
+        "src/aisle/harness/causal_study.py"
+      ],
+      "seed": 500001
+    },
+    "artifacts": {
+      "agent_adapters": "tools/agent_adapters.py",
+      "analyzer": "src/aisle/harness/benchmark_statistics.py",
+      "budget_ceiling": "harness/budget.toml",
+      "monolithic_validators": "src/aisle/harness/monolithic.py",
+      "protocol": "analysis/freeze/cse-causal-study-v1/protocol.json",
+      "protocol_template": "analysis/statistics/protocol-template.json",
+      "research_prompt": "harness/CLAUDE.research.md",
+      "session_runner": "tools/campaign.py",
+      "session_validators": "src/aisle/harness/causal_study.py",
+      "spec": "specs/500-typed-monolithic-causal-study.md",
+      "treatment_integrity": "src/aisle/harness/treatment_integrity.py"
+    },
+    "budgets": {
+      "campaign_ceiling": "harness/budget.toml",
+      "rollouts_per_session": 20,
+      "session_tokens": 200000,
+      "session_wall_s": 3600,
+      "sim_episodes_per_session": 160
+    },
+    "campaign_id": "cse-causal-study-v1",
+    "commands": [
+      "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-v1/protocol.json --purpose power",
+      "uv run harness stats power --protocol analysis/freeze/cse-causal-study-v1/protocol.json --output analysis/freeze/cse-causal-study-v1/power.json",
+      "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-v1/protocol.json --purpose freeze --output analysis/freeze/cse-causal-study-v1/protocol-freeze-refusal.json",
+      "uv run harness freeze check --manifest analysis/freeze/cse-causal-study-v1/freeze-manifest.json --allow-withheld-seeds"
+    ],
+    "decision_rules": {
+      "alpha": 0.05,
+      "equivalence_margin": {
+        "cost_at_equal_quality": {
+          "acceptance_probability": 0.1,
+          "heldout_quality": 0.1,
+          "rule": "CSE-5: both must pass or cost claims stay unconditional",
+          "sidedness": "two-sided 0.90"
+        }
+      },
+      "multiplicity": "single primary endpoint",
+      "power": 0.8,
+      "primary_rule": "one-sided superiority at alpha 0.05 on the pooled Newcombe interval lower bound > 0 with no reversed stratum; otherwise weakened/rejected/undecidable by the #358 rule (CSE-3)",
+      "smallest_effect": {
+        "measure": "risk difference in session success",
+        "value": 0.25
+      },
+      "stopping_rule": "fixed n from the frozen power analysis using pilot-only control success; absolute floor 10 randomized assignments per arm per agent-system x task stratum (CSE-8); no optional stopping or extension"
+    },
+    "endpoints": {
+      "primary": [
+        {
+          "aggregation": "risk difference typed_dataflow - monolithic; exact arm intervals; Newcombe interval; per agent-system x task stratum before pooling (CSE-1, CSE-17)",
+          "direction": "higher",
+          "id": "E-CSE-1",
+          "outcome": "session_success",
+          "status": "inferential",
+          "unit": "agent_session"
+        }
+      ],
+      "secondary": [
+        {
+          "aggregation": "counts by arm",
+          "direction": "descriptive",
+          "id": "E-CSE-2",
+          "outcome": "validation_and_launch_failure_class",
+          "status": "descriptive",
+          "unit": "agent_session"
+        },
+        {
+          "aggregation": "Kaplan-Meier with censoring",
+          "direction": "lower",
+          "id": "E-CSE-3",
+          "outcome": "time_to_first_accepted_system",
+          "status": "descriptive",
+          "unit": "agent_session"
+        },
+        {
+          "aggregation": "unconditional session estimands; no at-equal-quality wording unless CSE-5 equivalence passes",
+          "direction": "lower",
+          "id": "E-CSE-4",
+          "outcome": "tokens_tool_calls_wall_active_time_sim_work_rollouts",
+          "status": "descriptive",
+          "unit": "agent_session"
+        },
+        {
+          "aggregation": "counts",
+          "direction": "descriptive",
+          "id": "E-CSE-5",
+          "outcome": "safety_interventions",
+          "status": "descriptive",
+          "unit": "agent_session"
+        },
+        {
+          "aggregation": "dropped unless a blinded rubric is ratified before freeze (CSE-18)",
+          "direction": "n/a",
+          "id": "E-CSE-6",
+          "outcome": "artifact_legibility",
+          "status": "exploratory",
+          "unit": "agent_session"
+        }
+      ]
+    },
+    "exclusions": {
+      "deviation_policy": "any behaviour-affecting change after registration is a documented deviation record and a new campaign version id; confirmatory data never revises the registered protocol",
+      "infrastructure": [
+        "independent-controller-determined, arm-neutral facts only (CSE-14): host outage, provider interruption before first tool call, launcher crash before the session started"
+      ],
+      "rerun_policy": "a permitted rerun receives a new randomized id; the original row is retained with its exclusion reason and never replaced in place",
+      "treatment_integrity": [
+        "contamination sentinel tripped (CSE-12)",
+        "model alias or CLI drift outside the frozen identity (CSE-6)",
+        "integrity verdict authored session-side (CSE-11)"
+      ]
+    },
+    "hypotheses": [
+      {
+        "direction": "typed_dataflow - monolithic > 0",
+        "id": "H-CSE-1",
+        "statement": "The bundled typed-dataflow surface raises the probability that a fresh coding-agent session produces a launching system passing the hidden held-out acceptance within budget, versus the equal-capability monolithic surface."
+      }
+    ],
+    "instrument_set": {
+      "agent_systems": [
+        {
+          "binary": "claude",
+          "frozen": false,
+          "id": "claude-code",
+          "version_observed": "2.1.261"
+        },
+        {
+          "binary": "codex",
+          "frozen": false,
+          "id": "codex-cli",
+          "version_observed": "0.151.0"
+        }
+      ],
+      "items": [
+        "short_composition:TBD-by-bnd-task-band-calibration-v1",
+        "engineering:TBD-by-bnd-task-band-calibration-v1"
+      ],
+      "kind": "selected_task"
+    },
+    "integrity_checks": [
+      {
+        "gate": "CON-14 spec approval",
+        "kind": "external_review",
+        "owner_role": "project owner",
+        "record": null,
+        "status": "pending"
+      },
+      {
+        "gate": "STA-12 independent statistical review",
+        "kind": "external_review",
+        "owner_role": "independent statistician",
+        "record": null,
+        "status": "pending"
+      },
+      {
+        "gate": "MON-1 treatment table and expert parity (#344)",
+        "kind": "machine_check",
+        "owner_role": "parity harness (blocked: monolithic control surface not built)",
+        "record": null,
+        "status": "pending"
+      },
+      {
+        "gate": "BND-12 task-band freeze (#346)",
+        "kind": "machine_check",
+        "owner_role": "task-band auditor",
+        "record": null,
+        "status": "pending"
+      },
+      {
+        "gate": "TRT confinement/mutation/agent-path (#353)",
+        "kind": "machine_check",
+        "owner_role": "integrity controller",
+        "record": null,
+        "status": "pending"
+      }
+    ],
+    "issue": 347,
+    "purpose": "confirmatory",
+    "schema_version": "aisle.freeze.declaration.v1",
+    "seed_commitment": {
+      "rule": "32 distinct integers in [1000,9999) drawn once from the OS CSPRNG, retained only under ~/aisle-private/freeze/cse-causal-study-v1/, disjoint by value from every committed dev/pilot seed list; revealed after the campaign closes",
+      "salt_source": "~/aisle-private/freeze/cse-causal-study-v1/salt.bin",
+      "seeds_source": "~/aisle-private/freeze/cse-causal-study-v1/seeds.json"
+    },
+    "spec": "500"
+  },
+  "declaration_sha256": "sha256:d9d79bdb566cbb9488a2d30da065edf7f6914d726d55c09465283d80e40b90d0",
+  "frozen": false,
+  "gate_record_hashes": {},
+  "git_head": "3367251f7e404f3f5bf643949478039f0de65827",
+  "issue": 347,
+  "pending_gates": [
+    "BND-12 task-band freeze (#346)",
+    "CON-14 spec approval",
+    "MON-1 treatment table and expert parity (#344)",
+    "STA-12 independent statistical review",
+    "TRT confinement/mutation/agent-path (#353)"
+  ],
+  "purpose": "confirmatory",
+  "schema_version": "aisle.freeze.manifest.v1",
+  "seed_commitment": "sha256:f3f4e5efe4d573e1159d93e7b53a35a50620606e3dc72d0b5d5057611a2b7522",
+  "spec": "500",
+  "status": "registered_pending_review",
+  "timestamp": null,
+  "timestamp_source": null
+}

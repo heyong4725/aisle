@@ -1,0 +1,79 @@
+{
+  "allocation_ratio": 1.0,
+  "alpha": 0.05,
+  "analysis_seed": 500001,
+  "artifact_claim_threshold": 0.9,
+  "bootstrap": {
+    "confidence_level": 0.95,
+    "replicates": 10000
+  },
+  "campaign_id": "cse-causal-study-v1",
+  "campaign_phase": "confirmatory",
+  "control_arm": "monolithic",
+  "decision": {
+    "kind": "superiority",
+    "margin": null,
+    "rationale": "equivalence and non-inferiority are not the primary decision for this template"
+  },
+  "exclusion_rules": [
+    "exclude only a predeclared infrastructure failure independent of treatment outcome",
+    "retain every exclusion row and reason in the raw records"
+  ],
+  "experimental_unit": "session",
+  "inclusion_rules": [
+    "retain and classify every randomized assignment",
+    "include a started session unless a predeclared infrastructure rule applies"
+  ],
+  "outcome": {
+    "direction": "higher",
+    "field": "session_success",
+    "type": "binary"
+  },
+  "power": {
+    "assumption_note": "control_probability 0.40 is an ASSUMPTION for pre-registration power planning: no unscored pilot has run yet (BND-9 pilots pending). CSE-8/FEL-6 require the frozen sample size to come from pilot-only control success; this protocol must be re-issued under a new protocol_id once pilot data exist and before any scored session.",
+    "control_probability": 0.4,
+    "sensitivity_effects": [
+      0.15,
+      0.2,
+      0.25,
+      0.3
+    ],
+    "test_sidedness": "one-sided",
+    "treatment_probability": 0.65
+  },
+  "primary_estimand": {
+    "contrast": "typed_dataflow minus monolithic",
+    "population": "autonomous coding-agent sessions on the frozen task band",
+    "summary": "risk_difference"
+  },
+  "protocol_id": "cse-causal-study-v1-protocol-r0",
+  "schema_version": "aisle.stats.protocol.v1",
+  "smallest_effect": {
+    "measure": "risk_difference",
+    "value": 0.25
+  },
+  "stopping_rule": {
+    "max_sessions_per_arm": 40,
+    "type": "fixed"
+  },
+  "strata": [
+    "agent_system",
+    "task"
+  ],
+  "survival": {
+    "censor_time_field": "wall_s",
+    "event_time_field": "accepted_time_s"
+  },
+  "target_power": 0.8,
+  "treatment_arm": "typed_dataflow",
+  "treatment_arms": [
+    "monolithic",
+    "typed_dataflow"
+  ],
+  "zero_event": {
+    "confidence_level": 0.95,
+    "event_field": "safety_events",
+    "exposure_field": "commands",
+    "exposure_unit": "command"
+  }
+}

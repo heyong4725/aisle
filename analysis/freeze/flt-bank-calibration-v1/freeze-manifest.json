@@ -1,0 +1,187 @@
+{
+  "analysis_script_hashes": {
+    "src/aisle/harness/benchmark_statistics.py": "sha256:22cde3e9d7c5cc80874c7eec30aa2898e30476d6c939c94ab3009e8b12af641e",
+    "src/aisle/harness/fault_bank.py": "sha256:be57dcc63453253e075ba3c6dde6498fda782ae7583bebc5955e0006ef6cfca3"
+  },
+  "analysis_seed": 450001,
+  "artifact_hashes": {
+    "baseline_graph": "sha256:303d08b37c6f0ea3ab221778437029393e0a266094941d2124b54648a3cf48ed",
+    "public_fault_menu_h6": "sha256:e5b965ce2f4445e77fe50a1bb0548912b14ac1c1903a5f98a8f89a98aeb1ddb9",
+    "spec": "sha256:a96d43fb9bf2166568177eab48aada2dc80288325f4f55fae18f9c4ffc4f96f0",
+    "swap_engine": "sha256:936cf8d62a872d09912f49d81f56fc75af0f5134e12572c14013afebb03b8d48",
+    "validators": "sha256:be57dcc63453253e075ba3c6dde6498fda782ae7583bebc5955e0006ef6cfca3"
+  },
+  "campaign_id": "flt-bank-calibration-v1",
+  "commands": [
+    "uv run harness freeze check --manifest analysis/freeze/flt-bank-calibration-v1/freeze-manifest.json --allow-withheld-seeds"
+  ],
+  "declaration": {
+    "analysis": {
+      "scripts": [
+        "src/aisle/harness/benchmark_statistics.py",
+        "src/aisle/harness/fault_bank.py"
+      ],
+      "seed": 450001
+    },
+    "artifacts": {
+      "baseline_graph": "graphs/expert_t1.yaml",
+      "public_fault_menu_h6": "tools/h6_campaign.py",
+      "spec": "specs/450-sealed-fault-bank.md",
+      "swap_engine": "src/aisle/harness/swap.py",
+      "validators": "src/aisle/harness/fault_bank.py"
+    },
+    "budgets": {
+      "campaign_purpose": "excluded_pilot",
+      "episode_wall_s": 150,
+      "evidence_kind": "simulation",
+      "paired_seeds_per_instance": 8,
+      "severity_candidates_per_family": 2
+    },
+    "campaign_id": "flt-bank-calibration-v1",
+    "commands": [
+      "uv run harness freeze check --manifest analysis/freeze/flt-bank-calibration-v1/freeze-manifest.json --allow-withheld-seeds"
+    ],
+    "decision_rules": {
+      "alpha": 0.05,
+      "equivalence_margin": {
+        "sham_control": {
+          "margin": 0.125,
+          "rule": "sham-minus-clean paired difference interval within +-margin"
+        }
+      },
+      "power": 0.8,
+      "selection_rule": "an instance enters the sealed bank only if its paired interval excludes zero degradation and the point estimate meets the minimum; saturated (clean success 0) or unstable instances are rejected",
+      "smallest_effect": {
+        "measure": "paired risk difference in episode success",
+        "value": 0.25
+      },
+      "stopping_rule": "fixed 8 paired seeds per instance and severity; no severity added after seeing scored outcomes (FLT-10)"
+    },
+    "endpoints": {
+      "primary": [
+        {
+          "aggregation": "paired clean-minus-fault difference with exact interval",
+          "direction": "lower under fault",
+          "id": "E-FLT-1",
+          "outcome": "episode_success",
+          "status": "inferential",
+          "unit": "seed_pair"
+        }
+      ],
+      "secondary": [
+        {
+          "aggregation": "counts",
+          "direction": "descriptive",
+          "id": "E-FLT-2",
+          "outcome": "failure_class_distribution",
+          "status": "descriptive",
+          "unit": "seed_pair"
+        },
+        {
+          "aggregation": "counts",
+          "direction": "unchanged or lower",
+          "id": "E-FLT-3",
+          "outcome": "guard_interventions_and_safety_events",
+          "status": "descriptive",
+          "unit": "seed_pair"
+        },
+        {
+          "aggregation": "does the typed evidence bundle contain a component-level signal",
+          "direction": "present",
+          "id": "E-FLT-4",
+          "outcome": "evidence_localizability",
+          "status": "descriptive",
+          "unit": "instance"
+        }
+      ]
+    },
+    "exclusions": {
+      "deviation_policy": "any behaviour-affecting change after registration is a documented deviation record and a new campaign version id; confirmatory data never revises the registered protocol",
+      "infrastructure": [
+        "dora launch failure before the first turn",
+        "watchdog expiry attributable to host load (host-load baseline retained)"
+      ],
+      "rerun_policy": "a permitted rerun receives a new randomized id; the original row is retained with its exclusion reason and never replaced in place",
+      "treatment_integrity": [
+        "fault identity visible in any participant-facing surface (FLT-4)"
+      ]
+    },
+    "hypotheses": [
+      {
+        "direction": "fault < clean by >= 0.25",
+        "id": "H-FLT-1",
+        "statement": "Each candidate fault instance degrades the paired clean baseline episode success by at least the minimum meaningful degradation while leaving localizable evidence (FLT-9)."
+      },
+      {
+        "direction": "sham == clean",
+        "id": "H-FLT-0",
+        "statement": "Sham (no-fault) controls are indistinguishable from the clean baseline at session start and in outcome (FLT-8)."
+      }
+    ],
+    "instrument_set": {
+      "items": [
+        "perception",
+        "decision",
+        "motion",
+        "schema_metadata",
+        "clocking",
+        "runtime",
+        "coupled_distinct_targets_a",
+        "coupled_distinct_targets_b",
+        "sham_control"
+      ],
+      "kind": "fault_family",
+      "note": "instance ids, severities, and bytes are sealed outside the worktree (FLT-4); only families and their commitments are public"
+    },
+    "integrity_checks": [
+      {
+        "gate": "CON-7 frozen set",
+        "kind": "machine_check",
+        "owner_role": "env_hash checker",
+        "record": "tools/env_hash.json",
+        "status": "passed"
+      },
+      {
+        "gate": "FLT-4 sealed location denial",
+        "kind": "machine_check",
+        "owner_role": "confinement adapter",
+        "record": null,
+        "status": "pending"
+      },
+      {
+        "gate": "FLT-8 sham parity",
+        "kind": "machine_check",
+        "owner_role": "injector",
+        "record": null,
+        "status": "pending"
+      }
+    ],
+    "issue": 348,
+    "purpose": "calibration",
+    "schema_version": "aisle.freeze.declaration.v1",
+    "seed_commitment": {
+      "rule": "32 distinct integers in [1000,9999) drawn once from the OS CSPRNG, retained only under ~/aisle-private/freeze/flt-bank-calibration-v1/, disjoint by value from every committed dev/pilot seed list; revealed after the campaign closes",
+      "salt_source": "~/aisle-private/freeze/flt-bank-calibration-v1/salt.bin",
+      "seeds_source": "~/aisle-private/freeze/flt-bank-calibration-v1/seeds.json"
+    },
+    "spec": "450"
+  },
+  "declaration_sha256": "sha256:91d803e3c6294b01efa6d639483231fa155554adbbca7662aaa366fd2a9b4d64",
+  "frozen": false,
+  "gate_record_hashes": {
+    "CON-7 frozen set": "sha256:4faec5f81e00250b8fd6ecd483dcebc6cc065a53349a8f69b54667b870fb0c44"
+  },
+  "git_head": "3367251f7e404f3f5bf643949478039f0de65827",
+  "issue": 348,
+  "pending_gates": [
+    "FLT-4 sealed location denial",
+    "FLT-8 sham parity"
+  ],
+  "purpose": "calibration",
+  "schema_version": "aisle.freeze.manifest.v1",
+  "seed_commitment": "sha256:912a9fb8794597e84efb4fd7158824aa9e90b5a8b50d9ca9ccdb558c699ea98b",
+  "spec": "450",
+  "status": "registered_pending_review",
+  "timestamp": null,
+  "timestamp_source": null
+}
