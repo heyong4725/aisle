@@ -187,11 +187,67 @@ def build_parser() -> argparse.ArgumentParser:
         "--purpose", choices=["power", "analysis", "freeze"], default="analysis"
     )
     stats_validate.add_argument("--output", type=Path, default=None)
+
+    freeze = subparsers.add_parser(
+        "freeze", help="content-addressed campaign freeze registry (CSE-15, SFE-9, SEM-9, BND-12)"
+    )
+    freeze_sub = freeze.add_subparsers(dest="freeze_command", required=True)
+    freeze_build = freeze_sub.add_parser("build", help="hash a declaration into a manifest")
+    freeze_build.add_argument("--declaration", type=Path, required=True)
+    freeze_build.add_argument("--output", type=Path, default=None)
+    freeze_build.add_argument("--timestamp", default=None, help="ISO-8601 with zone")
+    freeze_build.add_argument("--timestamp-source", default=None, help="who issued it")
+    freeze_build.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    freeze_check = freeze_sub.add_parser("check", help="recompute a manifest; drift is ok:false")
+    freeze_check.add_argument("--manifest", type=Path, required=True)
+    freeze_check.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    freeze_check.add_argument(
+        "--allow-withheld-seeds",
+        action="store_true",
+        help="seed sources are withheld on this host: report the commitment as unverified",
+    )
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
+
+    if args.command == "freeze":
+        import subprocess as git_subprocess
+
+        from aisle.harness.freeze import FreezeError, build_manifest, check_manifest
+
+        try:
+            if args.freeze_command == "build":
+                declaration = json.loads(args.declaration.read_bytes())
+                head = git_subprocess.run(
+                    ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=args.root
+                )
+                manifest = build_manifest(
+                    args.root.resolve(),
+                    declaration,
+                    git_head=head.stdout.strip() if head.returncode == 0 else None,
+                    timestamp=args.timestamp,
+                    timestamp_source=args.timestamp_source,
+                )
+                report = {"ok": True, **manifest}
+                if args.output is not None:
+                    if args.output.resolve() == args.declaration.resolve():
+                        raise FreezeError("output path collides with an input", [str(args.output)])
+                    args.output.parent.mkdir(parents=True, exist_ok=True)
+                    args.output.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+            else:
+                report = check_manifest(
+                    args.root.resolve(),
+                    json.loads(args.manifest.read_bytes()),
+                    require_seed_sources=not args.allow_withheld_seeds,
+                )
+        except FreezeError as refused:
+            report = {"ok": False, "error": str(refused), "details": refused.details}
+        except (OSError, json.JSONDecodeError) as refused:
+            report = {"ok": False, "error": "input read failed", "details": [str(refused)]}
+        print(json.dumps(report, sort_keys=True))
+        return 0 if report["ok"] else 1
 
     if args.command == "stats":
         import aisle.harness.benchmark_statistics as statistics_module

@@ -1,0 +1,174 @@
+{
+  "analysis": {
+    "scripts": [
+      "src/aisle/harness/benchmark_statistics.py",
+      "src/aisle/harness/causal_study.py"
+    ],
+    "seed": 510001
+  },
+  "artifacts": {
+    "analyzer": "src/aisle/harness/benchmark_statistics.py",
+    "bank_validators": "src/aisle/harness/fault_bank.py",
+    "fault_validators": "src/aisle/harness/causal_study.py",
+    "h6_runner": "tools/h6_campaign.py",
+    "protocol": "analysis/freeze/fel-fault-evidence-study-v1/protocol.json",
+    "spec": "specs/510-fault-evidence-localization-study.md"
+  },
+  "budgets": {
+    "campaign_ceiling": "harness/budget.toml",
+    "relaunches_per_session": 10,
+    "session_tokens": 200000,
+    "session_wall_s": 3600
+  },
+  "campaign_id": "fel-fault-evidence-study-v1",
+  "commands": [
+    "uv run harness stats validate --protocol analysis/freeze/fel-fault-evidence-study-v1/protocol.json --purpose power",
+    "uv run harness stats power --protocol analysis/freeze/fel-fault-evidence-study-v1/protocol.json --output analysis/freeze/fel-fault-evidence-study-v1/power.json",
+    "uv run harness stats validate --protocol analysis/freeze/fel-fault-evidence-study-v1/protocol.json --purpose freeze --output analysis/freeze/fel-fault-evidence-study-v1/protocol-freeze-refusal.json",
+    "uv run harness freeze check --manifest analysis/freeze/fel-fault-evidence-study-v1/freeze-manifest.json --allow-withheld-seeds"
+  ],
+  "decision_rules": {
+    "alpha": 0.05,
+    "equivalence_margin": {
+      "not_applicable": "joint co-primary superiority decision (FEL-6)"
+    },
+    "multiplicity": "joint co-primary: both intervals must exclude zero at alpha 0.05",
+    "power": 0.8,
+    "smallest_effect": {
+      "measure": "risk difference on each co-primary",
+      "value": 0.25
+    },
+    "stopping_rule": "fixed n from frozen power analysis; floor 10 per arm per agent-system stratum; joint decision requires both co-primaries"
+  },
+  "endpoints": {
+    "primary": [
+      {
+        "aggregation": "risk difference with exact arm intervals and Newcombe interval",
+        "direction": "higher",
+        "id": "E-FEL-A",
+        "outcome": "correct_component_localization",
+        "status": "inferential",
+        "unit": "agent_session"
+      },
+      {
+        "aggregation": "risk difference with exact arm intervals and Newcombe interval",
+        "direction": "higher",
+        "id": "E-FEL-B",
+        "outcome": "accepted_repair_with_heldout_recovery",
+        "status": "inferential",
+        "unit": "agent_session"
+      }
+    ],
+    "secondary": [
+      {
+        "aggregation": "matrix",
+        "direction": "descriptive",
+        "id": "E-FEL-1",
+        "outcome": "fault_family_and_component_set_accuracy_confusion",
+        "status": "descriptive",
+        "unit": "agent_session"
+      },
+      {
+        "aggregation": "proportion",
+        "direction": "lower",
+        "id": "E-FEL-2",
+        "outcome": "sham_false_alarms_and_unnecessary_mutation",
+        "status": "descriptive",
+        "unit": "agent_session"
+      },
+      {
+        "aggregation": "Kaplan-Meier with censoring",
+        "direction": "lower",
+        "id": "E-FEL-3",
+        "outcome": "time_to_diagnosis_and_accepted_repair",
+        "status": "descriptive",
+        "unit": "agent_session"
+      },
+      {
+        "aggregation": "unconditional session estimands",
+        "direction": "descriptive",
+        "id": "E-FEL-4",
+        "outcome": "tokens_evidence_queries_edit_size_relaunches",
+        "status": "descriptive",
+        "unit": "agent_session"
+      }
+    ]
+  },
+  "exclusions": {
+    "deviation_policy": "any behaviour-affecting change after registration is a documented deviation record and a new campaign version id; confirmatory data never revises the registered protocol",
+    "infrastructure": [
+      "controller-determined arm-neutral facts only",
+      "sealed-bank materialization failure before session start"
+    ],
+    "rerun_policy": "a permitted rerun receives a new randomized id; the original row is retained with its exclusion reason and never replaced in place",
+    "treatment_integrity": [
+      "fault identity or repair source visible in the participant view (FLT-4)",
+      "undeclared treatment-table difference (FEL-1)"
+    ]
+  },
+  "hypotheses": [
+    {
+      "direction": "typed_evidence - logs_only > 0",
+      "id": "H-FEL-A",
+      "statement": "typed_evidence raises correct pre-repair component localization on fault sessions versus logs_only."
+    },
+    {
+      "direction": "typed_evidence - logs_only > 0",
+      "id": "H-FEL-B",
+      "statement": "typed_evidence raises accepted repair with held-out recovery on fault sessions versus logs_only."
+    }
+  ],
+  "instrument_set": {
+    "items": [
+      "perception",
+      "decision",
+      "motion",
+      "schema_metadata",
+      "clocking",
+      "runtime",
+      "coupled",
+      "sham_control"
+    ],
+    "kind": "sealed_fault_assignment",
+    "note": "instance ids sealed; assignment by hidden seed"
+  },
+  "integrity_checks": [
+    {
+      "gate": "CON-14 spec approval",
+      "kind": "external_review",
+      "owner_role": "project owner",
+      "record": null,
+      "status": "pending"
+    },
+    {
+      "gate": "STA-12 independent statistical review",
+      "kind": "external_review",
+      "owner_role": "independent statistician",
+      "record": null,
+      "status": "pending"
+    },
+    {
+      "gate": "FLT bank sealed and calibrated (#348)",
+      "kind": "machine_check",
+      "owner_role": "bank controller",
+      "record": null,
+      "status": "pending"
+    },
+    {
+      "gate": "FEL-1 treatment table",
+      "kind": "machine_check",
+      "owner_role": "integrity controller",
+      "record": null,
+      "status": "pending"
+    }
+  ],
+  "issue": 349,
+  "purpose": "confirmatory",
+  "schema_version": "aisle.freeze.declaration.v1",
+  "seed_commitment": {
+    "rule": "32 distinct integers in [1000,9999) drawn once from the OS CSPRNG, retained only under ~/aisle-private/freeze/fel-fault-evidence-study-v1/, disjoint by value from every committed dev/pilot seed list; revealed after the campaign closes",
+    "salt_source": "~/aisle-private/freeze/fel-fault-evidence-study-v1/salt.bin",
+    "seeds_source": "~/aisle-private/freeze/fel-fault-evidence-study-v1/seeds.json"
+  },
+  "spec": "510"
+}

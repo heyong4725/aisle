@@ -1,0 +1,19 @@
+{
+  "errors": [],
+  "execution_environment": {
+    "analysis_implementation_sha256": "22cde3e9d7c5cc80874c7eec30aa2898e30476d6c939c94ab3009e8b12af641e",
+    "machine": "arm64",
+    "python": "3.13.5",
+    "python_implementation": "CPython",
+    "release": "25.6.0",
+    "system": "Darwin"
+  },
+  "input_hashes": {
+    "protocol_sha256": "3ea71653f01ab43db539d712c11a414a0b90b3d9a0f585d7e773b6c4a1e7d58d"
+  },
+  "ok": true,
+  "protocol_core_sha256": "11fb420fb602e9c3576c1233541b5793d23680e5b8e4096b4164fd2e8c801df6",
+  "protocol_id": "fel-fault-evidence-study-v1-protocol-r0",
+  "purpose": "power",
+  "schema_version": "aisle.stats.validation.v1"
+}
