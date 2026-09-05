@@ -44,7 +44,7 @@ stayed outside it).
 |---|---:|
 | Graphs | 18 |
 | Capability manifests | 39 |
-| CLI command entries | 26 |
+| CLI command entries | 27 |
 | ADR files | 73 |
 
 ## Graphs
@@ -149,6 +149,7 @@ stayed outside it).
 | `harness freeze check` | `--manifest`, `--root`, `--allow-withheld-seeds` |
 | `harness hardware dry-run` | `--seed`, `--output` |
 | `harness hardware report` | `--station`, `--output` |
+| `harness perception audit` | `--run`, `--envelope`, `--output` |
 | `harness probe` | `--dataflow`, `--topic`, `--for`, `--root` |
 | `harness report close` | `--id`, `--observed`, `--verdict`, `--root` |
 | `harness report log` | `--idea`, `--parent`, `--expect`, `--root` |

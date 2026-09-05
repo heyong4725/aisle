@@ -1,0 +1,33 @@
+{
+  "accuracy_floor": 0.9,
+  "camera": {
+    "depth_required": true,
+    "resolution": [
+      480,
+      640
+    ],
+    "role": "overhead"
+  },
+  "confidence_floor": 0.0,
+  "identity_vocabulary": [
+    "amoxicillin",
+    "ibuprofen",
+    "cetirizine",
+    "omeprazole",
+    "metformin"
+  ],
+  "latency_ceiling_s": 5.0,
+  "localization_tolerance_m": 0.03,
+  "margin_floor": 0.01,
+  "missing_data": "a frame without depth, truth, or calibration is a missing_data row and fails the audit if any stratum is empty",
+  "multiplicity": "every required stratum must pass its floor; no pooling rescue",
+  "refusal_availability_limit": 0.5,
+  "schema_version": "aisle.perception-audit.envelope.v1",
+  "strata": [
+    "target_class",
+    "seed_parity",
+    "sensor"
+  ],
+  "synchronization": "rgb and depth share one sim_time_ns; truth is the oracle sample at the same stamp",
+  "tuning_rule": "thresholds may change only from calibration-split records; evaluation records never tune"
+}
