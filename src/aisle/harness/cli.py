@@ -206,11 +206,109 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="seed sources are withheld on this host: report the commitment as unverified",
     )
+
+    exposure = subparsers.add_parser(
+        "exposure", help="safety exposure ledger and zero-event report (SPEC 470)"
+    )
+    exposure_sub = exposure.add_subparsers(dest="exposure_command", required=True)
+    exposure_ledger = exposure_sub.add_parser("ledger", help="derive a run's exposure ledger")
+    exposure_ledger.add_argument("--run", type=Path, required=True)
+    exposure_ledger.add_argument("--campaign-id", required=True)
+    exposure_ledger.add_argument("--source-map", type=Path, required=True)
+    exposure_ledger.add_argument("--output", type=Path, default=None)
+    exposure_analyze = exposure_sub.add_parser("analyze", help="regenerate the exposure report")
+    exposure_analyze.add_argument("--ledger", type=Path, action="append", required=True)
+    exposure_analyze.add_argument("--confidence", type=float, default=0.95)
+    exposure_analyze.add_argument("--output", type=Path, default=None)
+    exposure_corpus = exposure_sub.add_parser(
+        "corpus", help="deterministic fixed-proposal trace corpus (SFE-9, SFE-11)"
+    )
+    exposure_corpus.add_argument("--embodiment", choices=["franka", "so101"], default="franka")
+    exposure_corpus.add_argument("--seed", type=int, required=True)
+    exposure_corpus.add_argument("--per-family", type=int, default=8)
+    exposure_corpus.add_argument("--output", type=Path, default=None)
+    exposure_ablate = exposure_sub.add_parser(
+        "ablate", help="guard_on vs guard_observe_only on a fake driver (SFE-10..12)"
+    )
+    exposure_ablate.add_argument("--corpus", type=Path, required=True)
+    exposure_ablate.add_argument("--analysis-seed", type=int, required=True)
+    exposure_ablate.add_argument("--output", type=Path, default=None)
     return parser
+
+
+def _maybe_gunzip(path: Path) -> bytes:
+    data = path.read_bytes()
+    if path.suffix == ".gz":
+        import gzip
+
+        return gzip.decompress(data)
+    return data
 
 
 def main() -> int:
     args = build_parser().parse_args()
+
+    if args.command == "exposure":
+        from aisle.harness.exposure import ExposureError, ledger_for_run, sha256_file
+        from aisle.harness.exposure_report import analyze_ledgers
+
+        try:
+            if args.exposure_command in ("corpus", "ablate"):
+                from aisle.harness.held_command import HeldCommandError, build_corpus, run_ablation
+                from aisle.nodes.budget_guard import load_limits
+
+                try:
+                    if args.exposure_command == "corpus":
+                        report = build_corpus(
+                            load_limits(args.embodiment),
+                            embodiment=args.embodiment,
+                            seed=args.seed,
+                            per_family=args.per_family,
+                        )
+                        report["ok"] = True
+                    else:
+                        corpus = json.loads(_maybe_gunzip(args.corpus))
+                        report = run_ablation(
+                            corpus,
+                            load_limits(corpus["embodiment"]),
+                            analysis_seed=args.analysis_seed,
+                        )
+                except HeldCommandError as refused:
+                    raise ExposureError(str(refused), refused.details) from refused
+            elif args.exposure_command == "ledger":
+                source_map = json.loads(args.source_map.read_bytes())
+                report = ledger_for_run(
+                    args.run.resolve(), campaign_id=args.campaign_id, source_map=source_map
+                )
+                report["source_map_hash"] = sha256_file(args.source_map)
+                report["ok"] = True
+            else:
+                ledgers = [json.loads(_maybe_gunzip(p)) for p in args.ledger]
+                report = analyze_ledgers(
+                    ledgers,
+                    confidence=args.confidence,
+                    input_hashes={str(p): sha256_file(p) for p in args.ledger},
+                )
+            if args.output is not None:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                payload = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode()
+                if args.output.suffix == ".gz":
+                    import gzip
+
+                    args.output.write_bytes(gzip.compress(payload, mtime=0))
+                else:
+                    args.output.write_bytes(payload)
+        except ExposureError as refused:
+            report = {"ok": False, "error": str(refused), "details": refused.details}
+        except (OSError, json.JSONDecodeError, KeyError, ValueError) as refused:
+            report = {"ok": False, "error": "input read failed", "details": [repr(refused)]}
+        summary = {
+            k: v
+            for k, v in report.items()
+            if k not in ("proposals", "episodes", "observed_envelope", "traces", "pairs")
+        }
+        print(json.dumps(summary, sort_keys=True))
+        return 0 if report["ok"] else 1
 
     if args.command == "freeze":
         import subprocess as git_subprocess
