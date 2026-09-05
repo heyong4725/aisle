@@ -1,0 +1,38 @@
+{
+  "bank_id": "aisle-fault-bank-v1-draft",
+  "bank_manifest_hash": "sha256:ec6c3bd6899dd72d023fb94188ab16b51d228ceef771e1cd0dfa0e26b1a6232e",
+  "calibration_summary": "analysis/fault-bank/calibration-summary.json",
+  "clean_baseline_hash": "sha256:daf9afb0ac118b6c544d194d473822257f204a675121ba259b9aee326a37f723",
+  "clean_commit": "4456839f01e5a615dce09452bbf73b72b8bf62b8",
+  "counts": {
+    "coupled": 2,
+    "families": {
+      "clocking": 1,
+      "decision": 1,
+      "motion": 2,
+      "perception": 2,
+      "runtime": 1,
+      "schema_metadata": 1
+    },
+    "instances": 11,
+    "intermittent": 2,
+    "novel_repair": 3,
+    "selected_after_calibration": 2,
+    "sham": 1
+  },
+  "injector_version": "aisle.fault-injector.v1",
+  "lifecycle_state": "calibration",
+  "note": "calibrated, not sealable: coverage failed after calibration; see calibration-summary.json",
+  "schema_version": "aisle.fault-bank.commitment.v1",
+  "storage": "~/aisle-private/fault-bank/v1/ (outside every worktree, git namespace, and tool root; FLT-4)",
+  "withheld": [
+    "instance ids",
+    "targets",
+    "operators",
+    "severities",
+    "activation rules",
+    "calibration outcomes",
+    "assignment seed",
+    "reveal key"
+  ]
+}

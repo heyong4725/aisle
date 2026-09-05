@@ -278,7 +278,7 @@ def test_committed_registrations_check_clean_with_withheld_seeds():
     campaign registration still binds the bytes it hashed, and none of them
     claims a freeze the spec hands to a human."""
     manifests = _committed_manifests()
-    assert len(manifests) == 8
+    assert len(manifests) == 9
     for path in manifests:
         manifest = json.loads(path.read_text())
         report = check_manifest(REPO_ROOT, manifest, require_seed_sources=False)
