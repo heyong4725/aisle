@@ -1,0 +1,18 @@
+{
+  "_instructions": "replace every hardware_pending with measured identities; a placeholder or simulated identity blocks physical execution (HWP-1)",
+  "actuators": "hardware_pending",
+  "arm": "hardware_pending",
+  "bus_usb_topology": "hardware_pending",
+  "cameras": "hardware_pending",
+  "estop_hardware": "hardware_pending",
+  "firmware_hashes": "hardware_pending",
+  "gripper": "hardware_pending",
+  "host": "hardware_pending",
+  "power_supply": "hardware_pending",
+  "responsible_operators": "hardware_pending",
+  "runtime_hashes": "hardware_pending",
+  "schema_version": "aisle.hardware.station-manifest.v1",
+  "station_id": "hardware_pending",
+  "task_object_ids": "hardware_pending",
+  "workspace_fixture_ids": "hardware_pending"
+}

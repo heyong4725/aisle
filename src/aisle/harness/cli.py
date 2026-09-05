@@ -246,6 +246,17 @@ def build_parser() -> argparse.ArgumentParser:
     semantic_run.add_argument("--corpus", type=Path, required=True)
     semantic_run.add_argument("--analysis-seed", type=int, required=True)
     semantic_run.add_argument("--output", type=Path, default=None)
+
+    hardware = subparsers.add_parser(
+        "hardware", help="SO-101 hardware phase dry run and report (SPEC 520)"
+    )
+    hardware_sub = hardware.add_subparsers(dest="hardware_command", required=True)
+    hardware_dry = hardware_sub.add_parser("dry-run", help="HWP-8 scenarios on doubles")
+    hardware_dry.add_argument("--seed", type=int, default=0)
+    hardware_dry.add_argument("--output", type=Path, default=None)
+    hardware_report = hardware_sub.add_parser("report", help="HWP-18/20 report; hardware_pending")
+    hardware_report.add_argument("--station", type=Path, default=None)
+    hardware_report.add_argument("--output", type=Path, default=None)
     return parser
 
 
@@ -260,6 +271,50 @@ def _maybe_gunzip(path: Path) -> bytes:
 
 def main() -> int:
     args = build_parser().parse_args()
+
+    if args.command == "hardware":
+        from aisle.hardware.adapters import SCENARIOS, run_scenario
+        from aisle.harness.hardware_phase import (
+            HardwarePhaseError,
+            hardware_report,
+            validate_telemetry_stream,
+        )
+
+        try:
+            if args.hardware_command == "dry-run":
+                scenarios = {}
+                for name in SCENARIOS:
+                    result = run_scenario(name, seed=args.seed)
+                    scenarios[name] = {
+                        "observations": result["observations"],
+                        "telemetry": validate_telemetry_stream(result["rows"]),
+                    }
+                report = {
+                    "ok": True,
+                    "schema_version": "aisle.hardware-phase.dry-run.v1",
+                    "evidence_kind": "loopback",
+                    "scenarios": scenarios,
+                    "wording": "doubles only; no realized-hardware field is produced here",
+                }
+            else:
+                station = json.loads(args.station.read_bytes()) if args.station else None
+                report = hardware_report(
+                    station=station,
+                    motor_calibration=None,
+                    workspace_calibration=None,
+                    telemetry=None,
+                    interventions=None,
+                )
+                report["ok"] = True
+            if args.output is not None:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        except HardwarePhaseError as refused:
+            report = {"ok": False, "error": str(refused), "details": refused.details}
+        except (OSError, json.JSONDecodeError, ValueError) as refused:
+            report = {"ok": False, "error": "hardware command refused", "details": [repr(refused)]}
+        print(json.dumps(report, sort_keys=True))
+        return 0 if report["ok"] else 1
 
     if args.command == "semantic":
         from aisle.harness.semantic_corpus import build_corpus as build_semantic_corpus

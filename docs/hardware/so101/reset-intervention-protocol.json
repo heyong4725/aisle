@@ -1,0 +1,31 @@
+{
+  "allowed_reset_steps": [
+    "return arm to home under torque at 10 percent speed",
+    "re-place task objects on the marked fixtures",
+    "clear the tray"
+  ],
+  "max_attempts": 2,
+  "permitted_tools": [
+    "hands",
+    "marked placement jig"
+  ],
+  "record_fields": [
+    "kind",
+    "start_ns",
+    "end_ns",
+    "actor",
+    "reason",
+    "scoring_consequence"
+  ],
+  "roles": [
+    "trial_conductor performs; safety_operator observes"
+  ],
+  "schema_version": "aisle.hardware.reset-protocol.v1",
+  "scoring_consequence": {
+    "estop": "trial excluded; drill record required",
+    "rescue": "trial excluded as infrastructure-invalid; retained",
+    "reset": "trial restarts; counted as an attempt",
+    "touch_during_trial": "trial excluded; retained"
+  },
+  "timeout_s": 120
+}
