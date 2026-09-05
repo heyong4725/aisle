@@ -1,0 +1,26 @@
+{
+  "artifacts": {
+    "README.md": "sha256:114f6012e984b8df6ba9a44a2ba96c3bcc68e5778adbbdbbe6a60dc64a1f60a1",
+    "tools/paper_figures.py": "sha256:13aef563c9d85e4c4aee2a207c72d599ad701b78fdcb1e5922678916f0e1eea7"
+  },
+  "gate": "BMK-21 (SPEC 540)",
+  "independence_requirement": "no synchronous maintainer intervention",
+  "request_id": "bmk-21-external-user",
+  "retained_record": "docs/reviews/records/bmk-21-external-user.json (absent until a real reviewer signs)",
+  "reviewer_role": "person or group that did not develop or package benchmark v1",
+  "reviewer_tasks": [
+    "start from the released artifact on a supported platform",
+    "run the quickstart and retain its CON-8 record with environment, commands, elapsed and resource data, failures, and documentation gaps",
+    "build and submit one registered bundle and retain the evaluator receipt"
+  ],
+  "schema_version": "aisle.review-request.v1",
+  "self_attestation": "forbidden: owner self-review, synthetic signatures, and admin merges do not satisfy this gate",
+  "status": "open: no reviewer engaged; nothing here is a review",
+  "title": "External user completes the clean-clone cell and a registered submission",
+  "what_the_maintainer_may_do": "answer documented questions; never edit the reviewer's environment, record, or result in place",
+  "what_the_reviewer_signs": "the machine-readable record named in BMK-21 including submission and evaluator receipt",
+  "what_this_unblocks": [
+    "BMK-21 in docs/benchmark/v1/release-audit.json",
+    "#357 closure"
+  ]
+}

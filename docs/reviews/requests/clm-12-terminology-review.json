@@ -1,0 +1,31 @@
+{
+  "artifacts": {
+    "README.md": "sha256:114f6012e984b8df6ba9a44a2ba96c3bcc68e5778adbbdbbe6a60dc64a1f60a1",
+    "analysis/claim-evidence/release-readiness.json": "sha256:549832f7994ec306ab9757e99e67840e1d233bcc0275427189ce13e5ebb362dd",
+    "docs/AISLE-technical-report.md": "sha256:a60643763debeeb6ac5d22daa99d47000149d5387c33f07a53e97fa6892e683d",
+    "docs/claim-evidence.yaml": "sha256:3ff90e63380b4f9605141d6a724bcef5351b80781352aabfbfd451dc38368c61",
+    "docs/generated/claim-evidence.md": "sha256:60d906643f7a82f8cd11935cab889df36e3fee5a61763dec48b0d2dd61f0fb6e",
+    "docs/paper/aisle-paper.md": "sha256:8fc80807de6b6281e098b9afd9cc39d0678eab87d6756e4b942de2faba3c22e3"
+  },
+  "gate": "CLM-12 (SPEC 410)",
+  "independence_requirement": "did not author README.md, docs/paper, docs/claim-evidence.yaml, or tools/claim_evidence.py",
+  "request_id": "clm-12-terminology-review",
+  "retained_record": "docs/reviews/records/clm-12-terminology-review.json (absent until a real reviewer signs)",
+  "reviewer_role": "reviewer outside the wording and catalog authorship chain",
+  "reviewer_tasks": [
+    "inspect every headline for promotional or causal wording beyond its row's allowed_wording",
+    "check that unrun, undecidable, unattested, hardware_pending, and weakened rows are visibly distinct in every surface",
+    "disposition every finding",
+    "sign the retained review record"
+  ],
+  "schema_version": "aisle.review-request.v1",
+  "self_attestation": "forbidden: owner self-review, synthetic signatures, and admin merges do not satisfy this gate",
+  "status": "open: no reviewer engaged; nothing here is a review",
+  "title": "Independent terminology review of promotional and causal wording",
+  "what_the_maintainer_may_do": "answer documented questions; never edit the reviewer's environment, record, or result in place",
+  "what_the_reviewer_signs": "a signed machine-readable review record with reviewer identity, role, external timestamp, catalog digest, and one disposition per finding",
+  "what_this_unblocks": [
+    "release readiness in tools/claim_evidence.py --require-release-ready",
+    "public benchmark release (BMK-20)"
+  ]
+}
