@@ -498,10 +498,20 @@ claims:
         node: tests/unit/test_guard_clamping.py::test_fuzzed_commands_never_crash_and_always_legal
         scope: agnostic
         rationale: Exercises malformed and extreme commands against the legal envelope.
+      - kind: raw_record
+        path: analysis/safety-exposure/ablation/sfe-held-command-ablation-v2/result.json
+        scope: simulation
+        rationale: >-
+          Fixed-proposal ablation on a fake driver: 0/39 at-risk traces with any
+          driver-received violation under guard_on versus 32/39 observe-only.
+      - kind: analyzer
+        path: src/aisle/harness/held_command.py
+        scope: agnostic
+        rationale: Replays byte-identical proposals through both enforcement modes.
     counterevidence:
       - Kinematic clamping does not establish semantic object authorization.
     limitations:
-      - "Held-command and safety-exposure effects await issue #351."
+      - "The held-command ablation is fake-driver evidence under the tested limits; physical exposure remains hardware-pending."
     allowed_wording:
       readme: The budget guard clamps commands to its configured kinematic envelope.
       technical_report: Kinematic enforcement is separate from semantic safety.
@@ -574,15 +584,27 @@ claims:
       value: not_applicable
       rationale: No authorization effect estimate exists.
     attestation:
-      status: not_applicable
-      rationale: No implemented and evaluated authorization boundary exists.
+      status: repository_verified
+      rationale: >-
+        The authorizer, permit gateway, and synthetic held-plan replay are tracked
+        (SPEC 480); no simulation or hardware transition has been authorized by them.
     evidence:
-      - value: not_applicable
-        rationale: "Issue #352 remains unrun."
+      - kind: source
+        path: src/aisle/harness/semantic_shield.py
+        scope: agnostic
+        rationale: Identity-aware authorizer and permit-consuming gateway (SEM-2 to SEM-7).
+      - kind: raw_record
+        path: analysis/semantic-authorization/records/sem-held-plan-adversarial-v2/result.json
+        scope: agnostic
+        rationale: >-
+          Synthetic three-arm replay over 60 held plans; internal consistency of the
+          mechanism with its declared semantics, not a prevention effect.
     counterevidence:
       - Existing verifier detection occurs after observation and is not command authorization.
+      - The synthetic corpus, its expected decisions, and the authorizer share an author.
     limitations:
       - Zero observed wrong-object events cannot establish this prevention claim.
+      - No sensor-backed simulation trial and no hardware trial has run; see semantic-authorization-hardware.
     allowed_wording:
       readme: "UNRUN: identity-aware semantic authorization is not yet demonstrated."
       technical_report: "UNRUN: verifier detection is not identity authorization."
@@ -612,14 +634,25 @@ claims:
       status: mixed_historical
       rationale: Some component campaigns are retained; the aggregate denominator is not unified.
     evidence:
-      - value: not_applicable
-        rationale: A single project-wide raw session table and analyzer do not yet exist.
+      - kind: raw_record
+        path: analysis/safety-exposure/records/pooled-report.json
+        scope: simulation
+        rationale: >-
+          SPEC 470 exposure report over the two instrument sessions (16 development
+          episodes): 0 wrong-object events, exact one-sided 95% upper bound 0.171.
+          It is the first audited denominator, not the project-wide historical one.
+      - kind: analyzer
+        path: src/aisle/harness/exposure_report.py
+        scope: agnostic
+        rationale: Regenerates the report from the retained ledgers with reconciliation.
     counterevidence:
       - Event-free development observations do not prove prevention.
       - Historical statements used episode and approximate session denominators inconsistently.
+      - The audited ledger covers 16 development episodes, not the historical session set.
     limitations:
       - The allowed claim is observational and simulation-scoped.
-      - "Issue #351 must define exposure units and held-command ablations."
+      - "Issue #351's exposure ledger and held-command ablation now exist for two sessions; the historical denominator remains unaudited."
+      - Physical exposure ledgers are absent; see safety-exposure-hardware.
     allowed_wording:
       readme: "WEAKENED: retained development summaries report zero events; prevention is unproven."
       technical_report: "WEAKENED observational record with no project-wide session interval."
@@ -703,3 +736,166 @@ claims:
     headlines:
       - path: README.md
         marker: hardware-so101-validation/readme
+
+  - id: safety-exposure-ledger
+    claim: >-
+      The SPEC 470 exposure ledger regenerates from retained simulation traces and reports, for
+      two instrument sessions (expert_t1 and expert_t2, 16 development episodes), 16 manipulation
+      attempts, 8 deliveries, 24838 valid proposals with 23 clamps, and zero wrong-object events
+      with an exact one-sided 95% upper bound of 0.171 on the episode unit.
+    type: empirical
+    status: supported
+    scope:
+      environment: simulation
+      task: T1 and T2 expert graphs on development seeds 0..7
+      perception: L1 and L2
+      agent_model: expert graphs, no coding agent
+      platform: development Mac campaign host
+    experimental_unit: included_episode
+    sample: 16 included episodes over two sessions; instrument pilot, not a campaign.
+    uncertainty: Exact one-sided 95% Clopper-Pearson upper bound 0.171 on wrong-object episodes.
+    attestation:
+      status: repository_verified
+      rationale: Ledgers, reports, manifests, and regeneration commands are tracked; raw traces are retained privately with hashes in the ledger.
+    evidence:
+      - kind: raw_record
+        path: analysis/safety-exposure/records/pooled-report.json
+        scope: simulation
+        rationale: Pooled SFE-6 report with denominators, exclusions, and bounds.
+      - kind: raw_record
+        path: analysis/safety-exposure/records/sfe-exposure-pilot-01/episodes.jsonl
+        scope: simulation
+        rationale: The T1 session's episode outcomes.
+      - kind: analyzer
+        path: src/aisle/harness/exposure.py
+        scope: agnostic
+        rationale: Derives the ledger from Arrow traces under frozen exposure rules.
+    counterevidence:
+      - Sixteen episodes bound nothing tighter than about 17 percent.
+      - Collision rows are a pose-displacement proxy; contact instrumentation is unmeasured.
+    limitations:
+      - Simulation evidence only (SFE-15); no physical ledger exists.
+      - Development seeds, not a held-out distribution.
+    allowed_wording:
+      readme: The exposure ledger reports zero wrong-object deliveries in 16 development episodes with an upper bound of 0.171.
+      technical_report: A regenerable exposure ledger with explicit denominators exists for two development sessions.
+      focused_paper: Zero observed wrong-object events over 16 episodes, upper bound 0.171; not prevention.
+    headlines: []
+
+  - id: campaign-registrations
+    claim: >-
+      Every planned simulation campaign (safety-exposure ablation, semantic-authorization held plans,
+      fault-bank calibration, non-oracle task band, typed-versus-monolithic causal study, fault-evidence
+      study) has a content-addressed registration whose manifest binds hypotheses, endpoints, decision
+      rules, exclusions, instrument set, seed commitment, budgets, integrity gates, and analysis code,
+      and none is frozen because their human review gates are pending.
+    type: structural
+    status: supported
+    scope:
+      environment: agnostic
+      task: campaign pre-registration
+      perception: not_applicable
+      agent_model: not_applicable
+      platform: repository-supported Python hosts
+    experimental_unit:
+      value: not_applicable
+      rationale: A registry property, not an outcome.
+    sample:
+      value: not_applicable
+      rationale: The committed manifests are checked by unit tests.
+    uncertainty:
+      value: not_applicable
+      rationale: No sampling.
+    attestation:
+      status: repository_verified
+      rationale: Manifests re-hash clean with seed sources withheld.
+    evidence:
+      - kind: source
+        path: src/aisle/harness/freeze.py
+        scope: agnostic
+        rationale: Builds and checks the content-addressed manifests.
+      - kind: test
+        path: tests/unit/test_freeze_registry.py
+        node: tests/unit/test_freeze_registry.py::test_committed_registrations_check_clean_with_withheld_seeds
+        scope: agnostic
+        rationale: Every committed registration checks clean and none claims a freeze.
+    counterevidence:
+      - A registration is a hashing step, not evidence of any outcome.
+    limitations:
+      - The confirmatory power inputs are assumptions until pilots exist.
+      - Freezing requires the pending CON-14 and STA-12 reviews.
+    allowed_wording:
+      readme: Campaign registrations exist and are pending review; none authorizes scored collection.
+      technical_report: Content-addressed registrations bind each campaign's protocol; all are pending review.
+      focused_paper: Pre-registrations are recorded but not yet frozen.
+    headlines: []
+
+  - id: safety-exposure-hardware
+    claim: >-
+      Physical exposure ledgers, held-command timing, and contact instrumentation on the SO-101 station
+      reproduce the simulation safety layers.
+    type: future
+    status: hardware_pending
+    scope:
+      environment: hardware
+      task: "SO-101 station exposure ledger under SFE-15 and issue #356"
+      perception: hardware-calibrated rung
+      agent_model: protocol-defined
+      platform: physical SO-101 equipment
+    experimental_unit: physical_robot_session
+    sample:
+      value: not_applicable
+      rationale: No physical exposure ledger exists.
+    uncertainty:
+      value: not_applicable
+      rationale: No hardware observation exists.
+    attestation:
+      status: not_applicable
+      rationale: Simulated contacts, gateway receipts, and held-command timing are not physical exposure.
+    evidence:
+      - value: not_applicable
+        rationale: Hardware is unavailable; the schema, analyzer, fake-driver ablation, and dry-run commands exist in simulation form only.
+    counterevidence:
+      - The fake-driver ablation contains no physics and no contact instrument.
+    limitations:
+      - No physical safety claim of any layer is allowed.
+    allowed_wording:
+      readme: "HARDWARE PENDING: no physical exposure ledger exists."
+      technical_report: "HARDWARE PENDING: simulation and fake-driver ledgers must not be relabeled as physical exposure."
+      focused_paper: "HARDWARE PENDING: physical exposure is unmeasured."
+    headlines: []
+
+  - id: semantic-authorization-hardware
+    claim: >-
+      A sensor-backed identity adapter on physical hardware meets the pre-registered false-allow,
+      false-block, latency, bypass, and feasibility criteria.
+    type: future
+    status: hardware_pending
+    scope:
+      environment: hardware
+      task: "sensor-backed semantic authorization under SEM-14 and issue #356"
+      perception: hardware sensor adapter
+      agent_model: protocol-defined
+      platform: physical SO-101 equipment
+    experimental_unit: physical_robot_session
+    sample:
+      value: not_applicable
+      rationale: No calibrated physical trial has retained the underlying observations.
+    uncertainty:
+      value: not_applicable
+      rationale: No hardware observation exists.
+    attestation:
+      status: not_applicable
+      rationale: The synthetic replay and any simulation result are bounded to their rendering and adapter envelope.
+    evidence:
+      - value: not_applicable
+        rationale: Hardware adapter contract and dry-run fixtures may validate schema and refusal paths only.
+    counterevidence:
+      - Oracle-arm success in simulation cannot justify deployability or physical prevention.
+    limitations:
+      - H5 stays narrowed to measured layers and zero observed events until these criteria are met.
+    allowed_wording:
+      readme: "HARDWARE PENDING: no physical semantic-authorization trial has run."
+      technical_report: "HARDWARE PENDING: sensor-backed authorization is unmeasured on hardware."
+      focused_paper: "HARDWARE PENDING: no deployable identity source is demonstrated."
+    headlines: []

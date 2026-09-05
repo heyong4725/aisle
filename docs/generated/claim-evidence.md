@@ -22,20 +22,39 @@
 
 | Claim | Type | Status | Environment | Attestation |
 |---|---|---|---|---|
+| [`campaign-registrations`](#campaign-registrations) | `structural` | `supported` | agnostic | {"rationale": "Manifests re-hash clean with seed sources withheld.", "status": "repository_verified"} |
 | [`development-ledger`](#development-ledger) | `structural` | `supported` | agnostic | {"rationale": "The catalog checker enforces the one-source marker and dated snapshot links.", "status": "repository_verified"} |
 | [`evidence-attestation`](#evidence-attestation) | `structural` | `supported` | agnostic | {"rationale": "The frozen inventory and guard dependencies are tested from tracked sources.", "status": "repository_verified"} |
 | [`external-reproduction`](#external-reproduction) | `reproducibility` | `unrun` | simulation_and_hardware | {"rationale": "Self-runs are not independent reproduction.", "status": "not_applicable"} |
 | [`hardware-so101-validation`](#hardware-so101-validation) | `future` | `hardware_pending` | hardware | {"rationale": "Simulation and loopback tests are not physical evidence.", "status": "not_applicable"} |
 | [`live-fault-feasibility`](#live-fault-feasibility) | `empirical` | `supported` | simulation | {"rationale": "Cell records and scorer are retained; no independent reproduction exists.", "status": "repository_recorded"} |
-| [`safety-identity-authorization`](#safety-identity-authorization) | `future` | `unrun` | simulation_and_hardware | {"rationale": "No implemented and evaluated authorization boundary exists.", "status": "not_applicable"} |
+| [`safety-exposure-hardware`](#safety-exposure-hardware) | `future` | `hardware_pending` | hardware | {"rationale": "Simulated contacts, gateway receipts, and held-command timing are not physical exposure.", "status": "not_applicable"} |
+| [`safety-exposure-ledger`](#safety-exposure-ledger) | `empirical` | `supported` | simulation | {"rationale": "Ledgers, reports, manifests, and regeneration commands are tracked; raw traces are retained privately with hashes in the ledger.", "status": "repository_verified"} |
+| [`safety-identity-authorization`](#safety-identity-authorization) | `future` | `unrun` | simulation_and_hardware | {"rationale": "The authorizer, permit gateway, and synthetic held-plan replay are tracked (SPEC 480); no simulation or hardware transition has been authorized by them.", "status": "repository_verified"} |
 | [`safety-kinematic`](#safety-kinematic) | `structural` | `supported` | agnostic | {"rationale": "Guard implementation and fuzzed command tests are tracked.", "status": "repository_verified"} |
 | [`safety-observed-outcomes`](#safety-observed-outcomes) | `empirical` | `weakened` | simulation | {"rationale": "Some component campaigns are retained; the aggregate denominator is not unified.", "status": "mixed_historical"} |
 | [`safety-semantic`](#safety-semantic) | `structural` | `supported` | simulation | {"rationale": "Verifier source and a wrong-object regression test establish detection behavior.", "status": "repository_verified"} |
 | [`safety-topology`](#safety-topology) | `structural` | `supported` | agnostic | {"rationale": "Source and adversarial topology tests establish the declared-path rule.", "status": "repository_verified"} |
+| [`semantic-authorization-hardware`](#semantic-authorization-hardware) | `future` | `hardware_pending` | hardware | {"rationale": "The synthetic replay and any simulation result are bounded to their rendering and adapter envelope.", "status": "not_applicable"} |
 | [`session-statistics`](#session-statistics) | `structural` | `supported` | agnostic | {"rationale": "Tracked implementation and exact-method tests establish the capability.", "status": "repository_verified"} |
 | [`typed-composition`](#typed-composition) | `structural` | `supported` | agnostic | {"rationale": "Tracked implementation and independently invoked unit tests establish the scope.", "status": "repository_verified"} |
 | [`typed-dataflow-causal`](#typed-dataflow-causal) | `causal` | `unrun` | simulation | {"rationale": "No confirmatory treatment records exist.", "status": "not_applicable"} |
 | [`typed-evidence-causal`](#typed-evidence-causal) | `causal` | `unrun` | simulation | {"rationale": "No confirmatory comparator records exist.", "status": "not_applicable"} |
+
+## campaign-registrations
+
+Every planned simulation campaign (safety-exposure ablation, semantic-authorization held plans, fault-bank calibration, non-oracle task band, typed-versus-monolithic causal study, fault-evidence study) has a content-addressed registration whose manifest binds hypotheses, endpoints, decision rules, exclusions, instrument set, seed commitment, budgets, integrity gates, and analysis code, and none is frozen because their human review gates are pending.
+
+- Type / status: `structural` / `supported`
+- Scope: {"agent_model": "not_applicable", "environment": "agnostic", "perception": "not_applicable", "platform": "repository-supported Python hosts", "task": "campaign pre-registration"}
+- Experimental unit and sample: {"rationale": "A registry property, not an outcome.", "value": "not_applicable"}; {"rationale": "The committed manifests are checked by unit tests.", "value": "not_applicable"}
+- Uncertainty: {"rationale": "No sampling.", "value": "not_applicable"}
+- Attestation: {"rationale": "Manifests re-hash clean with seed sources withheld.", "status": "repository_verified"}
+- Evidence: [{"kind": "source", "path": "src/aisle/harness/freeze.py", "rationale": "Builds and checks the content-addressed manifests.", "scope": "agnostic"}, {"kind": "test", "node": "tests/unit/test_freeze_registry.py::test_committed_registrations_check_clean_with_withheld_seeds", "path": "tests/unit/test_freeze_registry.py", "rationale": "Every committed registration checks clean and none claims a freeze.", "scope": "agnostic"}]
+- Counterevidence: ["A registration is a hashing step, not evidence of any outcome."]
+- Limitations: ["The confirmatory power inputs are assumptions until pilots exist.", "Freezing requires the pending CON-14 and STA-12 reviews."]
+- Allowed wording: {"focused_paper": "Pre-registrations are recorded but not yet frozen.", "readme": "Campaign registrations exist and are pending review; none authorizes scored collection.", "technical_report": "Content-addressed registrations bind each campaign's protocol; all are pending review."}
+- Headline markers: []
 
 ## development-ledger
 
@@ -112,6 +131,36 @@ In three retained development cells, one per perception, decision, and motion fa
 - Allowed wording: {"focused_paper": "SUPPORTED bounded feasibility; not a typed-evidence treatment effect.", "readme": "SUPPORTED bounded feasibility: the three retained H6 cells met their criteria.", "technical_report": "SUPPORTED bounded feasibility in 3/3 development cells, without comparison."}
 - Headline markers: [{"marker": "live-fault-feasibility/readme", "path": "README.md"}, {"marker": "live-fault-feasibility/paper-abstract", "path": "docs/paper/aisle-paper.md"}, {"marker": "live-fault-feasibility/paper-contributions", "path": "docs/paper/aisle-paper.md"}]
 
+## safety-exposure-hardware
+
+Physical exposure ledgers, held-command timing, and contact instrumentation on the SO-101 station reproduce the simulation safety layers.
+
+- Type / status: `future` / `hardware_pending`
+- Scope: {"agent_model": "protocol-defined", "environment": "hardware", "perception": "hardware-calibrated rung", "platform": "physical SO-101 equipment", "task": "SO-101 station exposure ledger under SFE-15 and issue #356"}
+- Experimental unit and sample: physical_robot_session; {"rationale": "No physical exposure ledger exists.", "value": "not_applicable"}
+- Uncertainty: {"rationale": "No hardware observation exists.", "value": "not_applicable"}
+- Attestation: {"rationale": "Simulated contacts, gateway receipts, and held-command timing are not physical exposure.", "status": "not_applicable"}
+- Evidence: [{"rationale": "Hardware is unavailable; the schema, analyzer, fake-driver ablation, and dry-run commands exist in simulation form only.", "value": "not_applicable"}]
+- Counterevidence: ["The fake-driver ablation contains no physics and no contact instrument."]
+- Limitations: ["No physical safety claim of any layer is allowed."]
+- Allowed wording: {"focused_paper": "HARDWARE PENDING: physical exposure is unmeasured.", "readme": "HARDWARE PENDING: no physical exposure ledger exists.", "technical_report": "HARDWARE PENDING: simulation and fake-driver ledgers must not be relabeled as physical exposure."}
+- Headline markers: []
+
+## safety-exposure-ledger
+
+The SPEC 470 exposure ledger regenerates from retained simulation traces and reports, for two instrument sessions (expert_t1 and expert_t2, 16 development episodes), 16 manipulation attempts, 8 deliveries, 24838 valid proposals with 23 clamps, and zero wrong-object events with an exact one-sided 95% upper bound of 0.171 on the episode unit.
+
+- Type / status: `empirical` / `supported`
+- Scope: {"agent_model": "expert graphs, no coding agent", "environment": "simulation", "perception": "L1 and L2", "platform": "development Mac campaign host", "task": "T1 and T2 expert graphs on development seeds 0..7"}
+- Experimental unit and sample: included_episode; 16 included episodes over two sessions; instrument pilot, not a campaign.
+- Uncertainty: Exact one-sided 95% Clopper-Pearson upper bound 0.171 on wrong-object episodes.
+- Attestation: {"rationale": "Ledgers, reports, manifests, and regeneration commands are tracked; raw traces are retained privately with hashes in the ledger.", "status": "repository_verified"}
+- Evidence: [{"kind": "raw_record", "path": "analysis/safety-exposure/records/pooled-report.json", "rationale": "Pooled SFE-6 report with denominators, exclusions, and bounds.", "scope": "simulation"}, {"kind": "raw_record", "path": "analysis/safety-exposure/records/sfe-exposure-pilot-01/episodes.jsonl", "rationale": "The T1 session's episode outcomes.", "scope": "simulation"}, {"kind": "analyzer", "path": "src/aisle/harness/exposure.py", "rationale": "Derives the ledger from Arrow traces under frozen exposure rules.", "scope": "agnostic"}]
+- Counterevidence: ["Sixteen episodes bound nothing tighter than about 17 percent.", "Collision rows are a pose-displacement proxy; contact instrumentation is unmeasured."]
+- Limitations: ["Simulation evidence only (SFE-15); no physical ledger exists.", "Development seeds, not a held-out distribution."]
+- Allowed wording: {"focused_paper": "Zero observed wrong-object events over 16 episodes, upper bound 0.171; not prevention.", "readme": "The exposure ledger reports zero wrong-object deliveries in 16 development episodes with an upper bound of 0.171.", "technical_report": "A regenerable exposure ledger with explicit denominators exists for two development sessions."}
+- Headline markers: []
+
 ## safety-identity-authorization
 
 An identity-aware authorization boundary prevents commands for an unauthorized object from reaching actuation.
@@ -120,10 +169,10 @@ An identity-aware authorization boundary prevents commands for an unauthorized o
 - Scope: {"agent_model": "any participant", "environment": "simulation_and_hardware", "perception": "identity-capable rung", "platform": "future ratified boundary", "task": "wrong-object intervention pending issue #352"}
 - Experimental unit and sample: coding_agent_session; {"rationale": "The authorization intervention has not run.", "value": "not_applicable"}
 - Uncertainty: {"rationale": "No authorization effect estimate exists.", "value": "not_applicable"}
-- Attestation: {"rationale": "No implemented and evaluated authorization boundary exists.", "status": "not_applicable"}
-- Evidence: [{"rationale": "Issue #352 remains unrun.", "value": "not_applicable"}]
-- Counterevidence: ["Existing verifier detection occurs after observation and is not command authorization."]
-- Limitations: ["Zero observed wrong-object events cannot establish this prevention claim."]
+- Attestation: {"rationale": "The authorizer, permit gateway, and synthetic held-plan replay are tracked (SPEC 480); no simulation or hardware transition has been authorized by them.", "status": "repository_verified"}
+- Evidence: [{"kind": "source", "path": "src/aisle/harness/semantic_shield.py", "rationale": "Identity-aware authorizer and permit-consuming gateway (SEM-2 to SEM-7).", "scope": "agnostic"}, {"kind": "raw_record", "path": "analysis/semantic-authorization/records/sem-held-plan-adversarial-v2/result.json", "rationale": "Synthetic three-arm replay over 60 held plans; internal consistency of the mechanism with its declared semantics, not a prevention effect.", "scope": "agnostic"}]
+- Counterevidence: ["Existing verifier detection occurs after observation and is not command authorization.", "The synthetic corpus, its expected decisions, and the authorizer share an author."]
+- Limitations: ["Zero observed wrong-object events cannot establish this prevention claim.", "No sensor-backed simulation trial and no hardware trial has run; see semantic-authorization-hardware."]
 - Allowed wording: {"focused_paper": "UNRUN: no semantic authorization effect is reported.", "readme": "UNRUN: identity-aware semantic authorization is not yet demonstrated.", "technical_report": "UNRUN: verifier detection is not identity authorization."}
 - Headline markers: []
 - Safety category: `identity_authorization`
@@ -137,9 +186,9 @@ The budget guard clamps or holds malformed, stale, out-of-limit, and out-of-work
 - Experimental unit and sample: {"rationale": "This is a deterministic command-transform property.", "value": "not_applicable"}; {"rationale": "Unit and fuzz tests exercise the transformation contract.", "value": "not_applicable"}
 - Uncertainty: {"rationale": "Sampling uncertainty does not apply to the bounded code property.", "value": "not_applicable"}
 - Attestation: {"rationale": "Guard implementation and fuzzed command tests are tracked.", "status": "repository_verified"}
-- Evidence: [{"kind": "source", "path": "src/aisle/nodes/budget_guard.py", "rationale": "Implements configured command clamping and holds.", "scope": "agnostic"}, {"kind": "test", "node": "tests/unit/test_guard_clamping.py::test_fuzzed_commands_never_crash_and_always_legal", "path": "tests/unit/test_guard_clamping.py", "rationale": "Exercises malformed and extreme commands against the legal envelope.", "scope": "agnostic"}]
+- Evidence: [{"kind": "source", "path": "src/aisle/nodes/budget_guard.py", "rationale": "Implements configured command clamping and holds.", "scope": "agnostic"}, {"kind": "test", "node": "tests/unit/test_guard_clamping.py::test_fuzzed_commands_never_crash_and_always_legal", "path": "tests/unit/test_guard_clamping.py", "rationale": "Exercises malformed and extreme commands against the legal envelope.", "scope": "agnostic"}, {"kind": "raw_record", "path": "analysis/safety-exposure/ablation/sfe-held-command-ablation-v2/result.json", "rationale": "Fixed-proposal ablation on a fake driver: 0/39 at-risk traces with any driver-received violation under guard_on versus 32/39 observe-only.", "scope": "simulation"}, {"kind": "analyzer", "path": "src/aisle/harness/held_command.py", "rationale": "Replays byte-identical proposals through both enforcement modes.", "scope": "agnostic"}]
 - Counterevidence: ["Kinematic clamping does not establish semantic object authorization."]
-- Limitations: ["Held-command and safety-exposure effects await issue #351."]
+- Limitations: ["The held-command ablation is fake-driver evidence under the tested limits; physical exposure remains hardware-pending."]
 - Allowed wording: {"focused_paper": "The guard enforces configured command bounds on declared paths.", "readme": "The budget guard clamps commands to its configured kinematic envelope.", "technical_report": "Kinematic enforcement is separate from semantic safety."}
 - Headline markers: []
 - Safety category: `kinematic_enforcement`
@@ -153,9 +202,9 @@ Historical development summaries report zero wrong-object events in retained den
 - Experimental unit and sample: coding_agent_session; Historical summaries include 224 H2 episodes and later campaign denominators.
 - Uncertainty: {"rationale": "No unified session-level raw table supports a project-wide interval yet.", "value": "not_applicable"}
 - Attestation: {"rationale": "Some component campaigns are retained; the aggregate denominator is not unified.", "status": "mixed_historical"}
-- Evidence: [{"rationale": "A single project-wide raw session table and analyzer do not yet exist.", "value": "not_applicable"}]
-- Counterevidence: ["Event-free development observations do not prove prevention.", "Historical statements used episode and approximate session denominators inconsistently."]
-- Limitations: ["The allowed claim is observational and simulation-scoped.", "Issue #351 must define exposure units and held-command ablations."]
+- Evidence: [{"kind": "raw_record", "path": "analysis/safety-exposure/records/pooled-report.json", "rationale": "SPEC 470 exposure report over the two instrument sessions (16 development episodes): 0 wrong-object events, exact one-sided 95% upper bound 0.171. It is the first audited denominator, not the project-wide historical one.", "scope": "simulation"}, {"kind": "analyzer", "path": "src/aisle/harness/exposure_report.py", "rationale": "Regenerates the report from the retained ledgers with reconciliation.", "scope": "agnostic"}]
+- Counterevidence: ["Event-free development observations do not prove prevention.", "Historical statements used episode and approximate session denominators inconsistently.", "The audited ledger covers 16 development episodes, not the historical session set."]
+- Limitations: ["The allowed claim is observational and simulation-scoped.", "Issue #351's exposure ledger and held-command ablation now exist for two sessions; the historical denominator remains unaudited.", "Physical exposure ledgers are absent; see safety-exposure-hardware."]
 - Allowed wording: {"focused_paper": "WEAKENED historical observation, not confirmatory safety evidence.", "readme": "WEAKENED: retained development summaries report zero events; prevention is unproven.", "technical_report": "WEAKENED observational record with no project-wide session interval."}
 - Headline markers: [{"marker": "safety-observed-outcomes/readme", "path": "README.md"}, {"marker": "safety-observed-outcomes/paper-contributions", "path": "docs/paper/aisle-paper.md"}]
 - Safety category: `observed_outcomes`
@@ -191,6 +240,21 @@ The validator requires every declared motion-command path in an accepted graph t
 - Allowed wording: {"focused_paper": "Declared topology is gated; a process-wide bypass boundary is not claimed.", "readme": "Accepted declared graph paths route motion through the budget guard.", "technical_report": "The validator establishes declared graph-path gating only."}
 - Headline markers: [{"marker": "safety-topology/technical-report", "path": "docs/AISLE-technical-report.md"}, {"marker": "safety-topology/paper-abstract", "path": "docs/paper/aisle-paper.md"}, {"marker": "safety-topology/paper-contributions", "path": "docs/paper/aisle-paper.md"}]
 - Safety category: `graph_topology`
+
+## semantic-authorization-hardware
+
+A sensor-backed identity adapter on physical hardware meets the pre-registered false-allow, false-block, latency, bypass, and feasibility criteria.
+
+- Type / status: `future` / `hardware_pending`
+- Scope: {"agent_model": "protocol-defined", "environment": "hardware", "perception": "hardware sensor adapter", "platform": "physical SO-101 equipment", "task": "sensor-backed semantic authorization under SEM-14 and issue #356"}
+- Experimental unit and sample: physical_robot_session; {"rationale": "No calibrated physical trial has retained the underlying observations.", "value": "not_applicable"}
+- Uncertainty: {"rationale": "No hardware observation exists.", "value": "not_applicable"}
+- Attestation: {"rationale": "The synthetic replay and any simulation result are bounded to their rendering and adapter envelope.", "status": "not_applicable"}
+- Evidence: [{"rationale": "Hardware adapter contract and dry-run fixtures may validate schema and refusal paths only.", "value": "not_applicable"}]
+- Counterevidence: ["Oracle-arm success in simulation cannot justify deployability or physical prevention."]
+- Limitations: ["H5 stays narrowed to measured layers and zero observed events until these criteria are met."]
+- Allowed wording: {"focused_paper": "HARDWARE PENDING: no deployable identity source is demonstrated.", "readme": "HARDWARE PENDING: no physical semantic-authorization trial has run.", "technical_report": "HARDWARE PENDING: sensor-backed authorization is unmeasured on hardware."}
+- Headline markers: []
 
 ## session-statistics
 
