@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "aisle.benchmark.leaderboard.v1",
+  "title": "AISLE benchmark v1 report row (BMK-16)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "benchmark_version", "result_version", "submission_id", "agent", "treatment", "experimental_unit", "sample", "success", "failure_classes", "effect", "exclusions", "integrity", "safety", "resources", "claim_status", "ranking"],
+  "properties": {
+    "schema_version": {"const": "aisle.benchmark.leaderboard.v1"},
+    "benchmark_version": {"type": "string"},
+    "result_version": {"type": "string", "description": "re-scoring under changed artifacts creates a new result version (BMK-15)"},
+    "submission_id": {"type": "string"},
+    "agent": {"type": "object"},
+    "treatment": {"enum": ["typed", "monolithic"]},
+    "experimental_unit": {"enum": ["agent_session"]},
+    "sample": {"type": "object", "required": ["sessions_randomized", "sessions_included", "tasks", "heldout_seeds_per_artifact"]},
+    "success": {"type": "object", "required": ["sessions_succeeded", "rate", "exact_interval"]},
+    "failure_classes": {"type": "object"},
+    "effect": {"type": "object", "required": ["contrast", "risk_difference", "newcombe_interval", "strata"], "description": "from SPEC 400 (#345); null when a contrast is not registered"},
+    "exclusions": {"type": "object", "required": ["infrastructure", "treatment_integrity", "deviations"]},
+    "integrity": {"type": "object", "required": ["treatment_integrity_status", "instrument_audit_status"]},
+    "safety": {"type": "object", "required": ["exposure_episodes", "interventions", "wrong_object_events", "zero_event_bound"]},
+    "resources": {"type": "object", "required": ["tokens", "api_cost", "wall_seconds", "cpu_seconds", "gpu_seconds", "peak_memory_bytes", "storage_bytes", "latency"]},
+    "claim_status": {"enum": ["supported", "weakened", "rejected", "unrun", "undecidable", "unattested", "hardware_pending"]},
+    "ranking": {"const": "none", "description": "rows are never ranked by a success scalar; Pareto views only beside registered fields"}
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "schema_version": "aisle.benchmark.baselines.v1",
+  "benchmark_version": "aisle-benchmark-v1-draft",
+  "coding_agent_systems": [
+    {"id": "claude-code", "provider": "Anthropic", "client": "claude", "client_version_observed": "2.1.261", "adapter": "tools/agent_adapters.py::ADAPTERS['claude']",
+     "prompt": "harness/CLAUDE.research.md", "access": "claude login on the campaign host; credentials scoped per session by tools/campaign.py", "model_id": "frozen per campaign protocol", "requested_parameters": "frozen per campaign protocol", "nondeterminism": "provider-side; recorded per session"},
+    {"id": "codex-cli", "provider": "OpenAI", "client": "codex", "client_version_observed": "0.151.0", "adapter": "tools/agent_adapters.py::ADAPTERS['codex']",
+     "prompt": "harness/CLAUDE.research.md", "access": "codex login on the campaign host; credentials scoped per session", "model_id": "frozen per campaign protocol", "requested_parameters": "frozen per campaign protocol", "nondeterminism": "provider-side; recorded per session"},
+    {"id": "local-baseline", "provider": "self-hosted", "client": "tools/local_agent.py", "client_version_observed": "repository", "adapter": "tools/agent_adapters.py::ADAPTERS['local']", "prompt": "harness/CLAUDE.research.md", "access": "local model per ADR-44", "model_id": "per ADR-44", "requested_parameters": "per ADR-44", "nondeterminism": "seeded"}
+  ],
+  "treatments": {
+    "typed": {"surface": "graphs/, skills/, registry/manifests/ with harness validate", "status": "available"},
+    "monolithic": {"surface": "single orchestration module over identical primitives (#344)", "status": "dependency_pending: no monolithic control surface exists; MON-1 baseline table is empty"}
+  },
+  "baseline_cells_required": 4,
+  "baseline_cells_available": 0,
+  "expert_artifacts": {
+    "short_composition": {"typed": "graphs/expert_t1_l2.yaml", "monolithic": "dependency_pending"},
+    "engineering": {"typed": "graphs/expert_t2.yaml", "monolithic": "dependency_pending"},
+    "oracle_ceiling": {"typed": "graphs/expert_t1.yaml (L1 oracle pose; labeled ceiling, not submittable)", "monolithic": "dependency_pending"}
+  },
+  "no_research_agent_fixture": "tools/local_baseline.py (C3 composition attempts, deterministic seed)"
+}

@@ -1,0 +1,40 @@
+{
+  "schema_version": "aisle.benchmark.task-distributions.v1",
+  "benchmark_version": "aisle-benchmark-v1-draft",
+  "families": {
+    "short_composition": {
+      "candidate": "graphs/expert_t1_l2.yaml",
+      "tier": "T1",
+      "perception_rung": "L2",
+      "objects": "pharmacy medicine boxes (src/aisle/scenes)",
+      "difficulty_strata": ["single target, no color prior"],
+      "sampling_weights": {"development_public": 1.0},
+      "generator": "src/aisle/scenes/pharmacy.py::generate_episode",
+      "scorer_visible_truth": "oracle_state topic, verifier-only (VAL-6)"
+    },
+    "engineering": {
+      "candidate": "graphs/expert_t2.yaml",
+      "tier": "T2",
+      "perception_rung": "L2",
+      "objects": "pharmacy medicine boxes with printed labels, colors permuted",
+      "difficulty_strata": ["label read required"],
+      "sampling_weights": {"development_public": 1.0},
+      "generator": "src/aisle/scenes/pharmacy.py::generate_episode",
+      "scorer_visible_truth": "oracle_state topic, verifier-only (VAL-6)"
+    }
+  },
+  "instances": {
+    "development_public": {"seeds": [0, 1, 2, 3, 4, 5, 6, 7], "role": "debugging and local development mode (BMK-9)"},
+    "qualification_public": {"seeds": [8, 9, 10, 11, 12, 13, 14, 15], "role": "the pre-registered T2 suite seeds; same schemas as evaluation"},
+    "evaluation_private": {
+      "seeds": "withheld",
+      "commitments": {
+        "bnd-task-band-calibration-v2": "pending",
+        "cse-causal-study-v1": "analysis/freeze/cse-causal-study-v1/freeze-manifest.json#seed_commitment"
+      },
+      "role": "held-out; at least 32 seed records per artifact (BND-13)"
+    }
+  },
+  "hidden_faults": {"bank_commitment": "analysis/fault-bank/commitment.json", "status": "draft bank, uncalibrated, unsealed (#348)"},
+  "status": "draft: the final task ids await the BND-1 human-reviewed amendment (#346)"
+}
