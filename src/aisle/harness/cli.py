@@ -233,6 +233,19 @@ def build_parser() -> argparse.ArgumentParser:
     exposure_ablate.add_argument("--corpus", type=Path, required=True)
     exposure_ablate.add_argument("--analysis-seed", type=int, required=True)
     exposure_ablate.add_argument("--output", type=Path, default=None)
+
+    semantic = subparsers.add_parser(
+        "semantic", help="semantic authorization held-plan corpus and replay (SPEC 480)"
+    )
+    semantic_sub = semantic.add_subparsers(dest="semantic_command", required=True)
+    semantic_corpus = semantic_sub.add_parser("corpus", help="build the SEM-10 held-plan corpus")
+    semantic_corpus.add_argument("--seed", type=int, required=True)
+    semantic_corpus.add_argument("--per-condition", type=int, default=4)
+    semantic_corpus.add_argument("--output", type=Path, default=None)
+    semantic_run = semantic_sub.add_parser("run", help="replay every plan through the three arms")
+    semantic_run.add_argument("--corpus", type=Path, required=True)
+    semantic_run.add_argument("--analysis-seed", type=int, required=True)
+    semantic_run.add_argument("--output", type=Path, default=None)
     return parser
 
 
@@ -247,6 +260,26 @@ def _maybe_gunzip(path: Path) -> bytes:
 
 def main() -> int:
     args = build_parser().parse_args()
+
+    if args.command == "semantic":
+        from aisle.harness.semantic_corpus import build_corpus as build_semantic_corpus
+        from aisle.harness.semantic_corpus import run_corpus
+
+        try:
+            if args.semantic_command == "corpus":
+                report = build_semantic_corpus(seed=args.seed, per_condition=args.per_condition)
+                report["ok"] = True
+            else:
+                corpus = json.loads(_maybe_gunzip(args.corpus))
+                report = run_corpus(corpus, analysis_seed=args.analysis_seed)
+            if args.output is not None:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        except (OSError, json.JSONDecodeError, KeyError, ValueError) as refused:
+            report = {"ok": False, "error": "semantic replay refused", "details": [repr(refused)]}
+        summary = {k: v for k, v in report.items() if k not in ("plans", "runs")}
+        print(json.dumps(summary, sort_keys=True))
+        return 0 if report["ok"] else 1
 
     if args.command == "exposure":
         from aisle.harness.exposure import ExposureError, ledger_for_run, sha256_file
