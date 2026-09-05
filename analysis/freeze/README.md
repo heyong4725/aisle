@@ -35,7 +35,13 @@ done
 
 Rebuilding a manifest (`harness freeze build --declaration ... --output ...`)
 is only legitimate as a new registration version; drift against an existing
-manifest is a refusal, not an update.
+manifest is a refusal, not an update. When a trusted artifact legitimately
+moves (a graph fix under CON-7 review, a new registry manifest), the affected
+registrations are superseded by a new version whose declaration names the old
+campaign id in `superseded` and says why; the old directory is retained as a
+drifted record and `tests/unit/test_freeze_registry.py` tolerates drift only
+for registrations named that way. v3 of the BND, FLT and SFE registrations
+supersede v2 after #475 (turn watchdog) and #492 (monolith-broker manifest).
 
 ## Confirmatory protocols
 

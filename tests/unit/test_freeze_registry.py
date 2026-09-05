@@ -276,13 +276,27 @@ def _committed_manifests() -> list[Path]:
 def test_committed_registrations_check_clean_with_withheld_seeds():
     """CSE-15 / FEL-18 / SFE-9 / SEM-9 / BND-12 / FLT-9: every committed
     campaign registration still binds the bytes it hashed, and none of them
-    claims a freeze the spec hands to a human."""
+    claims a freeze the spec hands to a human. A registration whose bytes
+    moved is retained as a drifted record ONLY when a newer committed
+    registration names it in `superseded`; drift with no successor is the
+    refusal the registry promises (analysis/freeze/README.md)."""
     manifests = _committed_manifests()
-    assert len(manifests) == 10
+    assert len(manifests) == 13
+    superseded_ids: set[str] = set()
+    for path in manifests:
+        declaration = json.loads(path.with_name("declaration.json").read_text())
+        note = declaration.get("superseded")
+        if note:
+            superseded_ids.add(note.split(" (", 1)[0])
     for path in manifests:
         manifest = json.loads(path.read_text())
         report = check_manifest(REPO_ROOT, manifest, require_seed_sources=False)
-        assert report["ok"] is True, (path.name, report["drift"])
+        campaign_id = manifest["declaration"]["campaign_id"]
+        if campaign_id in superseded_ids:
+            # retained drifted record: its successor binds the current bytes
+            assert path.parent.name == campaign_id
+        else:
+            assert report["ok"] is True, (path.parent.name, report["drift"])
         assert manifest["frozen"] is False
         assert manifest["status"] == "registered_pending_review"
         assert manifest["pending_gates"], path
@@ -291,6 +305,8 @@ def test_committed_registrations_check_clean_with_withheld_seeds():
         assert not any(
             "/Users/" in v for v in declaration["seed_commitment"].values() if isinstance(v, str)
         )
+    current = {json.loads(p.read_text())["declaration"]["campaign_id"] for p in manifests}
+    assert superseded_ids <= current, "a superseded note names a registration that is not committed"
 
 
 def test_confirmatory_registrations_carry_a_refused_freeze():
