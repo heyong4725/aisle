@@ -35,6 +35,7 @@ CORPUS_SCHEMA = "aisle.perception-audit.corpus.v1"
 REPORT_SCHEMA = "aisle.perception-audit.report.v1"
 FAILURE_TAXONOMY = (
     "correct",
+    "out_of_envelope",
     "wrong_identity",
     "refused",
     "no_detection",
@@ -70,7 +71,12 @@ def default_envelope(med_names: list[str]) -> dict:
         "refusal_availability_limit": 0.5,
         "accuracy_floor": 0.90,
         "camera": {"role": "overhead", "resolution": [480, 640], "depth_required": True},
-        "strata": ["target_class", "seed_parity", "sensor"],
+        "operating_window_s": 2.0,
+        "strata": ["target_class", "seed", "sensor"],
+        "frame_correlation": (
+            "frames within one seed are correlated; per-seed cells are reported so a "
+            "stratum cannot pass on one seed's frames alone"
+        ),
         "synchronization": (
             "rgb and depth share one sim_time_ns; truth is the oracle sample at the same stamp"
         ),
@@ -97,6 +103,7 @@ def validate_envelope(envelope: dict) -> None:
         "refusal_availability_limit",
         "accuracy_floor",
         "camera",
+        "operating_window_s",
         "strata",
         "synchronization",
         "missing_data",
@@ -145,10 +152,12 @@ def build_corpus(
             truth = (
                 by_stamp[min(truth_stamps, key=lambda s: abs(s - stamp))] if truth_stamps else None
             )
+            start_ns = next((s for s, e, g in windows if g is goal), None)
             record = {
                 "record_id": f"{run_id}-{camera}-{stamp}",
                 "camera": camera,
                 "sim_time_ns": stamp,
+                "since_reset_s": None if start_ns is None else (stamp - start_ns) / 1e9,
                 "seed": int(goal.get("seed", -1)) if goal else None,
                 "target": goal.get("target_med") if goal else None,
                 "frame_hash": content_hash(
@@ -168,6 +177,7 @@ def build_corpus(
                 },
                 "strata": {
                     "target_class": goal.get("target_med") if goal else "none",
+                    "seed": str(goal.get("seed")) if goal else "none",
                     "seed_parity": "even" if goal and int(goal.get("seed", 0)) % 2 == 0 else "odd",
                     "sensor": camera,
                 },
@@ -204,13 +214,14 @@ def score_record(
     from aisle.nodes.segmented_pose import PoseRefused
 
     truth = record.get("truth")
+    base = {"record_id": record["record_id"], "prediction": None, "latency_s": None}
+    if record.get("camera") != envelope["camera"]["role"]:
+        return {**base, "outcome": "out_of_envelope", "why": "camera outside the envelope"}
+    since = record.get("since_reset_s")
+    if since is None or since > envelope["operating_window_s"]:
+        return {**base, "outcome": "out_of_envelope", "why": "outside the operating window"}
     if not record.get("has_depth") or truth is None or record.get("target") is None:
-        return {
-            "record_id": record["record_id"],
-            "outcome": "missing_data",
-            "prediction": None,
-            "latency_s": None,
-        }
+        return {**base, "outcome": "missing_data"}
     started = clock()
     detections = detector(arrays["rgb"])
     prediction: dict[str, Any] = {"detections": len(detections)}
@@ -236,23 +247,20 @@ def score_record(
         prediction["position"] = position
     latency = clock() - started
     # truth is opened only now
-    if outcome == "correct":
-        rivals = [
-            d
-            for d in detections
-            if d["label"] != record["target"] and d["score"] > prediction["score"]
-        ]
-        if rivals:
-            outcome = "wrong_identity"
-        elif position is not None:
-            error = float(
-                np.linalg.norm(
-                    np.asarray(position) - np.asarray(truth["positions"][record["target"]])
-                )
-            )
-            prediction["localization_error_m"] = error
-            if error > envelope["localization_tolerance_m"]:
-                outcome = "localization_error"
+    if outcome == "correct" and position is not None:
+        distances = {
+            name: float(np.linalg.norm(np.asarray(position) - np.asarray(pos)))
+            for name, pos in truth["positions"].items()
+        }
+        nearest = min(distances, key=distances.get)
+        prediction["localization_error_m"] = distances[record["target"]]
+        prediction["nearest_truth"] = nearest
+        if nearest != record["target"]:
+            outcome = "wrong_identity"  # the picked box sits on another object
+        elif distances[record["target"]] > envelope["localization_tolerance_m"]:
+            outcome = "localization_error"
+    elif outcome == "correct":
+        outcome = "localization_error"  # the estimate refused after the pick
     return {
         "record_id": record["record_id"],
         "outcome": outcome,
@@ -281,7 +289,12 @@ def audit(
         splits[r["split"]].add(r["frame_hash"])
     if splits["calibration"] & splits["evaluation"]:
         raise PerceptionAuditError("calibration and evaluation frames overlap by content")
-    evaluation = [s for s in scored if by_id[s["record_id"]]["split"] == "evaluation"]
+    evaluation = [
+        s
+        for s in scored
+        if by_id[s["record_id"]]["split"] == "evaluation" and s["outcome"] != "out_of_envelope"
+    ]
+    out_of_envelope = sum(1 for s in scored if s["outcome"] == "out_of_envelope")
     strata: dict[str, dict[str, dict]] = {}
     for axis in envelope["strata"]:
         strata[axis] = {}
@@ -329,6 +342,7 @@ def audit(
         "model_hashes": model_hashes,
         "split_sizes": {k: len(v) for k, v in splits.items()},
         "evaluation_records": len(evaluation),
+        "out_of_envelope_records": out_of_envelope,
         "strata": strata,
         "latency_s": {
             "median": float(np.median(latencies)) if latencies else None,

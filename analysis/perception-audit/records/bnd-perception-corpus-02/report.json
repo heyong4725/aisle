@@ -1,0 +1,189 @@
+{
+  "corpus_hash": "sha256:8c339ee34d52fe673ef5014e59b148749cfc96178ec1399a46d7d1ce4eefd112",
+  "eligibility": "not_eligible",
+  "envelope_hash": "sha256:3af3c699c80132cf9bc9032be0e43d81071ab9256f6111bbcc5da2cf09cbdbf4",
+  "evaluation_records": 80,
+  "failures": [
+    "target_class=ibuprofen: accuracy lower bound 0.000 or refusal 1.00 outside the envelope",
+    "target_class=omeprazole: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "target_class=amoxicillin: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "target_class=cetirizine: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=1: accuracy lower bound 0.000 or refusal 1.00 outside the envelope",
+    "seed=3: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=5: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=7: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "sensor=overhead: accuracy lower bound 0.618 or refusal 0.25 outside the envelope"
+  ],
+  "latency_s": {
+    "ceiling": 5.0,
+    "descriptive": true,
+    "max": 0.7686340417712927,
+    "median": 0.692546687554568
+  },
+  "model_hashes": {
+    "identity": "pinned snapshot per src/aisle/verifier/models.py"
+  },
+  "ok": false,
+  "out_of_envelope_records": 4312,
+  "raw_predictions_file": "raw-predictions.json.gz",
+  "raw_predictions_note": "in-envelope rows only; out_of_envelope rows are counted in out_of_envelope_records and carry no prediction",
+  "report_hash": "sha256:404790cde428d214cd54eb9768a512ec0164623d95aeed2e9802fa6e122b6a5f",
+  "run_id": "bnd-perception-corpus-02",
+  "schema_version": "aisle.perception-audit.report.v1",
+  "split_sizes": {
+    "calibration": 976,
+    "evaluation": 1137
+  },
+  "strata": {
+    "seed": {
+      "1": {
+        "accuracy": 0.0,
+        "accuracy_lower_bound": 0.0,
+        "correct": 0,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 1.0,
+        "refusal_within_limit": false,
+        "refused": 20,
+        "taxonomy": {
+          "refused": 20
+        }
+      },
+      "3": {
+        "accuracy": 0.95,
+        "accuracy_lower_bound": 0.7838938357931526,
+        "correct": 19,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 19,
+          "localization_error": 1
+        }
+      },
+      "5": {
+        "accuracy": 0.95,
+        "accuracy_lower_bound": 0.7838938357931526,
+        "correct": 19,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 19,
+          "localization_error": 1
+        }
+      },
+      "7": {
+        "accuracy": 0.95,
+        "accuracy_lower_bound": 0.7838938357931526,
+        "correct": 19,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 19,
+          "localization_error": 1
+        }
+      }
+    },
+    "sensor": {
+      "overhead": {
+        "accuracy": 0.7125,
+        "accuracy_lower_bound": 0.6179118484757207,
+        "correct": 57,
+        "missing": 0,
+        "n": 80,
+        "passes_floor": false,
+        "refusal_rate": 0.25,
+        "refusal_within_limit": true,
+        "refused": 20,
+        "taxonomy": {
+          "correct": 57,
+          "localization_error": 3,
+          "refused": 20
+        }
+      }
+    },
+    "target_class": {
+      "amoxicillin": {
+        "accuracy": 0.95,
+        "accuracy_lower_bound": 0.7838938357931526,
+        "correct": 19,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 19,
+          "localization_error": 1
+        }
+      },
+      "cetirizine": {
+        "accuracy": 0.95,
+        "accuracy_lower_bound": 0.7838938357931526,
+        "correct": 19,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 19,
+          "localization_error": 1
+        }
+      },
+      "ibuprofen": {
+        "accuracy": 0.0,
+        "accuracy_lower_bound": 0.0,
+        "correct": 0,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 1.0,
+        "refusal_within_limit": false,
+        "refused": 20,
+        "taxonomy": {
+          "refused": 20
+        }
+      },
+      "omeprazole": {
+        "accuracy": 0.95,
+        "accuracy_lower_bound": 0.7838938357931526,
+        "correct": 19,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 19,
+          "localization_error": 1
+        }
+      }
+    }
+  },
+  "taxonomy": {
+    "correct": 57,
+    "localization_error": 3,
+    "missing_data": 0,
+    "no_detection": 0,
+    "out_of_envelope": 0,
+    "refused": 20,
+    "wrong_identity": 0
+  },
+  "wording": "an oracle-scored audit of the perception path; it does not validate perception portability beyond this rendering and envelope (BND-3)"
+}
