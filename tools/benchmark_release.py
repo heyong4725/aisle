@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -52,13 +53,27 @@ SURFACES = {
 OPTIONAL = {"hidden_bank_commitment"}  # tracked only once #348 lands
 
 
-def sha256_path(path: Path) -> str | None:
+def _tracked(root: Path, rel: Path) -> list[Path]:
+    """Git-tracked files under rel: ignored build output (for example
+    graphs/out/ from a dora run) must not move the release hash."""
+    proc = subprocess.run(
+        ["git", "ls-files", "-z", "--", rel.as_posix()], cwd=root, capture_output=True
+    )
+    if proc.returncode != 0:
+        return sorted(x for x in (root / rel).rglob("*") if x.is_file())
+    return sorted(root / p for p in proc.stdout.decode().split("\0") if p)
+
+
+def sha256_path(path: Path, *, root: Path | None = None) -> str | None:
     if not path.exists():
         return None
     if path.is_file():
         return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+    root = root or ROOT
     digest = hashlib.sha256()
-    for p in sorted(x for x in path.rglob("*") if x.is_file() and "__pycache__" not in x.parts):
+    for p in _tracked(root, path.relative_to(root)):
+        if "__pycache__" in p.parts or not p.is_file():
+            continue
         digest.update(p.relative_to(path).as_posix().encode() + b"\0")
         digest.update(hashlib.sha256(p.read_bytes()).digest())
     return "sha256:" + digest.hexdigest()
@@ -68,7 +83,7 @@ def version_manifest(root: Path) -> dict:
     hashes = {}
     missing = []
     for name, rel in SURFACES.items():
-        digest = sha256_path(root / rel)
+        digest = sha256_path(root / rel, root=root)
         if digest is None and name not in OPTIONAL:
             missing.append(rel.as_posix())
         hashes[name] = {"path": rel.as_posix(), "sha256": digest}
