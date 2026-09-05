@@ -264,6 +264,14 @@ def build_parser() -> argparse.ArgumentParser:
     threat_run = threat_sub.add_parser("run", help="THR-10 conformance run; bypass report")
     threat_run.add_argument("--agent-path", default="fixture")
     threat_run.add_argument("--output", type=Path, default=None)
+    perception = subparsers.add_parser(
+        "perception", help="independent perception audit with hidden truth (SPEC 490)"
+    )
+    perception_sub = perception.add_subparsers(dest="perception_command", required=True)
+    perception_audit = perception_sub.add_parser("audit", help="BND-5/6/7 audit of a recorded run")
+    perception_audit.add_argument("--run", type=Path, required=True)
+    perception_audit.add_argument("--envelope", type=Path, required=True)
+    perception_audit.add_argument("--output", type=Path, default=None)
     return parser
 
 
@@ -331,6 +339,46 @@ def main() -> int:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
         print(json.dumps({k: v for k, v in report.items() if k != "attacks"}, sort_keys=True))
+        return 0 if report["ok"] else 1
+
+    if args.command == "perception":
+        from aisle.harness import perception_audit as pa
+
+        try:
+            from aisle.scenes.pharmacy import MED_NAMES, load_meds
+            from aisle.verifier.models import detect_meds, load_pinned
+
+            envelope = json.loads(args.envelope.read_bytes())
+            pa.validate_envelope(envelope)
+            corpus, frames = pa.corpus_from_run(args.run.resolve(), med_names=list(MED_NAMES))
+            model_pair = load_pinned("identity")
+            localizer = pa.real_localizer(corpus["calibration"], load_meds())
+            scored = [
+                pa.score_record(
+                    record,
+                    frames[record["camera"]][record["sim_time_ns"]],
+                    envelope=envelope,
+                    detector=lambda rgb: detect_meds(rgb, list(MED_NAMES), model_pair=model_pair),
+                    localizer=localizer,
+                )
+                for record in corpus["records"]
+            ]
+            report = pa.audit(
+                corpus,
+                envelope,
+                scored=scored,
+                model_hashes={"identity": "pinned snapshot per src/aisle/verifier/models.py"},
+            )
+            if args.output is not None:
+                args.output.parent.mkdir(parents=True, exist_ok=True)
+                args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        except pa.PerceptionAuditError as refused:
+            report = {"ok": False, "error": str(refused), "details": refused.details}
+        except (OSError, json.JSONDecodeError, KeyError, ValueError, ImportError) as refused:
+            report = {"ok": False, "error": "perception audit refused", "details": [repr(refused)]}
+        print(
+            json.dumps({k: v for k, v in report.items() if k != "raw_predictions"}, sort_keys=True)
+        )
         return 0 if report["ok"] else 1
 
     if args.command == "semantic":
