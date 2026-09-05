@@ -257,6 +257,13 @@ def build_parser() -> argparse.ArgumentParser:
     hardware_report = hardware_sub.add_parser("report", help="HWP-18/20 report; hardware_pending")
     hardware_report.add_argument("--station", type=Path, default=None)
     hardware_report.add_argument("--output", type=Path, default=None)
+    threat = subparsers.add_parser(
+        "threat", help="execute the actuation attack catalog on the fixture (SPEC 460)"
+    )
+    threat_sub = threat.add_subparsers(dest="threat_command", required=True)
+    threat_run = threat_sub.add_parser("run", help="THR-10 conformance run; bypass report")
+    threat_run.add_argument("--agent-path", default="fixture")
+    threat_run.add_argument("--output", type=Path, default=None)
     return parser
 
 
@@ -314,6 +321,16 @@ def main() -> int:
         except (OSError, json.JSONDecodeError, ValueError) as refused:
             report = {"ok": False, "error": "hardware command refused", "details": [repr(refused)]}
         print(json.dumps(report, sort_keys=True))
+        return 0 if report["ok"] else 1
+
+    if args.command == "threat":
+        from aisle.harness.attack_catalog import run_catalog
+
+        report = run_catalog(agent_path=args.agent_path)
+        if args.output is not None:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        print(json.dumps({k: v for k, v in report.items() if k != "attacks"}, sort_keys=True))
         return 0 if report["ok"] else 1
 
     if args.command == "semantic":
