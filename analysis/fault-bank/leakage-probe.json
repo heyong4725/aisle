@@ -1,0 +1,21 @@
+{
+  "schema_version": "aisle.fault-leakage-probe.v1",
+  "probe_id": "flt-leakage-probe-v1",
+  "spec": "specs/450-fault-bank.md#FLT-8",
+  "frozen_before": "any v2 calibration rung is materialized (flt-cal-v2)",
+  "surfaces": "materialization receipts' visible_metadata: what a participant can observe about each staged target without opening it, captured by the injector before any rollout starts; no outcome, trace, log, or timing evidence is a feature",
+  "feature_allowlist": ["staged_file_count", "size_bytes", "mode", "mtime"],
+  "classifier": "leave-one-out nearest-centroid on z-scored features",
+  "split": "leave-one-out",
+  "decision_rule": {
+    "statistic": "balanced accuracy over sham and fault cells",
+    "null": "seeded label permutation, same classifier and split",
+    "alpha": 0.05,
+    "permutations": 2000,
+    "seed": 450008,
+    "minimum_cells_per_class": 3,
+    "blocked_when": "permutation p-value below alpha, or either class has fewer than minimum_cells_per_class cells"
+  },
+  "command": "uv run harness fault leakage --report ~/aisle-private/fault-bank/v2/calibration-report.json --probe analysis/fault-bank/leakage-probe.json --output analysis/fault-bank/leakage-v2.json",
+  "note": "v1 receipts carry no visible_metadata (the injector did not normalize or record it), so the probe cannot be run on flt-cal-v1 retroactively; it applies from the v2 candidate round on."
+}

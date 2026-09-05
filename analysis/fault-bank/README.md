@@ -30,6 +30,28 @@ VAL-2 resolves node paths against the staged tree. The shared environment
 is pinned with `UV_PROJECT_ENVIRONMENT`; the `aisle` package import path
 stays the repository's, only node entry files come from the worktree.
 
+## Participant-visible parity (FLT-8) and residency (FLT-4)
+
+Injector v2 (`aisle.fault-injector.v2`) pads every staged target — sham or
+fault — with a trailing comment to exactly `PAD_BYTES` more than its
+preimage, copies the preimage's mode bits, and stamps one fixed mtime, so
+the size, mode and timestamp a participant can see without opening the file
+are identical across cells; a replacement that would outgrow the pad is
+refused. Each receipt records that `visible_metadata`. The leakage probe is
+frozen in `leakage-probe.json` before the v2 round (feature allowlist,
+leave-one-out nearest-centroid classifier, seeded permutation null, alpha
+0.05, at least three cells per class) and runs with
+`harness fault leakage --report <calibration-report> --probe leakage-probe.json`;
+a classifier that beats chance keeps the bank blocked. v1 receipts carry no
+visible metadata, so the probe cannot be applied to flt-cal-v1 retroactively.
+
+`harness fault validate --bank ... --root . [--tool-root ...]` now also
+refuses a bank that resides inside the participant worktree, any git
+worktree or object namespace of the repository, a HOME cache view, the temp
+directory, or a declared tool root. That is the residency half of FLT-4;
+the denial proof (a participant session actually unable to reach the
+bytes) waits on the issue #353 confinement adapter.
+
 ## Commitment
 
 `commitment.json` binds the private manifest hash, clean baseline hash,

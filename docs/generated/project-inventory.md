@@ -45,7 +45,7 @@ stayed outside it).
 |---|---:|
 | Graphs | 19 |
 | Capability manifests | 40 |
-| CLI command entries | 36 |
+| CLI command entries | 37 |
 | ADR files | 74 |
 
 ## Graphs
@@ -150,7 +150,8 @@ stayed outside it).
 | `harness exposure ledger` | `--run`, `--campaign-id`, `--source-map`, `--output` |
 | `harness fault assign` | `--bank`, `--seed-file`, `--block`, `--session`, `--cells`, `--output` |
 | `harness fault calibrate` | `--bank`, `--clean-run`, `--clean-commit`, `--graph`, `--seeds`, `--tier`, `--embodiment`, `--perception`, `--staging`, `--raw-store`, `--campaign-id`, `--only`, `--output`, `--root` |
-| `harness fault validate` | `--bank` |
+| `harness fault leakage` | `--report`, `--probe`, `--output` |
+| `harness fault validate` | `--bank`, `--root`, `--tool-root` |
 | `harness fleet` | `--graph`, `--agents`, `--episodes`, `--seeds`, `--out`, `--timeout-s`, `--root` |
 | `harness freeze build` | `--declaration`, `--output`, `--timestamp`, `--timestamp-source`, `--root` |
 | `harness freeze check` | `--manifest`, `--root`, `--allow-withheld-seeds` |
