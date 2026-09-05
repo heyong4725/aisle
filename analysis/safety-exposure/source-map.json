@@ -1,0 +1,10 @@
+{
+  "classes": {
+    "sha256:44e8186838d9fb3a7674c8107dc85591c2182534ac6837403bd22892f7b1e447": {
+      "class": "classical",
+      "path_at_registration": "src/aisle/nodes/ik_trajectory.py",
+      "role": "ik-trajectory planner (analytic IK, scripted ladder)"
+    }
+  },
+  "schema_version": "aisle.safety-exposure.source-map.v1"
+}

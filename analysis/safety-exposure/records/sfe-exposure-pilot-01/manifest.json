@@ -1,0 +1,57 @@
+{
+ "run_id": "sfe-exposure-pilot-01",
+ "git_sha": "6e546efff4494e88599ba3b824237bff167a491a",
+ "env_hash": "fd3799643d7fd9f2363319eff24e72973ef63f7af4983f1e0769c86f6d7bb014",
+ "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+ "graph": "graphs/expert_t1.yaml",
+ "graph_hash": "303d08b37c6f0ea3ab221778437029393e0a266094941d2124b54648a3cf48ed",
+ "graph_snapshot": "runs/sfe-exposure-pilot-01/authored-graph.yaml",
+ "exec_graph_hashes": [
+  "5b4bd214d0823a7bcce4b46e632dd10f3fa22c1ad5da7e234107e36b642487ed"
+ ],
+ "tier": "T1",
+ "perception": "L1",
+ "embodiment": "franka",
+ "sim_extra": "sim",
+ "sim_backend": "metal",
+ "sim_device": "mps",
+ "seeds": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7
+ ],
+ "reset": "teleport",
+ "verifier": "oracle",
+ "idea": null,
+ "no_idea_gate": true,
+ "env_baseline": "local",
+ "env_baseline_oid": null,
+ "env_fingerprint": "cef769da9398271d2911d55107b4ba0b2c09ec7d2311c6b1852f6a3874017085",
+ "env_attested": false,
+ "dist_problems": [
+  "environment out of sync with the locked selection (uv sync --locked --check:  - torchcodec==0.16.0\n - torchvision==0.28.0\n - urllib3==2.7.0\n - wandb==0.28.2\n - werkzeug==3.1.8\n - xxhash==4.0.0\n - yarl==1.24.5\nThe environment is outdated; run `uv sync` to update the environment)"
+ ],
+ "post_run_audit": null,
+ "budget_reservation": null,
+ "tokens_log": null,
+ "wall_clamped": [],
+ "relaunches": 0,
+ "guard_divergence": {
+  "commands": 14294,
+  "clamped_commands": 0,
+  "violation_records": 0,
+  "divergence_rate": 0.0,
+  "labels_coincide": true,
+  "by_reason": {},
+  "max_abs_delta": null,
+  "mean_abs_delta": null,
+  "records_without_delta": 0,
+  "skipped_rows": 0,
+  "run_dir": "/Users/yonghe/src/aisle-runner/runs/sfe-exposure-pilot-01"
+ }
+}
