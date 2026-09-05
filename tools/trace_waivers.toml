@@ -45,9 +45,6 @@ SEM-15 = "proposed evidence boundary; oracle/simulation labeling tests land afte
 SEM-16 = "proposed H5 narrowing; claim occurrence-audit tests land after human spec review"
 
 # SPEC 470 safety exposure — proposed in the #351 spec-change PR.
-SFE-10 = "proposed observe-only mode; authority/containment tests land after human spec review"
-SFE-11 = "proposed trace corpus; violation/legal/watchdog tests land after human spec review"
-SFE-12 = "proposed paired analysis; unit/uncertainty/exclusion tests land after human spec review"
 SFE-14 = "proposed H5 wording; occurrence-audit tests land after human spec review"
 
 # SPEC 450 sealed fault bank — proposed in the #348 spec-change PR.

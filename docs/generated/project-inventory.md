@@ -44,7 +44,7 @@ stayed outside it).
 |---|---:|
 | Graphs | 18 |
 | Capability manifests | 39 |
-| CLI command entries | 19 |
+| CLI command entries | 21 |
 | ADR files | 73 |
 
 ## Graphs
@@ -140,7 +140,9 @@ stayed outside it).
 | Command | Arguments/options |
 |---|---|
 | `harness` | — |
+| `harness exposure ablate` | `--corpus`, `--analysis-seed`, `--output` |
 | `harness exposure analyze` | `--ledger`, `--confidence`, `--output` |
+| `harness exposure corpus` | `--embodiment`, `--seed`, `--per-family`, `--output` |
 | `harness exposure ledger` | `--run`, `--campaign-id`, `--source-map`, `--output` |
 | `harness fleet` | `--graph`, `--agents`, `--episodes`, `--seeds`, `--out`, `--timeout-s`, `--root` |
 | `harness freeze build` | `--declaration`, `--output`, `--timestamp`, `--timestamp-source`, `--root` |

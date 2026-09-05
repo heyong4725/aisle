@@ -66,9 +66,53 @@ uv run harness exposure analyze \
 `source-map.json` classifies command producers by content hash (SFE-7). A
 producer whose hash is not listed is `unknown` and stays visible.
 
+## Fixed-proposal guard ablation (SFE-9 to SFE-12)
+
+`ablation/sfe-held-command-ablation-v2/` holds the frozen corpus and the
+result. Evidence kind: `simulation_fake_driver`. No physics, no hardware:
+each pair replays byte-identical proposals with identical contract
+timestamps through `guard_on` (production clamp) and
+`guard_observe_only` (identical would-have decision logged, raw proposal
+forwarded) into a fake driver, and a frozen violation instrument scores
+what the driver received. The observe-only arm exists only inside this
+evaluator (SFE-10). Registration:
+`analysis/freeze/sfe-held-command-ablation-v2/` (pending CON-14 approval
+of SPEC 470 itself).
+
+| quantity | value |
+|---|---|
+| pairs (six families x 8) / included / excluded | 48 / 47 / 1 (containment activated, `joint_position_limit-03`) |
+| legal negative controls altered by guard_on | 0 of 8 (blocker did not fire) |
+| at-risk traces with any driver-received violation, guard_on | 0 / 39, exact 95% upper 0.090 |
+| at-risk traces with any driver-received violation, observe-only | 32 / 39, exact 95% interval 0.665 to 0.925 |
+| risk difference guard_on minus observe-only | -0.82 |
+| paired difference in violation count per trace | mean -1.87, seeded bootstrap 95% interval -2.21 to -1.51 (unit: trace) |
+| observe-only out-of-envelope duration | 0.03 s over the corpus; guard_on 0.0 s |
+| watchdog-silence pairs held by guard_on | 8 of 8 |
+| collisions | unmeasured (fake driver, no contact instrument) |
+
+Strata (guard_on any / observe-only any): joint position 0/7 vs 7/7,
+joint velocity 0/8 vs 8/8, workspace 0/8 vs 8/8, gripper 0/8 vs 8/8,
+watchdog silence 0/8 vs 1/8, legal 0/8 vs 0/8. The watchdog family's
+primary endpoint is near null by design: its held proposal is legal; the
+hold itself is the secondary endpoint.
+
+Wording this licenses (SFE-14): measured gateway interventions alter
+kinematically illegal proposals under the tested limits on a fake driver.
+It says nothing about medicine identity, semantic prevention, or physical
+outcomes.
+
+```bash
+uv run harness exposure corpus --embodiment franka --seed 470001 \
+  --output analysis/safety-exposure/ablation/sfe-held-command-ablation-v2/corpus.json
+uv run harness exposure ablate \
+  --corpus analysis/safety-exposure/ablation/sfe-held-command-ablation-v2/corpus.json \
+  --analysis-seed 470001 \
+  --output analysis/safety-exposure/ablation/sfe-held-command-ablation-v2/result.json
+```
+
 ## Not done here
 
-The fixed-proposal guard ablation (SFE-9 to SFE-12) is registered under
-`analysis/freeze/sfe-held-command-ablation-v1/` and not yet run. The
-SFE-14 occurrence audit of claim wording is not yet mechanised. Hardware
-ledgers are absent (`hardware_pending`, SFE-15).
+The SFE-14 occurrence audit of claim wording is not yet mechanised.
+Hardware ledgers are absent (`hardware_pending`, SFE-15). Emergency
+containment on a real driver is not modelled beyond the envelope check.
