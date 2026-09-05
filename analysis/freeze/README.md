@@ -41,7 +41,8 @@ registrations are superseded by a new version whose declaration names the old
 campaign id in `superseded` and says why; the old directory is retained as a
 drifted record and `tests/unit/test_freeze_registry.py` tolerates drift only
 for registrations named that way. v3 of the BND, FLT and SFE registrations
-supersede v2 after #475 (turn watchdog) and #492 (monolith-broker manifest).
+supersede v2 after #475 (turn watchdog) and #492 (monolith-broker manifest);
+flt-bank-calibration-v4 supersedes v3 after injector v2 (FLT-8 parity pad and probe).
 
 ## Confirmatory protocols
 

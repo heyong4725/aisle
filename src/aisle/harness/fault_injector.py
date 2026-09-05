@@ -27,7 +27,8 @@ from pathlib import Path
 from typing import Any
 
 BANK_SCHEMA = "aisle.fault-bank.manifest.v1"
-INJECTOR_VERSION = "aisle.fault-injector.v2"  # v2: FLT-8 visible-size pad, fixed mtime, visible_metadata receipts
+# v2: FLT-8 visible-size pad, fixed mtime, visible_metadata receipts
+INJECTOR_VERSION = "aisle.fault-injector.v2"
 FAMILIES = ("perception", "decision", "motion", "schema_metadata", "clocking", "runtime")
 PERSISTENCE = ("persistent", "intermittent")
 REPAIR_CLASSES = ("novel_repair", "restoration", "diagnosis_only")
