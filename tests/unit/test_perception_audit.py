@@ -48,6 +48,7 @@ def _frames(seeds: list[int], stamps_per_seed: int = 3) -> tuple[dict, list[dict
             rgb[..., 0], rgb[..., 1] = seed, k
             depth = np.full((8, 8), 0.5, dtype=np.float32)
             frames["overhead"][stamp] = {"rgb": rgb, "depth": depth}
+            frames.setdefault("wrist", {})[stamp] = {"rgb": rgb, "depth": depth}
             state = []
             for i in range(3):
                 state += [0.1 * i, 0.2 * seed, 0.05, 0, 0, 0, 1]
@@ -72,10 +73,11 @@ def _detector_for(truth_target: str, *, score: float = 0.5, rival: float = 0.0):
     return detector
 
 
-def _localizer(record_truth_offset: float = 0.0):
+def _localizer(record_truth_offset: float = 0.0, to_other: bool = False):
     def localize(best, depth, record):
-        pos = list(record["truth"]["positions"][record["target"]])
-        pos[0] += record_truth_offset
+        name = next(n for n in MEDS if n != record["target"]) if to_other else record["target"]
+        pos = list(record["truth"]["positions"][name])
+        pos[2] += record_truth_offset  # along z: the nearest truth stays the target
         return pos
 
     return localize
@@ -112,7 +114,8 @@ def test_corpus_attaches_hidden_truth_and_splits_by_content():
         calibration={"fx": 1},
         med_names=MEDS,
     )
-    assert len(corpus["records"]) == 12
+    assert len(corpus["records"]) == 24
+    assert corpus["records"][0]["since_reset_s"] == pytest.approx(0.1)
     first = corpus["records"][0]
     assert first["truth"]["positions"]["amoxicillin"] == pytest.approx([0.0, 0.0, 0.05])
     assert first["split"] == "calibration" and first["strata"]["seed_parity"] == "even"
@@ -181,6 +184,33 @@ def test_scorer_opens_truth_only_after_the_prediction_and_names_the_failure():
         clock=lambda: 0.0,
     )
     assert none["outcome"] == "no_detection"
+    other = pa.score_record(
+        record,
+        arrays,
+        envelope=envelope,
+        detector=_detector_for(record["target"]),
+        localizer=_localizer(to_other=True),
+        clock=lambda: 0.0,
+    )
+    assert other["outcome"] == "wrong_identity"
+    wrist = pa.score_record(
+        {**record, "camera": "wrist"},
+        arrays,
+        envelope=envelope,
+        detector=_detector_for(record["target"]),
+        localizer=_localizer(),
+        clock=lambda: 0.0,
+    )
+    assert wrist["outcome"] == "out_of_envelope"
+    late = pa.score_record(
+        {**record, "since_reset_s": 30.0},
+        arrays,
+        envelope=envelope,
+        detector=_detector_for(record["target"]),
+        localizer=_localizer(),
+        clock=lambda: 0.0,
+    )
+    assert late["outcome"] == "out_of_envelope"
     far = pa.score_record(
         record,
         arrays,
@@ -209,9 +239,10 @@ def test_eligibility_requires_every_stratum_to_clear_the_floor():
     corpus = pa.build_corpus(
         run_id="r", frames=frames, oracle_rows=oracle, goals=goals, calibration={}, med_names=MEDS
     )
-    envelope = pa.default_envelope(MEDS)
+    envelope = {**pa.default_envelope(MEDS), "operating_window_s": 100.0}
     scored = _score_all(corpus, frames, envelope)
     report = pa.audit(corpus, envelope, scored=scored, model_hashes={"identity": "sha256:x"})
+    assert report["out_of_envelope_records"] == 320  # every wrist frame
     assert report["ok"] is True and report["eligibility"] == "perception_eligible"
     assert report["split_sizes"] == {"calibration": 160, "evaluation": 160}
     assert all(cell["passes_floor"] for cell in report["strata"]["target_class"].values())
@@ -229,7 +260,7 @@ def test_eligibility_requires_every_stratum_to_clear_the_floor():
     assert failed["ok"] is False and failed["eligibility"] == "not_eligible"
     assert any("target_class=ibuprofen" in f for f in failed["failures"])
     assert (
-        failed["strata"]["seed_parity"]["odd"]["accuracy"] < 1.0
+        failed["strata"]["sensor"]["overhead"]["accuracy"] < 1.0
     )  # aggregate visible, not masking
     overlap = copy.deepcopy(corpus)
     evaluation_hash = next(
