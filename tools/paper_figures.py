@@ -1,8 +1,11 @@
 """paper_figures — every figure in docs/paper/ regenerated from committed
 records (the derived-never-hand-written discipline, extended to graphics).
 
-Each figure function reads ONLY committed analysis/ records or committed
-run artifacts and writes a PNG under docs/paper/figures/. Where a raw
+Each figure function reads ONLY committed analysis/ records and writes a
+PNG under docs/paper/figures/, so a clean clone regenerates every figure
+(RPR-8; issue #390). Episode streams a figure needs are promoted from the
+gitignored runs/ tree to analysis/<area>/records/<run-id>/ together with
+the run manifest that names their git_sha and env_hash. Where a raw
 record was purged and the durable record is a findings table, the values
 are transcribed in ONE place here with the source cited — the caption
 in the paper repeats the citation. Deterministic output: fixed style,
@@ -108,11 +111,12 @@ def fig_t2_arc() -> tuple[str, list[str]]:
     sources = ["analysis/t2/t2_curve_findings.md", "analysis/t2_breakthrough/"]
     stage_names = ["expert\n(0.08)", "breakthrough\n(0.375 holdout)", "registered stack\n(0.5 n=8)"]
     stage_vals = [0.08, 0.375, 0.5]
+    records = REPO / "analysis" / "t2" / "records"
     runs = {
-        "registration": REPO / "runs" / "t2-stack-registration",
-        "post-#314": REPO / "runs" / "t2-diverge-remeasure",
-        "post-#325": REPO / "runs" / "t2-flipfilter-remeasure",
-        "post-#328": REPO / "runs" / "t2-scope-v2",
+        "registration": records / "t2-stack-registration",
+        "post-#314": records / "t2-diverge-remeasure",
+        "post-#325": records / "t2-flipfilter-remeasure",
+        "post-#328": records / "t2-scope-v2",
     }
     classes = ["success", "collision", "never_grasped", "dropped"]
     colors = {"success": C_A, "collision": C_B, "never_grasped": "#937860", "dropped": C_C}
@@ -191,7 +195,7 @@ def fig_m1_mix() -> tuple[str, list[str]]:
     """M1 live vs lockstep failure mix (same adapter, same seeds)."""
     live_src = "analysis/m1/m1_zeroshot_findings.md"  # live mix per findings
     live = {"never_grasped": 5, "wall_clamp": 3, "collision": 0, "dropped": 0}
-    lock_src = REPO / "runs" / "m1-lockstep-n8" / "episodes.jsonl"
+    lock_src = REPO / "analysis" / "m1" / "records" / "m1-lockstep-n8" / "episodes.jsonl"
     eps = [json.loads(x) for x in lock_src.read_text().splitlines() if x.strip()]
     lock = {"never_grasped": 0, "wall_clamp": 0, "collision": 0, "dropped": 0}
     for e in eps:

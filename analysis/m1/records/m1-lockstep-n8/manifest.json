@@ -1,0 +1,60 @@
+{
+ "run_id": "m1-lockstep-n8",
+ "git_sha": "b13765e55a9d8be60e5462e9b65188a7244893ca",
+ "env_hash": "fd3799643d7fd9f2363319eff24e72973ef63f7af4983f1e0769c86f6d7bb014",
+ "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+ "graph": "graphs/eval_vla_smolvla_so101_lockstep.yaml",
+ "graph_hash": "f42a41fc43e0e40e98652a0d48e80d3831284f54d016279159cb7ed5a6b16f20",
+ "graph_snapshot": "runs/m1-lockstep-n8/authored-graph.yaml",
+ "exec_graph_hashes": [
+  "2bcb2ae55e3b06b4d5c2ccedf7a2f4a15cb647f9cc5abc966761cd1c1dfe8eee"
+ ],
+ "tier": "T0",
+ "perception": "L1",
+ "embodiment": "so101",
+ "sim_extra": "sim",
+ "sim_backend": "metal",
+ "sim_device": "mps",
+ "seeds": [
+  30,
+  31,
+  32,
+  33,
+  34,
+  35,
+  36,
+  37
+ ],
+ "reset": "teleport",
+ "verifier": "oracle",
+ "idea": null,
+ "no_idea_gate": true,
+ "env_baseline": "local",
+ "env_baseline_oid": null,
+ "env_fingerprint": "a0bc566c576474ed9e9f5d7718de488fe552dd7984067d969e0bd19053b0eccf",
+ "env_attested": false,
+ "dist_problems": [
+  "environment out of sync with the locked selection (uv sync --locked --check:  - torchcodec==0.16.0\n - torchvision==0.28.0\n - urllib3==2.7.0\n - wandb==0.28.2\n - werkzeug==3.1.8\n - xxhash==4.0.0\n - yarl==1.24.5\nThe environment is outdated; run `uv sync` to update the environment)"
+ ],
+ "post_run_audit": null,
+ "budget_reservation": null,
+ "tokens_log": null,
+ "wall_clamped": [],
+ "relaunches": 0,
+ "guard_divergence": {
+  "commands": 22911,
+  "clamped_commands": 30462,
+  "violation_records": 30462,
+  "divergence_rate": 1.32958,
+  "labels_coincide": false,
+  "by_reason": {
+   "velocity": 24192,
+   "position": 6270
+  },
+  "max_abs_delta": 2.74121,
+  "mean_abs_delta": 0.510962,
+  "records_without_delta": 0,
+  "skipped_rows": 0,
+  "run_dir": "/Users/yonghe/src/aisle-runner/runs/m1-lockstep-n8"
+ }
+}
