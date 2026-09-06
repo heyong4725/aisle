@@ -89,3 +89,9 @@ added to the scorer. Thresholds, seed lineage, and pending gates are preserved;
 the previous declarations and audit records remain historical.
 The v8 artifact set also binds the perception CLI and model lock; its report
 requires the digest of the verified identity-model lock entry.
+
+CSE v2 supersedes v1 after declared deliverable edits were separated from
+treatment drift. It binds preflight and postflight code, retains the original
+protocol and seed commitment, and keeps all review, parity, task-band, and
+confinement gates pending. Seed verification is also pending; this is not
+a study freeze or authorization to collect results.

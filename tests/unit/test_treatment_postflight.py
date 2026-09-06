@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import shutil
 import subprocess
@@ -238,9 +239,17 @@ def test_postflight_verifier_detects_retained_record_drift(tmp_path: Path):
         verify_postflight_record({"immutable_id": "sha256:bad", "value": float("nan")})
 
 
-def test_postflight_cli_creates_then_verifies_machine_readable_evidence(tmp_path: Path):
-    """TRT-9: the controller exposes reproducible create and verify commands."""
+@pytest.mark.parametrize("with_edit", [False, True])
+def test_postflight_cli_creates_then_verifies_machine_readable_evidence(tmp_path: Path, with_edit):
+    """TRT-9/MON-13: CLI create/verify retains authorized edits and immutable evidence."""
     preflight, candidate, visible, access_log = _inputs(tmp_path)
+    if with_edit:
+        editable = next(
+            path for path in candidate["repository"]["visible_allowlist"] if path.endswith(".py")
+        )
+        candidate["repository"]["editable_allowlist"] = [editable]
+        preflight = create_treatment_manifest(candidate, visible)
+        (visible / editable).write_text("print('CLI agent revision')\n")
     preflight_path = tmp_path / "preflight.json"
     candidate_path = tmp_path / "candidate.json"
     output = tmp_path / "postflight.json"
@@ -293,3 +302,83 @@ def test_postflight_cli_creates_then_verifies_machine_readable_evidence(tmp_path
         "immutable_id": summary["immutable_id"],
         "ok": True,
     }
+
+
+def test_declared_deliverable_edit_is_retained_without_treatment_exclusion(tmp_path):
+    """MON-13/TRT-9: an authorized edit is evidence, not frozen-identity drift."""
+    _, candidate, visible, access_log = _inputs(tmp_path)
+    editable = next(
+        path for path in candidate["repository"]["visible_allowlist"] if path.endswith(".py")
+    )
+    candidate["repository"]["editable_allowlist"] = [editable]
+    preflight = create_treatment_manifest(candidate, visible)
+    before = next(
+        row["sha256"] for row in preflight["repository"]["visible_files"] if row["path"] == editable
+    )
+    (visible / editable).write_text("print('agent revision')\n")
+    result = create_postflight_record(preflight, candidate, visible, access_log)
+    assert result["classification"] == "synthetic_pass"
+    assert result["deliverable_changes"] == [
+        {
+            "path": editable,
+            "before_sha256": before,
+            "after_sha256": hashlib.sha256((visible / editable).read_bytes()).hexdigest(),
+        }
+    ]
+    assert result["eligible_for_estimate"] is False
+    assert verify_postflight_record(result) == result
+
+
+@pytest.mark.parametrize(
+    "defect", ["helper", "empty_helper", "trusted_edit", "widen_allowlist", "delete", "symlink"]
+)
+def test_edit_permission_cannot_hide_undeclared_or_trusted_changes(tmp_path, defect):
+    """MON-13: only the original declared file content may change during a session."""
+    _, candidate, visible, access_log = _inputs(tmp_path)
+    editable = next(
+        path for path in candidate["repository"]["visible_allowlist"] if path.endswith(".py")
+    )
+    candidate["repository"]["editable_allowlist"] = [editable]
+    preflight = create_treatment_manifest(candidate, visible)
+    if defect == "helper":
+        (visible / "helper.py").write_text("pass\n")
+    elif defect == "empty_helper":
+        (visible / "helper").mkdir()
+    elif defect == "trusted_edit":
+        (visible / "AGENTS.md").write_text("altered contract\n")
+    elif defect == "widen_allowlist":
+        candidate["repository"]["editable_allowlist"] = sorted(["AGENTS.md", editable])
+        (visible / "AGENTS.md").write_text("altered contract\n")
+    else:
+        (visible / editable).unlink()
+        if defect == "symlink":
+            (visible / editable).symlink_to(visible / "AGENTS.md")
+    result = create_postflight_record(preflight, candidate, visible, access_log)
+    assert result["classification"] == "infrastructure_exclusion"
+
+
+@pytest.mark.parametrize("defect", ["missing", "malformed_hash", "repository"])
+def test_malformed_edit_baseline_is_excluded_without_losing_json_output(tmp_path, defect):
+    """MON-13: a content-addressed but structurally invalid edit baseline cannot pass."""
+    _, candidate, visible, access_log = _inputs(tmp_path)
+    editable = next(
+        path for path in candidate["repository"]["visible_allowlist"] if path.endswith(".py")
+    )
+    candidate["repository"]["editable_allowlist"] = [editable]
+    preflight = create_treatment_manifest(candidate, visible)
+    if defect == "repository":
+        preflight["repository"] = None
+    elif defect == "missing":
+        preflight["repository"].pop("visible_files")
+    else:
+        next(row for row in preflight["repository"]["visible_files"] if row["path"] == editable)[
+            "sha256"
+        ] = "invalid"
+    preflight.pop("immutable_id")
+    raw = json.dumps(
+        preflight, allow_nan=False, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode()
+    preflight["immutable_id"] = "sha256:" + hashlib.sha256(raw).hexdigest()
+    (visible / editable).write_text("print('changed')\n")
+    result = create_postflight_record(preflight, candidate, visible, access_log)
+    assert result["classification"] == "infrastructure_exclusion"

@@ -24,3 +24,12 @@ Not built here: the session-level evidence envelope and preflight tuple
 (MON-8, MON-12, MON-13 — depend on #345/#353), OS-level confinement
 (MON-6, #353), and the protocol freeze (MON-15 — after CON-14 approval of
 SPEC 440). ADR-61 records the interpretation choices.
+
+The shared SPEC 420 preflight/postflight now supports an explicit
+`repository.editable_allowlist`. It records permitted content edits separately
+from immutable treatment drift and rejects undeclared files or directories in
+that sealed view. Runtime caches and controller records must be outside the
+visible root. See [the session-edit decision](../decisions/ADR-declared-session-edits.md).
+This supplies the edit-accounting prerequisite; the complete MON-8 arm tuple,
+MON-12 event/snapshot envelope, role-specific grants, and external enforcement
+are still required before a monolithic agent session can be admitted.

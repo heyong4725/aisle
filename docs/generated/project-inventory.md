@@ -46,7 +46,7 @@ stayed outside it).
 | Graphs | 24 |
 | Capability manifests | 42 |
 | CLI command entries | 39 |
-| ADR files | 76 |
+| ADR files | 77 |
 
 ## Graphs
 
@@ -269,6 +269,7 @@ inference.
 | [docs/decisions/ADR-a4-protocol.md](../decisions/ADR-a4-protocol.md) | ADR-a4-protocol — A4 agent comparison: Claude Code vs Codex on T1 | ACCEPTED (owner-directed launch 2026-08-14: "run A4 when A3 |
 | [docs/decisions/ADR-a5-protocol.md](../decisions/ADR-a5-protocol.md) | ADR-a5-protocol — A5 fleet scaling: 1/4/8 concurrent agents on T1 | ACCEPTED (owner-directed launch 2026-08-14: "run A5 fleet |
 | [docs/decisions/ADR-contract-acceptance-window.md](../decisions/ADR-contract-acceptance-window.md) | ADR-contract-acceptance-window — Nominal-load contract capture | Accepted (issue #497). |
+| [docs/decisions/ADR-declared-session-edits.md](../decisions/ADR-declared-session-edits.md) | ADR-declared-session-edits — Declared edits preserve treatment identity | PROPOSED — engineering interpretation; no protocol or collection approval. |
 | [docs/decisions/ADR-h1-protocol.md](../decisions/ADR-h1-protocol.md) | ADR-h1-protocol — H1 composition-experiment protocol (design doc §8.2.4) | accepted (CON-15: §8.2.4 defines what to record but not the |
 | [docs/decisions/ADR-h2-campaign-protocol.md](../decisions/ADR-h2-campaign-protocol.md) | ADR-h2-campaign-protocol — single-scenario research campaign runner (design doc §8.3 item 6) | accepted (CON-15: §8.3 names the campaign but not the mechanics; |
 | [docs/decisions/ADR-h3-campaign-protocol.md](../decisions/ADR-h3-campaign-protocol.md) | ADR-h3-campaign-protocol — H3 accumulation campaign, S1→S2→S3 (design doc §11.5, §8.4) | accepted 2026-07-27 (decisions D1–D6 resolved by human; D1 |

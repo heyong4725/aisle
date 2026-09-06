@@ -1,5 +1,5 @@
 {
-  "immutable_id": "sha256:103ea4ea0fc7d3fd32d641251fb837ca6d060ca2891f545b2ff44964256e81b6",
+  "immutable_id": "sha256:01ec26398e07d42da49a0e604191d663ec9f91be7c0fa33ecaf0bac512bdb4af",
   "rows": [
     {
       "analysis": "the manipulated factor (SPEC 500 primary contrast)",
@@ -33,7 +33,7 @@
       "classification": "intentionally-different",
       "id": "mon1-04",
       "justification": "each arm documents its own representation; task, goals, budgets and evaluator text are shared",
-      "monolithic": "docs/monolithic/primitive-api.md#sha256:a76f8a1db3b6168ab786a01888dfd2aee6402ce908cfa5fd803cfee948750d46",
+      "monolithic": "docs/monolithic/primitive-api.md#sha256:9c6beaf111b63793dd94efbdd8ace6c9c7651d7fbea3b512e909ee9296701dbc",
       "surface": "documentation given to the agent",
       "typed": "harness/CLAUDE.research.md#sha256:4294608b814889307577e6ade7ed4f0dde5dba098f91a69ca441d070590a3daf"
     },
