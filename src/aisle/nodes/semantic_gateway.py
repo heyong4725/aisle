@@ -18,8 +18,9 @@ Identity adapters (`AISLE_SHIELD_ARM`):
 - `oracle_sim_shield`: the ground-truth `poses` topic of a rung-L0 graph —
   the ceiling arm; which box is at the tool centre point is read from the
   simulator. This is NOT a deployable shield (SEM-14).
-- `sensor_shield`: reserved for the rendered-perception adapter; refuses
-  (no permit) until it exists, so a graph that wires it fails closed.
+- `sensor_shield`: OWLv2 on the overhead RGB frame (the VER-9 identity
+  adapter), the detection nearest the tool centre point's projected pixel;
+  refuses when no detection sits there or no frame/calibration exists.
 - `no_shield`: every proposal is forwarded; the authorizer still logs, so
   the same evidence exists for the control arm.
 
@@ -112,16 +113,126 @@ class OracleIdentity:
         }, track
 
 
+SENSOR_SOURCE = "owlv2_overhead"
+SENSOR_MIN_INTERVAL_S = 0.4  # sim seconds between detections while a stage is active
+SENSOR_PIXEL_RADIUS = 60.0  # a detection whose box centre is within this of the TCP pixel
+
+
+class SensorIdentity:
+    """The deployable-shaped adapter: OWLv2 (VER-9 identity adapter) on the
+    latest overhead RGB frame, the box nearest the tool centre point's
+    projected pixel, scores normalized over the detections at that spot.
+    Detection is CPU-bound (seconds per frame) so it runs only when an
+    authorization-bearing proposal needs it and at most every
+    SENSOR_MIN_INTERVAL_S of sim time; the assertion's capture_s is the
+    frame's stamp, so the authorizer's max_age_s still applies."""
+
+    def __init__(self, med_names: list[str], detector=None, projector=None):
+        self.med_names = med_names
+        self._detector = detector
+        self._projector = projector
+        self.calibration: dict | None = None
+        self.rgb: np.ndarray | None = None
+        self.stamp_s: float = -1.0
+        self.n = 0
+        self.source_hash = hashlib.sha256(SENSOR_SOURCE.encode()).hexdigest()
+        self._cache: tuple[float, list[dict]] | None = None  # (stamp_s, detections)
+        self._last_detect_s: float = -1e9
+        self.detections_run = 0
+
+    def on_calibration(self, calibration: dict) -> None:
+        self.calibration = calibration
+
+    def on_rgb(self, rgb: np.ndarray, sim_time_s: float) -> None:
+        self.rgb, self.stamp_s = rgb, sim_time_s
+
+    def _detect(self):
+        if self._detector is None:
+            from aisle.verifier.models import detect_meds, load_pinned
+
+            pair = load_pinned("identity")
+            self._detector = lambda rgb: detect_meds(rgb, list(self.med_names), model_pair=pair)
+        return self._detector
+
+    def _project(self, tcp: np.ndarray) -> np.ndarray:
+        if self._projector is not None:
+            return np.asarray(self._projector(tcp), dtype=np.float64)
+        from aisle.verifier.stages import project_to_pixels
+
+        return np.asarray(
+            project_to_pixels(np.asarray([tcp], dtype=np.float64), self.calibration)[0]
+        )
+
+    def detections(self, now_s: float) -> list[dict] | None:
+        """Cached detections for the latest frame; a new detection only when
+        the frame is newer than the cache and the interval elapsed."""
+        if self.rgb is None or self.calibration is None:
+            return None
+        if self._cache is not None and self._cache[0] == self.stamp_s:
+            return self._cache[1]
+        if now_s - self._last_detect_s < SENSOR_MIN_INTERVAL_S - 1e-9 and self._cache is not None:
+            return self._cache[1]
+        found = list(self._detect()(self.rgb))
+        self.detections_run += 1
+        self._last_detect_s = now_s
+        self._cache = (self.stamp_s, found)
+        return found
+
+    def assertion(self, tcp: np.ndarray, radius: float, now_s: float) -> tuple[dict, str | None]:
+        self.n += 1
+        found = self.detections(now_s)
+        refused, classes, track = True, {}, None
+        capture_s = self._cache[0] if self._cache is not None else -1.0
+        if found is not None and np.all(np.isfinite(tcp)):
+            uv = self._project(tcp)
+            near = []
+            for d in found:
+                x0, y0, x1, y1 = (float(v) for v in d["box"])
+                cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+                if float(np.hypot(cx - uv[0], cy - uv[1])) <= SENSOR_PIXEL_RADIUS:
+                    near.append(d)
+            total = sum(float(d["score"]) for d in near)
+            if near and total > 0:
+                for d in near:
+                    classes[d["label"]] = classes.get(d["label"], 0.0) + float(d["score"]) / total
+                track = max(classes, key=classes.get)
+                refused = False
+        return {
+            "assertion_id": f"sensor-{self.n:06d}",
+            "source_hash": self.source_hash,
+            "observation_id": f"rgb_overhead@{capture_s:.3f}",
+            "track_id": track or "none",
+            "carrier": "gripper" if not refused else None,
+            "classes": classes,
+            "refused": refused,
+            "capture_s": capture_s,
+            "receipt_s": now_s,
+            "in_envelope": self.rgb is not None and self.calibration is not None,
+            "evidence_kind": "rendered_perception",
+        }, track
+
+
 class Gateway:
     """Transport-free core, unit-testable without dora."""
 
-    def __init__(self, arm: str, key: bytes, med_names: list[str], tray: dict, grasp_cmd: float):
+    def __init__(
+        self,
+        arm: str,
+        key: bytes,
+        med_names: list[str],
+        tray: dict,
+        grasp_cmd: float,
+        sensor: SensorIdentity | None = None,
+    ):
         if arm not in ARMS:
             raise ValueError(f"unknown shield arm {arm!r}; expected one of {ARMS}")
         self.arm = arm
         self.tray = tray
         self.grasp_cmd = grasp_cmd
-        self.identity = OracleIdentity(med_names)
+        if arm == "sensor_shield":
+            self.identity = sensor if sensor is not None else SensorIdentity(med_names)
+        else:
+            self.identity = OracleIdentity(med_names)
         self.authorizer = SemanticAuthorizer(key, {self.identity.source_hash})
         self.permits = PermitGateway(key, enforce=arm != "no_shield")
         self.assignment: dict | None = None
@@ -185,8 +296,6 @@ class Gateway:
             }
         radius = CANDIDATE_RADIUS_M if stage == "pre_grasp" else CARRY_RADIUS_M
         assertion, track = self.identity.assertion(tcp, radius, now_s)
-        if self.arm == "sensor_shield":
-            assertion = {**assertion, "refused": True, "classes": {}}  # adapter absent
         # the authorizer keeps every assertion; at the joint_state cadence
         # that list would grow without bound and its scan would stall the
         # turn (watchdog in the first live run) — keep the evidence window
@@ -276,8 +385,15 @@ def main() -> None:  # pragma: no cover — dora runtime
         if not env_accepts(metadata, env_pin):
             continue
         now_s = int(metadata.get("sim_time_ns", 0)) / 1e9
-        if topic == "poses":
+        if topic == "poses" and isinstance(gateway.identity, OracleIdentity):
             gateway.identity.on_poses(event["value"].to_numpy(zero_copy_only=False), now_s)
+        elif topic == "bridge_info" and isinstance(gateway.identity, SensorIdentity):
+            gateway.identity.on_calibration(json.loads(event["value"][0].as_py())["calibration"])
+        elif topic == "rgb_overhead" and isinstance(gateway.identity, SensorIdentity):
+            h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
+            if h > 0 and w > 0:
+                frame = np.asarray(event["value"].to_numpy(zero_copy_only=False), dtype=np.uint8)
+                gateway.identity.on_rgb(frame.reshape(h, w, 3), now_s)
         elif topic == "joint_state":
             qpos = np.asarray(event["value"].to_numpy(zero_copy_only=False), dtype=np.float32)
         elif topic == "episode_goal":

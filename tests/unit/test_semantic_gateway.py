@@ -144,14 +144,14 @@ def test_no_shield_arm_forwards_but_still_logs():
     assert g.events[-1]["reason"] == "wrong_target" and g.gripper_closed
 
 
-def test_sensor_arm_fails_closed_until_the_adapter_exists():
-    """SEM-14: the sensor arm has no rendered-perception adapter yet; it
-    refuses every authorization-bearing proposal instead of passing."""
+def test_sensor_arm_refuses_without_frame_or_calibration():
+    """SEM-6 / SEM-14: the sensor arm with no overhead frame or calibration
+    is out of envelope and refuses rather than passing."""
     g = _gateway("sensor_shield")
     tcp = np.array([0.4, 0.1, 0.3])
-    g.identity.on_poses(_poses(ibuprofen=[0.4, 0.1, 0.3]), sim_time_s=1.9)
     close = g.propose("gripper_cmd", np.array([1.0]), tcp, 2.0)
-    assert close["forward"] is False and close["reason"] == "missing_or_stale_identity"
+    assert close["forward"] is False
+    assert close["reason"] in ("out_of_envelope", "missing_or_stale_identity")
 
 
 def test_reset_and_goal_change_revoke():
