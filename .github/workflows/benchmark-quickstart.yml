@@ -1,0 +1,65 @@
+name: benchmark-quickstart
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/benchmark-quickstart.yml
+permissions:
+  contents: read
+jobs:
+  linux:
+    name: benchmark/linux-${{ matrix.source }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [clone, archive]
+    env:
+      UV_CACHE_DIR: ${{ runner.temp }}/quickstart-uv-cache
+      UV_TOOL_DIR: ${{ runner.temp }}/quickstart-uv-tools
+      UV_TOOL_BIN_DIR: ${{ runner.temp }}/quickstart-bin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: source
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+          python-version: '3.13'
+      - name: Install the pinned runtime CLI
+        run: |
+          uv tool install dora-rs-cli==1.0.1
+          echo "$UV_TOOL_BIN_DIR" >> "$GITHUB_PATH"
+      - name: Prepare committed source archive
+        if: matrix.source == 'archive'
+        run: |
+          uv run --no-project python source/tools/source_archive.py --root source --output "$RUNNER_TEMP/source.tar" > archive-record.json
+          mkdir archive
+          uv run --no-project python -m tarfile -e "$RUNNER_TEMP/source.tar" archive
+      # BMK-7/BMK-8: these are separate fresh runners, with no restored uv
+      # cache, pre-installed project environment, or pre-existing runs/.
+      - name: Run the public quickstart
+        env:
+          SOURCE_KIND: ${{ matrix.source }}
+        run: |
+          if [ "$SOURCE_KIND" = archive ]; then
+            cd archive
+          else
+            cd source
+          fi
+          uv run python tools/quickstart.py > "$GITHUB_WORKSPACE/quickstart.json" 2> "$GITHUB_WORKSPACE/quickstart.stderr"
+      - name: Retain observed evidence, including failed attempts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quickstart-linux-${{ matrix.source }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            quickstart.json
+            quickstart.stderr
+            archive-record.json
+            source/runs/
+            archive/runs/
+          if-no-files-found: warn
+          retention-days: 30
