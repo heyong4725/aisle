@@ -36,7 +36,9 @@ controller teardown, dynamic-node swap, forged prior-validator claim.
 - OS-level process, socket, and filesystem confinement of the participant
   (residual path RES-1, an in-scope blocker owned by #353).
 - Claude and Codex campaign paths under the production confinement
-  profile (THR-11): not run.
+  profile (THR-11): not run. `harness threat parity` records both paths
+  as `not_executed` with every authority dimension unresolved
+  (`agent-path-parity.json`); the matched run waits on the #353 adapter.
 - Device credentials, firmware watchdogs, physical stop latency (RES-2,
   hardware-pending).
 - The out-of-scope registry (kernel or hypervisor compromise, malicious

@@ -45,7 +45,7 @@ stayed outside it).
 |---|---:|
 | Graphs | 19 |
 | Capability manifests | 40 |
-| CLI command entries | 37 |
+| CLI command entries | 39 |
 | ADR files | 74 |
 
 ## Graphs
@@ -148,6 +148,7 @@ stayed outside it).
 | `harness exposure analyze` | `--ledger`, `--confidence`, `--output` |
 | `harness exposure corpus` | `--embodiment`, `--seed`, `--per-family`, `--output` |
 | `harness exposure ledger` | `--run`, `--campaign-id`, `--source-map`, `--output` |
+| `harness exposure wording` | `--output`, `--root` |
 | `harness fault assign` | `--bank`, `--seed-file`, `--block`, `--session`, `--cells`, `--output` |
 | `harness fault calibrate` | `--bank`, `--clean-run`, `--clean-commit`, `--graph`, `--seeds`, `--tier`, `--embodiment`, `--perception`, `--staging`, `--raw-store`, `--campaign-id`, `--only`, `--output`, `--root` |
 | `harness fault leakage` | `--report`, `--probe`, `--output` |
@@ -175,6 +176,7 @@ stayed outside it).
 | `harness stats power` | `--protocol`, `--output` |
 | `harness stats validate` | `--protocol`, `--purpose`, `--output` |
 | `harness swap` | `--graph`, `--dataflow`, `--replace`, `--with`, `--embodiment`, `--root` |
+| `harness threat parity` | `--paths`, `--output` |
 | `harness threat run` | `--agent-path`, `--output` |
 | `harness traces query` | `--run`, `--topic`, `--t0`, `--t1`, `--episode`, `--node`, `--format`, `--out`, `--summarize`, `--root` |
 | `harness validate` | `<graph>`, `--root`, `--embodiment`, `--allow-unproven`, `--write-turn-plan` |

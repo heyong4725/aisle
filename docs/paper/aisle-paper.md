@@ -778,7 +778,7 @@ processes, with policy comparison available as a special case (M1).
 code that passes tests. Our artifacts control a physical process with
 a safety envelope where one failure class (`wrong_object`) cannot be
 retried away — the retry-until-green strategy that solves coding
-benchmarks is unsound here by construction.
+benchmarks is unsound here: a wrong-object delivery cannot be undone.
 
 **Simulators and learned world models.** Genesis [4], MuJoCo [13], and
 Isaac [14] provide physics; AISLE consumes a simulator rather than
