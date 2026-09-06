@@ -394,3 +394,27 @@ def test_quickstart_retains_memory_measurement_in_final_report(
     assert (
         report_stage["sha256"] == "sha256:" + hashlib.sha256(report_path.read_bytes()).hexdigest()
     )
+
+
+def test_version_identity_changes_when_the_executed_submission_validator_changes(
+    tmp_path, monkeypatch
+):
+    """BMK-1/BMK-14: changing the validator called by quickstart must change benchmark identity."""
+    import inspect
+    import shutil
+    from pathlib import Path
+
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "tools"))
+    import benchmark_release
+
+    actual_source = Path(inspect.getsourcefile(validate_submission)).resolve()
+    relative = actual_source.relative_to(REPO_ROOT.resolve())
+    copied = tmp_path / relative
+    copied.parent.mkdir(parents=True)
+    shutil.copyfile(actual_source, copied)
+    before = benchmark_release.version_manifest(tmp_path)
+    copied.write_bytes(copied.read_bytes() + b"\n# mutation: validator revision\n")
+    after = benchmark_release.version_manifest(tmp_path)
+    assert before["manifest_sha256"] != after["manifest_sha256"]
+    copied.unlink()
+    assert relative.as_posix() in benchmark_release.version_manifest(tmp_path)["missing_surfaces"]

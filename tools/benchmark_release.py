@@ -47,7 +47,7 @@ SURFACES = {
     "budgets": Path("harness/budget.toml"),
     "hidden_bank_commitment": Path("analysis/fault-bank/commitment.json"),
     "analyzer": Path("src/aisle/harness/benchmark_statistics.py"),
-    "submission_validator": Path("src/aisle/harness/reproduction.py"),
+    "submission_validator": Path("src/aisle/harness/benchmark_submission.py"),
     "quickstart": Path("tools/quickstart.py"),
     "source_archive": Path("tools/source_archive.py"),
     "process_resources": Path("tools/process_resources.py"),
@@ -194,7 +194,7 @@ def release_audit(root: Path, manifest: dict) -> dict:
         ),
         "BMK-14": (
             "passed",
-            ["src/aisle/harness/reproduction.py", "tests/unit/test_benchmark_release.py"],
+            ["src/aisle/harness/benchmark_submission.py", "tests/unit/test_benchmark_release.py"],
             "deterministic fail-closed validation of the schema; leaked-marker and "
             "budget checks are unit-level",
         ),

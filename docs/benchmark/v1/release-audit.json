@@ -117,7 +117,7 @@
     {
       "criterion": "BMK-14",
       "evidence": [
-        "src/aisle/harness/reproduction.py",
+        "src/aisle/harness/benchmark_submission.py",
         "tests/unit/test_benchmark_release.py"
       ],
       "note": "deterministic fail-closed validation of the schema; leaked-marker and budget checks are unit-level",
@@ -184,7 +184,7 @@
       "status": "passed"
     }
   ],
-  "manifest_sha256": "201790f2208206658e24f0f95c4427c4b5f0f83aeead01342f2304d168cbbc99",
+  "manifest_sha256": "df5968777fed364b2665f0d8dc0fafca4e23480f3c383d2f355a3f50967cd70a",
   "release_ready": false,
   "schema_version": "aisle.benchmark.release-audit.v1",
   "wording": "#357 stays open until every applicable criterion has reviewable evidence; internal dry runs never pass the external criteria"
