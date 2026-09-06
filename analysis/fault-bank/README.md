@@ -95,3 +95,32 @@ confirmatory estimate (FLT-9, FLT-10). `calibration-summary.json` carries
 opaque ids, families, paired effects, and decisions; targets, operators,
 and severity values stay private. Raw runs are retained under
 `~/aisle-private/raw/fault-calibration/`.
+
+## Calibration round v2 (campaign flt-cal-v2, excluded_pilot)
+
+Bank v2 (`aisle-fault-bank-v2-draft`, injector v2, 14 instances: 2
+perception, 2 decision, 2 motion, 1 schema, 1 clocking, 1 runtime, 2
+coupled, 3 shams) ran 18 rungs on `graphs/expert_t1.yaml` against the
+fresh clean run `flt-clean-v2` (seeds 0..7, 8/8; `records/flt-clean-v2/`),
+each in a detached worktree at the clean commit. Same frozen rule as v1.
+
+| family | rungs | outcome |
+|---|---|---|
+| perception (2 instances, 3 rungs) | 0/8, 0/8, 8/8 | persistent bias selected at its least severe rung; the intermittent instance is recovered by in-episode retries and rejected |
+| decision (2 instances, 3 rungs) | 1/8, 1/8, 0/8 | both selected |
+| motion (2 instances, 4 rungs) | 8/8, 8/8, 5/8, 0/8 | loose IK tolerance rejected at both severities; low transfer selected at its second rung only |
+| schema_metadata | 0/8 (executor crash, wall clamps) | selected; crash-class, labelled as such |
+| clocking | 0/8 (no pose ever pairs) | selected |
+| runtime | 0/8 (crash at frame 400, wall clamps) | selected; crash-class |
+| coupled (2) | 0/8, 1/8 | both selected |
+| sham (3) | 8/8, 8/8, 8/8 | parity with clean |
+
+Coverage after calibration: every family has at least one selected
+instance (`calibration-summary-v2.json`; nine of eleven real instances).
+The FLT-8 leakage probe over the 18 materialization receipts (3 sham, 15
+fault) does not beat chance: balanced accuracy 0.37, permutation p 0.80
+(`leakage-v2.json`). `commitment-v2.json` binds the v2 manifest hash,
+clean commit and counts. The bank is still not sealed: FLT-9/FLT-10
+sealing waits on CON-14 approval of SPEC 450 and the FLT-4 denial proof
+(issue #353). Registration: `analysis/freeze/flt-bank-calibration-v6/`.
+Raw runs: `~/aisle-private/raw/fault-calibration-v2/`.

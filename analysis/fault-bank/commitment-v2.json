@@ -1,0 +1,39 @@
+{
+  "bank_id": "aisle-fault-bank-v2-draft",
+  "bank_manifest_hash": "sha256:9571c6be9be2a052f30712e5f364c76bb50400cc17f9c9e3361ca672ffe7c4e6",
+  "calibration_summary": "analysis/fault-bank/calibration-summary-v2.json",
+  "clean_baseline_hash": "sha256:5246bc3014924919d46eb48d8f3476b181ac5be5981bed0434994e97d3cfab03",
+  "clean_commit": "265dcec3f485096b39b43a9e7150b7fde73f6be9",
+  "counts": {
+    "coupled": 2,
+    "families": {
+      "clocking": 1,
+      "decision": 2,
+      "motion": 2,
+      "perception": 2,
+      "runtime": 1,
+      "schema_metadata": 1
+    },
+    "instances": 14,
+    "intermittent": 2,
+    "novel_repair": 3,
+    "selected_after_calibration": 9,
+    "sham": 3
+  },
+  "injector_version": "aisle.fault-injector.v2",
+  "leakage_report": "analysis/fault-bank/leakage-v2.json",
+  "lifecycle_state": "calibration",
+  "note": "calibrated: every family covered, shams at parity, leakage probe not distinguishable; not sealed pending CON-14 approval of SPEC 450 and the FLT-4 denial proof (#353)",
+  "schema_version": "aisle.fault-bank.commitment.v1",
+  "storage": "~/aisle-private/fault-bank/v2/ (outside every worktree, git namespace, and tool root; FLT-4)",
+  "withheld": [
+    "instance ids",
+    "targets",
+    "operators",
+    "severities",
+    "activation rules",
+    "calibration outcomes",
+    "assignment seed",
+    "reveal key"
+  ]
+}

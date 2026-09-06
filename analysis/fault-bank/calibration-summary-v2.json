@@ -1,0 +1,473 @@
+{
+  "bank_id": "aisle-fault-bank-v2-draft",
+  "campaign_id": "flt-cal-v2",
+  "campaign_purpose": "excluded_pilot",
+  "clean_run_id": "flt-clean-v2",
+  "coverage_after_calibration": {
+    "clocking": 1,
+    "coupled": 2,
+    "decision": 2,
+    "motion": 1,
+    "perception": 1,
+    "runtime": 1,
+    "schema_metadata": 1
+  },
+  "crash_class_rungs": {
+    "note": "every episode wall-clamped because the fault crashes the executor; scored as failures under the frozen rule, but the degradation is a crash, not a behavioural failure, and is labelled as such",
+    "opaque_ids": [
+      "i-r1",
+      "i-s1"
+    ]
+  },
+  "disposition": "bank v2 meets the frozen degradation rule in every family (perception, decision, motion, schema_metadata, clocking, runtime, coupled) with three shams at parity and the FLT-8 leakage probe not distinguishable (analysis/fault-bank/leakage-v2.json). Sealing (FLT-9/FLT-10) still waits on CON-14 approval of SPEC 450 and the FLT-4 denial proof (issue #353); the lifecycle stays at calibration.",
+  "evidence_kind": "simulation",
+  "private_report_hash": "sha256:49790a6c77572b308e084a5d1fe0c3d7769fa84b9570b0e6ca67210d10b181ed",
+  "rule": {
+    "confidence_level": 0.95,
+    "direction": "fault lower than clean",
+    "minimum_discordant_pairs": 3,
+    "minimum_meaningful_degradation": 0.25,
+    "outcome": "episode_success",
+    "saturation": "a clean baseline with zero successes cannot calibrate anything",
+    "selection": "paired difference point estimate >= minimum, at least the minimum number of discordant pairs, and the exact 95% lower bound on the clean-only share of discordant pairs above 0.5 (paired binomial); sham must not degrade by the same rule",
+    "unit": "seed_pair"
+  },
+  "rungs": [
+    {
+      "clean_successes": 8,
+      "decision": "selected",
+      "discordant_pairs": {
+        "clean_only": 8,
+        "fault_only": 0
+      },
+      "family": "perception",
+      "fault_failure_classes": {
+        "collision": 5,
+        "dropped": 2,
+        "timeout": 1
+      },
+      "fault_successes": 0,
+      "opaque_id": "i-a3",
+      "paired_difference": 1.0,
+      "pairs": 8,
+      "reason": "meets the frozen degradation rule",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "selected",
+      "discordant_pairs": {
+        "clean_only": 8,
+        "fault_only": 0
+      },
+      "family": "perception",
+      "fault_failure_classes": {
+        "never_grasped": 8
+      },
+      "fault_successes": 0,
+      "opaque_id": "i-a3",
+      "paired_difference": 1.0,
+      "pairs": 8,
+      "reason": "meets the frozen degradation rule",
+      "rollout_ok": true,
+      "severity_index": 1,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "perception",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-a4",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "selected",
+      "discordant_pairs": {
+        "clean_only": 7,
+        "fault_only": 0
+      },
+      "family": "decision",
+      "fault_failure_classes": {
+        "dropped": 7,
+        "success": 1
+      },
+      "fault_successes": 1,
+      "opaque_id": "i-d2",
+      "paired_difference": 0.875,
+      "pairs": 8,
+      "reason": "meets the frozen degradation rule",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "selected",
+      "discordant_pairs": {
+        "clean_only": 7,
+        "fault_only": 0
+      },
+      "family": "decision",
+      "fault_failure_classes": {
+        "dropped": 7,
+        "success": 1
+      },
+      "fault_successes": 1,
+      "opaque_id": "i-d2",
+      "paired_difference": 0.875,
+      "pairs": 8,
+      "reason": "meets the frozen degradation rule",
+      "rollout_ok": true,
+      "severity_index": 1,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "selected",
+      "discordant_pairs": {
+        "clean_only": 8,
+        "fault_only": 0
+      },
+      "family": "decision",
+      "fault_failure_classes": {
+        "never_grasped": 8
+      },
+      "fault_successes": 0,
+      "opaque_id": "i-d3",
+      "paired_difference": 1.0,
+      "pairs": 8,
+      "reason": "meets the frozen degradation rule",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "motion",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-m3",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "motion",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-m3",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 1,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "rejected",
+      "discordant_pairs": {
+        "clean_only": 3,
+        "fault_only": 0
+      },
+      "family": "motion",
+      "fault_failure_classes": {
+        "collision": 3,
+        "success": 5
+      },
+      "fault_successes": 5,
+      "opaque_id": "i-m4",
+      "paired_difference": 0.375,
+      "pairs": 8,
+      "reason": "degradation below the minimum or interval overlap",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "selected",
+      "discordant_pairs": {
+        "clean_only": 8,
+        "fault_only": 0
+      },
+      "family": "motion",
+      "fault_failure_classes": {
+        "collision": 6,
+        "dropped": 2
+      },
+      "fault_successes": 0,
+      "opaque_id": "i-m4",
+      "paired_difference": 1.0,
+      "pairs": 8,
+      "reason": "meets the frozen degradation rule",
+      "rollout_ok": true,
+      "severity_index": 1,
+      "sham": false
+    },
+    {
+      "clean_successes": 7,
+      "decision": "selected",
+      "discordant_pairs": {
+        "clean_only": 7,
+        "fault_only": 0
+      },
+      "family": "schema_metadata",
+      "fault_failure_classes": {
+        "wall_clamp": 7
+      },
+      "fault_successes": 0,
+      "opaque_id": "i-s1",
+      "paired_difference": 1.0,
+      "pairs": 7,
+      "reason": "meets the frozen degradation rule",
+      "rollout_ok": false,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "selected",
+      "discordant_pairs": {
+        "clean_only": 8,
+        "fault_only": 0
+      },
+      "family": "clocking",
+      "fault_failure_classes": {
+        "never_grasped": 8
+      },
+      "fault_successes": 0,
+      "opaque_id": "i-c2",
+      "paired_difference": 1.0,
+      "pairs": 8,
+      "reason": "meets the frozen degradation rule",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 7,
+      "decision": "selected",
+      "discordant_pairs": {
+        "clean_only": 7,
+        "fault_only": 0
+      },
+      "family": "runtime",
+      "fault_failure_classes": {
+        "wall_clamp": 7
+      },
+      "fault_successes": 0,
+      "opaque_id": "i-r1",
+      "paired_difference": 1.0,
+      "pairs": 7,
+      "reason": "meets the frozen degradation rule",
+      "rollout_ok": false,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "selected",
+      "discordant_pairs": {
+        "clean_only": 8,
+        "fault_only": 0
+      },
+      "family": "coupled",
+      "fault_failure_classes": {
+        "collision": 5,
+        "dropped": 2,
+        "timeout": 1
+      },
+      "fault_successes": 0,
+      "opaque_id": "i-x3",
+      "paired_difference": 1.0,
+      "pairs": 8,
+      "reason": "meets the frozen degradation rule",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "selected",
+      "discordant_pairs": {
+        "clean_only": 7,
+        "fault_only": 0
+      },
+      "family": "coupled",
+      "fault_failure_classes": {
+        "collision": 3,
+        "dropped": 4,
+        "success": 1
+      },
+      "fault_successes": 1,
+      "opaque_id": "i-x4",
+      "paired_difference": 0.875,
+      "pairs": 8,
+      "reason": "meets the frozen degradation rule",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": false
+    },
+    {
+      "clean_successes": 8,
+      "decision": "parity",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "sham",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-sham2",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "sham indistinguishable from clean",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": true
+    },
+    {
+      "clean_successes": 8,
+      "decision": "parity",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "sham",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-sham3",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "sham indistinguishable from clean",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": true
+    },
+    {
+      "clean_successes": 8,
+      "decision": "parity",
+      "discordant_pairs": {
+        "clean_only": 0,
+        "fault_only": 0
+      },
+      "family": "sham",
+      "fault_failure_classes": {
+        "success": 8
+      },
+      "fault_successes": 8,
+      "opaque_id": "i-sham4",
+      "paired_difference": 0.0,
+      "pairs": 8,
+      "reason": "sham indistinguishable from clean",
+      "rollout_ok": true,
+      "severity_index": 0,
+      "sham": true
+    }
+  ],
+  "schema_version": "aisle.fault-bank.calibration-summary.v1",
+  "sealable": false,
+  "selection": {
+    "i-a3": {
+      "disposition": "selected",
+      "severity_index": 0
+    },
+    "i-a4": {
+      "disposition": "rejected",
+      "severity_index": null
+    },
+    "i-c2": {
+      "disposition": "selected",
+      "severity_index": 0
+    },
+    "i-d2": {
+      "disposition": "selected",
+      "severity_index": 0
+    },
+    "i-d3": {
+      "disposition": "selected",
+      "severity_index": 0
+    },
+    "i-m3": {
+      "disposition": "rejected",
+      "severity_index": null
+    },
+    "i-m4": {
+      "disposition": "selected",
+      "severity_index": 1
+    },
+    "i-r1": {
+      "disposition": "selected",
+      "severity_index": 0
+    },
+    "i-s1": {
+      "disposition": "selected",
+      "severity_index": 0
+    },
+    "i-sham2": {
+      "disposition": "control",
+      "severity_index": null
+    },
+    "i-sham3": {
+      "disposition": "control",
+      "severity_index": null
+    },
+    "i-sham4": {
+      "disposition": "control",
+      "severity_index": null
+    },
+    "i-x3": {
+      "disposition": "selected",
+      "severity_index": 0
+    },
+    "i-x4": {
+      "disposition": "selected",
+      "severity_index": 0
+    }
+  },
+  "withheld": [
+    "targets",
+    "operators",
+    "severity values",
+    "activation rules"
+  ]
+}

@@ -1,0 +1,526 @@
+{
+ "run_id": "flt-clean-v2",
+ "git_sha": "265dcec3f485096b39b43a9e7150b7fde73f6be9",
+ "env_hash": "1d83efdec4b47846e1277bb67c6f4b074c65941df840fa8aeca32d4a5871a17c",
+ "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+ "graph": "graphs/expert_t1.yaml",
+ "graph_hash": "303d08b37c6f0ea3ab221778437029393e0a266094941d2124b54648a3cf48ed",
+ "graph_snapshot": "runs/flt-clean-v2/authored-graph.yaml",
+ "exec_graph_hashes": [
+  "ae1d2f723a6343e7cb6de034fceb6ef1ccbf22e311718d68806e5c4a36c7c10d"
+ ],
+ "tier": "T1",
+ "perception": "L1",
+ "embodiment": "franka",
+ "sim_extra": "sim",
+ "sim_backend": "metal",
+ "sim_device": "mps",
+ "seeds": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7
+ ],
+ "reset": "teleport",
+ "verifier": "oracle",
+ "idea": null,
+ "no_idea_gate": true,
+ "env_baseline": "origin/main",
+ "env_baseline_oid": "265dcec3f485096b39b43a9e7150b7fde73f6be9",
+ "env_fingerprint": "cef769da9398271d2911d55107b4ba0b2c09ec7d2311c6b1852f6a3874017085",
+ "env_attested": false,
+ "dist_problems": [],
+ "post_run_audit": {
+  "ok": false,
+  "verified": {
+   "absl-py": {
+    "files": 31,
+    "mismatched": 0
+   },
+   "aisle": {
+    "files": 10,
+    "mismatched": 0
+   },
+   "annotated-doc": {
+    "files": 9,
+    "mismatched": 0
+   },
+   "annotated-types": {
+    "files": 8,
+    "mismatched": 0
+   },
+   "anyio": {
+    "files": 53,
+    "mismatched": 0
+   },
+   "attrs": {
+    "files": 36,
+    "mismatched": 0
+   },
+   "certifi": {
+    "files": 13,
+    "mismatched": 0
+   },
+   "cffi": {
+    "files": 33,
+    "mismatched": 0
+   },
+   "click": {
+    "files": 23,
+    "mismatched": 0
+   },
+   "coacd": {
+    "files": 9,
+    "mismatched": 0
+   },
+   "colorama": {
+    "files": 18,
+    "mismatched": 0
+   },
+   "contourpy": {
+    "files": 25,
+    "mismatched": 0
+   },
+   "cycler": {
+    "files": 8,
+    "mismatched": 0
+   },
+   "dataclasses-json": {
+    "files": 15,
+    "mismatched": 0
+   },
+   "decorator": {
+    "files": 9,
+    "mismatched": 0
+   },
+   "deprecated": {
+    "files": 10,
+    "mismatched": 0
+   },
+   "dill": {
+    "files": 53,
+    "mismatched": 0
+   },
+   "dora-rs": {
+    "files": 14,
+    "mismatched": 0
+   },
+   "dracopy": {
+    "files": 218,
+    "mismatched": 0
+   },
+   "etils": {
+    "files": 103,
+    "mismatched": 0
+   },
+   "fast-simplification": {
+    "files": 14,
+    "mismatched": 0
+   },
+   "filelock": {
+    "files": 27,
+    "mismatched": 0
+   },
+   "fonttools": {
+    "files": 364,
+    "mismatched": 0
+   },
+   "freetype-py": {
+    "files": 46,
+    "mismatched": 0
+   },
+   "frozendict": {
+    "files": 14,
+    "mismatched": 0
+   },
+   "fsspec": {
+    "files": 60,
+    "mismatched": 0
+   },
+   "genesis-world": {
+    "files": 799,
+    "mismatched": 0
+   },
+   "glfw": {
+    "files": 12,
+    "mismatched": 0
+   },
+   "h11": {
+    "files": 18,
+    "mismatched": 0
+   },
+   "hf-xet": {
+    "files": 8,
+    "mismatched": 0
+   },
+   "httpcore": {
+    "files": 37,
+    "mismatched": 0
+   },
+   "httpx": {
+    "files": 31,
+    "mismatched": 0
+   },
+   "huggingface-hub": {
+    "files": 196,
+    "mismatched": 0
+   },
+   "idna": {
+    "files": 18,
+    "mismatched": 0
+   },
+   "imageio": {
+    "files": 67,
+    "mismatched": 0
+   },
+   "imageio-ffmpeg": {
+    "files": 14,
+    "mismatched": 0
+   },
+   "iniconfig": {
+    "files": 11,
+    "mismatched": 0
+   },
+   "jinja2": {
+    "files": 32,
+    "mismatched": 0
+   },
+   "jsonschema": {
+    "files": 45,
+    "mismatched": 0
+   },
+   "jsonschema-specifications": {
+    "files": 29,
+    "mismatched": 0
+   },
+   "kiwisolver": {
+    "files": 11,
+    "mismatched": 0
+   },
+   "lazy-loader": {
+    "files": 7,
+    "mismatched": 0
+   },
+   "libigl": {
+    "files": 538,
+    "mismatched": 0
+   },
+   "llvmlite": {
+    "files": 46,
+    "mismatched": 0
+   },
+   "markdown-it-py": {
+    "files": 76,
+    "mismatched": 0
+   },
+   "markupsafe": {
+    "files": 12,
+    "mismatched": 0
+   },
+   "marshmallow": {
+    "files": 19,
+    "mismatched": 0
+   },
+   "matplotlib": {
+    "files": 603,
+    "mismatched": 0
+   },
+   "mdurl": {
+    "files": 12,
+    "mismatched": 0
+   },
+   "moviepy": {
+    "files": 84,
+    "mismatched": 0
+   },
+   "mpmath": {
+    "files": 93,
+    "mismatched": 0
+   },
+   "mujoco": {
+    "files": 217,
+    "mismatched": 0
+   },
+   "mypy-extensions": {
+    "files": 6,
+    "mismatched": 0
+   },
+   "networkx": {
+    "files": 602,
+    "mismatched": 0
+   },
+   "numba": {
+    "files": 811,
+    "mismatched": 0
+   },
+   "numpy": {
+    "files": 914,
+    "mismatched": 0
+   },
+   "opencv-python": {
+    "files": 7,
+    "mismatched": 0
+   },
+   "openexr": {
+    "files": 7,
+    "mismatched": 0
+   },
+   "packaging": {
+    "files": 28,
+    "mismatched": 0
+   },
+   "pillow": {
+    "files": 138,
+    "mismatched": 0
+   },
+   "pip": {
+    "files": 442,
+    "mismatched": 9
+   },
+   "plotly": {
+    "files": 15320,
+    "mismatched": 0
+   },
+   "pluggy": {
+    "files": 15,
+    "mismatched": 0
+   },
+   "proglog": {
+    "files": 9,
+    "mismatched": 0
+   },
+   "psutil": {
+    "files": 17,
+    "mismatched": 0
+   },
+   "py-cpuinfo": {
+    "files": 11,
+    "mismatched": 0
+   },
+   "pyarrow": {
+    "files": 754,
+    "mismatched": 0
+   },
+   "pycollada": {
+    "files": 42,
+    "mismatched": 0
+   },
+   "pycparser": {
+    "files": 14,
+    "mismatched": 0
+   },
+   "pydantic": {
+    "files": 112,
+    "mismatched": 0
+   },
+   "pydantic-core": {
+    "files": 11,
+    "mismatched": 0
+   },
+   "pygel3d": {
+    "files": 15,
+    "mismatched": 0
+   },
+   "pyglet": {
+    "files": 235,
+    "mismatched": 0
+   },
+   "pygltflib": {
+    "files": 10,
+    "mismatched": 0
+   },
+   "pygments": {
+    "files": 347,
+    "mismatched": 0
+   },
+   "pymeshlab": {
+    "files": 314,
+    "mismatched": 0
+   },
+   "pyopengl": {
+    "files": 2900,
+    "mismatched": 0
+   },
+   "pyparsing": {
+    "files": 24,
+    "mismatched": 0
+   },
+   "pysplashsurf": {
+    "files": 21,
+    "mismatched": 0
+   },
+   "pytest": {
+    "files": 92,
+    "mismatched": 0
+   },
+   "python-dateutil": {
+    "files": 26,
+    "mismatched": 0
+   },
+   "python-dotenv": {
+    "files": 17,
+    "mismatched": 0
+   },
+   "pyyaml": {
+    "files": 25,
+    "mismatched": 0
+   },
+   "quadrants": {
+    "files": 152,
+    "mismatched": 0
+   },
+   "referencing": {
+    "files": 20,
+    "mismatched": 0
+   },
+   "regex": {
+    "files": 11,
+    "mismatched": 0
+   },
+   "rich": {
+    "files": 106,
+    "mismatched": 0
+   },
+   "rpds-py": {
+    "files": 10,
+    "mismatched": 0
+   },
+   "rtree": {
+    "files": 45,
+    "mismatched": 0
+   },
+   "ruff": {
+    "files": 10,
+    "mismatched": 0
+   },
+   "safetensors": {
+    "files": 16,
+    "mismatched": 0
+   },
+   "scikit-image": {
+    "files": 310,
+    "mismatched": 0
+   },
+   "scipy": {
+    "files": 1430,
+    "mismatched": 0
+   },
+   "setuptools": {
+    "files": 442,
+    "mismatched": 0
+   },
+   "shellingham": {
+    "files": 14,
+    "mismatched": 0
+   },
+   "six": {
+    "files": 7,
+    "mismatched": 0
+   },
+   "sympy": {
+    "files": 1572,
+    "mismatched": 0
+   },
+   "tenacity": {
+    "files": 19,
+    "mismatched": 0
+   },
+   "tetgen": {
+    "files": 9,
+    "mismatched": 0
+   },
+   "tifffile": {
+    "files": 22,
+    "mismatched": 0
+   },
+   "tokenizers": {
+    "files": 30,
+    "mismatched": 0
+   },
+   "torch": {
+    "files": 12713,
+    "mismatched": 0
+   },
+   "tqdm": {
+    "files": 45,
+    "mismatched": 0
+   },
+   "transformers": {
+    "files": 2565,
+    "mismatched": 0
+   },
+   "trimesh": {
+    "files": 146,
+    "mismatched": 0
+   },
+   "typer": {
+    "files": 42,
+    "mismatched": 0
+   },
+   "typing-extensions": {
+    "files": 6,
+    "mismatched": 0
+   },
+   "typing-inspect": {
+    "files": 7,
+    "mismatched": 0
+   },
+   "typing-inspection": {
+    "files": 10,
+    "mismatched": 0
+   },
+   "vtk": {
+    "files": 585,
+    "mismatched": 0
+   },
+   "wrapt": {
+    "files": 21,
+    "mismatched": 0
+   },
+   "xacro": {
+    "files": 13,
+    "mismatched": 0
+   },
+   "z3-solver": {
+    "files": 42,
+    "mismatched": 0
+   },
+   "zipp": {
+    "files": 13,
+    "mismatched": 0
+   }
+  },
+  "problems": [
+   "pip: ../../../bin/pip does not match its RECORD hash",
+   "pip: ../../../bin/pip3 does not match its RECORD hash",
+   "pip: ../../../bin/pip3.13 does not match its RECORD hash",
+   "pip: pip/_vendor/distlib/t32.exe does not match its RECORD hash",
+   "pip: pip/_vendor/distlib/t64-arm.exe does not match its RECORD hash",
+   "pip: pip/_vendor/distlib/t64.exe does not match its RECORD hash",
+   "pip: pip/_vendor/distlib/w32.exe does not match its RECORD hash",
+   "pip: pip/_vendor/distlib/w64-arm.exe does not match its RECORD hash",
+   "pip: pip/_vendor/distlib/w64.exe does not match its RECORD hash"
+  ]
+ },
+ "budget_reservation": "d4c5825a6cf64ceb48af050f91e4cb00744a226693466d9ffa6a6bbce1f29e4b",
+ "tokens_log": null,
+ "wall_clamped": [],
+ "relaunches": 0,
+ "guard_divergence": {
+  "commands": 14294,
+  "clamped_commands": 0,
+  "violation_records": 0,
+  "divergence_rate": 0.0,
+  "labels_coincide": true,
+  "by_reason": {},
+  "max_abs_delta": null,
+  "mean_abs_delta": null,
+  "records_without_delta": 0,
+  "skipped_rows": 0,
+  "run_dir": "/Users/yonghe/src/aisle-runner/runs/flt-clean-v2"
+ }
+}
