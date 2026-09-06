@@ -478,7 +478,7 @@ def main() -> None:  # pragma: no cover — dora runtime
                     {"sim_time_ns": metadata.get("sim_time_ns", 0)},
                 )
             if decision["forward"]:
-                send(kind, pa.array(value), metadata)
+                send(kind, pa.array(np.asarray(decision["value"], dtype=np.float32)), metadata)
                 continue
             if decision["value"] is not None:
                 send(kind, pa.array(decision["value"]), metadata)  # hold position
