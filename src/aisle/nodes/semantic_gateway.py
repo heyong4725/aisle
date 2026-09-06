@@ -175,7 +175,14 @@ class Gateway:
                 self.gripper_closed = float(value[0]) >= self.grasp_cmd - 1e-6
             elif kind == "joint_cmd":
                 self.last_forwarded = np.asarray(value, dtype=np.float32)
-            return {"forward": True, "value": value, "stage": stage, "reason": None, "halt": False}
+            return {
+                "forward": True,
+                "value": value,
+                "stage": stage,
+                "reason": None,
+                "halt": False,
+                "event": None,
+            }
         radius = CANDIDATE_RADIUS_M if stage == "pre_grasp" else CARRY_RADIUS_M
         assertion, track = self.identity.assertion(tcp, radius, now_s)
         if self.arm == "sensor_shield":
@@ -219,6 +226,7 @@ class Gateway:
                 "value": value,
                 **{k: event[k] for k in ("stage", "reason")},
                 "halt": False,
+                "event": event,
             }
         held = self.last_forwarded if kind == "joint_cmd" else None
         return {
@@ -227,6 +235,7 @@ class Gateway:
             "stage": stage,
             "reason": event["reason"],
             "halt": event["halt"],
+            "event": event,
         }
 
 
@@ -294,10 +303,10 @@ def main() -> None:  # pragma: no cover — dora runtime
             kind = "joint_cmd" if topic == "joint_proposal" else "gripper_cmd"
             value = np.asarray(event["value"].to_numpy(zero_copy_only=False), dtype=np.float32)
             decision = gateway.propose(kind, value, tcp_now(), now_s)
-            if decision["stage"] is not None:
+            if decision["event"] is not None:
                 send(
                     "shield_event",
-                    pa.array([json.dumps({**gateway.events[-1], "arm": arm})]),
+                    pa.array([json.dumps({**decision["event"], "arm": arm})]),
                     {"sim_time_ns": metadata.get("sim_time_ns", 0)},
                 )
             if decision["forward"]:

@@ -165,6 +165,19 @@ def test_reset_and_goal_change_revoke():
     assert g.propose("joint_cmd", np.zeros(9), tcp, 2.5)["stage"] is None
 
 
+def test_commands_after_the_verdict_carry_no_event():
+    """SEM-8 evidence hygiene: once the verdict cleared the assignment the
+    executor may still stream closed-gripper commands; they pass without a
+    permit and without an event (the first live no_shield run died here)."""
+    g = _gateway("no_shield")
+    tcp = np.array([0.4, 0.1, 0.3])
+    g.identity.on_poses(_poses(metformin=[0.4, 0.1, 0.3]), sim_time_s=1.9)
+    assert g.propose("gripper_cmd", np.array([1.0]), tcp, 2.0)["event"] is not None
+    g.assignment = None  # episode_result arrived
+    later = g.propose("joint_cmd", np.zeros(9), tcp, 2.1)
+    assert later["forward"] and later["stage"] == "carry" and later["event"] is None
+
+
 def test_unknown_arm_is_refused():
     with pytest.raises(ValueError, match="unknown shield arm"):
         Gateway("magic", KEY, MEDS, TRAY, 1.0)
