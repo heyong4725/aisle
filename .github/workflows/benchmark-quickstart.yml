@@ -15,11 +15,12 @@ jobs:
       fail-fast: false
       matrix:
         source: [clone, archive]
-    env:
-      UV_CACHE_DIR: ${{ runner.temp }}/quickstart-uv-cache
-      UV_TOOL_DIR: ${{ runner.temp }}/quickstart-uv-tools
-      UV_TOOL_BIN_DIR: ${{ runner.temp }}/quickstart-bin
     steps:
+      - name: Set fresh runtime directories
+        run: |
+          echo "UV_CACHE_DIR=$RUNNER_TEMP/quickstart-uv-cache" >> "$GITHUB_ENV"
+          echo "UV_TOOL_DIR=$RUNNER_TEMP/quickstart-uv-tools" >> "$GITHUB_ENV"
+          echo "UV_TOOL_BIN_DIR=$RUNNER_TEMP/quickstart-bin" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           path: source
