@@ -43,7 +43,7 @@ stayed outside it).
 
 | Surface | Count |
 |---|---:|
-| Graphs | 22 |
+| Graphs | 24 |
 | Capability manifests | 42 |
 | CLI command entries | 39 |
 | ADR files | 75 |
@@ -74,6 +74,8 @@ stayed outside it).
 | [graphs/shield_t0_none_adversary.yaml](../../graphs/shield_t0_none_adversary.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 12 |
 | [graphs/shield_t0_oracle.yaml](../../graphs/shield_t0_oracle.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 11 |
 | [graphs/shield_t0_oracle_adversary.yaml](../../graphs/shield_t0_oracle_adversary.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 12 |
+| [graphs/shield_t1_sensor.yaml](../../graphs/shield_t1_sensor.yaml) | pharmacy (default) / — | franka (default) | L1 | 11 |
+| [graphs/shield_t1_sensor_adversary.yaml](../../graphs/shield_t1_sensor_adversary.yaml) | pharmacy (default) / — | franka (default) | L1 | 12 |
 
 ### Graph node membership
 
@@ -99,6 +101,8 @@ stayed outside it).
 - **graphs/shield_t0_none_adversary.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `semantic-gateway`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `goal-adversary`, `turn-barrier`
 - **graphs/shield_t0_oracle.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `semantic-gateway`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/shield_t0_oracle_adversary.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `semantic-gateway`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `goal-adversary`, `turn-barrier`
+- **graphs/shield_t1_sensor.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `semantic-gateway`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
+- **graphs/shield_t1_sensor_adversary.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `semantic-gateway`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `goal-adversary`, `turn-barrier`
 
 ## Capability manifests
 
