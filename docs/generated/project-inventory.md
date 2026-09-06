@@ -46,7 +46,7 @@ stayed outside it).
 | Graphs | 24 |
 | Capability manifests | 42 |
 | CLI command entries | 39 |
-| ADR files | 78 |
+| ADR files | 79 |
 
 ## Graphs
 
@@ -281,6 +281,7 @@ inference.
 | [docs/decisions/ADR-powder-spike.md](../decisions/ADR-powder-spike.md) | ADR-powder-spike — T20 solver spike for the powder family (SPEC 300 PW-0) | **ACCEPTED** — ratified by the owner 2026-08-27 ("ratify PW-0 |
 | [docs/decisions/ADR-realistic-verifier.md](../decisions/ADR-realistic-verifier.md) | ADR-realistic-verifier — accepted design (D1–D6 ratified 2026-08-05) | ACCEPTED — D1–D6 ratified by the owner 2026-08-05 |
 | [docs/decisions/ADR-seed-commitment-inheritance.md](../decisions/ADR-seed-commitment-inheritance.md) | ADR-seed-commitment-inheritance — Seed commitments in successor registrations | PROPOSED — implementation interpretation under CON-15; review in PR #496. |
+| [docs/decisions/ADR-source-archive-identity.md](../decisions/ADR-source-archive-identity.md) | ADR-source-archive-identity — Portable Git content evidence | PROPOSED — engineering interpretation; no release or collection approval. |
 
 ## Tests
 
