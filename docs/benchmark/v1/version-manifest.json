@@ -1,6 +1,6 @@
 {
   "benchmark_version": "aisle-benchmark-v1-draft",
-  "manifest_sha256": "201790f2208206658e24f0f95c4427c4b5f0f83aeead01342f2304d168cbbc99",
+  "manifest_sha256": "df5968777fed364b2665f0d8dc0fafca4e23480f3c383d2f355a3f50967cd70a",
   "missing_surfaces": [],
   "schema_version": "aisle.benchmark.version-manifest.v1",
   "status": "draft",
@@ -90,8 +90,8 @@
       "sha256": "sha256:851ac3b7d4e5204e67803a68f748f38ce55dc69393fe0265041d11b635fbb3cb"
     },
     "submission_validator": {
-      "path": "src/aisle/harness/reproduction.py",
-      "sha256": "sha256:4874c3403a27704f3b8eff999817eb4fb1ea0778af2ef40e35b3ccb130b13fc6"
+      "path": "src/aisle/harness/benchmark_submission.py",
+      "sha256": "sha256:3812dfda8acd05d3b4b82cb92911c189c975ec42e7502c14971ef8c9b5a0f492"
     },
     "task_distributions": {
       "path": "docs/benchmark/v1/task-distributions.json",
