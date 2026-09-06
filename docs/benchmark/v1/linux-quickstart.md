@@ -5,7 +5,12 @@ quickstart twice on separate fresh Ubuntu 24.04 runners: once from a checkout
 and once from the committed source archive built by `tools/source_archive.py`.
 Linux uses the declared CPU simulation backend. Neither job restores an Actions
 uv cache, pre-installs the project environment, or supplies an existing run.
-The pinned Dora CLI is installed before the documented quickstart command.
+The pinned Dora CLI and Ubuntu rendering libraries are installed before the
+quickstart command. Even with CPU physics, Genesis constructs an offscreen
+renderer. On Ubuntu 24.04 the workflow installs `libegl1`, `libgl1` and
+`libgl1-mesa-dri` (including the Mesa EGL dependency) with apt, and retains the
+resolved package versions in `system-packages.txt`. These are declared system
+prerequisites, separate from the Python lockfile.
 
 The workflow runs when its definition changes in a pull request and can be
 manually dispatched on a chosen revision after it is merged. Both jobs must

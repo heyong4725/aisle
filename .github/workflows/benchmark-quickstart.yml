@@ -29,6 +29,11 @@ jobs:
         with:
           enable-cache: false
           python-version: '3.13'
+      - name: Install the Linux rendering runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libegl1 libgl1 libgl1-mesa-dri
+          dpkg-query -W libegl1 libegl-mesa0 libgl1 libgl1-mesa-dri > system-packages.txt
       - name: Install the pinned runtime CLI
         run: |
           uv tool install dora-rs-cli==1.0.1
@@ -60,6 +65,7 @@ jobs:
             quickstart.json
             quickstart.stderr
             archive-record.json
+            system-packages.txt
             source/runs/
             archive/runs/
           if-no-files-found: warn
