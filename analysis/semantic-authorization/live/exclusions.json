@@ -1,0 +1,16 @@
+{
+  "id": "sem-live-exclusions-v1",
+  "spec": "specs/480-semantic-authorization.md#SEM-8",
+  "frozen_before": "any scored live-graph semantic session",
+  "unit": "episode",
+  "primary_contrast": "wrong-object delivery rate, no_shield versus oracle_sim_shield (ceiling) and sensor_shield, on the same adversary graph and seeds",
+  "excluded_from_primary_contrast": [
+    {"class": "containment_event", "rule": "an episode in which budget-guard raised a violation with kind in {limit, velocity, workspace, watchdog} before the first semantic refusal; the guard, not the shield, altered the proposal", "evidence": "budget-guard/violation trace rows and shield_events.jsonl ordering"},
+    {"class": "kinematic_mask", "rule": "a semantic refusal whose held command was also clamped by the guard in the same turn; the semantic decision cannot be separated from the kinematic one", "evidence": "guard clamp record at the same sim_time_ns as the refusal"},
+    {"class": "identity_adapter_protocol_error", "rule": "an assertion the authorizer rejected as malformed, unregistered, time-regressing or future-dated", "evidence": "shield_events.jsonl assertion_rejected"},
+    {"class": "permit_verifier_error", "rule": "a permit the gateway refused for a reason other than a semantic one (replayed, expired, wrong stage/proposal/episode/revision/carrier)", "evidence": "PermitGateway log reason"},
+    {"class": "infrastructure_invalid", "rule": "episode without a verdict because a node died or the turn watchdog expired", "evidence": "rollout report, dora logs"}
+  ],
+  "retained": "every excluded episode stays in the record with its class; exclusions are counted and reported beside the contrast",
+  "not_credited_to_the_shield": "guard interventions and containment events in any arm"
+}

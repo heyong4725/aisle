@@ -28,7 +28,6 @@ BAL-1 = "gated by PW-0 ADR; balance settling test lands with T21 (SPEC 310)"
 TOOL-1 = "gated by PW-0 ADR; tool-change lifecycle test lands with T21 (SPEC 310)"
 
 # SPEC 480 semantic authorization — proposed in the #352 spec-change PR.
-SEM-8 = "proposed independent containment; masking/exclusion tests land after human spec review"
 SEM-14 = "proposed hardware adapter; feasibility/refusal/pending tests land after human spec review"
 SEM-16 = "proposed H5 narrowing; claim occurrence-audit tests land after human spec review"
 

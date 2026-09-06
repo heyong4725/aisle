@@ -68,3 +68,19 @@ sensor adapter over rendered perception), the SEM-8 containment and
 kinematic-masking exclusions, the SEM-14 hardware adapter contract and the
 SEM-16 claim disposition. H5 wording stays narrowed to measured layers and
 zero observed events.
+
+## Live graph (issue #352, second round)
+
+`src/aisle/nodes/semantic_gateway.py` puts the same authorizer and permit
+gateway between ik-trajectory and budget-guard in a running dataflow
+(`graphs/shield_t0_oracle*.yaml`, `graphs/shield_t0_none_adversary.yaml`).
+Stages are derived from the motion (closing edge, closed, closed over the
+tray); the ceiling identity adapter reads the rung-L0 ground-truth `poses`
+topic and is not deployable (SEM-14); `sensor_shield` fails closed until a
+rendered-perception adapter exists. `goal-adversary` is a graph-attested
+wrong-object adversary that rewrites the goal the policy sees while the
+verifier and the gateway keep the true one. Guard and verifier are
+byte-identical across arms (SEM-8); `live/exclusions.json` is the
+pre-registered exclusion rule; per-episode permits and refusals land in
+`shield_events.jsonl` beside each run's results. Records under `live/`
+are engineering shakeouts, not SEM-10 sessions.
