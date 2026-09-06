@@ -70,3 +70,15 @@ The report above remains historical evidence from the previous auditor. BND
 registration v7 requires a new audit and remains pending; no threshold, seed
 commitment, or candidate eligibility has changed. Replays must use a new output
 path rather than overwrite the retained report.
+
+A further geometry revision rejects non-finite or non-xyz localization output
+as localization error. Missing scene-object truth or malformed oracle positions
+produce missing-data failures, with attempted predictions retained. This prevents
+NaN comparisons and array broadcasting from certifying invalid coordinates.
+BND v8 requires a fresh audit under these checks and remains unfrozen.
+
+The CLI also records the content digest of the exact identity-model lock entry
+passed to the pinned loader. That entry binds the model repository/revision and
+individual snapshot-file hashes, which the loader verifies before use. Missing
+or descriptive model-hash fields fail the auditor. Existing historical reports
+are not rewritten with provenance they did not record.

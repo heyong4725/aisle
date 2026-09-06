@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -211,6 +212,17 @@ def build_corpus(
 # ------------------------------------------------------------- scoring
 
 
+def _position3(value: Any) -> list[float] | None:
+    """Return finite xyz coordinates without accepting NumPy broadcasting."""
+    try:
+        position = np.asarray(value, dtype=float)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if position.shape != (3,) or not np.isfinite(position).all():
+        return None
+    return position.tolist()
+
+
 def score_record(
     record: dict,
     arrays: dict[str, np.ndarray],
@@ -259,14 +271,23 @@ def score_record(
     if outcome == "correct":
         # Only the assigned goal is policy-visible. The scorer's record also
         # contains oracle positions, seed and strata: none may cross this API.
-        position = localizer(best, arrays["depth"], {"target": record["target"]})
+        position = _position3(localizer(best, arrays["depth"], {"target": record["target"]}))
         prediction["position"] = position
     latency = clock() - started
     # truth is opened only now
+    missing = {**base, "prediction": prediction, "latency_s": latency, "outcome": "missing_data"}
+    truth_positions = truth.get("positions") if isinstance(truth, dict) else None
+    if not isinstance(truth_positions, dict) or not set(envelope["identity_vocabulary"]).issubset(
+        truth_positions
+    ):
+        return missing
+    truth_positions = {name: _position3(value) for name, value in truth_positions.items()}
+    if any(value is None for value in truth_positions.values()):
+        return missing
     if outcome == "correct" and position is not None:
         distances = {
             name: float(np.linalg.norm(np.asarray(position) - np.asarray(pos)))
-            for name, pos in truth["positions"].items()
+            for name, pos in truth_positions.items()
         }
         nearest = min(distances, key=distances.get)
         prediction["localization_error_m"] = distances[record["target"]]
@@ -297,6 +318,15 @@ def audit(
     the frozen floor, refusal availability, latency, taxonomy, split
     disjointness; missing strata fail; raw predictions retained."""
     validate_envelope(envelope)
+    if (
+        not isinstance(model_hashes, dict)
+        or "identity" not in model_hashes
+        or any(
+            not isinstance(value, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", value)
+            for value in model_hashes.values()
+        )
+    ):
+        raise PerceptionAuditError("model hashes are missing or invalid")
     for name, rows in (("corpus", corpus["records"]), ("scored", scored)):
         ids = [r["record_id"] for r in rows]
         if len(ids) != len(set(ids)):

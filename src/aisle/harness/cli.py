@@ -468,12 +468,13 @@ def main() -> int:
 
         try:
             from aisle.scenes.pharmacy import MED_NAMES, load_meds
-            from aisle.verifier.models import detect_meds, load_pinned
+            from aisle.verifier.models import detect_meds, load_lock, load_pinned
 
             envelope = json.loads(args.envelope.read_bytes())
             pa.validate_envelope(envelope)
             corpus, frames = pa.corpus_from_run(args.run.resolve(), med_names=list(MED_NAMES))
-            model_pair = load_pinned("identity")
+            model_lock = load_lock()
+            model_pair = load_pinned("identity", lock=model_lock)
             localizer = pa.real_localizer(corpus["calibration"], load_meds())
             scored = [
                 pa.score_record(
@@ -489,7 +490,7 @@ def main() -> int:
                 corpus,
                 envelope,
                 scored=scored,
-                model_hashes={"identity": "pinned snapshot per src/aisle/verifier/models.py"},
+                model_hashes={"identity": pa.content_hash(model_lock["models"]["identity"])},
             )
             if args.output is not None:
                 args.output.parent.mkdir(parents=True, exist_ok=True)
