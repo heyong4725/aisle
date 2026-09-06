@@ -44,7 +44,8 @@ for registrations named that way. v3 of the BND, FLT and SFE registrations
 supersede v2 after #475 (turn watchdog) and #492 (monolith-broker manifest);
 flt-bank-calibration-v4 supersedes v3 after injector v2 (FLT-8 parity pad and probe);
 bnd v4, sfe v4 and flt v5 supersede their predecessors after the SPEC 480 live-graph
-manifests (semantic-gateway, goal-adversary) entered the registry.
+manifests (semantic-gateway, goal-adversary) entered the registry;
+flt-bank-calibration-v6 supersedes v5 with the artifacts of the v2 round that actually ran.
 
 BND v5 supersedes v4 after the Dora 1.0.1 lockfile upgrade. Its unchanged
 salted seed commitment is inherited from the byte-bound v4 manifest because

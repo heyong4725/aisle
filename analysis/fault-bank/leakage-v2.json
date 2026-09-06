@@ -1,0 +1,21 @@
+{
+  "alpha": 0.05,
+  "balanced_accuracy": 0.3666666666666667,
+  "cells": 18,
+  "counts": {
+    "fault": 15,
+    "sham": 3
+  },
+  "decision": "not_distinguishable",
+  "feature_allowlist": [
+    "staged_file_count",
+    "size_bytes",
+    "mode",
+    "mtime"
+  ],
+  "ok": true,
+  "permutation_p": 0.8020989505247377,
+  "probe_sha256": "d092dacdc338cffb442ca084d8324bb82626d0ec054f5de126f0626b59c8bdc8",
+  "reason": "classifier does not beat the frozen chance criterion",
+  "schema_version": "aisle.fault-leakage-probe.v1"
+}
