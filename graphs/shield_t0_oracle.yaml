@@ -3,6 +3,9 @@
 # `poses` topic) with semantic-gateway between ik-trajectory and budget-guard
 # (AISLE_SHIELD_ARM=oracle_sim_shield).
 # Evaluation graph: never a measured expert or agent graph.
+# ik-trajectory declares plan_done here (expert_t0.yaml does not): a grasp plan
+# that finishes without a verdict -- exactly what a refused closure produces --
+# would otherwise raise 'unknown or reserved output' and kill the executor.
 nodes:
 - id: dora-genesis
   path: ../src/aisle/nodes/dora_genesis.py
@@ -130,7 +133,7 @@ nodes:
   env:
     AISLE_LOCKSTEP: '1'
     AISLE_TURN_NODE: ik-trajectory
-    AISLE_TURN_OUTPUTS: joint_cmd,gripper_cmd,turn_done
+    AISLE_TURN_OUTPUTS: joint_cmd,gripper_cmd,plan_done,turn_done
   inputs:
     grasp_pose:
       source: grasp-planner-topdown/grasp_pose
@@ -149,6 +152,7 @@ nodes:
   - joint_cmd
   - gripper_cmd
   - turn_done
+  - plan_done
 - id: semantic-gateway
   path: ../src/aisle/nodes/semantic_gateway.py
   env:
