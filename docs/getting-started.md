@@ -28,23 +28,19 @@ things to know before anything else:
   mutually exclusive. Pass `--sim-extra cuda` to `harness rollout`; the
   request fails closed if CUDA is unavailable and is recorded in the run
   manifest. The default `--sim-extra sim` never auto-upgrades to CUDA.
-- **dora runs from source, not PyPI.** PyPI's latest dora wheel (0.5.0)
-  is far behind dora main and lacks the dynamic-node command family this
-  repo depends on (`dora node add/remove`, hot-swap). The python API
-  builds from git at the rev pinned in `pyproject.toml`
-  `[tool.uv.sources]`.
+- **The dora Python API and CLI must both use release 1.0.1.** The API
+  installs from PyPI through the exact pin in `pyproject.toml`.
 
-The dora **CLI** must be cargo-installed from the SAME rev as the
-python API (needs a Rust toolchain — `rustup` if you don't have one):
+Install the matching CLI:
 
 ```bash
-cargo install --git https://github.com/dora-rs/dora --rev cd597e705 dora-cli --locked
-dora --version    # prints a warning if the CLI/python-API revs drift
+uv tool install dora-rs-cli==1.0.1
+dora --version    # must report 1.0.1
 ```
 
-If you see a version-mismatch warning, check which `dora` binary is on
-your PATH (`which dora`) — stray conda environments are the usual
-culprit.
+Check which `dora` binary is on PATH (`which dora`); an older Cargo or
+conda installation may shadow the uv-installed executable. Upgrade daemon
+and nodes together: release-candidate binaries use an incompatible wire format.
 
 ## 2. Verify the install
 

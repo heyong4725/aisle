@@ -143,19 +143,14 @@ def test_order_and_phase_are_seeded_not_fixed():
     assert "phase_delay_s" in src
 
 
-def test_manifest_dora_api_rev_matches_pyproject_pin():
-    """PR #85 review: batch_manifest hardcodes dora_api_rev; a future pin
-    bump that misses it would attribute latency samples to the wrong
-    runtime rev — the manifest field designed to catch cross-rev mixing
-    must never itself drift from the pyproject pin."""
+def test_manifest_dora_api_version_matches_pyproject_pin():
+    """CON-5: H4 samples must identify the pinned stable API release."""
     import re
     import tomllib
 
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
-    pin = pyproject["tool"]["uv"]["sources"]["dora-rs"]["rev"]
+    deps = pyproject["project"]["optional-dependencies"]["sim"]
+    pin = next(dep.removeprefix("dora-rs==") for dep in deps if dep.startswith("dora-rs=="))
     src = (REPO_ROOT / "tools" / "h4_iteration.py").read_text()
-    constant = re.search(r'"dora_api_rev": "([0-9a-f]+)"', src).group(1)
-    assert pin.startswith(constant), (
-        f"tools/h4_iteration.py dora_api_rev {constant!r} is not a prefix of "
-        f"the pyproject dora-rs pin {pin!r} — update it with the bump"
-    )
+    constant = re.search(r'"dora_api_version": "([0-9.]+)"', src).group(1)
+    assert constant == pin

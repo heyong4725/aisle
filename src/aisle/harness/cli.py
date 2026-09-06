@@ -667,7 +667,11 @@ def main() -> int:
                 )
                 report = {"ok": True, **manifest}
                 if args.output is not None:
-                    if args.output.resolve() == args.declaration.resolve():
+                    inputs = {args.declaration.resolve()}
+                    predecessor = declaration["seed_commitment"].get("inherited_from")
+                    if predecessor:
+                        inputs.add((args.root / predecessor).resolve())
+                    if args.output.resolve() in inputs:
                         raise FreezeError("output path collides with an input", [str(args.output)])
                     args.output.parent.mkdir(parents=True, exist_ok=True)
                     args.output.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -175,6 +176,65 @@ def _gate_records(root: Path, gates: list[dict[str, Any]]) -> dict[str, str]:
     return hashes
 
 
+def _inherited_commitment(root: Path, declaration: dict[str, Any]) -> str:
+    """Carry a committed seed identity into a pending successor, never a freeze.
+
+    Artifact drift is the reason for a successor, so the predecessor's old
+    artifact hashes need not match today's tree. Its declaration must still
+    be internally consistent, and its exact bytes are bound as an artifact.
+    """
+    commitment = declaration["seed_commitment"]
+    source = commitment["inherited_from"]
+    if not isinstance(source, str) or not source:
+        raise FreezeError("seed commitment predecessor must be a path")
+    if declaration["artifacts"].get("seed_commitment_predecessor") != source:
+        raise FreezeError("seed commitment predecessor must be bound as an artifact")
+    gates = [
+        g for g in declaration["integrity_checks"] if g["gate"] == "seed commitment verification"
+    ]
+    if (
+        len(gates) != 1
+        or gates[0]["status"] != "pending"
+        or gates[0]["kind"] != "machine_check"
+        or gates[0]["record"] is not None
+    ):
+        raise FreezeError("inherited seed commitment requires a pending verification gate")
+    prior = json.loads((root / source).read_bytes())
+    old = prior.get("declaration") if isinstance(prior, dict) else None
+    try:
+        invalid = not isinstance(old, dict) or bool(_check_shape(old))
+    except (TypeError, KeyError, AttributeError) as exc:
+        raise FreezeError("seed commitment predecessor declaration is invalid") from exc
+    if (
+        invalid
+        or prior.get("schema_version") != MANIFEST_SCHEMA
+        or prior.get("declaration_sha256") != "sha256:" + sha256_hex(canonical_bytes(old))
+        or prior.get("campaign_id") != old["campaign_id"]
+    ):
+        raise FreezeError("seed commitment predecessor declaration is invalid")
+    if (
+        declaration["campaign_id"] == old["campaign_id"]
+        or declaration.get("superseded", "").split(" (", 1)[0] != old["campaign_id"]
+    ):
+        raise FreezeError("seed commitment inheritance requires a named, distinct predecessor")
+    if any(
+        declaration[field] != old[field] for field in ("spec", "issue", "purpose", "instrument_set")
+    ):
+        raise FreezeError(
+            "seed commitment inheritance cannot change study, purpose, or instruments"
+        )
+    if {k: v for k, v in commitment.items() if k != "inherited_from"} != {
+        k: v for k, v in old["seed_commitment"].items() if k != "inherited_from"
+    }:
+        raise FreezeError("seed commitment inheritance cannot change seed sources or rules")
+    digest = prior.get("seed_commitment")
+    if not isinstance(digest, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
+        raise FreezeError("seed commitment predecessor has no valid salted commitment")
+    if _seed_sources_present(root, commitment) and _seed_commitment(root, commitment) != digest:
+        raise FreezeError("restored seed sources disagree with the inherited commitment")
+    return digest
+
+
 def build_manifest(
     root: Path,
     declaration: dict[str, Any],
@@ -190,6 +250,12 @@ def build_manifest(
     errors = _check_shape(declaration)
     if errors:
         raise FreezeError("declaration is invalid", errors)
+    if "inherited_from" in declaration["seed_commitment"]:
+        seed_digest = _inherited_commitment(root, declaration)
+    elif skip_seed_commitment:
+        seed_digest = None
+    else:
+        seed_digest = _seed_commitment(root, declaration["seed_commitment"])
     artifact_hashes = {
         name: hash_path(root, rel) for name, rel in sorted(declaration["artifacts"].items())
     }
@@ -217,9 +283,7 @@ def build_manifest(
         "artifact_hashes": artifact_hashes,
         "analysis_script_hashes": script_hashes,
         "analysis_seed": declaration["analysis"]["seed"],
-        "seed_commitment": None
-        if skip_seed_commitment
-        else _seed_commitment(root, declaration["seed_commitment"]),
+        "seed_commitment": seed_digest,
         "gate_record_hashes": gate_hashes,
         "commands": list(declaration["commands"]),
         "declaration": declaration,
@@ -260,7 +324,11 @@ def check_manifest(
             if actual != expected:
                 drift.append(f"{section}.{name}: {expected} -> {actual}")
     for field in ("declaration_sha256", "seed_commitment"):
-        if field == "seed_commitment" and not seeds_present:
+        if (
+            field == "seed_commitment"
+            and not seeds_present
+            and "inherited_from" not in declaration["seed_commitment"]
+        ):
             continue
         if rebuilt[field] != manifest.get(field):
             drift.append(f"{field}: {manifest.get(field)} -> {rebuilt[field]}")

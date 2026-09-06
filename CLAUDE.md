@@ -19,11 +19,9 @@ proceed (CON-15). If spec and test conflict: STOP, open `spec-conflict` issue (C
 
 ## Environment
 macOS arm64, Python via uv only. Setup: `uv sync` (dev) / `uv sync --extra sim`
-(anything that runs the sim — plain sync REMOVES the sim extras). dora runs
-from SOURCE at the rev pinned in pyproject `[tool.uv.sources]`: the python API
-builds from git via uv; the CLI must be cargo-installed from the SAME rev
-(`cargo install --git https://github.com/dora-rs/dora --rev <rev> dora-cli
---locked`) — `dora --version` warns if the pair drifts. Run things:
+(anything that runs the sim — plain sync REMOVES the sim extras). dora uses
+the 1.0.1 release: the Python API is pinned in pyproject and
+the CLI must match (`uv tool install dora-rs-cli==1.0.1`). Run things:
 `uv run pytest -m unit`, `uv run harness validate graphs/expert_t0.yaml`,
 `dora run graphs/expert_t0.yaml --uv`. Never install with bare pip/conda.
 CUDA-only deps are forbidden in default extras (CON-1).
