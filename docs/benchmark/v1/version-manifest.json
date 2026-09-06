@@ -1,6 +1,6 @@
 {
   "benchmark_version": "aisle-benchmark-v1-draft",
-  "manifest_sha256": "ef8eeb3e23670e5a85bca2e583028d46633b91377a1fbd13cb85903f0da297f5",
+  "manifest_sha256": "69239c76dbd4d6b712ddd93b3fc49e60bb5f7e755166b56939273f29a7133418",
   "missing_surfaces": [],
   "schema_version": "aisle.benchmark.version-manifest.v1",
   "status": "draft",
@@ -47,7 +47,7 @@
     },
     "quickstart": {
       "path": "tools/quickstart.py",
-      "sha256": "sha256:ff46f68ee15eaaf9b6061e3c7fca3905073d8477f948e35ee307c4fdc10dce70"
+      "sha256": "sha256:8a1f097c9a8932c6d01fa4910bdb99f42dbc3205f94ff2c54b37bfd8f85828a0"
     },
     "resource_accounting": {
       "path": "docs/benchmark/v1/resource-accounting.md",
