@@ -417,3 +417,70 @@ def test_launcher_stamps_the_frozen_graph_with_the_module(tmp_path):
     assert all(Path(n["path"]).is_absolute() and Path(n["path"]).is_file() for n in doc["nodes"])
     template = yaml.safe_load((ROOT / mono.TEMPLATE_GRAPH).read_text())
     assert [n["id"] for n in doc["nodes"]] == [n["id"] for n in template["nodes"]]
+
+
+@pytest.mark.parametrize("tier", ["T0", "T2", "T3", "T4", "unknown"])
+def test_launcher_refuses_unsupported_tier_before_participant_execution(
+    tmp_path, monkeypatch, tier
+):
+    """MON-4, BMK-4: the T1 surface cannot stand in for another task tier."""
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("unsupported tier reached participant construction or rollout")
+
+    monkeypatch.setattr(mono, "check_module", unexpected)
+    monkeypatch.setattr(mono, "stamp_graph", unexpected)
+    report = mono.run(tmp_path, tmp_path / "absent.py", [0], 1, tier=tier)
+    assert report["ok"] is False
+    assert report["tier"] == tier
+    assert report["supported_tiers"] == ["T1"]
+    assert report["error"] == "unsupported_monolithic_tier"
+    assert not (tmp_path / "graphs").exists()
+
+
+def test_launcher_preserves_t1_rollout_arguments(tmp_path, monkeypatch):
+    """MON-3, MON-4: the supported T1 surface still reaches the trusted rollout."""
+    from aisle.harness import rollout
+
+    observed = {}
+    module = tmp_path / "participant.py"
+    graph = tmp_path / "stamped.yaml"
+    monkeypatch.setattr(mono, "check_module", lambda *args: {"ok": True})
+    monkeypatch.setattr(mono, "stamp_graph", lambda *args: graph)
+
+    def launch(**kwargs):
+        observed.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(rollout, "rollout", launch)
+    report = mono.run(tmp_path, module, [0, 1], 2, run_id="tier-test")
+    assert report["ok"] is True
+    assert observed["tier"] == "T1"
+    assert observed["graph"] == graph
+    assert observed["seeds"] == [0, 1]
+    assert observed["episodes"] == 2
+    assert report["campaign_purpose"] == "expert_parity"
+
+
+def test_cli_reports_unsupported_tier_as_json(tmp_path):
+    """CON-8, MON-4: unsupported task tiers produce structured CLI refusal."""
+    from cli_helpers import run_json
+
+    code, report = run_json(
+        "aisle.harness.cli",
+        "monolith",
+        "run",
+        "--module",
+        str(tmp_path / "absent.py"),
+        "--tier",
+        "T2",
+        "--episodes",
+        "1",
+        "--seeds",
+        "0",
+        "--root",
+        str(tmp_path),
+    )
+    assert code == 1
+    assert report["error"] == "unsupported_monolithic_tier"
+    assert report["ok"] is False

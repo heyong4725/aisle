@@ -1,5 +1,5 @@
 {
-  "immutable_id": "sha256:01ec26398e07d42da49a0e604191d663ec9f91be7c0fa33ecaf0bac512bdb4af",
+  "immutable_id": "sha256:30a157698ebfbe2f66d269d4def0fcb70ee27e6a9649145cc5fb21981d9a568b",
   "rows": [
     {
       "analysis": "the manipulated factor (SPEC 500 primary contrast)",
@@ -15,7 +15,7 @@
       "classification": "intentionally-different",
       "id": "mon1-02",
       "justification": "part of the bundled treatment; absence is a declared property, not missing data (MON-12)",
-      "monolithic": "src/aisle/harness/monolith.py#sha256:93b47d34018dc35282efe5bf1a757c358f57859ba557ba39ab77fe2348f39d02",
+      "monolithic": "src/aisle/harness/monolith.py#sha256:5c1489d1758352be18e47d7c4ab3e8479b5bbf6995109d81f26adde272b1ff99",
       "surface": "static validation and diagnostics",
       "typed": "src/aisle/harness/validate.py#sha256:55ab8640ce1dc85fac48ba5b21556cfaf1f1827c60cc2056abe12b51ae8d03e2"
     },
@@ -24,7 +24,7 @@
       "classification": "intentionally-different",
       "id": "mon1-03",
       "justification": "part of the bundled treatment",
-      "monolithic": "docs/monolithic/primitive-api.md#sha256:718bed4f2f664ac1de1ffa104c6c68b39460a5a7aaab01c8a4f00e065b545f01",
+      "monolithic": "docs/monolithic/primitive-api.md#sha256:9b6ecbcbe4b90ebdb0f9dd75a547ab7a6ac0075d30d785d5903cf619f20409a2",
       "surface": "registry search and resolution",
       "typed": "src/aisle/harness/registry.py#sha256:d0308d20480f4627c2831ba5f07891b846107c60489a9260de4fa332ed982494"
     },
@@ -33,7 +33,7 @@
       "classification": "intentionally-different",
       "id": "mon1-04",
       "justification": "each arm documents its own representation; task, goals, budgets and evaluator text are shared",
-      "monolithic": "docs/monolithic/primitive-api.md#sha256:9c6beaf111b63793dd94efbdd8ace6c9c7651d7fbea3b512e909ee9296701dbc",
+      "monolithic": "docs/monolithic/primitive-api.md#sha256:cd7fea8600f55a64bbf90a0cb6a7cc09517e55454a17ee2958e9a5d1aa6ea892",
       "surface": "documentation given to the agent",
       "typed": "harness/CLAUDE.research.md#sha256:4294608b814889307577e6ade7ed4f0dde5dba098f91a69ca441d070590a3daf"
     },
@@ -114,7 +114,7 @@
       "classification": "identical",
       "id": "mon1-13",
       "justification": "none needed: same artifact",
-      "monolithic": "src/aisle/harness/monolith.py#sha256:93b47d34018dc35282efe5bf1a757c358f57859ba557ba39ab77fe2348f39d02",
+      "monolithic": "src/aisle/harness/monolith.py#sha256:5c1489d1758352be18e47d7c4ab3e8479b5bbf6995109d81f26adde272b1ff99",
       "surface": "episode budget, seeds, reset semantics, evaluator",
       "typed": "src/aisle/harness/rollout.py#sha256:6faf01e46a176482c29a11a6fd8f3a9b35c6d86df9f51690974f67d0e08265ed"
     },
