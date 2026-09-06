@@ -43,8 +43,8 @@ stayed outside it).
 
 | Surface | Count |
 |---|---:|
-| Graphs | 19 |
-| Capability manifests | 40 |
+| Graphs | 22 |
+| Capability manifests | 42 |
 | CLI command entries | 39 |
 | ADR files | 74 |
 
@@ -71,6 +71,9 @@ stayed outside it).
 | [graphs/expert_t4.yaml](../../graphs/expert_t4.yaml) | pharmacy (default) / — | franka (default) | L1 | 11 |
 | [graphs/expert_t4_inc2.yaml](../../graphs/expert_t4_inc2.yaml) | pharmacy (default) / — | franka (default) | L1 | 12 |
 | [graphs/monolithic_t1.yaml](../../graphs/monolithic_t1.yaml) | pharmacy (default) / — | franka (default) | L1 | 7 |
+| [graphs/shield_t0_none_adversary.yaml](../../graphs/shield_t0_none_adversary.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 12 |
+| [graphs/shield_t0_oracle.yaml](../../graphs/shield_t0_oracle.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 11 |
+| [graphs/shield_t0_oracle_adversary.yaml](../../graphs/shield_t0_oracle_adversary.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 12 |
 
 ### Graph node membership
 
@@ -93,6 +96,9 @@ stayed outside it).
 - **graphs/expert_t4.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `human-sim`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/expert_t4_inc2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `human-sim`, `task-state-machine`, `rollout-client`, `turn-barrier`, `return-planner`
 - **graphs/monolithic_t1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `monolith-broker`, `verifier-oracle`, `rollout-client`, `turn-barrier`
+- **graphs/shield_t0_none_adversary.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `semantic-gateway`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `goal-adversary`, `turn-barrier`
+- **graphs/shield_t0_oracle.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `semantic-gateway`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
+- **graphs/shield_t0_oracle_adversary.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `semantic-gateway`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `goal-adversary`, `turn-barrier`
 
 ## Capability manifests
 
@@ -105,6 +111,7 @@ stayed outside it).
 | [registry/manifests/detected-pose.yaml](../../registry/manifests/detected-pose.yaml) | object_pose | franka, so101 | perception | hub | `src/aisle/nodes/l2_pose.py` |
 | [registry/manifests/detector-openvocab.yaml](../../registry/manifests/detector-openvocab.yaml) | object_detection | franka, so101 | perception | hub | `pip:dora-yolo` |
 | [registry/manifests/dora-genesis.yaml](../../registry/manifests/dora-genesis.yaml) | sim_bridge, rgb_stream, depth_stream, arm_actuation, gripper_actuation | franka, so101 | motion | hub | `src/aisle/nodes/dora_genesis.py` |
+| [registry/manifests/goal-adversary.yaml](../../registry/manifests/goal-adversary.yaml) | goal_adversary | franka, so101 | decision | agent-authored | `src/aisle/nodes/goal_adversary.py` |
 | [registry/manifests/grasp-planner-topdown.yaml](../../registry/manifests/grasp-planner-topdown.yaml) | grasp_planning | franka, so101 | decision | hub | `src/aisle/nodes/grasp_topdown.py` |
 | [registry/manifests/gripper-driver-sim.yaml](../../registry/manifests/gripper-driver-sim.yaml) | gripper_actuation | franka, so101 | motion | hub | `src/aisle/nodes/dora_genesis.py` |
 | [registry/manifests/human-sim.yaml](../../registry/manifests/human-sim.yaml) | dialogue_human | franka, so101 | decision | hub | `src/aisle/nodes/human_sim.py` |
@@ -126,6 +133,7 @@ stayed outside it).
 | [registry/manifests/s1-expert.yaml](../../registry/manifests/s1-expert.yaml) | s1_expert_driving | franka | motion | hub | `src/aisle/nodes/s1_expert.py` |
 | [registry/manifests/s3-driver-v1.yaml](../../registry/manifests/s3-driver-v1.yaml) | s3_reshelving_driving_both_l1 | franka | motion | agent-authored | `skills/s3-driver-v1/s3_driver_v1.py` |
 | [registry/manifests/segmented-pose.yaml](../../registry/manifests/segmented-pose.yaml) | object_pose | franka, so101 | perception | hub | `src/aisle/nodes/segmented_pose.py` |
+| [registry/manifests/semantic-gateway.yaml](../../registry/manifests/semantic-gateway.yaml) | semantic_authorization | franka, so101 | motion | agent-authored | `src/aisle/nodes/semantic_gateway.py` |
 | [registry/manifests/so101-driver.yaml](../../registry/manifests/so101-driver.yaml) | hw_bridge | so101 | motion | hub | `src/aisle/nodes/so101_driver.py` |
 | [registry/manifests/stock-detector.yaml](../../registry/manifests/stock-detector.yaml) | stock_detection | franka | perception | hub | `src/aisle/nodes/stock_detector.py` |
 | [registry/manifests/t2-scan-pose.yaml](../../registry/manifests/t2-scan-pose.yaml) | object_pose, scan_candidates | franka, so101 | perception | agent-authored | `skills/t2-scan-pose/t2_scan_pose.py` |
