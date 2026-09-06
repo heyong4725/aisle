@@ -17,7 +17,7 @@
     "perception_models": "src/aisle/verifier/models.py",
     "registry": "registry/manifests",
     "research_prompt": "harness/CLAUDE.research.md",
-    "seed_commitment_predecessor": "analysis/freeze/bnd-task-band-calibration-v4/freeze-manifest.json",
+    "seed_commitment_predecessor": "analysis/freeze/bnd-task-band-calibration-v5/freeze-manifest.json",
     "spec": "specs/490-non-oracle-task-band.md",
     "validators": "src/aisle/harness/non_oracle.py"
   },
