@@ -252,6 +252,43 @@ def _visible_files(allowlist: Any, root: Path) -> list[dict[str, str]]:
     return rows
 
 
+def _validate_editable_view(repository: dict, root: Path) -> None:
+    """An explicit edit grant applies only to an exact, sealed visible file set."""
+    if "editable_allowlist" not in repository:
+        return
+    editable = repository["editable_allowlist"]
+    if (
+        not isinstance(editable, list)
+        or not all(isinstance(path, str) and path for path in editable)
+        or editable != sorted(set(editable))
+        or not set(editable).issubset(repository["visible_allowlist"])
+    ):
+        raise ManifestError("repository.editable_allowlist must be a sorted unique visible subset")
+    directories = {
+        parent.as_posix()
+        for name in repository["visible_allowlist"]
+        for parent in PurePosixPath(name).parents
+        if parent != PurePosixPath(".")
+    }
+    try:
+        actual = set()
+        pending = [root]
+        while pending:
+            for path in pending.pop().iterdir():
+                if path.is_dir() and not path.is_symlink():
+                    if path.relative_to(root).as_posix() not in directories:
+                        raise ManifestError(
+                            "editable visible tree contains an undeclared directory"
+                        )
+                    pending.append(path)
+                else:
+                    actual.add(path.relative_to(root).as_posix())
+    except OSError as exc:
+        raise ManifestError("editable visible tree cannot be enumerated") from exc
+    if actual != set(repository["visible_allowlist"]):
+        raise ManifestError("editable visible tree contains undeclared or missing files")
+
+
 def _content_id(manifest_without_id: dict) -> str:
     return f"sha256:{hashlib.sha256(_canonical_bytes(manifest_without_id)).hexdigest()}"
 
@@ -272,6 +309,7 @@ def create_treatment_manifest(candidate: dict, root: Path) -> dict:
     manifest["repository"]["visible_files"] = _visible_files(
         manifest["repository"]["visible_allowlist"], Path(root)
     )
+    _validate_editable_view(manifest["repository"], Path(root))
     manifest["immutable_id"] = _content_id(manifest)
     return manifest
 

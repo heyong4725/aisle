@@ -358,3 +358,15 @@ def test_controller_cli_reports_a_json_refusal_without_writing_output(tmp_path: 
         "ok": False,
     }
     assert not manifest_path.exists()
+
+
+@pytest.mark.parametrize(
+    "editable",
+    [["missing.py"], ["../escape.py"], ["src/worker.py", "src/worker.py"], "src/worker.py"],
+)
+def test_editable_surface_must_be_an_explicit_unique_visible_subset(tmp_path, editable):
+    """MON-8/MON-13: undeclared edit grants cannot enter a treatment identity."""
+    candidate = _candidate(tmp_path)
+    candidate["repository"]["editable_allowlist"] = editable
+    with pytest.raises(ManifestError, match="editable"):
+        create_treatment_manifest(candidate, tmp_path)

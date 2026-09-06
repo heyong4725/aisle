@@ -125,6 +125,38 @@ def _access_log_record(path: Path) -> tuple[dict | None, list[str], str, str]:
     return record, reasons, log_status, confinement_status
 
 
+def _declared_edits(baseline: dict, current: dict) -> list[dict[str, str]]:
+    """Normalize only originally granted content edits, retaining both digests."""
+    before = baseline.get("repository", {})
+    after = current.get("repository", {})
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return []
+    editable = before.get("editable_allowlist")
+    if not isinstance(editable, list) or editable != after.get("editable_allowlist"):
+        return []
+    rows = before.get("visible_files")
+    if not isinstance(rows, list) or any(
+        not isinstance(row, dict)
+        or set(row) != {"path", "sha256"}
+        or not isinstance(row["path"], str)
+        or not isinstance(row["sha256"], str)
+        or len(row["sha256"]) != 64
+        or any(char not in "0123456789abcdef" for char in row["sha256"])
+        for row in rows
+    ):
+        return []
+    previous = {row["path"]: row["sha256"] for row in rows}
+    changes = []
+    for row in after["visible_files"]:
+        path = row["path"]
+        if path in editable and path in previous and row["sha256"] != previous[path]:
+            changes.append(
+                {"path": path, "before_sha256": previous[path], "after_sha256": row["sha256"]}
+            )
+            row["sha256"] = previous[path]
+    return changes
+
+
 def create_postflight_record(
     preflight: dict,
     current_candidate: dict,
@@ -142,6 +174,7 @@ def create_postflight_record(
     reasons: list[str] = []
     drift_paths: list[str] = []
     diagnostic: str | None = None
+    deliverable_changes: list[dict[str, str]] = []
 
     current: dict | None = None
     try:
@@ -160,6 +193,7 @@ def create_postflight_record(
     elif current is not None:
         current_without_id = copy.deepcopy(current)
         current_without_id.pop("immutable_id")
+        deliverable_changes = _declared_edits(baseline, current_without_id)
         drift_paths = _diff_paths(baseline, current_without_id)
         if drift_paths:
             reasons.append("treatment_drift")
@@ -188,6 +222,12 @@ def create_postflight_record(
         else None,
         "schema_version": SCHEMA_VERSION,
     }
+    if (
+        baseline is not None
+        and isinstance(baseline.get("repository"), dict)
+        and "editable_allowlist" in baseline["repository"]
+    ):
+        record["deliverable_changes"] = deliverable_changes
     if current is not None:
         record["current_treatment_immutable_id"] = current["immutable_id"]
     if access_record is not None:

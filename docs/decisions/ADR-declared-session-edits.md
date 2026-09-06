@@ -1,0 +1,7 @@
+# ADR-declared-session-edits — Declared edits preserve treatment identity
+
+Status: PROPOSED — engineering interpretation; no protocol or collection approval.
+
+Implementation decision for MON-8/MON-13 and TRT-9; issue #357. This does not approve a study protocol or authorize collection.
+
+A coding session must change its deliverable without changing its frozen treatment. A controller may therefore include a sorted `repository.editable_allowlist` in the SPEC 420 preflight candidate. It must be a unique subset of `visible_allowlist`; the visible root must contain exactly the declared files. Runtime caches and controller evidence belong outside that view. Postflight retains before/after SHA-256 values for content edits granted by the original immutable preflight, while still comparing all other treatment fields and file identities. Missing files, undeclared helpers, symlinks, changed grants, and frozen-file edits remain infrastructure exclusions. Manifests without an edit grant keep the existing strict behavior. An explicit empty grant permits no edits and still checks the exact view. This records only content changes between checkpoints, not a complete edit history or snapshots; MON-12 capture and the full MON-8 arm tuple remain required. Grants are controller-owned protocol inputs, not agent-selected permissions, and still need the role-specific allowlist, external enforcement, and independent integrity evidence before a real campaign.
