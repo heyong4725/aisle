@@ -409,7 +409,7 @@ def test_committed_registrations_check_clean_with_withheld_seeds():
     registration names it in `superseded`; drift with no successor is the
     refusal the registry promises (analysis/freeze/README.md)."""
     manifests = _committed_manifests()
-    assert len(manifests) == 20
+    assert len(manifests) == 21
     superseded_ids: set[str] = set()
     for path in manifests:
         declaration = json.loads(path.with_name("declaration.json").read_text())
@@ -449,3 +449,14 @@ def test_confirmatory_registrations_carry_a_refused_freeze():
         refusal = json.loads((folder / "protocol-freeze-refusal.json").read_text())
         assert refusal["ok"] is False
         assert "independent statistical review" in refusal["errors"][0]
+
+
+def test_hardened_perception_registration_requires_a_new_audit():
+    """BND-5/BND-12: a changed auditor cannot inherit a passed historical audit."""
+    root = REPO_ROOT / "analysis/freeze"
+    previous = json.loads((root / "bnd-task-band-calibration-v6/freeze-manifest.json").read_text())
+    current = json.loads((root / "bnd-task-band-calibration-v7/freeze-manifest.json").read_text())
+    assert current["seed_commitment"] == previous["seed_commitment"]
+    assert "BND-5 perception audit" in current["pending_gates"]
+    assert "BND-5 perception audit" not in current["gate_record_hashes"]
+    assert current["frozen"] is False

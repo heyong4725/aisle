@@ -56,3 +56,17 @@ uv run harness perception audit --run runs/bnd-perception-corpus-02 \
   --envelope analysis/perception-audit/envelope.json \
   --output analysis/perception-audit/records/bnd-perception-corpus-02/report.json
 ```
+
+## Auditor integrity revision (#346)
+
+The hardened auditor passes only the assigned target to the localizer; oracle
+positions, seeds, and scorer strata remain outside that callback's inputs. It
+enforces the declared confidence and latency limits, rejects duplicate records
+and invalid limits, retains missing observations in accuracy denominators, and
+requires evaluation coverage of every declared target class. These API checks
+do not establish process isolation or independence of correlated frames.
+
+The report above remains historical evidence from the previous auditor. BND
+registration v7 requires a new audit and remains pending; no threshold, seed
+commitment, or candidate eligibility has changed. Replays must use a new output
+path rather than overwrite the retained report.
