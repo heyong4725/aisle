@@ -9,6 +9,7 @@ import json
 import shutil
 
 import pytest
+from contract_capture import assert_rates, write_contract_dataflow
 
 from aisle.embodiment import SO101_JOINTS
 
@@ -33,20 +34,30 @@ FRANKA_N_DOF = 9
 SO101_N_DOF = len(SO101_JOINTS)
 
 
-def capture(dataflow, tmp_path, bridge_env, driver_env, duration_s=10.0, **kw):
+def capture(dataflow, tmp_path, bridge_env, driver_env, duration_s=10.0):
     out = tmp_path / "records.jsonl"
-    graph = dataflow.write(
-        tmp_path, out, bridge_env=bridge_env, driver_env=driver_env, duration_s=duration_s, **kw
+    graph = write_contract_dataflow(
+        tmp_path, out, bridge_env=bridge_env, driver_env=driver_env, duration_s=duration_s
     )
-    # startup budget: genesis build can exceed 3 min under CPU contention
-    run = dataflow.run(graph, timeout_s=duration_s + 300)
-    records = dataflow.read(out)
-    assert records, f"recorder captured nothing; dora stderr tail: {run.stderr[-2000:]}"
-    # an early bridge crash must fail the test, not shorten it silently:
-    # the capture window must actually span the requested duration
-    span = max(r["wall_t"] for r in records) - min(r["wall_t"] for r in records)
-    assert span >= duration_s * 0.8, f"capture ended early ({span:.1f}s of {duration_s}s)"
-    assert run.timed_out, f"dataflow ended by itself: rc={run.returncode}\n{run.stderr[-1500:]}"
+    # Await complete protocol evidence, with a separate bounded startup watchdog.
+    dataflow.run_until_settled(graph, out, deadline_s=600)
+    records = [r for r in dataflow.read(out) if r["id"] != "tick"]
+    assert records, "recorder captured nothing"
+    previous = {}
+    for row in records:
+        if row["id"] == "bridge_info":  # the sole pre-loop announcement
+            continue
+        meta = row["metadata"]
+        required = {"turn_epoch", "turn_id", "sim_time_ns", "seq", "env_id"}
+        assert required <= meta.keys(), row
+        assert all(type(meta[key]) is int for key in required), row
+        assert meta["turn_epoch"] == 19 and meta["env_id"] == 0, row
+        prior = previous.get(row["id"])
+        if prior is not None:
+            assert meta["seq"] > prior["seq"] and meta["turn_id"] >= prior["turn_id"], row
+        previous[row["id"]] = meta
+    reset = next(r for r in records if r["id"] == "reset")
+    assert reset["metadata"]["turn_id"] == 0 and reset["metadata"]["sim_time_ns"] == 0
     return records
 
 
@@ -74,17 +85,8 @@ def test_schema_conformance(tmp_path, dataflow):
             assert {"sim_time_ns", "env_id", "seq"} <= set(meta), (topic, meta)  # TC-2
         seqs = [int(m["metadata"]["seq"]) for m in msgs]
         assert seqs == sorted(seqs), f"{topic} seq not monotonic"  # TC-2
-        # TC-4: the contract band is WALL-clock — producers must publish
-        # within +/-20% of the declared rate as consumers experience it
-        wall_span = msgs[-1]["wall_t"] - msgs[0]["wall_t"]
-        if wall_span > 2.0:
-            measured = (len(msgs) - 1) / wall_span
-            assert 0.8 * rate <= measured <= 1.2 * rate, (topic, measured)
-        # scheduler correctness: sim-time rates are exact by construction
-        span_ns = int(msgs[-1]["metadata"]["sim_time_ns"]) - int(msgs[0]["metadata"]["sim_time_ns"])
-        if span_ns > 2e9:
-            sim_rate = (len(msgs) - 1) / (span_ns / 1e9)
-            assert 0.8 * rate <= sim_rate <= 1.2 * rate, (topic, sim_rate)
+        measured = assert_rates(topic, msgs, rate, 10.0)
+        print(f"{topic}: {json.dumps(measured, sort_keys=True)}")
 
     for topic in ("rgb_overhead", "rgb_wrist"):
         m = by_topic[topic][0]
@@ -125,7 +127,7 @@ def test_schema_conformance(tmp_path, dataflow):
     # BRG-3: joint_state documents coalescing in metadata dropped:int
     assert all("dropped" in m["metadata"] for m in by_topic["joint_state"])
     assert any(int(m["metadata"]["dropped"]) > 0 for m in by_topic["joint_state"]), (
-        "driver double-sends per tick; some coalescing must be observed"
+        "driver double-sends per turn; some coalescing must be observed"
     )
 
 
@@ -139,7 +141,6 @@ def test_so101_schema_conformance(tmp_path, dataflow):
         bridge_env={"AISLE_SEED": 7, "AISLE_EMBODIMENT": "so101"},
         driver_env={"DRIVER_MODE": "conformance", "DRIVER_N_DOF": SO101_N_DOF},
         duration_s=4.0,
-        driver_waits_for_bridge_info=True,
     )
     by_topic: dict[str, list[dict]] = {}
     for record in records:
@@ -165,14 +166,11 @@ def test_reset_service(tmp_path, dataflow):
         dataflow,
         tmp_path,
         bridge_env={"AISLE_SEED": 7},
-        step_without_reset=False,
         driver_env={
             "DRIVER_MODE": "reset",
             "DRIVER_RESET_SEEDS": ",".join(str(s) for s in seeds),
             "DRIVER_RESET_SPACING": 10,
         },
-        duration_s=18.0,
-        with_reset_service=True,
     )
     # the DISPATCHER's forwarded replies: proves src/aisle/reset/service.py
     # ran live and preserved TC-6 metadata across both hops
@@ -185,6 +183,9 @@ def test_reset_service(tmp_path, dataflow):
     request_wall_t = {
         r["metadata"]["request_id"]: r["wall_t"] for r in records if r["id"] == "reset"
     }
+    assert [r["metadata"]["request_id"] for r in dones] == [
+        f"req-{i}-{seed}" for i, seed in enumerate(seeds, 1)
+    ]
     for done in dones:
         meta = done["metadata"]
         assert meta["request_id"].startswith("req-")  # TC-6 request/reply correlation
@@ -203,7 +204,9 @@ def test_reset_service(tmp_path, dataflow):
             if r["sha256"] != first_oracle_after[pending_seed]:
                 pytest.fail(f"seed {pending_seed} reproduced different oracle_state")
             pending_seed = None
-    assert 1 in first_oracle_after  # seed 1 was requested three times
+    assert pending_seed is None
+    assert len([r for r in records if r["id"] == "bridge_reset_done"]) == len(seeds)
+    assert set(first_oracle_after) == set(seeds)
 
     # TC-6 send-side ordering: dora preserves per-producer order, so the
     # bridge message FOLLOWING each reset_done must be the post-reset
@@ -213,7 +216,14 @@ def test_reset_service(tmp_path, dataflow):
     for i, r in enumerate(records):
         if r["id"] != "bridge_reset_done":
             continue
-        following = next((x for x in records[i + 1 :] if x["id"] != "reset_done"), None)
+        following = next(
+            (
+                x
+                for x in records[i + 1 :]
+                if x["id"] not in {"reset_done", "reset", "reset_refused"}
+            ),
+            None,
+        )
         assert following is not None and following["id"] == "oracle_state", following
 
 
@@ -227,8 +237,6 @@ def test_episode_action_lifecycle(tmp_path, dataflow):
         tmp_path,
         bridge_env={"AISLE_SEED": 7},
         driver_env={"DRIVER_MODE": "episode"},
-        duration_s=8.0,
-        with_verifier_stub=True,
     )
     goals = [r for r in records if r["id"] == "episode_goal"]
     feedback = [r for r in records if r["id"] == "episode_feedback"]
