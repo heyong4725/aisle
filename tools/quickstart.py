@@ -363,14 +363,21 @@ def main(argv: list[str] | None = None) -> int:
             {"name": "preflight", "ok": False, "errors": record["local_overrides"]}
         )
     else:
-        for name, fn in stages:
-            ok = stage(record, name, fn) and ok
-            if ok:
-                continue
-            record["stages"].append(
-                {"name": "remaining", "ok": False, "skipped_because": f"{name} failed"}
-            )
-            break
+        from process_resources import ResourceSampler
+
+        with ResourceSampler() as sampler:
+            for name, fn in stages:
+                ok = stage(record, name, fn) and ok
+                if ok:
+                    continue
+                record["stages"].append(
+                    {"name": "remaining", "ok": False, "skipped_because": f"{name} failed"}
+                )
+                break
+        record["memory_sampling"] = sampler.report()
+        record["memory_sampling"]["window"] = (
+            "quickstart stages; excludes uv bootstrap and final record serialization"
+        )
     record["ok"] = ok and not record["local_overrides"]
     record["elapsed_s"] = round(time.monotonic() - started, 1)
     record["storage_bytes"] = (
@@ -378,6 +385,23 @@ def main(argv: list[str] | None = None) -> int:
         if (root / "runs" / args.run_id).exists()
         else None
     )
+    if "report" in record["outputs"]:
+        report_path = Path(record["outputs"]["report"])
+        report_stage = next(s for s in record["stages"] if s["name"] == "report")
+        try:
+            report_data = json.loads(report_path.read_text())
+            memory = record["memory_sampling"]
+            report_data["resources"].update(
+                memory_sampling=memory,
+                peak_memory_bytes=memory["sampled_peak_rss_bytes"],
+                storage_bytes=record["storage_bytes"],
+                storage_scope="rollout_directory_logical_bytes",
+            )
+            report_path.write_text(json.dumps(report_data, indent=2, sort_keys=True) + "\n")
+            report_stage["sha256"] = _sha(report_path)
+        except (OSError, ValueError) as exc:
+            report_stage.update(ok=False, error=f"resource finalization failed: {exc}")
+            record["ok"] = False
     out.mkdir(parents=True, exist_ok=True)
     (out / "quickstart-record.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
     print(json.dumps(record, sort_keys=True))

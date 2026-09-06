@@ -1,6 +1,6 @@
 {
   "benchmark_version": "aisle-benchmark-v1-draft",
-  "manifest_sha256": "1e78390114ec0879854e58f5836d949135bc1172831dd78a973d2f79e997e6bd",
+  "manifest_sha256": "201790f2208206658e24f0f95c4427c4b5f0f83aeead01342f2304d168cbbc99",
   "missing_surfaces": [],
   "schema_version": "aisle.benchmark.version-manifest.v1",
   "status": "draft",
@@ -45,13 +45,17 @@
       "path": "docs/benchmark/v1/participant-contract.md",
       "sha256": "sha256:fc24a298079e6bf7d27d21e8d4d67d5e05f60d4bedf7965ed1237017a423ebc2"
     },
+    "process_resources": {
+      "path": "tools/process_resources.py",
+      "sha256": "sha256:99f15a4d474569b0444847302291a86d670157aa5c376826626063933f8eeaf7"
+    },
     "quickstart": {
       "path": "tools/quickstart.py",
-      "sha256": "sha256:ff92a2a17df4f78ea3c1fc622d25e5af145dd4ec3136bf4253830629c7a6e46a"
+      "sha256": "sha256:cf07e58ce3dec9b80104eb36f42d49b5e9287e85a5f3763ce110a0c774930d36"
     },
     "resource_accounting": {
       "path": "docs/benchmark/v1/resource-accounting.md",
-      "sha256": "sha256:f6118edd25f252a53caddc63504a0aab34b8aaf0a91466fc2b2a987da1fb5825"
+      "sha256": "sha256:5de75df0f8d64f24b2048561c20e63c93758499854f33c747ac556187b9f154a"
     },
     "safety_boundary_guard": {
       "path": "src/aisle/nodes/budget_guard.py",

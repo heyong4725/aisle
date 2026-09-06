@@ -50,6 +50,7 @@ SURFACES = {
     "submission_validator": Path("src/aisle/harness/reproduction.py"),
     "quickstart": Path("tools/quickstart.py"),
     "source_archive": Path("tools/source_archive.py"),
+    "process_resources": Path("tools/process_resources.py"),
     "source_archive_contract": V1 / "source-archive.md",
 }
 OPTIONAL = {"hidden_bank_commitment"}  # tracked only once #348 lands

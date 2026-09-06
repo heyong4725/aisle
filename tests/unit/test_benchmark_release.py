@@ -224,8 +224,10 @@ def test_quickstart_records_a_local_override_as_failure(tmp_path):
 
 
 @pytest.fixture
-def quickstart_module():
+def quickstart_module(monkeypatch):
     import importlib.util
+
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "tools"))
 
     spec = importlib.util.spec_from_file_location(
         "benchmark_quickstart", REPO_ROOT / "tools/quickstart.py"
@@ -343,3 +345,52 @@ def test_quickstart_distinguishes_empty_directory_marker_from_run_input(
     else:
         assert record["local_overrides"] == []
         assert record["stages"][0]["name"] == "sync" and calls
+
+
+@pytest.mark.parametrize("measurement_fails", [False, True])
+def test_quickstart_retains_memory_measurement_in_final_report(
+    quickstart_module, tmp_path, capsys, monkeypatch, measurement_fails
+):
+    """BMK-8/BMK-17: actual quickstart finalization retains measured memory or an explicit gap."""
+    import hashlib
+
+    import process_resources
+
+    import aisle.harness.benchmark_submission as submission
+
+    def observe(_pid):
+        if measurement_fails:
+            raise OSError("inspection refused")
+        return {"rss_bytes": 2048, "processes": 2}
+
+    monkeypatch.setattr(process_resources, "observe_tree", observe)
+    monkeypatch.setattr(submission, "validate_submission", lambda *a, **k: [])
+    run_dir = tmp_path / "runs/quickstart-t0-seed0"
+
+    def fake_run(cmd, cwd, env=None):
+        if "rollout" in cmd:
+            run_dir.mkdir(parents=True)
+            (run_dir / "manifest.json").write_text(
+                json.dumps({"graph_hash": "a" * 64, "exec_graph_hashes": ["b" * 64]})
+            )
+            (run_dir / "episodes.jsonl").write_text(json.dumps({"status": "success"}) + "\n")
+            return 0, json.dumps({"ok": True, "episodes": [{"status": "success"}]}), ""
+        if "validate" in cmd:
+            return 0, '{"ok": true}', ""
+        if "tools/env_hash.py" in cmd:
+            return 0, json.dumps({"env_hash": "c" * 64}), ""
+        return 0, "1.0.1", ""
+
+    monkeypatch.setattr(quickstart_module, "_run", fake_run)
+    assert quickstart_module.main(["--root", str(tmp_path), "--out", "result"]) == 0
+    record = json.loads(capsys.readouterr().out)
+    report_path = tmp_path / "result/report.json"
+    report = json.loads(report_path.read_text())
+    memory = record["memory_sampling"]
+    assert memory["status"] == ("unmeasured" if measurement_fails else "measured")
+    assert report["resources"]["memory_sampling"] == memory
+    assert report["resources"]["peak_memory_bytes"] == (None if measurement_fails else 2048)
+    report_stage = next(s for s in record["stages"] if s["name"] == "report")
+    assert (
+        report_stage["sha256"] == "sha256:" + hashlib.sha256(report_path.read_bytes()).hexdigest()
+    )
