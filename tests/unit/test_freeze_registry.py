@@ -269,6 +269,134 @@ def test_withheld_seed_sources_are_unverified_not_invented(tmp_path):
     assert report["ok"] is False and report["drift"][0].startswith("gate_record_hashes.MON-parity")
 
 
+def _successor(root):
+    prior = build_manifest(root, _declaration(), git_head="old")
+    (root / "prior.json").write_text(json.dumps(prior))
+    declaration = _declaration()
+    declaration["campaign_id"] = "demo-campaign-v2"
+    declaration["superseded"] = "demo-campaign-v1 (runtime upgrade)"
+    declaration["seed_commitment"]["inherited_from"] = "prior.json"
+    declaration["artifacts"]["seed_commitment_predecessor"] = "prior.json"
+    declaration["integrity_checks"].append(
+        {
+            "gate": "seed commitment verification",
+            "kind": "machine_check",
+            "status": "pending",
+            "record": None,
+            "owner_role": "holder of the private seed sources",
+        }
+    )
+    return declaration, prior
+
+
+def test_successor_preserves_withheld_commitment_without_claiming_verification(tmp_path):
+    """BND-12 / BND-13: runtime re-registration preserves private seed identity
+    and binds its predecessor, without certifying unavailable seed sources."""
+    root = _tree(tmp_path)
+    declaration, prior = _successor(root)
+    (root / "private/seeds.json").unlink()
+    (root / "graphs/expert.yaml").write_text("nodes: [changed]\n")
+    manifest = build_manifest(root, declaration, git_head=None)
+    assert manifest["seed_commitment"] == prior["seed_commitment"]
+    assert manifest["artifact_hashes"]["graph"] != prior["artifact_hashes"]["graph"]
+    assert manifest["frozen"] is False
+    assert "seed commitment verification" in manifest["pending_gates"]
+    report = check_manifest(root, manifest, require_seed_sources=False)
+    assert report["ok"] is True and report["seed_commitment"] == "unverified"
+    forged = copy.deepcopy(manifest)
+    forged["seed_commitment"] = "sha256:" + "0" * 64
+    assert check_manifest(root, forged, require_seed_sources=False)["ok"] is False
+    with pytest.raises(FreezeError, match="seed commitment sources are missing"):
+        check_manifest(root, manifest)
+    (root / "prior.json").write_text(json.dumps(prior, indent=2))
+    assert check_manifest(root, manifest, require_seed_sources=False)["ok"] is False
+
+
+@pytest.mark.parametrize(
+    "mutation", ["rules", "parent", "artifact", "gate", "digest", "id", "purpose"]
+)
+def test_successor_refuses_unbound_or_changed_seed_identity(tmp_path, mutation):
+    """BND-12 / BND-13: inherited commitments cannot disguise changed seeds,
+    missing lineage, corrupt declarations, or self-attested verification."""
+    root = _tree(tmp_path)
+    declaration, prior = _successor(root)
+    (root / "private/seeds.json").unlink()
+    if mutation == "rules":
+        declaration["seed_commitment"]["rule"] = "different seeds"
+    elif mutation == "parent":
+        declaration["superseded"] = "another-campaign (runtime upgrade)"
+    elif mutation == "artifact":
+        del declaration["artifacts"]["seed_commitment_predecessor"]
+    elif mutation == "gate":
+        declaration["integrity_checks"].pop()
+    elif mutation == "digest":
+        prior["declaration"]["campaign_id"] = "tampered"
+        (root / "prior.json").write_text(json.dumps(prior))
+    elif mutation == "id":
+        declaration["campaign_id"] = prior["campaign_id"]
+    elif mutation == "purpose":
+        declaration["purpose"] = "calibration"
+    with pytest.raises(FreezeError):
+        build_manifest(root, declaration, git_head=None)
+
+
+def test_successor_rejects_restored_seed_sources_that_disagree(tmp_path):
+    """BND-13: available sources must match the inherited commitment."""
+    root = _tree(tmp_path)
+    declaration, _ = _successor(root)
+    (root / "private/seeds.json").write_text("[999]\n")
+    with pytest.raises(FreezeError, match="seed sources disagree"):
+        build_manifest(root, declaration, git_head=None)
+
+
+def test_inherited_commitment_cannot_freeze_with_all_other_gates_passed(tmp_path):
+    """BND-13 / CON-5: inheritance never certifies absent sources, even with
+    an explicit timestamp and all of the campaign's other gates passed."""
+    root = _tree(tmp_path)
+    declaration, prior = _successor(root)
+    declaration["integrity_checks"] = [
+        g for g in declaration["integrity_checks"] if g["gate"] != "STA-12"
+    ]
+    (root / "private/seeds.json").unlink()
+    manifest = build_manifest(
+        root,
+        declaration,
+        git_head=None,
+        timestamp="2026-09-06T00:00:00+00:00",
+        timestamp_source="test",
+    )
+    assert manifest["seed_commitment"] == prior["seed_commitment"]
+    assert manifest["frozen"] is False
+    assert manifest["pending_gates"] == ["seed commitment verification"]
+
+
+def test_successor_cli_preserves_predecessor_and_reports_pending_status(tmp_path):
+    """BND-12 / BND-13 / CON-8: CLI inheritance is explicit, pending, and
+    cannot overwrite the evidence whose commitment it carries forward."""
+    root = _tree(tmp_path)
+    declaration, prior = _successor(root)
+    (root / "declaration.json").write_text(json.dumps(declaration))
+    (root / "private/seeds.json").unlink()
+    args = (
+        "aisle.harness.cli",
+        "freeze",
+        "build",
+        "--root",
+        str(root),
+        "--declaration",
+        str(root / "declaration.json"),
+    )
+    result = run_module(*args, "--output", str(root / "successor.json"))
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["ok"] is True and report["status"] == "registered_pending_review"
+    assert report["seed_commitment"] == prior["seed_commitment"]
+    prior_bytes = (root / "prior.json").read_bytes()
+    result = run_module(*args, "--output", str(root / "prior.json"))
+    assert result.returncode == 1 and "collides" in json.loads(result.stdout)["error"]
+    assert (root / "prior.json").read_bytes() == prior_bytes
+
+
 def _committed_manifests() -> list[Path]:
     return sorted((REPO_ROOT / "analysis" / "freeze").glob("*/freeze-manifest.json"))
 
@@ -281,7 +409,7 @@ def test_committed_registrations_check_clean_with_withheld_seeds():
     registration names it in `superseded`; drift with no successor is the
     refusal the registry promises (analysis/freeze/README.md)."""
     manifests = _committed_manifests()
-    assert len(manifests) == 17
+    assert len(manifests) == 18
     superseded_ids: set[str] = set()
     for path in manifests:
         declaration = json.loads(path.with_name("declaration.json").read_text())

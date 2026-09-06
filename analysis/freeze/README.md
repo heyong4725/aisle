@@ -46,6 +46,22 @@ flt-bank-calibration-v4 supersedes v3 after injector v2 (FLT-8 parity pad and pr
 bnd v4, sfe v4 and flt v5 supersede their predecessors after the SPEC 480 live-graph
 manifests (semantic-gateway, goal-adversary) entered the registry.
 
+BND v5 supersedes v4 after the Dora 1.0.1 lockfile upgrade. Its unchanged
+salted seed commitment is inherited from the byte-bound v4 manifest because
+the original private sources are unavailable on the build host. The added
+`seed commitment verification` gate stays pending; this is not a verified
+seed commitment or authorization to collect scores. Strict checks still
+require those sources. See
+[the inheritance decision](../../docs/decisions/ADR-seed-commitment-inheritance.md).
+
+To make such a pending successor, set `seed_commitment.inherited_from` and
+`artifacts.seed_commitment_predecessor` to the same predecessor manifest path,
+name its campaign in `superseded`, preserve its seed rules and source paths,
+and include a pending `seed commitment verification` machine gate. The normal
+`harness freeze build` command validates and hashes that lineage. It rejects
+changed seed rules, a missing verification gate, or restored sources whose
+digest disagrees. The predecessor itself is retained unchanged.
+
 ## Confirmatory protocols
 
 `cse-causal-study-v1` and `fel-fault-evidence-study-v1` also carry a SPEC 400
