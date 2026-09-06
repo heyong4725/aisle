@@ -78,3 +78,8 @@ risk difference needs 49 randomized sessions per arm per stratum.
 
 No campaign outcome, treatment effect, physical result, external review, or
 DOI. Building a manifest is a hashing step, not evidence.
+
+BND v7 supersedes v6 after the perception-auditor integrity fix (#346). It
+preserves the inherited seed commitment and thresholds, retains the old report
+as historical evidence, and resets the BND-5 audit gate to pending. A fresh
+audit with the hardened implementation is required; v7 is not a protocol freeze.

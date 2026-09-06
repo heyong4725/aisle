@@ -73,10 +73,12 @@ def _detector_for(truth_target: str, *, score: float = 0.5, rival: float = 0.0):
     return detector
 
 
-def _localizer(record_truth_offset: float = 0.0, to_other: bool = False):
+def _localizer(fixture_record: dict, record_truth_offset: float = 0.0, to_other: bool = False):
+    positions = copy.deepcopy(fixture_record["truth"]["positions"])
+
     def localize(best, depth, record):
         name = next(n for n in MEDS if n != record["target"]) if to_other else record["target"]
-        pos = list(record["truth"]["positions"][name])
+        pos = list(positions[name])
         pos[2] += record_truth_offset  # along z: the nearest truth stays the target
         return pos
 
@@ -94,7 +96,7 @@ def _score_all(corpus, frames, envelope, *, offset=0.0, score=0.5, rival=0.0):
                 arrays,
                 envelope=envelope,
                 detector=detector,
-                localizer=_localizer(offset),
+                localizer=_localizer(record, offset),
                 clock=lambda: 0.0,
             )
         )
@@ -152,7 +154,7 @@ def test_scorer_opens_truth_only_after_the_prediction_and_names_the_failure():
         arrays,
         envelope=envelope,
         detector=spying_detector,
-        localizer=_localizer(),
+        localizer=_localizer(record),
         clock=lambda: 0.0,
     )
     assert seen["rgb_only"] and out["outcome"] == "correct"
@@ -162,7 +164,7 @@ def test_scorer_opens_truth_only_after_the_prediction_and_names_the_failure():
         arrays,
         envelope=envelope,
         detector=_detector_for(record["target"], score=0.3, rival=0.1),
-        localizer=_localizer(),
+        localizer=_localizer(record),
         clock=lambda: 0.0,
     )
     assert wrong["outcome"] == "correct"  # rival below the picked score, margin above the floor
@@ -171,7 +173,7 @@ def test_scorer_opens_truth_only_after_the_prediction_and_names_the_failure():
         arrays,
         envelope=envelope,
         detector=_detector_for(record["target"], score=0.3, rival=0.295),
-        localizer=_localizer(),
+        localizer=_localizer(record),
         clock=lambda: 0.0,
     )
     assert refused["outcome"] == "refused"
@@ -180,7 +182,7 @@ def test_scorer_opens_truth_only_after_the_prediction_and_names_the_failure():
         arrays,
         envelope=envelope,
         detector=lambda rgb: [],
-        localizer=_localizer(),
+        localizer=_localizer(record),
         clock=lambda: 0.0,
     )
     assert none["outcome"] == "no_detection"
@@ -189,7 +191,7 @@ def test_scorer_opens_truth_only_after_the_prediction_and_names_the_failure():
         arrays,
         envelope=envelope,
         detector=_detector_for(record["target"]),
-        localizer=_localizer(to_other=True),
+        localizer=_localizer(record, to_other=True),
         clock=lambda: 0.0,
     )
     assert other["outcome"] == "wrong_identity"
@@ -198,7 +200,7 @@ def test_scorer_opens_truth_only_after_the_prediction_and_names_the_failure():
         arrays,
         envelope=envelope,
         detector=_detector_for(record["target"]),
-        localizer=_localizer(),
+        localizer=_localizer(record),
         clock=lambda: 0.0,
     )
     assert wrist["outcome"] == "out_of_envelope"
@@ -207,7 +209,7 @@ def test_scorer_opens_truth_only_after_the_prediction_and_names_the_failure():
         arrays,
         envelope=envelope,
         detector=_detector_for(record["target"]),
-        localizer=_localizer(),
+        localizer=_localizer(record),
         clock=lambda: 0.0,
     )
     assert late["outcome"] == "out_of_envelope"
@@ -216,7 +218,7 @@ def test_scorer_opens_truth_only_after_the_prediction_and_names_the_failure():
         arrays,
         envelope=envelope,
         detector=_detector_for(record["target"]),
-        localizer=_localizer(0.1),
+        localizer=_localizer(record, 0.1),
         clock=lambda: 0.0,
     )
     assert far["outcome"] == "localization_error"
@@ -225,7 +227,7 @@ def test_scorer_opens_truth_only_after_the_prediction_and_names_the_failure():
         arrays,
         envelope=envelope,
         detector=_detector_for(record["target"]),
-        localizer=_localizer(),
+        localizer=_localizer(record),
         clock=lambda: 0.0,
     )
     assert missing["outcome"] == "missing_data"
@@ -251,7 +253,9 @@ def test_eligibility_requires_every_stratum_to_clear_the_floor():
     ids = {
         r["record_id"]
         for r in corpus["records"]
-        if r["split"] == "evaluation" and r["strata"]["target_class"] == "ibuprofen"
+        if r["split"] == "evaluation"
+        and r["camera"] == "overhead"
+        and r["strata"]["target_class"] == "ibuprofen"
     }
     for s in broken:
         if s["record_id"] in ids:
@@ -273,3 +277,131 @@ def test_eligibility_requires_every_stratum_to_clear_the_floor():
         pa.audit(overlap, envelope, scored=scored, model_hashes={})
     with pytest.raises(pa.PerceptionAuditError, match="incomplete"):
         pa.audit(corpus, {"schema_version": "x"}, scored=scored, model_hashes={})
+
+
+def _perfect_audit_inputs():
+    frames, oracle, goals = _frames([0, 1, 2, 3, 4, 5, 6, 7], stamps_per_seed=40)
+    corpus = pa.build_corpus(
+        run_id="r", frames=frames, oracle_rows=oracle, goals=goals, calibration={}, med_names=MEDS
+    )
+    envelope = {**pa.default_envelope(MEDS), "operating_window_s": 100.0}
+    return corpus, envelope, _score_all(corpus, frames, envelope)
+
+
+def test_localizer_receives_only_the_declared_goal_not_hidden_truth():
+    """BND-5: localization cannot read scorer truth or seed-derived metadata."""
+    frames, oracle, goals = _frames([1])
+    corpus = pa.build_corpus(
+        run_id="r", frames=frames, oracle_rows=oracle, goals=goals, calibration={}, med_names=MEDS
+    )
+    record = corpus["records"][0]
+    position = record["truth"]["positions"][record["target"]]
+    seen = []
+
+    def localize(best, depth, context):
+        seen.append(context)
+        return position
+
+    out = pa.score_record(
+        record,
+        frames["overhead"][record["sim_time_ns"]],
+        envelope=pa.default_envelope(MEDS),
+        detector=_detector_for(record["target"]),
+        localizer=localize,
+        clock=lambda: 0.0,
+    )
+    assert out["outcome"] == "correct"
+    assert seen == [{"target": record["target"]}]
+
+
+def test_confidence_floor_refuses_before_localization():
+    """BND-6: an accepted margin cannot override the frozen confidence floor."""
+    frames, oracle, goals = _frames([1])
+    corpus = pa.build_corpus(
+        run_id="r", frames=frames, oracle_rows=oracle, goals=goals, calibration={}, med_names=MEDS
+    )
+    record = corpus["records"][0]
+
+    def localize(*args):
+        pytest.fail("a below-confidence detection must not reach localization")
+
+    out = pa.score_record(
+        record,
+        frames["overhead"][record["sim_time_ns"]],
+        envelope={**pa.default_envelope(MEDS), "confidence_floor": 0.8},
+        detector=_detector_for(record["target"], score=0.7),
+        localizer=localize,
+        clock=lambda: 0.0,
+    )
+    assert out["outcome"] == "refused"
+    assert "confidence" in out["prediction"]["refusal"]
+
+
+@pytest.mark.parametrize("latency", [5.01, None, float("nan"), float("inf"), -0.1])
+def test_latency_gate_cannot_be_bypassed_by_perfect_accuracy(latency):
+    """BND-7: every evaluated prediction must meet the frozen latency ceiling."""
+    corpus, envelope, scored = _perfect_audit_inputs()
+    row_id = next(
+        r["record_id"]
+        for r in corpus["records"]
+        if r["split"] == "evaluation" and r["camera"] == "overhead"
+    )
+    next(r for r in scored if r["record_id"] == row_id)["latency_s"] = latency
+    if latency != 5.01:
+        with pytest.raises(pa.PerceptionAuditError, match="latency"):
+            pa.audit(corpus, envelope, scored=scored, model_hashes={})
+        return
+    report = pa.audit(corpus, envelope, scored=scored, model_hashes={})
+    assert report["eligibility"] == "not_eligible" and not report["ok"]
+    assert any("latency" in f for f in report["failures"])
+
+
+def test_missing_data_cannot_disappear_from_eligibility_denominator():
+    """BND-5/BND-7: one missing source record fails instead of shrinking n."""
+    corpus, envelope, scored = _perfect_audit_inputs()
+    row_id = next(
+        r["record_id"]
+        for r in corpus["records"]
+        if r["split"] == "evaluation" and r["camera"] == "overhead"
+    )
+    next(r for r in scored if r["record_id"] == row_id)["outcome"] = "missing_data"
+    report = pa.audit(corpus, envelope, scored=scored, model_hashes={})
+    assert not report["ok"]
+    cell = report["strata"]["sensor"]["overhead"]
+    assert cell["n"] == 160 and cell["missing"] == 1
+    assert cell["accuracy"] == pytest.approx(159 / 160)
+
+
+@pytest.mark.parametrize("duplicate_in", ["corpus", "scored"])
+def test_duplicate_records_cannot_inflate_accuracy_certainty(duplicate_in):
+    """BND-16: duplicated record ids are inadmissible audit inputs."""
+    corpus, envelope, scored = _perfect_audit_inputs()
+    rows = corpus["records"] if duplicate_in == "corpus" else scored
+    rows.append(copy.deepcopy(rows[0]))
+    with pytest.raises(pa.PerceptionAuditError, match="duplicate"):
+        pa.audit(corpus, envelope, scored=scored, model_hashes={})
+
+
+def test_missing_supported_target_cannot_be_hidden_by_other_strata():
+    """BND-5/BND-7: each declared target class needs evaluation evidence."""
+    corpus, envelope, scored = _perfect_audit_inputs()
+    envelope["identity_vocabulary"].append("missing-med")
+    report = pa.audit(corpus, envelope, scored=scored, model_hashes={})
+    assert not report["ok"]
+    assert any("missing-med" in f for f in report["failures"])
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("accuracy_floor", float("nan")),
+        ("confidence_floor", float("nan")),
+        ("latency_ceiling_s", float("inf")),
+        ("refusal_availability_limit", 1.1),
+        ("localization_tolerance_m", -0.1),
+    ],
+)
+def test_invalid_thresholds_cannot_disable_the_envelope(key, value):
+    """BND-6: malformed frozen limits fail rather than making comparisons vacuous."""
+    with pytest.raises(pa.PerceptionAuditError, match="envelope"):
+        pa.validate_envelope({**pa.default_envelope(MEDS), key: value})

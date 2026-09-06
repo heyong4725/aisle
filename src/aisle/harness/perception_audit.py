@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -113,6 +114,17 @@ def validate_envelope(envelope: dict) -> None:
     missing = sorted(required - set(envelope))
     if missing or envelope.get("schema_version") != ENVELOPE_SCHEMA:
         raise PerceptionAuditError("perception envelope incomplete", missing)
+    bounded = ("margin_floor", "confidence_floor", "refusal_availability_limit", "accuracy_floor")
+    positive = ("localization_tolerance_m", "latency_ceiling_s", "operating_window_s")
+    for key in (*bounded, *positive):
+        value = envelope.get(key)
+        if (
+            type(value) not in (int, float)
+            or not math.isfinite(value)
+            or (key in bounded and not 0 <= value <= 1)
+            or (key in positive and value <= 0)
+        ):
+            raise PerceptionAuditError("perception envelope has an invalid limit", [key])
 
 
 # ------------------------------------------------------------- corpus
@@ -227,6 +239,8 @@ def score_record(
     prediction: dict[str, Any] = {"detections": len(detections)}
     try:
         best = pick_target_detection(detections, record["target"], envelope["margin_floor"])
+        if not math.isfinite(float(best["score"])) or best["score"] < envelope["confidence_floor"]:
+            raise PoseRefused("confidence below the frozen floor or non-finite")
         prediction.update(
             {
                 "identity": best["label"],
@@ -243,7 +257,9 @@ def score_record(
         )
     position = None
     if outcome == "correct":
-        position = localizer(best, arrays["depth"], record)
+        # Only the assigned goal is policy-visible. The scorer's record also
+        # contains oracle positions, seed and strata: none may cross this API.
+        position = localizer(best, arrays["depth"], {"target": record["target"]})
         prediction["position"] = position
     latency = clock() - started
     # truth is opened only now
@@ -281,9 +297,20 @@ def audit(
     the frozen floor, refusal availability, latency, taxonomy, split
     disjointness; missing strata fail; raw predictions retained."""
     validate_envelope(envelope)
+    for name, rows in (("corpus", corpus["records"]), ("scored", scored)):
+        ids = [r["record_id"] for r in rows]
+        if len(ids) != len(set(ids)):
+            raise PerceptionAuditError(f"duplicate {name} record ids")
     by_id = {r["record_id"]: r for r in corpus["records"]}
     if {s["record_id"] for s in scored} != set(by_id):
         raise PerceptionAuditError("scored rows do not match the corpus")
+    for row in scored:
+        if row["outcome"] not in FAILURE_TAXONOMY:
+            raise PerceptionAuditError("unknown perception outcome", [row["record_id"]])
+        if row["outcome"] not in {"out_of_envelope", "missing_data"}:
+            latency = row["latency_s"]
+            if type(latency) not in (int, float) or not math.isfinite(latency) or latency < 0:
+                raise PerceptionAuditError("invalid prediction latency", [row["record_id"]])
     splits = {"calibration": set(), "evaluation": set()}
     for r in corpus["records"]:
         splits[r["split"]].add(r["frame_hash"])
@@ -309,20 +336,23 @@ def audit(
             cell["missing"] += s["outcome"] == "missing_data"
             cell["taxonomy"][s["outcome"]] = cell["taxonomy"].get(s["outcome"], 0) + 1
     failures = []
+    missing_ids = [s["record_id"] for s in scored if s["outcome"] == "missing_data"]
+    if missing_ids:
+        failures.append(f"missing source data for {len(missing_ids)} records")
+    if "target_class" in strata:
+        for target in envelope["identity_vocabulary"]:
+            if target not in strata["target_class"]:
+                failures.append(f"target_class={target}: no evaluation records")
     for axis, cells in strata.items():
         if not cells:
             failures.append(f"stratum axis {axis} has no evaluation records")
         for key, cell in cells.items():
-            usable = cell["n"] - cell["missing"]
-            if usable == 0:
-                failures.append(f"{axis}={key}: no usable records")
-                continue
             interval = clopper_pearson_interval(
-                cell["correct"], usable, confidence_level=confidence, sidedness="lower"
+                cell["correct"], cell["n"], confidence_level=confidence, sidedness="lower"
             )
-            cell["accuracy"] = cell["correct"] / usable
+            cell["accuracy"] = cell["correct"] / cell["n"]
             cell["accuracy_lower_bound"] = interval["lower"]
-            cell["refusal_rate"] = cell["refused"] / usable
+            cell["refusal_rate"] = cell["refused"] / cell["n"]
             cell["passes_floor"] = interval["lower"] >= envelope["accuracy_floor"]
             cell["refusal_within_limit"] = (
                 cell["refusal_rate"] <= envelope["refusal_availability_limit"]
@@ -332,7 +362,18 @@ def audit(
                     f"{axis}={key}: accuracy lower bound {interval['lower']:.3f} or refusal "
                     f"{cell['refusal_rate']:.2f} outside the envelope"
                 )
-    latencies = [s["latency_s"] for s in evaluation if s["latency_s"] is not None]
+    latencies = [
+        s["latency_s"]
+        for s in evaluation
+        if s["outcome"] != "missing_data" and s["latency_s"] is not None
+    ]
+    slow_ids = [
+        s["record_id"]
+        for s in evaluation
+        if s["outcome"] != "missing_data" and s["latency_s"] > envelope["latency_ceiling_s"]
+    ]
+    if slow_ids:
+        failures.append(f"latency ceiling exceeded by {len(slow_ids)} evaluation records")
     report = {
         "ok": not failures,
         "schema_version": REPORT_SCHEMA,
@@ -349,6 +390,7 @@ def audit(
             "max": max(latencies) if latencies else None,
             "ceiling": envelope["latency_ceiling_s"],
             "descriptive": True,
+            "within_ceiling": not slow_ids,
         },
         "taxonomy": {k: sum(1 for s in evaluation if s["outcome"] == k) for k in FAILURE_TAXONOMY},
         "eligibility": "perception_eligible" if not failures else "not_eligible",
