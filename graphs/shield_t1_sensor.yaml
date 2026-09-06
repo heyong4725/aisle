@@ -282,7 +282,7 @@ nodes:
   path: ../src/aisle/nodes/turn_barrier.py
   env:
     AISLE_TURN_PLAN: turn_plans/shield_t1_sensor.json
-    AISLE_TURN_WATCHDOG_S: '10'
+    AISLE_TURN_WATCHDOG_S: '60'  # OWLv2 runs on CPU inside the gateway's turn
     AISLE_VERDICT_TURN_WATCHDOG_S: '15'
   inputs:
     tick: dora/timer/millis/100

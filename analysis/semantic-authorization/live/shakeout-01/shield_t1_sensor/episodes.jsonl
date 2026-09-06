@@ -1,0 +1,2 @@
+{"episode": 0, "seed": 3, "status": "success", "failure": null, "t_end": 20.36, "goal_id": "ep-0000", "verifier": "oracle", "retries": 0}
+{"episode": 1, "seed": 5, "status": "success", "failure": null, "t_end": 15.63, "goal_id": "ep-0001", "verifier": "oracle", "retries": 0}

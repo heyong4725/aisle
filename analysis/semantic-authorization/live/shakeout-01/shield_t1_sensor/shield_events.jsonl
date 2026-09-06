@@ -1,0 +1,2 @@
+{"t_s": 5.5, "kind": "gripper_cmd", "stage": "pre_grasp", "track": "amoxicillin", "assertion_rejected": null, "outcome": "refuse", "reason": "below_threshold", "forwarded": false, "halt": false, "arm": "sensor_shield", "goal_id": "ep-0000"}
+{"t_s": 24.5, "kind": "gripper_cmd", "stage": "pre_grasp", "track": "cetirizine", "assertion_rejected": null, "outcome": "refuse", "reason": "below_threshold", "forwarded": false, "halt": false, "arm": "sensor_shield", "goal_id": "ep-0001"}
