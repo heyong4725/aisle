@@ -891,8 +891,10 @@ uv run python tools/env_hash.py --check
 ```
 
 Add `uv run pytest -m "sim or graph"` when simulation or graph code changes.
-Acceptance and nightly surfaces apply before releases. [`tools/ci.sh`](../tools/ci.sh)
-is the repository CI entry point.
+Acceptance surfaces (`uv run pytest -m "sim or graph or accept"`) apply before
+releases and run locally: the `nightly` workflow is manual-dispatch only because
+GitHub-hosted macOS runners have no Metal device for the simulator.
+[`tools/ci.sh`](../tools/ci.sh) is the repository CI entry point.
 
 ### 13.3 Risk classes and frozen set
 

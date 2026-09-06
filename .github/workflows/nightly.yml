@@ -1,7 +1,10 @@
 name: nightly
+# Manual dispatch only. GitHub-hosted macOS runners expose no Metal device, so
+# the Genesis sim/graph/acceptance suites failed there every night with
+# "MPS backend out of memory" before running a single episode. Those suites
+# are run locally before each merge (docs/contributor-wiki.md); dispatch this
+# workflow from a runner with a GPU when one exists.
 on:
-  schedule:
-    - cron: "0 9 * * *"
   workflow_dispatch:
 jobs:
   sim-graph-accept:
