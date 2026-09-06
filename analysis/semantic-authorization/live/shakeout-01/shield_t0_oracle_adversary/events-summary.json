@@ -1,0 +1,12 @@
+{
+  "events": 46,
+  "by_stage_outcome": [
+    {
+      "stage": "pre_grasp",
+      "outcome": "refuse",
+      "reason": "wrong_target",
+      "forwarded": false,
+      "count": 46
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "events": 2308,
+  "by_stage_outcome": [
+    {
+      "stage": "carry",
+      "outcome": "permit",
+      "reason": "",
+      "forwarded": true,
+      "count": 1350
+    },
+    {
+      "stage": "delivery",
+      "outcome": "permit",
+      "reason": "",
+      "forwarded": true,
+      "count": 956
+    },
+    {
+      "stage": "pre_grasp",
+      "outcome": "permit",
+      "reason": "",
+      "forwarded": true,
+      "count": 2
+    }
+  ]
+}

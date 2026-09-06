@@ -1,0 +1,19 @@
+{
+  "events": 424,
+  "by_stage_outcome": [
+    {
+      "stage": "carry",
+      "outcome": "refuse",
+      "reason": "wrong_target",
+      "forwarded": true,
+      "count": 422
+    },
+    {
+      "stage": "pre_grasp",
+      "outcome": "refuse",
+      "reason": "wrong_target",
+      "forwarded": true,
+      "count": 2
+    }
+  ]
+}
