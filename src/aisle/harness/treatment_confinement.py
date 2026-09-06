@@ -14,15 +14,17 @@ import json
 import os
 import platform
 import shlex
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = "aisle.macos-confinement-capability.v2"
+SCHEMA_VERSION = "aisle.macos-confinement-capability.v3"
 EVIDENCE_CLASS = "synthetic_unscored_capability"
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 SYSTEM_PROFILE = Path("/System/Library/Sandbox/Profiles/system.sb")
@@ -42,6 +44,10 @@ _REQUIRED_CASE_IDS = {
     "unrestricted_hidden_baseline",
     "visible_git_object_read",
     "visible_read",
+    "unrestricted_tcp_baseline",
+    "tcp_read",
+    "unrestricted_exec_baseline",
+    "unlisted_executable",
 }
 
 
@@ -327,6 +333,45 @@ def _platform_record() -> dict[str, str]:
     }
 
 
+def _socket_capability_cases(profile_path: Path, cwd: Path, sentinel: bytes) -> list[dict]:
+    """Exercise the same loopback read outside and inside the external profile."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        listener.settimeout(0.1)
+        stopped = threading.Event()
+
+        def serve():
+            while not stopped.is_set():
+                try:
+                    connection, _ = listener.accept()
+                except TimeoutError:
+                    continue
+                with connection:
+                    connection.settimeout(1)
+                    connection.sendall(sentinel)
+
+        server = threading.Thread(target=serve, daemon=True)
+        server.start()
+        command = [
+            "/bin/bash",
+            "-c",
+            f"exec 3<>/dev/tcp/127.0.0.1/{listener.getsockname()[1]} && /bin/cat <&3",
+        ]
+        try:
+            baseline = _run(command, cwd=cwd)
+            confined = _run(_wrapped(profile_path, command), cwd=cwd)
+        finally:
+            stopped.set()
+            server.join(timeout=2)
+        return [
+            _case_result(
+                "unrestricted_tcp_baseline", baseline, sentinel, expected="baseline-exposure"
+            ),
+            _case_result("tcp_read", confined, sentinel, expected="deny"),
+        ]
+
+
 def run_macos_capability_audit() -> dict[str, Any]:
     """Run the synthetic deny/allow matrix through the external adapter."""
     if sys.platform != "darwin":
@@ -608,6 +653,25 @@ def run_macos_capability_audit() -> dict[str, Any]:
             _case_result("hidden_write", forbidden_write, hidden_sentinel, expected="deny")
         )
 
+        cases.extend(_socket_capability_cases(profile_path, visible, hidden_sentinel))
+        executable_command = ["/usr/bin/printf", "%s", hidden_sentinel.decode()]
+        cases.append(
+            _case_result(
+                "unrestricted_exec_baseline",
+                _run(executable_command, cwd=visible),
+                hidden_sentinel,
+                expected="baseline-exposure",
+            )
+        )
+        cases.append(
+            _case_result(
+                "unlisted_executable",
+                _run(_wrapped(profile_path, executable_command), cwd=visible),
+                hidden_sentinel,
+                expected="deny",
+            )
+        )
+
         denial_cases = [row for row in cases if row["expected"] == "deny"]
         allow_cases = [row for row in cases if row["expected"] == "allow"]
         baseline_cases = [row for row in cases if row["expected"] == "baseline-exposure"]
@@ -630,7 +694,8 @@ def run_macos_capability_audit() -> dict[str, Any]:
             "evidence_class": EVIDENCE_CLASS,
             "limitations": [
                 "macOS-only capability; no Linux adapter evaluated",
-                "synthetic filesystem sentinels; no benchmark fault identities",
+                "synthetic filesystem and loopback TCP sentinels; no benchmark fault identities",
+                "TCP read and one unlisted executable tested; not exhaustive IPC/process coverage",
                 "no vendor network or credential path evaluated",
                 "no Claude/Codex end-to-end parity evaluated",
                 "Git surfaces cover the system Git CLI only, not every future allowed tool",
