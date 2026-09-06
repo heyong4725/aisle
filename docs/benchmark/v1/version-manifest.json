@@ -1,6 +1,6 @@
 {
   "benchmark_version": "aisle-benchmark-v1-draft",
-  "manifest_sha256": "69ddef1edea647a2a1eb199f5c72e0248b42134e3bf62b63422a164b6bcc728c",
+  "manifest_sha256": "1e78390114ec0879854e58f5836d949135bc1172831dd78a973d2f79e997e6bd",
   "missing_surfaces": [],
   "schema_version": "aisle.benchmark.version-manifest.v1",
   "status": "draft",
@@ -47,7 +47,7 @@
     },
     "quickstart": {
       "path": "tools/quickstart.py",
-      "sha256": "sha256:f9b980202aafb2271b6fc3a5206d01683af3eb2f181d858655b5923933906af9"
+      "sha256": "sha256:ff92a2a17df4f78ea3c1fc622d25e5af145dd4ec3136bf4253830629c7a6e46a"
     },
     "resource_accounting": {
       "path": "docs/benchmark/v1/resource-accounting.md",
@@ -72,6 +72,14 @@
     "semantic_authorization": {
       "path": "src/aisle/harness/semantic_shield.py",
       "sha256": "sha256:0c730e116022c6b092d88b58c6251e8f73ddffe7cfa09a3e1e26973c3191aaf5"
+    },
+    "source_archive": {
+      "path": "tools/source_archive.py",
+      "sha256": "sha256:583e39b6b4f22f5db09ec16bee9684283f29c2d9fe32d72307b25d44b5cec04b"
+    },
+    "source_archive_contract": {
+      "path": "docs/benchmark/v1/source-archive.md",
+      "sha256": "sha256:ff632c624c6bc8d1bc1fbf6f3bf4aef4dce9e33b51dfee3cefe60d45b2fda119"
     },
     "submission_schema": {
       "path": "docs/benchmark/v1/submission.schema.json",

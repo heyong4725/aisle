@@ -48,6 +48,19 @@ def _manifest_digest(value: object) -> str | None:
     return None
 
 
+def _source_provenance(manifest: dict, root: Path) -> dict:
+    """Bind development provenance to Git or verified archived commit/tree bytes."""
+    from source_archive import PROVENANCE, verify_source
+
+    provenance = {"git_sha": manifest.get("git_sha")}
+    if (root / PROVENANCE).exists():
+        source = verify_source(root)
+        if provenance["git_sha"] and provenance["git_sha"] != source["git_sha"]:
+            raise ValueError("archive and execution source commit mismatch")
+        provenance.update(git_sha=source["git_sha"], source_archive=source)
+    return provenance
+
+
 def stage(record: dict, name: str, fn) -> bool:
     started = time.monotonic()
     try:
@@ -108,6 +121,8 @@ def main(argv: list[str] | None = None) -> int:
         return {"ok": code == 0, "stderr_tail": se[-400:]}
 
     def versions():
+        # Verify archived source before execution, then again when building the bundle.
+        _source_provenance({}, root)
         code, so, _ = _run(
             ["uv", "run", "python", "-c", "import aisle,sys;print(sys.version.split()[0])"], root
         )
@@ -229,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
                     "treatment": "typed",
                     "provenance": {
                         "run_id": manifest.get("run_id"),
-                        "git_sha": manifest.get("git_sha"),
+                        **_source_provenance(manifest, root),
                         "mode": "development_public",
                     },
                     "budget": {"episodes": 1},
