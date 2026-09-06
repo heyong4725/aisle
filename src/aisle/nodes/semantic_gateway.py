@@ -229,6 +229,7 @@ class Gateway:
         grasp_cmd: float,
         sensor: SensorIdentity | None = None,
         open_cmd: float = 0.0,
+        finger_open: np.ndarray | None = None,
     ):
         if arm not in ARMS:
             raise ValueError(f"unknown shield arm {arm!r}; expected one of {ARMS}")
@@ -236,6 +237,11 @@ class Gateway:
         self.tray = tray
         self.grasp_cmd = grasp_cmd
         self.open_cmd = open_cmd
+        # the executor closes the fingers through joint_cmd's gripper dofs
+        # as well as through gripper_cmd; a refused closure must hold BOTH
+        # channels open (second live shakeout: refusals logged, box grasped)
+        self.finger_open = None if finger_open is None else np.asarray(finger_open, np.float32)
+        self.closure_refused = False
         if arm == "sensor_shield":
             self.identity = sensor if sensor is not None else SensorIdentity(med_names)
         else:
@@ -280,6 +286,16 @@ class Gateway:
             "goal_revision": self.assignment["goal_revision"],
         }
 
+    def _hold_fingers(self, value):
+        """While a closure is refused, the gripper dofs of every forwarded
+        joint command stay at their open posture."""
+        if not self.closure_refused or self.finger_open is None:
+            return value
+        out = np.asarray(value, dtype=np.float32).copy()
+        n = self.finger_open.shape[0]
+        out[-n:] = self.finger_open
+        return out
+
     def _closing(self, value) -> bool:
         span = self.grasp_cmd - self.open_cmd
         return (float(value[0]) - self.open_cmd) / span >= CLOSING_FRACTION if span else False
@@ -295,10 +311,12 @@ class Gateway:
             closing = self._closing(value)
             if not closing:
                 self.gripper_closed = False  # opening or open: always allowed
+                self.closure_refused = False
             closing_edge = closing and not self.gripper_closed
         stage = stage_of(self.gripper_closed, closing_edge, over_tray(tcp, self.tray))
         if stage is None or self.assignment is None:
             if kind == "joint_cmd":
+                value = self._hold_fingers(value)
                 self.last_forwarded = np.asarray(value, dtype=np.float32)
             elif kind == "gripper_cmd" and self._closing(value):
                 self.gripper_closed = True  # no assignment: nothing to authorize against
@@ -344,7 +362,9 @@ class Gateway:
         if forward:
             if kind == "gripper_cmd":
                 self.gripper_closed = True
+                self.closure_refused = False
             else:
+                value = self._hold_fingers(value)
                 self.last_forwarded = np.asarray(value, dtype=np.float32)
             return {
                 "forward": True,
@@ -353,6 +373,8 @@ class Gateway:
                 "halt": False,
                 "event": event,
             }
+        if kind == "gripper_cmd":
+            self.closure_refused = True
         held = (
             self.last_forwarded
             if kind == "joint_cmd"
@@ -391,6 +413,9 @@ def main() -> None:  # pragma: no cover — dora runtime
         tray,
         float(profile.get("gripper_grasp_cmd", 1.0)),
         open_cmd=float(profile.get("gripper_pregrasp_cmd", 0.0)),
+        finger_open=np.asarray(profile["home_qpos"], dtype=np.float32)[
+            -int(profile.get("gripper_dofs", 2)) :
+        ],
     )
     n_arm = int(np.asarray(profile["home_qpos"]).shape[0]) - int(profile.get("gripper_dofs", 2))
     qpos: np.ndarray | None = None

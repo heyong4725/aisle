@@ -138,6 +138,24 @@ def test_closing_ramp_is_gated_from_its_first_step():
     assert release["forward"] and release["stage"] is None and ok.gripper_closed is False
 
 
+def test_refused_closure_holds_the_finger_dofs_in_joint_commands():
+    """SEM-4: the executor also closes the fingers through joint_cmd's
+    gripper dofs; after a refused closure every forwarded joint command
+    keeps them open until a closure is permitted or the gripper opens."""
+    g = Gateway("oracle_sim_shield", KEY, MEDS, TRAY, 1.0, finger_open=np.array([0.04, 0.04]))
+    g.on_goal({"target_med": "ibuprofen"}, "ep-0", now_s=1.0, vocabulary=MEDS)
+    tcp = np.array([0.4, 0.1, 0.3])
+    g.identity.on_poses(_poses(metformin=[0.4, 0.1, 0.3]), sim_time_s=1.9)
+    assert g.propose("gripper_cmd", np.array([0.5]), tcp, 2.0)["forward"] is False
+    closing_joints = np.array([0.1] * 7 + [0.0, 0.0])
+    d = g.propose("joint_cmd", closing_joints, tcp, 2.01)
+    assert d["forward"] and d["value"][-2:].tolist() == pytest.approx([0.04, 0.04])
+    assert d["value"][:7].tolist() == pytest.approx([0.1] * 7)
+    g.propose("gripper_cmd", np.array([0.0]), tcp, 3.0)  # opened: hold released
+    d = g.propose("joint_cmd", closing_joints, tcp, 3.01)
+    assert d["value"][-2:].tolist() == [0.0, 0.0]
+
+
 def test_no_box_at_the_tool_is_missing_identity():
     """SEM-6: closing on air (no box within the candidate radius) refuses
     with missing_or_stale_identity rather than guessing."""
