@@ -227,6 +227,9 @@ def build_parser() -> argparse.ArgumentParser:
     exposure_corpus.add_argument("--seed", type=int, required=True)
     exposure_corpus.add_argument("--per-family", type=int, default=8)
     exposure_corpus.add_argument("--output", type=Path, default=None)
+    exposure_wording = exposure_sub.add_parser("wording", help="SFE-14 claim-wording audit")
+    exposure_wording.add_argument("--output", type=Path, default=None)
+    exposure_wording.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     exposure_ablate = exposure_sub.add_parser(
         "ablate", help="guard_on vs guard_observe_only on a fake driver (SFE-10..12)"
     )
@@ -264,6 +267,9 @@ def build_parser() -> argparse.ArgumentParser:
     threat_run = threat_sub.add_parser("run", help="THR-10 conformance run; bypass report")
     threat_run.add_argument("--agent-path", default="fixture")
     threat_run.add_argument("--output", type=Path, default=None)
+    threat_parity = threat_sub.add_parser("parity", help="THR-11 Claude/Codex path parity")
+    threat_parity.add_argument("--paths", default="claude,codex", help="comma list")
+    threat_parity.add_argument("--output", type=Path, default=None)
     monolith = subparsers.add_parser(
         "monolith", help="monolithic control surface: launcher, table, map, parity (SPEC 440)"
     )
@@ -407,7 +413,12 @@ def main() -> int:
     if args.command == "threat":
         from aisle.harness.attack_catalog import run_catalog
 
-        report = run_catalog(agent_path=args.agent_path)
+        if args.threat_command == "parity":
+            from aisle.harness.attack_catalog import agent_path_parity
+
+            report = agent_path_parity(tuple(p.strip() for p in args.paths.split(",") if p.strip()))
+        else:
+            report = run_catalog(agent_path=args.agent_path)
         if args.output is not None:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
@@ -560,6 +571,17 @@ def main() -> int:
         except (OSError, json.JSONDecodeError, KeyError, ValueError) as refused:
             report = {"ok": False, "error": "fault command refused", "details": [repr(refused)]}
         summary = {k: v for k, v in report.items() if k != "rungs"}
+        print(json.dumps(summary, sort_keys=True))
+        return 0 if report["ok"] else 1
+
+    if args.command == "exposure" and args.exposure_command == "wording":
+        from aisle.harness.exposure_wording import audit as audit_wording
+
+        report = audit_wording(args.root)
+        if args.output is not None:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        summary = {k: v for k, v in report.items() if k != "occurrences"}
         print(json.dumps(summary, sort_keys=True))
         return 0 if report["ok"] else 1
 

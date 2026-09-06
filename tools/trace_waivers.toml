@@ -33,7 +33,6 @@ SEM-14 = "proposed hardware adapter; feasibility/refusal/pending tests land afte
 SEM-16 = "proposed H5 narrowing; claim occurrence-audit tests land after human spec review"
 
 # SPEC 470 safety exposure — proposed in the #351 spec-change PR.
-SFE-14 = "proposed H5 wording; occurrence-audit tests land after human spec review"
 
 # SPEC 450 sealed fault bank — proposed in the #348 spec-change PR.
 # The tests-first implementation PR MUST remove every FLT waiver before merge.
@@ -76,7 +75,7 @@ TRT-5 = "proposed confinement boundary; adapter fail-closed tests land after hum
 
 # SPEC 460 actuation threat model — proposed in the #350 spec-change PR.
 THR-1 = "proposed threat model; schema/render/completeness tests land after human spec review"
-THR-11 = "proposed two-agent parity; matched-profile tests land after human spec review"
+THR-11 = "harness threat parity records both paths as not_executed with unresolved authority profiles; the matched-profile run needs the issue #353 confinement adapter"
 THR-13 = "proposed human review record; hash/disposition tests land after human spec review"
 THR-14 = "proposed scoped wording; documentation scan tests land after human spec review"
 TRT-6 = "proposed hidden boundary; path/symlink/git-object tests land after human spec review"

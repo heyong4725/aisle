@@ -487,4 +487,106 @@ def run_catalog(*, agent_path: str = "fixture") -> dict:
     return report
 
 
-__all__: list[Any] = ["ATTACKS", "OUT_OF_SCOPE", "RESIDUAL_PATHS", "execute", "run_catalog"]
+# ---------------------------------------------------------------- THR-11
+
+#: the authority dimensions both campaign paths must match before the
+#: catalog result on one may be read beside the other
+AUTHORITY_DIMENSIONS = (
+    "filesystem",
+    "process",
+    "network",
+    "tool",
+    "coordinator",
+    "broker",
+    "credential",
+)
+
+
+def agent_path_profile(agent_path: str) -> dict:
+    """The confinement/authority profile a campaign path runs under. Until
+    the issue #353 confinement adapter exists, every dimension of the
+    Claude and Codex paths is `unresolved`: the adapters (tools/
+    agent_adapters.py) pin model, credentials and treatment identity, but
+    nothing bounds the process the agent gets. The fixture path is the
+    harness's own process and is resolved by definition."""
+    if agent_path == "fixture":
+        return {
+            "agent_path": "fixture",
+            **{dim: "harness process" for dim in AUTHORITY_DIMENSIONS},
+            "confinement_adapter": "not applicable",
+            "resolved": True,
+        }
+    if agent_path not in ("claude", "codex"):
+        raise ValueError(f"unknown agent path {agent_path!r}")
+    return {
+        "agent_path": agent_path,
+        **{dim: "unresolved (#353)" for dim in AUTHORITY_DIMENSIONS},
+        "confinement_adapter": "issue #353, not built",
+        "resolved": False,
+    }
+
+
+def matched_profiles(a: dict, b: dict) -> list[str]:
+    """Dimensions on which two resolved profiles differ; an unresolved
+    profile mismatches on every dimension (nothing is attested)."""
+    if not (a.get("resolved") and b.get("resolved")):
+        return [d for d in AUTHORITY_DIMENSIONS]
+    return [d for d in AUTHORITY_DIMENSIONS if a.get(d) != b.get(d)]
+
+
+def agent_path_parity(paths: tuple[str, ...] = ("claude", "codex")) -> dict:
+    """THR-11: both campaign paths must run the identical catalog under
+    matched authority. With no confinement adapter the catalog is NOT
+    executed on either path — a fixture pass says nothing about them — and
+    the report records every attack as not_executed with the reason, so the
+    gap is a retained record rather than an absent one."""
+    profiles = {p: agent_path_profile(p) for p in paths}
+    mismatches = {}
+    ordered = list(paths)
+    for i, a in enumerate(ordered):
+        for b in ordered[i + 1 :]:
+            mismatches[f"{a}:{b}"] = matched_profiles(profiles[a], profiles[b])
+    runs = {}
+    for path, profile in profiles.items():
+        if profile["resolved"]:
+            runs[path] = run_catalog(agent_path=path)
+        else:
+            runs[path] = {
+                "agent_path": path,
+                "executed": False,
+                "reason": "authority profile unresolved: the #353 confinement adapter is not built",
+                "attacks": [
+                    {"attack_id": aid, "class": cls, "outcome": "not_executed"}
+                    for aid, cls, _e, _d in ATTACKS
+                ],
+                "counts": {o: (len(ATTACKS) if o == "not_executed" else 0) for o in OUTCOMES},
+            }
+    ok = all(r.get("executed", True) and r.get("ok") for r in runs.values()) and not any(
+        mismatches.values()
+    )
+    return {
+        "ok": ok,
+        "schema_version": "aisle.threat-model.agent-path-parity.v1",
+        "catalog_version": CATALOG_VERSION,
+        "paths": ordered,
+        "profiles": profiles,
+        "profile_mismatches": mismatches,
+        "runs": runs,
+        "claim_wording": (
+            "no Claude or Codex campaign path has run the catalog under a matched, "
+            "attested authority profile; the fixture result authorizes no claim about "
+            "either path (THR-11)"
+        ),
+    }
+
+
+__all__: list[Any] = [
+    "ATTACKS",
+    "OUT_OF_SCOPE",
+    "RESIDUAL_PATHS",
+    "agent_path_parity",
+    "agent_path_profile",
+    "execute",
+    "matched_profiles",
+    "run_catalog",
+]

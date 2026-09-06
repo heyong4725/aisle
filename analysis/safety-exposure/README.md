@@ -138,3 +138,20 @@ uv run harness exposure ablate \
 The SFE-14 occurrence audit of claim wording is not yet mechanised.
 Hardware ledgers are absent (`hardware_pending`, SFE-15). Emergency
 containment on a real driver is not modelled beyond the envelope check.
+
+## Claim wording (SFE-14)
+
+Three separate statements, each with its own evidence, and nothing broader:
+
+1. Validated declared paths traverse the guard: every command edge into
+   the bridge routes through budget-guard (VAL-5 at the gate; ledger source map).
+2. Measured gateway interventions alter kinematically illegal proposals
+   under the tested boundary: the held-command ablation counts clamps and
+   refusals of limit- and velocity-violating proposals, nothing semantic.
+3. The verifier counts observed semantic outcomes: wrong-object deliveries
+   are counted by the held-out verifier after the fact; detection is not
+   prevention, and a zero count is an observation, not an impossibility.
+
+The guard does not know identity; nothing here holds `by construction`.
+`uv run harness exposure wording --check` rejects broader wording on the
+claim-bearing surfaces.
