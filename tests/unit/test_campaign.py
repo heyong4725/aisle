@@ -1455,7 +1455,8 @@ def test_frozen_audit_errors_are_not_clean_audits(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "failure", ["retention", "drift", "audit", "scoring", "scorer_launch", "no_deliverable", None]
+    "failure",
+    ["retention", "drift", "audit", "scoring", "scorer_launch", "session", "no_deliverable", None],
 )
 def test_campaign_gates_holdout_on_retention_and_frozen_audit(
     tmp_path, monkeypatch, capsys, failure
@@ -1478,9 +1479,15 @@ def test_campaign_gates_holdout_on_retention_and_frozen_audit(
     monkeypatch.setattr(c, "scrub_session_credentials", lambda *a: [])
     monkeypatch.setattr(c, "probe_agent_auth", lambda *a: None)
     monkeypatch.setattr(c, "attach_historical_baseline_compat", lambda *a: {})
-    monkeypatch.setattr(
-        c, "run_session", lambda *a, **k: {"tokens": 1, "wall_s": 1.0, "stopped": "agent_done"}
-    )
+
+    def run_session(*args, **kwargs):
+        session = {"tokens": 1, "wall_s": 1.0, "stopped": "agent_done"}
+        if failure == "session":
+            session["classification"] = "infrastructure_exclusion"
+            raise c.SessionInfraError("CLI exited rc=3", session)
+        return session
+
+    monkeypatch.setattr(c, "run_session", run_session)
     monkeypatch.setattr(c, "sweep_worktree", lambda *a: [])
     monkeypatch.setattr(
         c,
@@ -1525,3 +1532,34 @@ def test_campaign_gates_holdout_on_retention_and_frozen_audit(
     if failure == "no_deliverable":
         assert record["holdout"]["outcome"] == "no_deliverable"
     assert len(record["sessions"]) == 1
+
+
+def test_failed_session_retains_resource_and_transcript_record(tmp_path, monkeypatch):
+    """MON-12/TRT-10: a failed CLI retains its lifecycle, observed spend, and transcript hashes."""
+    import hashlib
+
+    import campaign as c
+
+    with pytest.raises(c.InfraError):
+        _run(tmp_path, monkeypatch, "print('retained failure'); raise SystemExit(3)")
+    out = tmp_path / "out"
+    record = json.loads((out / "session-record.json").read_text())
+    assert record["classification"] == "infrastructure_exclusion"
+    assert record["rc"] == 3
+    assert record["wall_s"] >= 0
+    for name in ("session.jsonl", "session.stderr", "token_samples.jsonl"):
+        assert (
+            record["artifacts"][name]
+            == "sha256:" + hashlib.sha256((out / name).read_bytes()).hexdigest()
+        )
+
+
+def test_resume_refuses_retained_infrastructure_session(tmp_path):
+    """TRT-10/MON-12: a failed session cannot be silently resumed as a valid budget ledger."""
+    import campaign as c
+
+    (tmp_path / "campaign.json").write_text(
+        json.dumps({"treatment": {}, "sessions": [{"classification": "infrastructure_exclusion"}]})
+    )
+    with pytest.raises(SystemExit, match="infrastructure"):
+        c.load_existing(tmp_path, {})

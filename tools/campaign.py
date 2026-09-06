@@ -58,6 +58,14 @@ TEE_JOIN_S = 10.0  # stream-drain grace after the session exits
 BASELINE_COMPAT_TEMPLATE = REPO_ROOT / "tools" / "campaign_baseline_sitecustomize.py"
 
 
+class SessionInfraError(InfraError):
+    """A failed session with retained observed accounting and evidence."""
+
+    def __init__(self, message: str, session: dict):
+        super().__init__(message)
+        self.session = session
+
+
 # ---------------------------------------------------------------- telemetry
 
 
@@ -834,7 +842,8 @@ def run_session(
                     break
         rc = proc.wait()
         reader.join(timeout=TEE_JOIN_S)
-        if reader.is_alive():
+        stream_complete = not reader.is_alive()
+        if not stream_complete:
             # an escaped grandchild holds the pipe open past killpg: the
             # drain is incomplete — attribute a possibly-short count
             print("[campaign] WARNING stream drain incomplete after session exit", file=sys.stderr)
@@ -843,23 +852,37 @@ def run_session(
         except OSError:
             pass
         total = counter.total  # pinned before the log handle closes
+    error = None
     if tee_failure:
-        raise InfraError(
-            f"telemetry tee failed ({tee_failure[0]}) — the token ceiling "
-            "could not be trusted; session killed (not an agent outcome)"
-        )
-    if stopped == "agent_done" and rc != 0:
-        raise InfraError(f"{agent} CLI exited rc={rc} (not an agent outcome)")
-    return {
+        error = "telemetry tee failed; token accounting is incomplete (not an agent outcome)"
+    elif stopped == "agent_done" and rc != 0:
+        error = f"{agent} CLI exited rc={rc} (not an agent outcome)"
+    elif not stream_complete:
+        error = "stream drain incomplete; token accounting is incomplete"
+    record = {
+        "schema_version": "aisle.campaign.session.v1",
+        "classification": "infrastructure_exclusion" if error else "agent_outcome",
+        "error": error,
         "stopped": stopped,
         "rc": rc,
         "tokens": total,
-        # ADR-43: recorded beside `tokens`, never summed with it. A cross-arm
-        # claim citing `tokens` is invalid once a non-API arm exists; this is
-        # the unit such a claim must use.
+        # ADR-43: generated tokens stay distinct from the API enforcement meter.
         "tokens_generated": counter.generated,
         "wall_s": round(time.monotonic() - t0, 1),
+        "stream_complete": stream_complete and not tee_failure,
+        "artifacts": {},
     }
+    # Do not attest bytes while a descendant may still be writing the stream.
+    if record["stream_complete"]:
+        for path in (log_path, stderr_path, samples_path):
+            with path.open("rb") as source:
+                record["artifacts"][path.name] = (
+                    "sha256:" + hashlib.file_digest(source, "sha256").hexdigest()
+                )
+    (out / "session-record.json").write_text(json.dumps(record, indent=1))
+    if tee_failure or (stopped == "agent_done" and rc != 0):
+        raise SessionInfraError(error, record)
+    return record
 
 
 def score_holdout(wt: Path, holdout_seeds: str, run_tag: str, tier: str = "T1") -> dict:
@@ -922,6 +945,21 @@ def load_existing(out: Path, current: dict) -> dict | None:
     if not record_path.exists():
         return None
     existing = json.loads(record_path.read_text())
+    if any(
+        session.get("classification") == "infrastructure_exclusion"
+        for session in existing.get("sessions", [])
+    ):
+        raise SystemExit(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": (
+                        "resume refused: retained infrastructure exclusion "
+                        "requires a new campaign id"
+                    ),
+                }
+            )
+        )
     prior = existing.get("treatment") or {}
     for key in TREATMENT_IDENTITY:
         if prior.get(key) != current.get(key):
@@ -1032,6 +1070,9 @@ def main() -> int:
             env=session_env,
             environment_record=session_isolation["ambient_baseline"],
         )
+    except SessionInfraError as exc:
+        session = exc.session
+        print(f"[campaign] {exc}", file=sys.stderr)
     finally:
         # PR #100 review P1: the seeded token must not outlive the
         # session — runs/ artifact directories persist indefinitely
@@ -1058,7 +1099,9 @@ def main() -> int:
         audit_error = str(exc)
         print(f"[campaign] {audit_error}", file=sys.stderr)
     admission = {
-        "ok": bool(archive["ok"] and not drift and audit_error is None),
+        "ok": bool(archive["ok"] and not drift and audit_error is None)
+        and session.get("classification") != "infrastructure_exclusion",
+        "session_execution_valid": session.get("classification") != "infrastructure_exclusion",
         "deliverable_retained": bool(archive["ok"]),
         "frozen_audit_readable": audit_error is None,
         "frozen_audit_error": audit_error,
@@ -1077,7 +1120,7 @@ def main() -> int:
             "ok": False,
             "executed": False,
             "outcome": "not_executed",
-            "error": "scoring admission refused: retention or frozen audit failed",
+            "error": "scoring admission refused: session, retention or frozen audit failed",
         }
     sweep_worktree(wt)  # ...and so may the holdout rollout
     metrics = campaign_metrics(wt, session_t0=sessions[0]["t0_epoch"], pin=oid)
