@@ -56,8 +56,16 @@ def test_oracle_shield_refuses_the_wrong_object_closure(tmp_path):
     assert refusals[0]["reason"] == "wrong_target"
 
 
-def test_no_shield_arm_lets_the_wrong_object_through(tmp_path):
-    """SEM-10 control: the same adversary graph without enforcement ends in
-    the verifier's wrong_object verdict, so the contrast is real."""
+def test_no_shield_arm_forwards_the_refused_closure(tmp_path):
+    """SEM-10 control: the same adversary graph without enforcement forwards
+    the closure the authorizer refused (logged, not enforced). The oracle
+    verifier classifies disturbing the wrong box as `collision` before any
+    delivery, in both arms, so the verdict alone does not separate the arms
+    here; the shield_events record does (SEM-8 evidence)."""
     record = _records(*_run_expert_graph(tmp_path, "shield_t0_none_adversary.yaml", ENV))
-    assert record["failure"] == "wrong_object", record
+    assert record["status"] != "success", record
+    events = [
+        json.loads(line) for line in (tmp_path / "shield_events.jsonl").read_text().splitlines()
+    ]
+    refused = [e for e in events if e["outcome"] == "refuse"]
+    assert refused and all(e["forwarded"] for e in refused), events[:5]
