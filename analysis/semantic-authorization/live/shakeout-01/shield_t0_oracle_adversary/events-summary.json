@@ -1,0 +1,19 @@
+{
+  "events": 90,
+  "by_stage_outcome": [
+    {
+      "stage": "pre_grasp",
+      "outcome": "refuse",
+      "reason": "wrong_target",
+      "forwarded": false,
+      "count": 46
+    },
+    {
+      "stage": "pre_grasp",
+      "outcome": "refuse",
+      "reason": "missing_or_stale_identity",
+      "forwarded": false,
+      "count": 44
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "events": 248,
+  "by_stage_outcome": [
+    {
+      "stage": "pre_grasp",
+      "outcome": "refuse",
+      "reason": "below_threshold",
+      "forwarded": false,
+      "count": 248
+    }
+  ]
+}

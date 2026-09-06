@@ -43,17 +43,18 @@ def test_oracle_shield_permits_the_correct_plan(tmp_path):
 
 def test_oracle_shield_refuses_the_wrong_object_closure(tmp_path):
     """SEM-4 / SEM-8: under goal-adversary the policy pursues the wrong box;
-    the gateway refuses at pre_grasp and the verifier never records a
-    wrong-object delivery (the disturbed box is a `collision`, a verifier
-    semantic outcome, not a guard intervention)."""
+    the gateway refuses every closing step at pre_grasp, holds the fingers
+    open on both command channels, and the verifier never records a
+    wrong-object delivery nor a success."""
     record = _records(*_run_expert_graph(tmp_path, "shield_t0_oracle_adversary.yaml", ENV))
-    assert record["failure"] != "wrong_object", record
+    assert record["status"] != "success" and record["failure"] != "wrong_object", record
     events = [
         json.loads(line) for line in (tmp_path / "shield_events.jsonl").read_text().splitlines()
     ]
     refusals = [e for e in events if e["outcome"] == "refuse"]
     assert refusals and refusals[0]["stage"] == "pre_grasp", events[:5]
     assert refusals[0]["reason"] == "wrong_target"
+    assert not any(e["forwarded"] for e in refusals)
 
 
 def test_no_shield_arm_forwards_the_refused_closure(tmp_path):

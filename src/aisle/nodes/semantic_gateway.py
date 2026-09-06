@@ -18,8 +18,9 @@ Identity adapters (`AISLE_SHIELD_ARM`):
 - `oracle_sim_shield`: the ground-truth `poses` topic of a rung-L0 graph —
   the ceiling arm; which box is at the tool centre point is read from the
   simulator. This is NOT a deployable shield (SEM-14).
-- `sensor_shield`: reserved for the rendered-perception adapter; refuses
-  (no permit) until it exists, so a graph that wires it fails closed.
+- `sensor_shield`: OWLv2 on the overhead RGB frame (the VER-9 identity
+  adapter), the detection nearest the tool centre point's projected pixel;
+  refuses when no detection sits there or no frame/calibration exists.
 - `no_shield`: every proposal is forwarded; the authorizer still logs, so
   the same evidence exists for the control arm.
 
@@ -45,6 +46,11 @@ from aisle.harness.semantic_shield import (
     content_hash,
 )
 
+#: a gripper command is a CLOSING proposal once it moves this fraction of the
+#: way from the open value toward the grasp value; the executor ramps the
+#: command in 0.01 steps, so gating only the final value would let the
+#: fingers close through the ramp unauthorized (first live shakeout)
+CLOSING_FRACTION = 0.1
 CARRY_RADIUS_M = 0.06  # a box centre within this of the TCP is the carried object
 CANDIDATE_RADIUS_M = 0.10  # at closure, the nearest box within this is the grasp candidate
 IDENTITY_SOURCE = "simulation_oracle"
@@ -112,16 +118,134 @@ class OracleIdentity:
         }, track
 
 
+SENSOR_SOURCE = "owlv2_overhead"
+SENSOR_MIN_INTERVAL_S = 0.4  # sim seconds between detections while a stage is active
+SENSOR_PIXEL_RADIUS = 60.0  # a detection whose box centre is within this of the TCP pixel
+
+
+class SensorIdentity:
+    """The deployable-shaped adapter: OWLv2 (VER-9 identity adapter) on the
+    latest overhead RGB frame, the box nearest the tool centre point's
+    projected pixel, scores normalized over the detections at that spot.
+    Detection is CPU-bound (seconds per frame) so it runs only when an
+    authorization-bearing proposal needs it and at most every
+    SENSOR_MIN_INTERVAL_S of sim time; the assertion's capture_s is the
+    frame's stamp, so the authorizer's max_age_s still applies."""
+
+    def __init__(self, med_names: list[str], detector=None, projector=None):
+        self.med_names = med_names
+        self._detector = detector
+        self._projector = projector
+        self.calibration: dict | None = None
+        self.rgb: np.ndarray | None = None
+        self.stamp_s: float = -1.0
+        self.n = 0
+        self.source_hash = hashlib.sha256(SENSOR_SOURCE.encode()).hexdigest()
+        self._cache: tuple[float, list[dict]] | None = None  # (stamp_s, detections)
+        self._last_detect_s: float = -1e9
+        self.detections_run = 0
+
+    def on_calibration(self, calibration: dict) -> None:
+        self.calibration = calibration
+
+    def on_rgb(self, rgb: np.ndarray, sim_time_s: float) -> None:
+        self.rgb, self.stamp_s = rgb, sim_time_s
+
+    def _detect(self):
+        if self._detector is None:
+            from aisle.verifier.models import detect_meds, load_pinned
+
+            pair = load_pinned("identity")
+            self._detector = lambda rgb: detect_meds(rgb, list(self.med_names), model_pair=pair)
+        return self._detector
+
+    def _project(self, tcp: np.ndarray) -> np.ndarray:
+        if self._projector is not None:
+            return np.asarray(self._projector(tcp), dtype=np.float64)
+        from aisle.verifier.stages import project_to_pixels
+
+        return np.asarray(
+            project_to_pixels(np.asarray([tcp], dtype=np.float64), self.calibration)[0]
+        )
+
+    def detections(self, now_s: float) -> list[dict] | None:
+        """Cached detections for the latest frame; a new detection only when
+        the frame is newer than the cache and the interval elapsed."""
+        if self.rgb is None or self.calibration is None:
+            return None
+        if self._cache is not None and self._cache[0] == self.stamp_s:
+            return self._cache[1]
+        if now_s - self._last_detect_s < SENSOR_MIN_INTERVAL_S - 1e-9 and self._cache is not None:
+            return self._cache[1]
+        found = list(self._detect()(self.rgb))
+        self.detections_run += 1
+        self._last_detect_s = now_s
+        self._cache = (self.stamp_s, found)
+        return found
+
+    def assertion(self, tcp: np.ndarray, radius: float, now_s: float) -> tuple[dict, str | None]:
+        self.n += 1
+        found = self.detections(now_s)
+        refused, classes, track = True, {}, None
+        capture_s = self._cache[0] if self._cache is not None else -1.0
+        if found is not None and np.all(np.isfinite(tcp)):
+            uv = self._project(tcp)
+            near = []
+            for d in found:
+                x0, y0, x1, y1 = (float(v) for v in d["box"])
+                cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+                if float(np.hypot(cx - uv[0], cy - uv[1])) <= SENSOR_PIXEL_RADIUS:
+                    near.append(d)
+            total = sum(float(d["score"]) for d in near)
+            if near and total > 0:
+                for d in near:
+                    classes[d["label"]] = classes.get(d["label"], 0.0) + float(d["score"]) / total
+                track = max(classes, key=classes.get)
+                refused = False
+        return {
+            "assertion_id": f"sensor-{self.n:06d}",
+            "source_hash": self.source_hash,
+            "observation_id": f"rgb_overhead@{capture_s:.3f}",
+            "track_id": track or "none",
+            "carrier": "gripper" if not refused else None,
+            "classes": classes,
+            "refused": refused,
+            "capture_s": capture_s,
+            "receipt_s": now_s,
+            "in_envelope": self.rgb is not None and self.calibration is not None,
+            "evidence_kind": "rendered_perception",
+        }, track
+
+
 class Gateway:
     """Transport-free core, unit-testable without dora."""
 
-    def __init__(self, arm: str, key: bytes, med_names: list[str], tray: dict, grasp_cmd: float):
+    def __init__(
+        self,
+        arm: str,
+        key: bytes,
+        med_names: list[str],
+        tray: dict,
+        grasp_cmd: float,
+        sensor: SensorIdentity | None = None,
+        open_cmd: float = 0.0,
+        finger_open: np.ndarray | None = None,
+    ):
         if arm not in ARMS:
             raise ValueError(f"unknown shield arm {arm!r}; expected one of {ARMS}")
         self.arm = arm
         self.tray = tray
         self.grasp_cmd = grasp_cmd
-        self.identity = OracleIdentity(med_names)
+        self.open_cmd = open_cmd
+        # the executor closes the fingers through joint_cmd's gripper dofs
+        # as well as through gripper_cmd; a refused closure must hold BOTH
+        # channels open (second live shakeout: refusals logged, box grasped)
+        self.finger_open = None if finger_open is None else np.asarray(finger_open, np.float32)
+        self.closure_refused = False
+        if arm == "sensor_shield":
+            self.identity = sensor if sensor is not None else SensorIdentity(med_names)
+        else:
+            self.identity = OracleIdentity(med_names)
         self.authorizer = SemanticAuthorizer(key, {self.identity.source_hash})
         self.permits = PermitGateway(key, enforce=arm != "no_shield")
         self.assignment: dict | None = None
@@ -162,19 +286,40 @@ class Gateway:
             "goal_revision": self.assignment["goal_revision"],
         }
 
+    def _hold_fingers(self, value):
+        """While a closure is refused, the gripper dofs of every forwarded
+        joint command stay at their open posture."""
+        if not self.closure_refused or self.finger_open is None:
+            return value
+        out = np.asarray(value, dtype=np.float32).copy()
+        n = self.finger_open.shape[0]
+        out[-n:] = self.finger_open
+        return out
+
+    def _closing(self, value) -> bool:
+        span = self.grasp_cmd - self.open_cmd
+        return (float(value[0]) - self.open_cmd) / span >= CLOSING_FRACTION if span else False
+
     def propose(self, kind: str, value: np.ndarray, tcp: np.ndarray, now_s: float) -> dict:
         """Decide one command. Returns {"forward": bool, "value": array|None,
-        "stage": str|None, "reason": str|None, "halt": bool}."""
+        "stage": str|None, "reason": str|None, "halt": bool, "event": dict|None}.
+        A refused closing command is replaced by the OPEN value (the fingers
+        never close); a refused joint command re-sends the last forwarded
+        one (the arm holds)."""
         closing_edge = False
         if kind == "gripper_cmd":
-            closed = float(value[0]) >= self.grasp_cmd - 1e-6
-            closing_edge = closed and not self.gripper_closed
+            closing = self._closing(value)
+            if not closing:
+                self.gripper_closed = False  # opening or open: always allowed
+                self.closure_refused = False
+            closing_edge = closing and not self.gripper_closed
         stage = stage_of(self.gripper_closed, closing_edge, over_tray(tcp, self.tray))
         if stage is None or self.assignment is None:
-            if kind == "gripper_cmd":
-                self.gripper_closed = float(value[0]) >= self.grasp_cmd - 1e-6
-            elif kind == "joint_cmd":
+            if kind == "joint_cmd":
+                value = self._hold_fingers(value)
                 self.last_forwarded = np.asarray(value, dtype=np.float32)
+            elif kind == "gripper_cmd" and self._closing(value):
+                self.gripper_closed = True  # no assignment: nothing to authorize against
             return {
                 "forward": True,
                 "value": value,
@@ -185,8 +330,6 @@ class Gateway:
             }
         radius = CANDIDATE_RADIUS_M if stage == "pre_grasp" else CARRY_RADIUS_M
         assertion, track = self.identity.assertion(tcp, radius, now_s)
-        if self.arm == "sensor_shield":
-            assertion = {**assertion, "refused": True, "classes": {}}  # adapter absent
         # the authorizer keeps every assertion; at the joint_state cadence
         # that list would grow without bound and its scan would stall the
         # turn (watchdog in the first live run) — keep the evidence window
@@ -218,8 +361,10 @@ class Gateway:
         self.events.append(event)
         if forward:
             if kind == "gripper_cmd":
-                self.gripper_closed = float(value[0]) >= self.grasp_cmd - 1e-6
+                self.gripper_closed = True
+                self.closure_refused = False
             else:
+                value = self._hold_fingers(value)
                 self.last_forwarded = np.asarray(value, dtype=np.float32)
             return {
                 "forward": True,
@@ -228,7 +373,13 @@ class Gateway:
                 "halt": False,
                 "event": event,
             }
-        held = self.last_forwarded if kind == "joint_cmd" else None
+        if kind == "gripper_cmd":
+            self.closure_refused = True
+        held = (
+            self.last_forwarded
+            if kind == "joint_cmd"
+            else np.array([self.open_cmd], dtype=np.float32)  # refused closure: stay open
+        )
         return {
             "forward": False,
             "value": held,
@@ -255,7 +406,17 @@ def main() -> None:  # pragma: no cover — dora runtime
     key = hashlib.sha256(
         f"aisle-semantic-gateway:{os.environ.get('AISLE_SEEDS', '')}".encode()
     ).digest()
-    gateway = Gateway(arm, key, list(MED_NAMES), tray, float(profile.get("gripper_grasp_cmd", 1.0)))
+    gateway = Gateway(
+        arm,
+        key,
+        list(MED_NAMES),
+        tray,
+        float(profile.get("gripper_grasp_cmd", 1.0)),
+        open_cmd=float(profile.get("gripper_pregrasp_cmd", 0.0)),
+        finger_open=np.asarray(profile["home_qpos"], dtype=np.float32)[
+            -int(profile.get("gripper_dofs", 2)) :
+        ],
+    )
     n_arm = int(np.asarray(profile["home_qpos"]).shape[0]) - int(profile.get("gripper_dofs", 2))
     qpos: np.ndarray | None = None
     last_note: tuple | None = None  # (stage, reason) of the last logged hold
@@ -276,8 +437,15 @@ def main() -> None:  # pragma: no cover — dora runtime
         if not env_accepts(metadata, env_pin):
             continue
         now_s = int(metadata.get("sim_time_ns", 0)) / 1e9
-        if topic == "poses":
+        if topic == "poses" and isinstance(gateway.identity, OracleIdentity):
             gateway.identity.on_poses(event["value"].to_numpy(zero_copy_only=False), now_s)
+        elif topic == "bridge_info" and isinstance(gateway.identity, SensorIdentity):
+            gateway.identity.on_calibration(json.loads(event["value"][0].as_py())["calibration"])
+        elif topic == "rgb_overhead" and isinstance(gateway.identity, SensorIdentity):
+            h, w = int(metadata.get("h", 0)), int(metadata.get("w", 0))
+            if h > 0 and w > 0:
+                frame = np.asarray(event["value"].to_numpy(zero_copy_only=False), dtype=np.uint8)
+                gateway.identity.on_rgb(frame.reshape(h, w, 3), now_s)
         elif topic == "joint_state":
             qpos = np.asarray(event["value"].to_numpy(zero_copy_only=False), dtype=np.float32)
         elif topic == "episode_goal":
@@ -310,7 +478,7 @@ def main() -> None:  # pragma: no cover — dora runtime
                     {"sim_time_ns": metadata.get("sim_time_ns", 0)},
                 )
             if decision["forward"]:
-                send(kind, pa.array(value), metadata)
+                send(kind, pa.array(np.asarray(decision["value"], dtype=np.float32)), metadata)
                 continue
             if decision["value"] is not None:
                 send(kind, pa.array(decision["value"]), metadata)  # hold position

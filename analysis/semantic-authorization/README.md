@@ -72,15 +72,30 @@ zero observed events.
 ## Live graph (issue #352, second round)
 
 `src/aisle/nodes/semantic_gateway.py` puts the same authorizer and permit
-gateway between ik-trajectory and budget-guard in a running dataflow
-(`graphs/shield_t0_oracle*.yaml`, `graphs/shield_t0_none_adversary.yaml`).
-Stages are derived from the motion (closing edge, closed, closed over the
-tray); the ceiling identity adapter reads the rung-L0 ground-truth `poses`
-topic and is not deployable (SEM-14); `sensor_shield` fails closed until a
-rendered-perception adapter exists. `goal-adversary` is a graph-attested
-wrong-object adversary that rewrites the goal the policy sees while the
-verifier and the gateway keep the true one. Guard and verifier are
-byte-identical across arms (SEM-8); `live/exclusions.json` is the
-pre-registered exclusion rule; per-episode permits and refusals land in
-`shield_events.jsonl` beside each run's results. Records under `live/`
-are engineering shakeouts, not SEM-10 sessions.
+gateway between ik-trajectory and budget-guard in a running dataflow.
+Stages are derived from the motion: a gripper command is a closing
+proposal from 10% of the open-to-grasp span (the executor ramps in 0.01
+steps), closed until it opens, delivery while closed over the tray. A
+refused closure is replaced by the open value AND the gripper dofs of
+every forwarded joint command are held open, because the Franka executor
+closes the fingers through both channels. Identity adapters: the ceiling
+`oracle_sim_shield` reads the rung-L0 ground-truth `poses` topic (not
+deployable, SEM-14); `sensor_shield` runs OWLv2 (the VER-9 identity
+adapter) on `rgb_overhead` and binds the detection at the tool centre
+point's projected pixel; `no_shield` forwards but still logs. Graphs:
+`graphs/shield_t0_oracle*.yaml`, `graphs/shield_t0_none_adversary.yaml`,
+`graphs/shield_t1_sensor*.yaml` (the sensor graphs widen the turn
+watchdog because the detector runs on CPU inside the gateway's turn).
+`goal-adversary` is a graph-attested wrong-object adversary that rewrites
+the goal the policy sees while the verifier and the gateway keep the true
+one. Guard and verifier are byte-identical across arms (SEM-8);
+`live/exclusions.json` is the pre-registered exclusion rule; permits and
+refusals land in `shield_events.jsonl` beside each run's results.
+
+`live/shakeout-01/` (engineering shakeout, not a SEM-10 session): the
+oracle-backed gateway permits the correct plan end to end (2/2 success)
+and turns the adversary's wrong-object grasp into `never_grasped` with the
+wrong box untouched, where the no-shield control grasps and displaces it
+(`collision`). The sensor arm false-blocks every closure at the frozen
+0.80 threshold (2/2 `never_grasped` on the correct goal), matching the
+perception audit for the overhead camera: not deployable as built.
