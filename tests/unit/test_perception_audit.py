@@ -21,6 +21,7 @@ from aisle.harness import perception_audit as pa
 pytestmark = pytest.mark.unit
 
 MEDS = ["amoxicillin", "ibuprofen", "cetirizine"]
+MODEL_HASHES = {"identity": pa.content_hash({"synthetic_fixture": "perfect detector"})}
 
 
 def _frames(seeds: list[int], stamps_per_seed: int = 3) -> tuple[dict, list[dict], list[dict]]:
@@ -243,7 +244,7 @@ def test_eligibility_requires_every_stratum_to_clear_the_floor():
     )
     envelope = {**pa.default_envelope(MEDS), "operating_window_s": 100.0}
     scored = _score_all(corpus, frames, envelope)
-    report = pa.audit(corpus, envelope, scored=scored, model_hashes={"identity": "sha256:x"})
+    report = pa.audit(corpus, envelope, scored=scored, model_hashes=MODEL_HASHES)
     assert report["out_of_envelope_records"] == 320  # every wrist frame
     assert report["ok"] is True and report["eligibility"] == "perception_eligible"
     assert report["split_sizes"] == {"calibration": 160, "evaluation": 160}
@@ -260,7 +261,7 @@ def test_eligibility_requires_every_stratum_to_clear_the_floor():
     for s in broken:
         if s["record_id"] in ids:
             s["outcome"] = "wrong_identity"
-    failed = pa.audit(corpus, envelope, scored=broken, model_hashes={})
+    failed = pa.audit(corpus, envelope, scored=broken, model_hashes=MODEL_HASHES)
     assert failed["ok"] is False and failed["eligibility"] == "not_eligible"
     assert any("target_class=ibuprofen" in f for f in failed["failures"])
     assert (
@@ -274,9 +275,9 @@ def test_eligibility_requires_every_stratum_to_clear_the_floor():
         evaluation_hash  # a calibration frame reused in evaluation
     )
     with pytest.raises(pa.PerceptionAuditError, match="overlap"):
-        pa.audit(overlap, envelope, scored=scored, model_hashes={})
+        pa.audit(overlap, envelope, scored=scored, model_hashes=MODEL_HASHES)
     with pytest.raises(pa.PerceptionAuditError, match="incomplete"):
-        pa.audit(corpus, {"schema_version": "x"}, scored=scored, model_hashes={})
+        pa.audit(corpus, {"schema_version": "x"}, scored=scored, model_hashes=MODEL_HASHES)
 
 
 def _perfect_audit_inputs():
@@ -349,9 +350,9 @@ def test_latency_gate_cannot_be_bypassed_by_perfect_accuracy(latency):
     next(r for r in scored if r["record_id"] == row_id)["latency_s"] = latency
     if latency != 5.01:
         with pytest.raises(pa.PerceptionAuditError, match="latency"):
-            pa.audit(corpus, envelope, scored=scored, model_hashes={})
+            pa.audit(corpus, envelope, scored=scored, model_hashes=MODEL_HASHES)
         return
-    report = pa.audit(corpus, envelope, scored=scored, model_hashes={})
+    report = pa.audit(corpus, envelope, scored=scored, model_hashes=MODEL_HASHES)
     assert report["eligibility"] == "not_eligible" and not report["ok"]
     assert any("latency" in f for f in report["failures"])
 
@@ -365,7 +366,7 @@ def test_missing_data_cannot_disappear_from_eligibility_denominator():
         if r["split"] == "evaluation" and r["camera"] == "overhead"
     )
     next(r for r in scored if r["record_id"] == row_id)["outcome"] = "missing_data"
-    report = pa.audit(corpus, envelope, scored=scored, model_hashes={})
+    report = pa.audit(corpus, envelope, scored=scored, model_hashes=MODEL_HASHES)
     assert not report["ok"]
     cell = report["strata"]["sensor"]["overhead"]
     assert cell["n"] == 160 and cell["missing"] == 1
@@ -379,14 +380,14 @@ def test_duplicate_records_cannot_inflate_accuracy_certainty(duplicate_in):
     rows = corpus["records"] if duplicate_in == "corpus" else scored
     rows.append(copy.deepcopy(rows[0]))
     with pytest.raises(pa.PerceptionAuditError, match="duplicate"):
-        pa.audit(corpus, envelope, scored=scored, model_hashes={})
+        pa.audit(corpus, envelope, scored=scored, model_hashes=MODEL_HASHES)
 
 
 def test_missing_supported_target_cannot_be_hidden_by_other_strata():
     """BND-5/BND-7: each declared target class needs evaluation evidence."""
     corpus, envelope, scored = _perfect_audit_inputs()
     envelope["identity_vocabulary"].append("missing-med")
-    report = pa.audit(corpus, envelope, scored=scored, model_hashes={})
+    report = pa.audit(corpus, envelope, scored=scored, model_hashes=MODEL_HASHES)
     assert not report["ok"]
     assert any("missing-med" in f for f in report["failures"])
 
@@ -405,3 +406,131 @@ def test_invalid_thresholds_cannot_disable_the_envelope(key, value):
     """BND-6: malformed frozen limits fail rather than making comparisons vacuous."""
     with pytest.raises(pa.PerceptionAuditError, match="envelope"):
         pa.validate_envelope({**pa.default_envelope(MEDS), key: value})
+
+
+@pytest.mark.parametrize(
+    "position", [[float("nan"), 0, 0], [float("inf"), 0, 0], [0], [[0, 0, 0]], []]
+)
+def test_malformed_localizer_position_never_counts_as_correct(position):
+    """BND-5/BND-6: non-finite or non-3D predictions cannot pass localization."""
+    frames, oracle, goals = _frames([1])
+    corpus = pa.build_corpus(
+        run_id="r", frames=frames, oracle_rows=oracle, goals=goals, calibration={}, med_names=MEDS
+    )
+    record = corpus["records"][0]
+    result = pa.score_record(
+        record,
+        frames["overhead"][record["sim_time_ns"]],
+        envelope=pa.default_envelope(MEDS),
+        detector=_detector_for(record["target"]),
+        localizer=lambda *args: position,
+        clock=lambda: 0.0,
+    )
+    assert result["outcome"] == "localization_error"
+    assert result["prediction"]["position"] is None
+
+
+@pytest.mark.parametrize(
+    "position", [[float("nan"), 0, 0], [float("inf"), 0, 0], [0], [[0, 0, 0]], []]
+)
+def test_invalid_truth_geometry_is_missing_data_not_accuracy_evidence(position):
+    """BND-6: invalid oracle coordinates fail the audit rather than certify a pose."""
+    frames, oracle, goals = _frames([1])
+    corpus = pa.build_corpus(
+        run_id="r", frames=frames, oracle_rows=oracle, goals=goals, calibration={}, med_names=MEDS
+    )
+    record = corpus["records"][0]
+    valid = list(record["truth"]["positions"][record["target"]])
+    record["truth"]["positions"][record["target"]] = position
+    result = pa.score_record(
+        record,
+        frames["overhead"][record["sim_time_ns"]],
+        envelope=pa.default_envelope(MEDS),
+        detector=_detector_for(record["target"]),
+        localizer=lambda *args: valid,
+        clock=lambda: 0.0,
+    )
+    assert result["outcome"] == "missing_data"
+
+
+@pytest.mark.parametrize("defect", ["missing_other_object", "non_object_truth"])
+def test_incomplete_truth_cannot_hide_a_wrong_object(defect):
+    """BND-6: missing scene-object truth must not shrink the nearest-object comparison."""
+    frames, oracle, goals = _frames([1])
+    corpus = pa.build_corpus(
+        run_id="r", frames=frames, oracle_rows=oracle, goals=goals, calibration={}, med_names=MEDS
+    )
+    record = corpus["records"][0]
+    valid = list(record["truth"]["positions"][record["target"]])
+    if defect == "missing_other_object":
+        other = next(name for name in MEDS if name != record["target"])
+        del record["truth"]["positions"][other]
+    else:
+        record["truth"] = []
+    result = pa.score_record(
+        record,
+        frames["overhead"][record["sim_time_ns"]],
+        envelope=pa.default_envelope(MEDS),
+        detector=_detector_for(record["target"]),
+        localizer=lambda *args: valid,
+        clock=lambda: 0.0,
+    )
+    assert result["outcome"] == "missing_data"
+    assert result["prediction"]["position"] == valid
+
+
+@pytest.mark.parametrize(
+    "hashes", [{}, {"identity": "pinned model"}, {"identity": "sha256:x"}, {"identity": None}]
+)
+def test_unattested_model_cannot_produce_perception_eligibility(hashes):
+    """BND-5/BND-16: missing or descriptive model provenance must fail the audit."""
+    corpus, envelope, scored = _perfect_audit_inputs()
+    with pytest.raises(pa.PerceptionAuditError, match="model"):
+        pa.audit(corpus, envelope, scored=scored, model_hashes=hashes)
+
+
+def test_cli_reports_the_same_model_lock_used_by_verified_loading(tmp_path, monkeypatch, capsys):
+    """BND-5: the CLI binds its identity digest to the lock actually passed to loading."""
+    import json
+    import sys
+
+    from aisle.harness import cli
+    from aisle.verifier import models
+
+    lock = {
+        "models": {
+            "identity": {
+                "repo": "fixture",
+                "revision": "fixed",
+                "files_sha256": {"weights": "a" * 64},
+            }
+        }
+    }
+    loaded = []
+
+    def load(role, lock=None):
+        loaded.append((role, lock))
+        return (None, None)
+
+    monkeypatch.setattr(models, "load_lock", lambda: lock)
+    monkeypatch.setattr(models, "load_pinned", load)
+    monkeypatch.setattr(
+        pa, "corpus_from_run", lambda *args, **kwargs: ({"calibration": {}, "records": []}, {})
+    )
+    monkeypatch.setattr(pa, "real_localizer", lambda *args: None)
+    monkeypatch.setattr(
+        pa,
+        "audit",
+        lambda *args, model_hashes, **kwargs: {"ok": False, "model_hashes": model_hashes},
+    )
+    envelope = tmp_path / "envelope.json"
+    envelope.write_text(json.dumps(pa.default_envelope(MEDS)))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["harness", "perception", "audit", "--run", str(tmp_path), "--envelope", str(envelope)],
+    )
+    assert cli.main() == 1
+    report = json.loads(capsys.readouterr().out)
+    assert loaded == [("identity", lock)]
+    assert report["model_hashes"] == {"identity": pa.content_hash(lock["models"]["identity"])}

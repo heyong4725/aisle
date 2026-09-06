@@ -83,3 +83,9 @@ BND v7 supersedes v6 after the perception-auditor integrity fix (#346). It
 preserves the inherited seed commitment and thresholds, retains the old report
 as historical evidence, and resets the BND-5 audit gate to pending. A fresh
 audit with the hardened implementation is required; v7 is not a protocol freeze.
+
+BND v8 supersedes v7 after finite-xyz and complete-oracle-geometry checks were
+added to the scorer. Thresholds, seed lineage, and pending gates are preserved;
+the previous declarations and audit records remain historical.
+The v8 artifact set also binds the perception CLI and model lock; its report
+requires the digest of the verified identity-model lock entry.
