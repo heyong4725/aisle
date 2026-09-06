@@ -41,6 +41,13 @@ def _sha(path: Path) -> str | None:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
 
 
+def _manifest_digest(value: object) -> str | None:
+    """Convert the rollout's bare SHA-256 to the submission's tagged digest."""
+    if isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value):
+        return "sha256:" + value
+    return None
+
+
 def stage(record: dict, name: str, fn) -> bool:
     started = time.monotonic()
     try:
@@ -82,8 +89,15 @@ def main(argv: list[str] | None = None) -> int:
         "outputs": {},
         "local_overrides": [],
     }
-    if (root / "runs" / args.run_id).exists():
-        record["local_overrides"].append(f"pre-existing run directory runs/{args.run_id}")
+    runs = root / "runs"
+    if runs.exists() and (
+        not runs.is_dir()
+        or any(
+            path.name != ".gitkeep" or not path.is_file() or path.stat().st_size != 0
+            for path in runs.iterdir()
+        )
+    ):
+        record["local_overrides"].append("pre-existing runs/ input")
     if args.skip_sync:
         record["local_overrides"].append("--skip-sync")
 
@@ -118,7 +132,11 @@ def main(argv: list[str] | None = None) -> int:
             report = json.loads(so)
         except json.JSONDecodeError:
             return {"ok": False, "stderr_tail": se[-400:]}
-        return {"ok": bool(report.get("ok")), "errors": report.get("errors", [])[:3]}
+        return {
+            "ok": code == 0 and bool(report.get("ok")),
+            "exit_code": code,
+            "errors": report.get("errors", [])[:3],
+        }
 
     def rollout():
         cmd = [
@@ -152,7 +170,8 @@ def main(argv: list[str] | None = None) -> int:
         record["outputs"]["run_dir"] = f"runs/{args.run_id}"
         episodes = result.get("episodes", [])
         return {
-            "ok": bool(result.get("ok")) and len(episodes) == 1,
+            "ok": code == 0 and bool(result.get("ok")) and len(episodes) == 1,
+            "exit_code": code,
             "episodes": episodes,
             "durations": result.get("durations"),
         }
@@ -173,6 +192,8 @@ def main(argv: list[str] | None = None) -> int:
             if (run_dir / "episodes.jsonl").exists()
             else []
         )
+        executed = manifest.get("exec_graph_hashes", [])
+        executed_hash = executed[0] if isinstance(executed, list) and len(executed) == 1 else None
         payload = {
             "schema_version": "aisle.benchmark.submission.v1",
             "submission_id": f"quickstart-{args.run_id}",
@@ -193,8 +214,8 @@ def main(argv: list[str] | None = None) -> int:
             },
             "treatment": "typed",
             "artifacts": {
-                "authored_hash": _sha(root / GRAPH),
-                "executed_hash": manifest.get("graph_hash"),
+                "authored_hash": _manifest_digest(manifest.get("graph_hash")),
+                "executed_hash": _manifest_digest(executed_hash),
             },
             "environment": {
                 "lock_hash": record["hashes"]["lock"],
@@ -312,8 +333,8 @@ def main(argv: list[str] | None = None) -> int:
         record["outputs"]["report"] = str(path)
         return {"ok": True, "sha256": _sha(path)}
 
-    ok = True
-    for name, fn in (
+    ok = not record["local_overrides"]
+    stages = (
         ("sync", sync),
         ("versions", versions),
         ("validate", validate),
@@ -321,9 +342,16 @@ def main(argv: list[str] | None = None) -> int:
         ("bundle", bundle),
         ("validate_bundle", validate_bundle),
         ("report", report),
-    ):
-        ok = stage(record, name, fn) and ok
-        if not ok and name in ("sync", "rollout"):
+    )
+    if record["local_overrides"] and not args.skip_sync:
+        record["stages"].append(
+            {"name": "preflight", "ok": False, "errors": record["local_overrides"]}
+        )
+    else:
+        for name, fn in stages:
+            ok = stage(record, name, fn) and ok
+            if ok:
+                continue
             record["stages"].append(
                 {"name": "remaining", "ok": False, "skipped_because": f"{name} failed"}
             )

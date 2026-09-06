@@ -212,7 +212,7 @@ def test_quickstart_records_a_local_override_as_failure(tmp_path):
     local override (skipped sync) makes it ok:false rather than silently
     passing; no simulator is needed for this refusal path."""
     proc = run_tool(
-        "quickstart.py", "--root", str(REPO_ROOT), "--out", str(tmp_path / "qs"), "--skip-sync"
+        "quickstart.py", "--root", str(tmp_path), "--out", str(tmp_path / "qs"), "--skip-sync"
     )
     record = json.loads(proc.stdout)
     assert proc.returncode == 1
@@ -221,3 +221,125 @@ def test_quickstart_records_a_local_override_as_failure(tmp_path):
     assert record["stages"][0]["name"] == "sync" and record["stages"][0]["ok"] is False
     assert record["mode"] == "development_public"
     assert (tmp_path / "qs" / "quickstart-record.json").exists()
+
+
+@pytest.fixture
+def quickstart_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "benchmark_quickstart", REPO_ROOT / "tools/quickstart.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("failed_stage", ["validate", "rollout"])
+def test_quickstart_refuses_nonzero_exit_even_with_ok_json(
+    quickstart_module, tmp_path, capsys, monkeypatch, failed_stage
+):
+    """BMK-7/CON-8: a failed subprocess cannot be accepted from its JSON alone."""
+    calls = []
+
+    def run(cmd, cwd, env=None):
+        calls.append(cmd)
+        if "validate" in cmd or "rollout" in cmd:
+            return (
+                (1 if failed_stage in cmd else 0),
+                json.dumps({"ok": True, "episodes": [{}]}),
+                "deliberate failure",
+            )
+        if cmd == ["dora", "--version"]:
+            return 0, "dora-cli 1.0.1", ""
+        if "tools/env_hash.py" in cmd:
+            return 0, json.dumps({"ok": True, "env_hash": "a" * 64}), ""
+        return 0, "3.13.15", ""
+
+    monkeypatch.setattr(quickstart_module, "_run", run)
+    assert quickstart_module.main(["--root", str(tmp_path), "--out", "result"]) == 1
+    record = json.loads(capsys.readouterr().out)
+    failed = next(stage for stage in record["stages"] if stage["name"] == failed_stage)
+    assert failed["ok"] is False
+    assert not any(stage["name"] == "bundle" for stage in record["stages"])
+    if failed_stage == "validate":
+        assert not any("rollout" in cmd for cmd in calls)
+
+
+@pytest.mark.parametrize("existing_run", ["quickstart-t0-seed0", "another-run"])
+def test_quickstart_rejects_existing_run_before_starting(
+    quickstart_module, tmp_path, capsys, monkeypatch, existing_run
+):
+    """BMK-7: retained run inputs must not be overwritten by a refused quickstart."""
+    run = tmp_path / "runs" / existing_run
+    run.mkdir(parents=True)
+    evidence = run / "episodes.jsonl"
+    evidence.write_text("retained evidence\n")
+    monkeypatch.setattr(
+        quickstart_module,
+        "_run",
+        lambda *args, **kwargs: pytest.fail("must refuse before launching a subprocess"),
+    )
+    assert quickstart_module.main(["--root", str(tmp_path), "--out", "result"]) == 1
+    record = json.loads(capsys.readouterr().out)
+    assert record["ok"] is False
+    assert record["local_overrides"]
+    assert evidence.read_text() == "retained evidence\n"
+
+
+def test_quickstart_bundle_binds_executed_graph_and_stops_on_invalid_bundle(
+    quickstart_module, tmp_path, capsys, monkeypatch
+):
+    """BMK-7/BMK-13: run-manifest hashes become valid, distinct submission digests."""
+    run = tmp_path / "runs/quickstart-t0-seed0"
+    authored = "a" * 64
+    executed = "b" * 64
+
+    def fake_run(cmd, cwd, env=None):
+        if "rollout" in cmd:
+            run.mkdir(parents=True)
+            (run / "manifest.json").write_text(
+                json.dumps({"graph_hash": authored, "exec_graph_hashes": [executed]})
+            )
+            (run / "episodes.jsonl").write_text(json.dumps({"status": "success"}) + "\n")
+            return 0, json.dumps({"ok": True, "episodes": [{"status": "success"}]}), ""
+        if "validate" in cmd:
+            return 0, '{"ok": true}', ""
+        if "tools/env_hash.py" in cmd:
+            return 0, json.dumps({"env_hash": "c" * 64}), ""
+        return 0, "1.0.1", ""
+
+    monkeypatch.setattr(quickstart_module, "_run", fake_run)
+    assert quickstart_module.main(["--root", str(tmp_path), "--out", "result"]) == 1
+    record = json.loads(capsys.readouterr().out)
+    payload = json.loads((tmp_path / "result/submission.json").read_text())
+    assert payload["artifacts"]["authored_hash"] == "sha256:" + authored
+    assert payload["artifacts"]["executed_hash"] == "sha256:" + executed
+    # Other fixture provenance is deliberately incomplete: no report may be produced.
+    assert next(s for s in record["stages"] if s["name"] == "validate_bundle")["ok"] is False
+    assert "report" not in record["outputs"]
+    assert not (tmp_path / "result/report.json").exists()
+
+
+@pytest.mark.parametrize("contents", ["", "retained run data"])
+def test_quickstart_distinguishes_empty_directory_marker_from_run_input(
+    quickstart_module, tmp_path, capsys, monkeypatch, contents
+):
+    """BMK-7: a fresh clone's empty runs/.gitkeep is not a pre-existing run."""
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    (runs / ".gitkeep").write_text(contents)
+    calls = []
+
+    def fake_run(cmd, cwd, env=None):
+        calls.append(cmd)
+        return 1, "", "deliberate sync failure"
+
+    monkeypatch.setattr(quickstart_module, "_run", fake_run)
+    assert quickstart_module.main(["--root", str(tmp_path), "--out", "result"]) == 1
+    record = json.loads(capsys.readouterr().out)
+    if contents:
+        assert record["stages"][0]["name"] == "preflight" and not calls
+    else:
+        assert record["local_overrides"] == []
+        assert record["stages"][0]["name"] == "sync" and calls
