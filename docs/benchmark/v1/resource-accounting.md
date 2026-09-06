@@ -19,3 +19,22 @@
 - Incomparable fields stay explicit as `not_comparable` with a reason.
 - No composite score collapses accuracy, safety, and cost; Pareto views
   may be shown only beside the registered fields (BMK-16).
+
+## Quickstart process-memory observation
+
+The quickstart samples its process tree every 250 ms using the OS process table.
+It retains elapsed timestamps, process counts, RSS sums, the sampling interval,
+and observation errors in `memory_sampling`. `peak_memory_bytes` is the maximum
+observed RSS sum, explicitly marked `exact_peak: false`; a failed observation
+leaves that field null and status `unmeasured`. Samples can miss short peaks,
+shared pages can be counted in several processes, detached/reparented processes
+leave the observed tree, and device memory is not measured. The temporary process
+used to inspect the tree is excluded from the sum.
+
+The measurement window covers quickstart stages through initial report creation.
+It excludes uv bootstrap before the Python tool starts and final evidence
+serialization. The finalized report retains the sampling record and its updated
+content hash. Report `storage_bytes` covers logical file sizes in the rollout
+directory, with `storage_scope: rollout_directory_logical_bytes`; environment,
+package/model caches and total setup storage are outside that count. These
+observations do not satisfy all of BMK-8's platform/release/setup requirements.
