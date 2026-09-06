@@ -1439,3 +1439,89 @@ class TestAgentAdapters:
 
         for agent in ("claude", "codex"):
             assert aa.ADAPTERS[agent].enforcement_unit == "tokens_new"
+
+
+def test_frozen_audit_errors_are_not_clean_audits(tmp_path, monkeypatch):
+    """TRT-9: an unreadable audit source cannot authorize held-out scoring."""
+    import campaign as c
+
+    monkeypatch.setattr(
+        c.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a[0], 128, "", "unreadable repository"),
+    )
+    with pytest.raises(c.InfraError, match="audit"):
+        c.audit_frozen(tmp_path, "a" * 40)
+
+
+@pytest.mark.parametrize(
+    "failure", ["retention", "drift", "audit", "scoring", "scorer_launch", "no_deliverable", None]
+)
+def test_campaign_gates_holdout_on_retention_and_frozen_audit(
+    tmp_path, monkeypatch, capsys, failure
+):
+    """TRT-9/TRT-10: failed retention or postflight blocks private scoring, retaining a record."""
+    import campaign as c
+
+    out = tmp_path / "campaign"
+    wt = out / "worktree"
+    wt.mkdir(parents=True)
+    monkeypatch.setattr(sys, "argv", ["campaign.py", "--out", str(out), "--agent", "claude"])
+    monkeypatch.setattr(c, "resolve_commit", lambda *a: "a" * 40)
+    monkeypatch.setattr(c, "campaign_treatment", lambda *a: {"commit": "a" * 40})
+    monkeypatch.setattr(c, "load_existing", lambda *a: None)
+    monkeypatch.setattr(c, "_default_budgets", lambda *a: (1000, 1.0))
+    monkeypatch.setattr(
+        c, "isolated_session_env", lambda path, **k: ({"HOME": str(path)}, {"ambient_baseline": {}})
+    )
+    monkeypatch.setattr(c, "seed_session_credentials", lambda *a: ({}, None))
+    monkeypatch.setattr(c, "scrub_session_credentials", lambda *a: [])
+    monkeypatch.setattr(c, "probe_agent_auth", lambda *a: None)
+    monkeypatch.setattr(c, "attach_historical_baseline_compat", lambda *a: {})
+    monkeypatch.setattr(
+        c, "run_session", lambda *a, **k: {"tokens": 1, "wall_s": 1.0, "stopped": "agent_done"}
+    )
+    monkeypatch.setattr(c, "sweep_worktree", lambda *a: [])
+    monkeypatch.setattr(
+        c,
+        "archive_deliverable",
+        lambda *a, **k: {"ok": failure != "retention", "error": "retention unavailable"},
+    )
+
+    def audit(*args):
+        if failure == "audit":
+            raise c.InfraError("frozen audit unavailable")
+        return ["src/aisle/verifier/oracle.py"] if failure == "drift" else []
+
+    monkeypatch.setattr(c, "audit_frozen", audit)
+    calls = []
+
+    def score(*args):
+        calls.append(args)
+        if failure == "scorer_launch":
+            raise OSError("scorer launch unavailable")
+        if failure == "scoring":
+            return {"ok": False, "error": "scorer unavailable"}
+        if failure == "no_deliverable":
+            return {"ok": False, "outcome": "no_deliverable"}
+        return {"ok": True, "pass1": 0.0, "pass8": 0.0}
+
+    monkeypatch.setattr(c, "score_holdout", score)
+    monkeypatch.setattr(
+        c,
+        "campaign_metrics",
+        lambda *a, **k: {"first_success_wall_s": None, "wrong_object_total": 0},
+    )
+    rc = c.main()
+    summary = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    record = json.loads((out / "campaign.json").read_text())
+    complete = failure in (None, "no_deliverable")
+    admitted = failure in (None, "no_deliverable", "scoring", "scorer_launch")
+    assert rc == (0 if complete else 1)
+    assert summary["ok"] is complete
+    assert bool(calls) is admitted
+    assert record["holdout"]["executed"] is admitted
+    assert record["scoring_admission"]["ok"] is admitted
+    if failure == "no_deliverable":
+        assert record["holdout"]["outcome"] == "no_deliverable"
+    assert len(record["sessions"]) == 1

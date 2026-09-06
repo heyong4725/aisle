@@ -46,7 +46,7 @@ stayed outside it).
 | Graphs | 24 |
 | Capability manifests | 42 |
 | CLI command entries | 39 |
-| ADR files | 77 |
+| ADR files | 78 |
 
 ## Graphs
 
@@ -268,6 +268,7 @@ inference.
 | [docs/decisions/ADR-a3-protocol.md](../decisions/ADR-a3-protocol.md) | ADR-a3-protocol — A3 ablation: params-only vs params+code authorship | PROPOSED, **rev 2** (rev 1 drafted 2026-08-12 by the dev loop; |
 | [docs/decisions/ADR-a4-protocol.md](../decisions/ADR-a4-protocol.md) | ADR-a4-protocol — A4 agent comparison: Claude Code vs Codex on T1 | ACCEPTED (owner-directed launch 2026-08-14: "run A4 when A3 |
 | [docs/decisions/ADR-a5-protocol.md](../decisions/ADR-a5-protocol.md) | ADR-a5-protocol — A5 fleet scaling: 1/4/8 concurrent agents on T1 | ACCEPTED (owner-directed launch 2026-08-14: "run A5 fleet |
+| [docs/decisions/ADR-campaign-scoring-admission.md](../decisions/ADR-campaign-scoring-admission.md) | ADR-campaign-scoring-admission — Retention and audit precede scoring | PROPOSED — engineering interpretation; no protocol or collection approval. |
 | [docs/decisions/ADR-contract-acceptance-window.md](../decisions/ADR-contract-acceptance-window.md) | ADR-contract-acceptance-window — Nominal-load contract capture | Accepted (issue #497). |
 | [docs/decisions/ADR-declared-session-edits.md](../decisions/ADR-declared-session-edits.md) | ADR-declared-session-edits — Declared edits preserve treatment identity | PROPOSED — engineering interpretation; no protocol or collection approval. |
 | [docs/decisions/ADR-h1-protocol.md](../decisions/ADR-h1-protocol.md) | ADR-h1-protocol — H1 composition-experiment protocol (design doc §8.2.4) | accepted (CON-15: §8.2.4 defines what to record but not the |

@@ -334,12 +334,17 @@ def audit_frozen(wt: Path, oid: str) -> list[str]:
     # graphs/turn_plans/expert_*.json when #197 froze it, so an agent could
     # have edited ADR-30 scheduler topology with the tamper audit blind to it.
     paths = [*FROZEN_DIRS, *FROZEN_FILES, *FROZEN_GLOBS]
-    diff = subprocess.run(
-        ["git", "diff", "--name-only", oid, "--", *paths],
-        cwd=wt,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        diff = subprocess.run(
+            ["git", "diff", "--name-only", oid, "--", *paths],
+            cwd=wt,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        raise InfraError("frozen audit could not read the repository") from exc
+    if diff.returncode != 0:
+        raise InfraError(f"frozen audit failed (git diff rc={diff.returncode})")
     return [line for line in diff.stdout.splitlines() if line.strip()]
 
 
@@ -1045,12 +1050,41 @@ def main() -> int:
     )
     if not archive["ok"]:
         print(f"[campaign] {archive['error']}", file=sys.stderr)
-    drift = audit_frozen(wt, oid)
-    holdout = score_holdout(wt, args.holdout_seeds, f"{session_index:02d}", args.tier)
+    audit_error = None
+    drift = []
+    try:
+        drift = audit_frozen(wt, oid)
+    except InfraError as exc:
+        audit_error = str(exc)
+        print(f"[campaign] {audit_error}", file=sys.stderr)
+    admission = {
+        "ok": bool(archive["ok"] and not drift and audit_error is None),
+        "deliverable_retained": bool(archive["ok"]),
+        "frozen_audit_readable": audit_error is None,
+        "frozen_audit_error": audit_error,
+        "frozen_drift": drift,
+    }
+    # These legacy-runner checks do not attest the full TRT postflight contract.
+    if admission["ok"]:
+        try:
+            holdout = score_holdout(wt, args.holdout_seeds, f"{session_index:02d}", args.tier)
+        except (OSError, InfraError):
+            holdout = {"ok": False, "error": "holdout scorer could not execute"}
+        # Executed means the scorer was invoked, including its no-deliverable check.
+        holdout["executed"] = True
+    else:
+        holdout = {
+            "ok": False,
+            "executed": False,
+            "outcome": "not_executed",
+            "error": "scoring admission refused: retention or frozen audit failed",
+        }
     sweep_worktree(wt)  # ...and so may the holdout rollout
     metrics = campaign_metrics(wt, session_t0=sessions[0]["t0_epoch"], pin=oid)
     record = {
-        "ok": not drift,
+        "ok": admission["ok"]
+        and (holdout.get("ok") is True or holdout.get("outcome") == "no_deliverable"),
+        "scoring_admission": admission,
         "treatment": treatment,
         "sessions": sessions,
         "tokens_spent": prior_tokens + session["tokens"],
@@ -1058,7 +1092,8 @@ def main() -> int:
         "frozen_drift": drift,
         "deliverable_archive": archive,  # #245: where the agent's code went
         "holdout": {
-            k: holdout.get(k) for k in ("ok", "error", "pass1", "pass8", "failures", "run_id")
+            k: holdout.get(k)
+            for k in ("ok", "executed", "outcome", "error", "pass1", "pass8", "failures", "run_id")
         },
         "metrics": metrics,
     }

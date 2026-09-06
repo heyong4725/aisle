@@ -1,0 +1,5 @@
+# ADR-campaign-scoring-admission — Retention and audit precede scoring
+
+Status: PROPOSED — engineering interpretation; no protocol or collection approval.
+
+For TRT-9/TRT-10 and issue #357, the legacy campaign runner refuses held-out scoring when deliverable archival fails, frozen paths drift, or the Git audit cannot be read. It retains the started session and explicit admission failure in campaign.json. These checks cover only archival and the existing frozen-path audit; they do not attest the full treatment tuple, model identity, external confinement, or private evaluator separation. The holdout `executed` flag records invocation of the scoring helper, including its no-deliverable check, not proof that an episode ran. A retained, admitted session with no deliverable remains an agent outcome and does not invalidate campaign execution; scorer operational failures make the campaign unsuccessful. No session is silently replaced or retried. CSE v3 binds this runner change while preserving pending protocol gates and the original seed commitment.
