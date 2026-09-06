@@ -41,16 +41,19 @@ The campaign runners sweep their own worktrees between sessions; manual
 
 ## `dora --version` mismatch warning
 
-The CLI and python API must be the same source rev (pinned in
-`pyproject.toml [tool.uv.sources]`). If the warning appears:
+The CLI and Python API must both use release 1.0.1. Check `dora --version`
+and `uv run --extra sim python -c "from importlib.metadata import version; print(version('dora-rs'))"`.
 
-- `which dora` — stray conda/homebrew installs shadowing the
-  cargo-installed CLI are the usual cause.
-- Reinstall the CLI at the pinned rev:
-  `cargo install --git https://github.com/dora-rs/dora --rev <rev> dora-cli --locked`.
+- `which dora` identifies older Cargo, conda, or Homebrew binaries that
+  may shadow the uv-installed CLI.
+- Reinstall with `uv tool install dora-rs-cli==1.0.1` and
+  `uv sync --extra sim --locked`.
 
-PyPI's dora wheel (0.5.0) is far behind main and lacks `dora node
-add/remove` — never "fix" a mismatch by downgrading to it.
+Stop and restart any older daemon/coordinator before launching 1.0.1 nodes.
+The 1.0 release changes binary encoding; release candidates cannot be mixed
+with stable nodes. Existing coordinator stores and recordings may also need
+migration; consult the [upstream 1.0 release notes](https://github.com/dora-rs/dora/blob/v1.0.1/Changelog.md#v100-2026-09-02)
+before reusing them.
 
 ## Rollout refuses to start
 

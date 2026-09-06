@@ -13,6 +13,25 @@ def load_pyproject() -> dict:
         return tomllib.load(f)
 
 
+def test_dora_cli_and_api_release_match():
+    """CON-3 / CON-5: nightly and both sim extras use one pinned Dora release."""
+    import yaml
+
+    project = load_pyproject()
+    extras = project["project"]["optional-dependencies"]
+    for extra in ("sim", "cuda"):
+        assert "dora-rs==1.0.1" in extras[extra]
+    assert "dora-rs" not in project["tool"]["uv"]["sources"]
+    workflow = yaml.safe_load((REPO_ROOT / ".github/workflows/nightly.yml").read_text())
+    commands = [step.get("run", "") for step in workflow["jobs"]["sim-graph-accept"]["steps"]]
+    assert "uv tool install dora-rs-cli==1.0.1" in commands
+    lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text())
+    api = [package for package in lock["package"] if package["name"] == "dora-rs"]
+    assert len(api) == 1
+    assert api[0]["version"] == "1.0.1"
+    assert "registry" in api[0]["source"]
+
+
 def test_layout():
     """CON-6: the fixed repository layout exists."""
     required = [

@@ -189,15 +189,15 @@ human-in-the-loop governance of agent-authored robot code has to carry.
 
 ## Quickstart
 
-macOS arm64, Python >= 3.11, [uv](https://docs.astral.sh/uv/), and a
-Rust toolchain (for the dora CLI). Details and troubleshooting:
+macOS arm64, Python >= 3.11, [uv](https://docs.astral.sh/uv/), and the
+dora 1.0.1 CLI. Details and troubleshooting:
 `docs/getting-started.md`.
 
 ```bash
 uv sync --extra sim        # plain `uv sync` REMOVES the sim extras
                            # NVIDIA host? use --extra cuda (GPU torch)
-cargo install --git https://github.com/dora-rs/dora --rev cd597e705 dora-cli --locked
-dora --version             # warns if CLI and python API revs drift
+uv tool install dora-rs-cli==1.0.1
+dora --version             # must report 1.0.1
 
 uv run pytest -m unit                            # fast, no simulator (~90 s)
 uv run harness validate graphs/expert_t0.yaml    # typed-graph validation
@@ -206,8 +206,8 @@ uv run harness rollout --graph graphs/expert_t0.yaml --tier T0 \
 # With `uv sync --extra cuda`, add `--sim-extra cuda` (Linux only).
 ```
 
-dora runs **from source** at the rev pinned in `pyproject.toml`
-`[tool.uv.sources]`; the CLI must be cargo-installed from the same rev.
+The dora Python API and CLI are both pinned to release 1.0.1.
+Upgrade them together; release-candidate binaries use an incompatible wire format.
 Never install with bare pip/conda.
 
 ## Repository map
