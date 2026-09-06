@@ -6,11 +6,14 @@ so a dead bridge fails the acceptance test (TC-7/TC-8 shapes)."""
 import json
 
 import pyarrow as pa
-from dora import Node
+
+from aisle.topics import make_sender
+from aisle.turn_node import Node
 
 
 def main() -> None:
     node = Node()
+    send = make_sender(node)
     goal_id = None
     oracle_seen = 0
     last_sim_time_ns = 0
@@ -25,7 +28,7 @@ def main() -> None:
             last_sim_time_ns = int((event.get("metadata") or {}).get("sim_time_ns", 0))
             if oracle_seen in (5, 10):
                 feedback = {"t": last_sim_time_ns / 1e9, "phase": "reach"}
-                node.send_output(
+                send(
                     "episode_feedback",
                     pa.array([json.dumps(feedback)]),
                     metadata={"goal_id": goal_id},
@@ -39,7 +42,7 @@ def main() -> None:
                     "goal_id": goal_id,
                     "verifier": "oracle",
                 }
-                node.send_output(
+                send(
                     "episode_result",
                     pa.array([json.dumps(result)]),
                     metadata={"goal_id": goal_id},

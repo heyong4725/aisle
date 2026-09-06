@@ -44,3 +44,26 @@ measure cold and warm starts separately with a capture boundary that includes
 all required protocol events and enough simulated-time coverage. Preserve the
 TC-4 0.5x wall liveness floor and the full simulated-time rate band. No threshold
 was changed and no failing sample was reclassified as a pass.
+
+## Issue #497: lockstep contract acceptance
+
+The follow-up fixture on `fix/497-lockstep-acceptance` uses the production
+turn barrier for A1–A3, with a turn-zero boot reset and turn-accounted reset
+service / verifier replies. A1 now enforces TC-4's simulation-rate band and
+wall-clock liveness floor over a complete ten simulated seconds after a fixed
+one simulated second of startup (see
+[the capture-window ADR](decisions/ADR-contract-acceptance-window.md)).
+The recorder awaits a simulated-time horizon rather than assuming a wall
+window or sample count implies sufficient coverage. A2 awaits every forwarded
+reset reply, and A3 awaits the live-oracle-derived action result.
+
+On macOS arm64 with Dora CLI/API 1.0.1, two consecutive four-case acceptance
+runs passed (94.17 s and 80.08 s). A1 measured 88.50 / 87.98 Hz joint-state,
+26.55 / 26.40 Hz RGB, and 13.28 / 13.20 Hz depth wall-clock; simulation rates
+were exactly 100, 30, and 15 Hz over ten simulated seconds. The fixtures also
+checked SO-101 schema, twenty resets with repeated-seed snapshot identity,
+and the goal/feedback/result lifecycle. These are isolated local runs;
+they do not establish cold-cache reliability or throughput under concurrent
+simulation load. Synthetic regression traces separately prove that a delay
+in the fixed startup interval does not shorten coverage, while the same delay
+inside the measurement interval still fails the wall-clock floor.
