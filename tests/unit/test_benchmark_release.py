@@ -319,3 +319,27 @@ def test_quickstart_bundle_binds_executed_graph_and_stops_on_invalid_bundle(
     assert next(s for s in record["stages"] if s["name"] == "validate_bundle")["ok"] is False
     assert "report" not in record["outputs"]
     assert not (tmp_path / "result/report.json").exists()
+
+
+@pytest.mark.parametrize("contents", ["", "retained run data"])
+def test_quickstart_distinguishes_empty_directory_marker_from_run_input(
+    quickstart_module, tmp_path, capsys, monkeypatch, contents
+):
+    """BMK-7: a fresh clone's empty runs/.gitkeep is not a pre-existing run."""
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    (runs / ".gitkeep").write_text(contents)
+    calls = []
+
+    def fake_run(cmd, cwd, env=None):
+        calls.append(cmd)
+        return 1, "", "deliberate sync failure"
+
+    monkeypatch.setattr(quickstart_module, "_run", fake_run)
+    assert quickstart_module.main(["--root", str(tmp_path), "--out", "result"]) == 1
+    record = json.loads(capsys.readouterr().out)
+    if contents:
+        assert record["stages"][0]["name"] == "preflight" and not calls
+    else:
+        assert record["local_overrides"] == []
+        assert record["stages"][0]["name"] == "sync" and calls

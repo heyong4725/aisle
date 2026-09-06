@@ -90,7 +90,13 @@ def main(argv: list[str] | None = None) -> int:
         "local_overrides": [],
     }
     runs = root / "runs"
-    if runs.exists() and (not runs.is_dir() or any(runs.iterdir())):
+    if runs.exists() and (
+        not runs.is_dir()
+        or any(
+            path.name != ".gitkeep" or not path.is_file() or path.stat().st_size != 0
+            for path in runs.iterdir()
+        )
+    ):
         record["local_overrides"].append("pre-existing runs/ input")
     if args.skip_sync:
         record["local_overrides"].append("--skip-sync")
