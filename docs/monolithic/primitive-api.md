@@ -31,6 +31,10 @@ uv run harness monolith check --module my_controller.py          # compile + con
 uv run harness monolith run --module my_controller.py --tier T1 --episodes 8 --seeds 0..7
 ```
 
+The launcher currently supports only T1. Other tiers return a structured
+`unsupported_monolithic_tier` failure before loading the module or starting a
+rollout; they require their own declared observation and task setup.
+
 `check` reports Python's own syntax, import, and runtime errors and nothing
 else. `run` prints one JSON report and writes `runs/<id>/episodes.jsonl`.
 

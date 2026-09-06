@@ -89,7 +89,15 @@ def run(
     timeout_s: float | None = None,
     no_idea_gate: bool = False,
 ) -> dict:
-    """Stamp the graph and roll it out through the trusted runner."""
+    """Stamp the supported T1 graph and roll it out through the trusted runner."""
+    if tier != "T1":
+        return {
+            "ok": False,
+            "error": "unsupported_monolithic_tier",
+            "tier": tier,
+            "supported_tiers": ["T1"],
+        }
+
     from aisle.harness.cli import _branch
     from aisle.harness.rollout import rollout
 
