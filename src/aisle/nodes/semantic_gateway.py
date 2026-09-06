@@ -46,6 +46,11 @@ from aisle.harness.semantic_shield import (
     content_hash,
 )
 
+#: a gripper command is a CLOSING proposal once it moves this fraction of the
+#: way from the open value toward the grasp value; the executor ramps the
+#: command in 0.01 steps, so gating only the final value would let the
+#: fingers close through the ramp unauthorized (first live shakeout)
+CLOSING_FRACTION = 0.1
 CARRY_RADIUS_M = 0.06  # a box centre within this of the TCP is the carried object
 CANDIDATE_RADIUS_M = 0.10  # at closure, the nearest box within this is the grasp candidate
 IDENTITY_SOURCE = "simulation_oracle"
@@ -223,12 +228,14 @@ class Gateway:
         tray: dict,
         grasp_cmd: float,
         sensor: SensorIdentity | None = None,
+        open_cmd: float = 0.0,
     ):
         if arm not in ARMS:
             raise ValueError(f"unknown shield arm {arm!r}; expected one of {ARMS}")
         self.arm = arm
         self.tray = tray
         self.grasp_cmd = grasp_cmd
+        self.open_cmd = open_cmd
         if arm == "sensor_shield":
             self.identity = sensor if sensor is not None else SensorIdentity(med_names)
         else:
@@ -273,19 +280,28 @@ class Gateway:
             "goal_revision": self.assignment["goal_revision"],
         }
 
+    def _closing(self, value) -> bool:
+        span = self.grasp_cmd - self.open_cmd
+        return (float(value[0]) - self.open_cmd) / span >= CLOSING_FRACTION if span else False
+
     def propose(self, kind: str, value: np.ndarray, tcp: np.ndarray, now_s: float) -> dict:
         """Decide one command. Returns {"forward": bool, "value": array|None,
-        "stage": str|None, "reason": str|None, "halt": bool}."""
+        "stage": str|None, "reason": str|None, "halt": bool, "event": dict|None}.
+        A refused closing command is replaced by the OPEN value (the fingers
+        never close); a refused joint command re-sends the last forwarded
+        one (the arm holds)."""
         closing_edge = False
         if kind == "gripper_cmd":
-            closed = float(value[0]) >= self.grasp_cmd - 1e-6
-            closing_edge = closed and not self.gripper_closed
+            closing = self._closing(value)
+            if not closing:
+                self.gripper_closed = False  # opening or open: always allowed
+            closing_edge = closing and not self.gripper_closed
         stage = stage_of(self.gripper_closed, closing_edge, over_tray(tcp, self.tray))
         if stage is None or self.assignment is None:
-            if kind == "gripper_cmd":
-                self.gripper_closed = float(value[0]) >= self.grasp_cmd - 1e-6
-            elif kind == "joint_cmd":
+            if kind == "joint_cmd":
                 self.last_forwarded = np.asarray(value, dtype=np.float32)
+            elif kind == "gripper_cmd" and self._closing(value):
+                self.gripper_closed = True  # no assignment: nothing to authorize against
             return {
                 "forward": True,
                 "value": value,
@@ -327,7 +343,7 @@ class Gateway:
         self.events.append(event)
         if forward:
             if kind == "gripper_cmd":
-                self.gripper_closed = float(value[0]) >= self.grasp_cmd - 1e-6
+                self.gripper_closed = True
             else:
                 self.last_forwarded = np.asarray(value, dtype=np.float32)
             return {
@@ -337,7 +353,11 @@ class Gateway:
                 "halt": False,
                 "event": event,
             }
-        held = self.last_forwarded if kind == "joint_cmd" else None
+        held = (
+            self.last_forwarded
+            if kind == "joint_cmd"
+            else np.array([self.open_cmd], dtype=np.float32)  # refused closure: stay open
+        )
         return {
             "forward": False,
             "value": held,
@@ -364,7 +384,14 @@ def main() -> None:  # pragma: no cover — dora runtime
     key = hashlib.sha256(
         f"aisle-semantic-gateway:{os.environ.get('AISLE_SEEDS', '')}".encode()
     ).digest()
-    gateway = Gateway(arm, key, list(MED_NAMES), tray, float(profile.get("gripper_grasp_cmd", 1.0)))
+    gateway = Gateway(
+        arm,
+        key,
+        list(MED_NAMES),
+        tray,
+        float(profile.get("gripper_grasp_cmd", 1.0)),
+        open_cmd=float(profile.get("gripper_pregrasp_cmd", 0.0)),
+    )
     n_arm = int(np.asarray(profile["home_qpos"]).shape[0]) - int(profile.get("gripper_dofs", 2))
     qpos: np.ndarray | None = None
     last_note: tuple | None = None  # (stage, reason) of the last logged hold

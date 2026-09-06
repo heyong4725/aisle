@@ -106,12 +106,36 @@ def test_wrong_object_closure_is_refused_and_held():
     assert approach["forward"]
     close = g.propose("gripper_cmd", np.array([1.0]), tcp, 2.0)
     assert close["forward"] is False and close["reason"] == "wrong_target"
-    assert close["value"] is None and g.gripper_closed is False
+    assert close["value"].tolist() == [0.0] and g.gripper_closed is False
     assert g.events[-1]["outcome"] == "refuse"
     # the executor keeps commanding as if closed: the gateway sees it as a
     # renewed pre-grasp attempt and keeps refusing; joints hold
     close2 = g.propose("gripper_cmd", np.array([1.0]), tcp, 2.1)
     assert close2["forward"] is False
+
+
+def test_closing_ramp_is_gated_from_its_first_step():
+    """SEM-4: the executor ramps the gripper in 0.01 steps; every step of a
+    closure on the wrong box is refused and replaced by the open value, so
+    the fingers never close; a permitted first step marks the gripper
+    closed and the rest of the ramp becomes carry proposals."""
+    g = _gateway()
+    tcp = np.array([0.4, 0.1, 0.3])
+    g.identity.on_poses(_poses(metformin=[0.4, 0.1, 0.3]), sim_time_s=1.9)
+    assert g.propose("gripper_cmd", np.array([0.05]), tcp, 2.0)["stage"] is None  # below the edge
+    for i, v in enumerate((0.1, 0.5, 1.0)):
+        d = g.propose("gripper_cmd", np.array([v]), tcp, 2.0 + i * 0.01)
+        assert d["forward"] is False and d["stage"] == "pre_grasp", (v, d)
+        assert d["value"].tolist() == [0.0] and d["reason"] == "wrong_target"
+    assert g.gripper_closed is False
+    ok = _gateway()
+    ok.identity.on_poses(_poses(ibuprofen=[0.4, 0.1, 0.3]), sim_time_s=1.9)
+    assert ok.propose("gripper_cmd", np.array([0.1]), tcp, 2.0)["stage"] == "pre_grasp"
+    assert ok.gripper_closed is True
+    nxt = ok.propose("gripper_cmd", np.array([0.5]), tcp, 2.01)
+    assert nxt["forward"] and nxt["stage"] == "carry"
+    release = ok.propose("gripper_cmd", np.array([0.0]), tcp, 5.0)
+    assert release["forward"] and release["stage"] is None and ok.gripper_closed is False
 
 
 def test_no_box_at_the_tool_is_missing_identity():
