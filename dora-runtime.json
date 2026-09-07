@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/dora-rs/dora.git",
+  "commit": "7093bd0e2edfa62aa36a5d652b06d4151866147f",
+  "cargo_lock_sha256": "0fb1205f2f78f492400e5a1b36658be57c109094342d8c01eb0badba15feeb53",
+  "rust_toolchain": "1.97.1",
+  "build_profile": "dev",
+  "cli_version": "1.0.1",
+  "python_api_version": "1.0.1",
+  "upstream_status": "candidate",
+  "blocking_issue": "https://github.com/dora-rs/dora/pull/3429#issuecomment-5564012834"
+}

@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -82,6 +83,9 @@ def main(argv: list[str] | None = None) -> int:
         "--skip-sync", action="store_true", help="records a local override (ok:false)"
     )
     parser.add_argument("--run-id", default="quickstart-t0-seed0")
+    parser.add_argument(
+        "--runtime-prefix", type=Path, help="verify and use the declared source-pinned CLI"
+    )
     args = parser.parse_args(argv)
     root = args.root.resolve()
     out = (root / args.out).resolve() if not args.out.is_absolute() else args.out
@@ -114,24 +118,51 @@ def main(argv: list[str] | None = None) -> int:
     if args.skip_sync:
         record["local_overrides"].append("--skip-sync")
 
+    runtime_env = None
+
+    def run(cmd, cwd):
+        if runtime_env is not None:
+            from dora_runtime import verify
+
+            if verify(root / "dora-runtime.json", args.runtime_prefix) != record["runtime"]:
+                raise ValueError("source runtime identity changed after preflight")
+            return _run(cmd, cwd, env=runtime_env)
+        return _run(cmd, cwd)
+
     def sync():
         if args.skip_sync:
             return {"ok": False, "error": "sync skipped by local override"}
-        code, so, se = _run(["uv", "sync", "--extra", "sim"], root)
+        code, so, se = run(["uv", "sync", "--extra", "sim"], root)
         return {"ok": code == 0, "stderr_tail": se[-400:]}
 
     def versions():
+        nonlocal runtime_env
+        if args.runtime_prefix is not None:
+            from dora_runtime import verify
+
+            record["runtime"] = verify(root / "dora-runtime.json", args.runtime_prefix)
+            if not record["runtime"]["acceptance_ready"]:
+                return {
+                    "ok": False,
+                    "error": "source runtime is a candidate; upstream validation pending",
+                }
+            runtime_env = {
+                **os.environ,
+                "PATH": str(args.runtime_prefix.resolve() / "bin")
+                + os.pathsep
+                + os.environ.get("PATH", ""),
+            }
         # Verify archived source before execution, then again when building the bundle.
         _source_provenance({}, root)
-        code, so, _ = _run(
+        code, so, _ = run(
             ["uv", "run", "python", "-c", "import aisle,sys;print(sys.version.split()[0])"], root
         )
         record["versions"]["python"] = so.strip() if code == 0 else None
-        code, so, _ = _run(["dora", "--version"], root)
+        code, so, _ = run(["dora", "--version"], root)
         record["versions"]["dora_cli"] = (
             so.strip().splitlines()[0] if code == 0 and so.strip() else None
         )
-        code, so, _ = _run(["uv", "run", "python", "tools/env_hash.py"], root)
+        code, so, _ = run(["uv", "run", "python", "tools/env_hash.py"], root)
         try:
             record["hashes"]["env_hash"] = json.loads(so)["env_hash"] if code == 0 else None
         except (json.JSONDecodeError, KeyError):
@@ -142,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
         }
 
     def validate():
-        code, so, se = _run(["uv", "run", "harness", "validate", GRAPH], root)
+        code, so, se = run(["uv", "run", "harness", "validate", GRAPH], root)
         try:
             report = json.loads(so)
         except json.JSONDecodeError:
@@ -177,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
             "--run-id",
             args.run_id,
         ]
-        code, so, se = _run(cmd, root)
+        code, so, se = run(cmd, root)
         try:
             result = json.loads(so)
         except json.JSONDecodeError:
