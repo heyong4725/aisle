@@ -39,20 +39,33 @@ lsof -a -d cwd -c python | grep runs/
 The campaign runners sweep their own worktrees between sessions; manual
 `dora run` invocations are on you.
 
-## `dora --version` mismatch warning
+## Dora version, receipt or runtime mismatch
 
-The CLI and Python API must both use release 1.0.1. Check `dora --version`
-and `uv run --extra sim python -c "from importlib.metadata import version; print(version('dora-rs'))"`.
+The Python API is pinned to 1.0.1, but the CLI uses the corrected source commit
+in `dora-runtime.json`. Both the affected release and corrected source build
+report CLI version 1.0.1, so `dora --version` alone cannot distinguish them.
+Check the actual receipt against the current pin:
 
-- `which dora` identifies older Cargo, conda, or Homebrew binaries that
-  may shadow the uv-installed CLI.
-- Reinstall with `uv tool install dora-rs-cli==1.0.1` and
-  `uv sync --extra sim --locked`.
+```bash
+uv run --extra sim --locked python tools/dora_runtime.py verify --prefix "$AISLE_DORA_PREFIX"
+```
 
-Stop and restart any older daemon/coordinator before launching 1.0.1 nodes.
-The 1.0 release changes binary encoding; release candidates cannot be mixed
-with stable nodes. Existing coordinator stores and recordings may also need
-migration; consult the [upstream 1.0 release notes](https://github.com/dora-rs/dora/blob/v1.0.1/Changelog.md#v100-2026-09-02)
+`AISLE_DORA_PREFIX` is the installation directory chosen in
+[getting started](getting-started.md). If the receipt, binary or source pin
+has changed, install into a new prefix using those instructions. Do not
+reinstall the affected release CLI as a remedy for lockstep stalls, and do not
+rewrite a receipt. A failed installation keeps partial output for diagnosis;
+choose a fresh prefix for the retry.
+
+For the public quickstart, pass `--runtime-prefix "$AISLE_DORA_PREFIX"`.
+For manual commands, `which dora` should resolve inside that prefix after
+`export PATH="$AISLE_DORA_PREFIX/bin:$PATH"`. Older Cargo, conda or Homebrew
+installations may otherwise shadow the verified executable. Use `--extra cuda`
+in verification commands if that is your selected environment.
+
+Stop and restart any older daemon/coordinator you started before switching
+runtime builds. Historical pre-1.0 recordings and stores may need migration;
+consult the [upstream 1.0 release notes](https://github.com/dora-rs/dora/blob/v1.0.1/Changelog.md#v100-2026-09-02)
 before reusing them.
 
 ## Rollout refuses to start

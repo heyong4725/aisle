@@ -7,8 +7,17 @@ an explicit committed revision:
 uv run python tools/source_archive.py --revision HEAD --output /tmp/aisle-source.tar
 ```
 
-Extract into a new directory and run `uv run python tools/quickstart.py` there,
-with the documented uv and Dora prerequisites. The builder exports committed
+Extract into a new directory, install the declared source runtime using
+[the runtime guide](dora-runtime.md), and run from the extracted root:
+
+```bash
+uv run --extra sim --locked python tools/quickstart.py --runtime-prefix "$AISLE_DORA_PREFIX"
+```
+
+Set `AISLE_DORA_PREFIX` to the fresh installation directory chosen in that guide.
+Use the extracted archive's `dora-runtime.json` for installation so the receipt
+matches its pin. Linux also needs the EGL/Mesa prerequisites in
+[getting started](../../getting-started.md). The builder exports committed
 blobs, including executable modes and symlink contents; working-tree edits are
 excluded. An existing output file is refused. SHA-1 Git repositories are the
 supported source format; submodules and reserved provenance paths are refused.
