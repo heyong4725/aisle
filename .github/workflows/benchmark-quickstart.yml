@@ -1,0 +1,177 @@
+name: benchmark-quickstart
+on:
+  workflow_dispatch:
+    inputs:
+      dora_commit:
+        description: 'Optional full Dora commit SHA; diagnostic only, never release acceptance'
+        required: false
+        default: ''
+        type: string
+  pull_request:
+    paths:
+      - .github/workflows/benchmark-quickstart.yml
+      - dora-runtime.json
+      - tools/dora_runtime.py
+      - tools/quickstart.py
+permissions:
+  contents: read
+jobs:
+  candidate-cli:
+    if: inputs.dora_commit != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      DORA_COMMIT: ${{ inputs.dora_commit }}
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - name: Require an immutable candidate revision
+        run: '[[ "$DORA_COMMIT" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@v4
+        with:
+          repository: dora-rs/dora
+          ref: ${{ inputs.dora_commit }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - name: Build the diagnostic CLI
+        run: |
+          test "$(git rev-parse HEAD)" = "$DORA_COMMIT"
+          cargo build --locked -p dora-cli
+          mkdir candidate-cli
+          cp target/debug/dora candidate-cli/dora
+          strip candidate-cli/dora
+          git rev-parse HEAD > candidate-cli/source-commit.txt
+          sha256sum Cargo.lock > candidate-cli/source-lock.sha256
+          (cd candidate-cli && sha256sum dora > binary.sha256)
+          candidate-cli/dora --version > candidate-cli/version.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-dora-cli-${{ github.run_id }}
+          path: candidate-cli/
+          retention-days: 7
+  linux:
+    needs: candidate-cli
+    if: always() && (inputs.dora_commit == '' || needs.candidate-cli.result == 'success')
+    name: ${{ inputs.dora_commit != '' && 'diagnostic' || 'benchmark' }}/linux-${{ matrix.source }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [clone, archive]
+    steps:
+      - name: Set fresh runtime directories
+        run: |
+          echo "UV_CACHE_DIR=$RUNNER_TEMP/quickstart-uv-cache" >> "$GITHUB_ENV"
+          echo "UV_TOOL_DIR=$RUNNER_TEMP/quickstart-uv-tools" >> "$GITHUB_ENV"
+          echo "UV_TOOL_BIN_DIR=$RUNNER_TEMP/quickstart-bin" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          path: source
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+          python-version: '3.13'
+      - name: Install the Linux rendering runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libegl1 libgl1 libgl1-mesa-dri
+          dpkg-query -W libegl1 libegl-mesa0 libgl1 libgl1-mesa-dri > system-packages.txt
+      - uses: dtolnay/rust-toolchain@1.97.1
+        if: inputs.dora_commit == ''
+      - uses: actions/download-artifact@v4
+        if: inputs.dora_commit != ''
+        with:
+          name: diagnostic-dora-cli-${{ github.run_id }}
+          path: candidate-cli
+      - name: Use the explicitly recorded candidate CLI
+        if: inputs.dora_commit != ''
+        run: |
+          (cd candidate-cli && sha256sum --check binary.sha256)
+          chmod +x candidate-cli/dora
+          echo "$GITHUB_WORKSPACE/candidate-cli" >> "$GITHUB_PATH"
+      - name: Prepare committed source archive
+        if: matrix.source == 'archive'
+        run: |
+          uv run --no-project python source/tools/source_archive.py --root source --output "$RUNNER_TEMP/source.tar" > archive-record.json
+          mkdir archive
+          uv run --no-project python -m tarfile -e "$RUNNER_TEMP/source.tar" archive
+      - name: Install and verify the declared source runtime
+        if: inputs.dora_commit == ''
+        env:
+          SOURCE_KIND: ${{ matrix.source }}
+          CARGO_PROFILE_DEV_DEBUG: '0'
+        run: |
+          if [ "$SOURCE_KIND" = archive ]; then
+            cd archive
+          else
+            cd source
+          fi
+          # A separate bootstrap environment supplies the pinned node API;
+          # the project environment is installed by the quickstart itself.
+          uv run --no-project --with dora-rs==1.0.1 python tools/dora_runtime.py install --prefix "$RUNNER_TEMP/declared-dora" > "$GITHUB_WORKSPACE/runtime-install.json"
+          cp "$RUNNER_TEMP/declared-dora/aisle-dora-receipt.json" "$GITHUB_WORKSPACE/runtime-receipt.json"
+      # BMK-7/BMK-8: these are separate fresh runners, with no restored uv
+      # cache, pre-installed project environment, or pre-existing runs/.
+      - name: Run the public quickstart
+        env:
+          SOURCE_KIND: ${{ matrix.source }}
+          DORA_COMMIT: ${{ inputs.dora_commit }}
+        run: |
+          if [ "$SOURCE_KIND" = archive ]; then
+            cd archive
+          else
+            cd source
+          fi
+          runtime_args=()
+          if [ -z "$DORA_COMMIT" ]; then
+            runtime_args+=(--runtime-prefix "$RUNNER_TEMP/declared-dora")
+          fi
+          uv run python tools/quickstart.py "${runtime_args[@]}" > "$GITHUB_WORKSPACE/quickstart.json" 2> "$GITHUB_WORKSPACE/quickstart.stderr"
+      - name: Classify candidate evidence as an override
+        if: always() && inputs.dora_commit != ''
+        env:
+          DORA_COMMIT: ${{ inputs.dora_commit }}
+        run: |
+          uv run --no-project python - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+
+          raw = Path("quickstart.json")
+          if raw.exists():
+              raw.rename("candidate-quickstart-observed.json")
+          observed = Path("candidate-quickstart-observed.json")
+          try:
+              runtime_ok = json.loads(observed.read_text()).get("ok") is True
+          except (OSError, ValueError):
+              runtime_ok = False
+          report = {
+              "ok": False,
+              "evidence_class": "upstream_candidate_diagnostic",
+              "release_acceptance": False,
+              "local_overrides": ["Dora CLI built from an unreleased candidate commit"],
+              "dora_commit": os.environ["DORA_COMMIT"],
+              "observed_runtime_ok": runtime_ok,
+          }
+          Path("quickstart.json").write_text(json.dumps(report, indent=2) + "\n")
+          PYTHON
+      - name: Retain observed evidence, including failed attempts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quickstart-linux-${{ matrix.source }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            quickstart.json
+            quickstart.stderr
+            runtime-install.json
+            runtime-receipt.json
+            candidate-quickstart-observed.json
+            candidate-cli/*.txt
+            candidate-cli/*.sha256
+            archive-record.json
+            system-packages.txt
+            source/runs/
+            archive/runs/
+          if-no-files-found: warn
+          retention-days: 30
