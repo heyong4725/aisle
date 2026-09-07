@@ -189,26 +189,31 @@ human-in-the-loop governance of agent-authored robot code has to carry.
 
 ## Quickstart
 
-macOS arm64, Python >= 3.11, [uv](https://docs.astral.sh/uv/), and the
-dora 1.0.1 CLI. Details and troubleshooting:
-`docs/getting-started.md`.
+Use macOS arm64 or Linux CPU, Python >= 3.11, Git, rustup and
+[uv](https://docs.astral.sh/uv/). Linux also needs the EGL/Mesa packages listed in
+[getting started](docs/getting-started.md). From a fresh checkout:
 
 ```bash
-uv sync --extra sim        # plain `uv sync` REMOVES the sim extras
-                           # NVIDIA host? use --extra cuda (GPU torch)
-uv tool install dora-rs-cli==1.0.1
-dora --version             # must report 1.0.1
-
-uv run pytest -m unit                            # fast, no simulator (~90 s)
-uv run harness validate graphs/expert_t0.yaml    # typed-graph validation
-uv run harness rollout --graph graphs/expert_t0.yaml --tier T0 \
-    --episodes 2 --seeds 0..1 --no-idea-gate --env-baseline local
-# With `uv sync --extra cuda`, add `--sim-extra cuda` (Linux only).
+uv sync --extra sim --locked   # plain `uv sync` REMOVES the sim extras
+rustup toolchain install 1.97.1
+export AISLE_DORA_PREFIX="$PWD/../aisle-dora-runtime"  # choose a new directory
+uv run --extra sim --locked python tools/dora_runtime.py install --prefix "$AISLE_DORA_PREFIX"
+uv run --extra sim --locked python tools/dora_runtime.py verify --prefix "$AISLE_DORA_PREFIX"
+uv run --extra sim --locked python tools/quickstart.py --runtime-prefix "$AISLE_DORA_PREFIX"
 ```
 
-The dora Python API and CLI are both pinned to release 1.0.1.
-Upgrade them together; release-candidate binaries use an incompatible wire format.
-Never install with bare pip/conda.
+The Python API remains pinned to 1.0.1; the CLI is built from the corrected,
+immutable source revision in `dora-runtime.json`. CLI version output alone does
+not identify that correction: the installer and quickstart verify its receipt.
+The release CLI 1.0.1 has a reproduced timer-pressure event-loss defect (#516).
+See [runtime installation](docs/benchmark/v1/dora-runtime.md) for identity checks
+and [getting started](docs/getting-started.md) for manual rollouts and NVIDIA
+setup. Never install with bare pip/conda.
+
+The supported Linux clone and archive quickstarts passed in
+[run 34082153283](https://github.com/heyong4725/aisle/actions/runs/34082153283).
+These are development runs; the benchmark's independent-user, release and
+physical-evidence gates remain outstanding.
 
 ## Repository map
 
