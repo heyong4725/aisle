@@ -28,3 +28,17 @@ installation storage and exact peak memory remain separate BMK-8 measurements.
 GitHub-hosted macOS runners do not provide the Metal device required by the
 macOS simulation backend; the existing nightly workflow documents that limit.
 A Linux success cannot satisfy the macOS gate or any physical-robot criterion.
+
+For upstream debugging (#516), a manual dispatch may supply `dora_commit` as
+an exact 40-character SHA from `dora-rs/dora`. A separate runner builds that
+CLI with its locked dependencies; the clone/archive runners record its source
+commit, lockfile hash, executable hash, and version. The Python node package
+continues to use AISLE's pinned release. This is a compatibility diagnostic,
+not a paired release installation or benchmark acceptance.
+
+Candidate jobs are named `diagnostic/linux-*`. Their raw stage output is kept
+as `candidate-quickstart-observed.json`; `quickstart.json` explicitly reports
+`ok: false`, `release_acceptance: false`, and the CLI override even if all runtime
+stages pass. A successful diagnostic check cannot satisfy BMK-7/BMK-8 or justify
+merging this acceptance PR. After adopting a released fix, rerun with an empty
+`dora_commit` to exercise the release-based `benchmark/linux-*` checks.
