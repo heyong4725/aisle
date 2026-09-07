@@ -184,7 +184,7 @@
       "status": "passed"
     }
   ],
-  "manifest_sha256": "df5968777fed364b2665f0d8dc0fafca4e23480f3c383d2f355a3f50967cd70a",
+  "manifest_sha256": "a02aa8ef753127458332b217ccc04aadc6af93b810bdb84a81f9972e5d51c5e4",
   "release_ready": false,
   "schema_version": "aisle.benchmark.release-audit.v1",
   "wording": "#357 stays open until every applicable criterion has reviewable evidence; internal dry runs never pass the external criteria"

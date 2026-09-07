@@ -1,6 +1,6 @@
 {
   "benchmark_version": "aisle-benchmark-v1-draft",
-  "manifest_sha256": "df5968777fed364b2665f0d8dc0fafca4e23480f3c383d2f355a3f50967cd70a",
+  "manifest_sha256": "a02aa8ef753127458332b217ccc04aadc6af93b810bdb84a81f9972e5d51c5e4",
   "missing_surfaces": [],
   "schema_version": "aisle.benchmark.version-manifest.v1",
   "status": "draft",
@@ -24,6 +24,18 @@
     "contamination_rotation": {
       "path": "docs/benchmark/v1/contamination-rotation.md",
       "sha256": "sha256:02332a8e08fd9ac4eb7aefaba2774c1d4810a86aa9ea97a1895a34ae671c2e91"
+    },
+    "dora_runtime_contract": {
+      "path": "docs/benchmark/v1/dora-runtime.md",
+      "sha256": "sha256:d74da10532c8d5ea5da3c3c4f9e329d892046c8e2236753481b3820934d98b9f"
+    },
+    "dora_runtime_installer": {
+      "path": "tools/dora_runtime.py",
+      "sha256": "sha256:d9dda250c8e9ddf4cc335732ac3ade0744c1936ab8df24588948e8c5566e7aca"
+    },
+    "dora_runtime_pin": {
+      "path": "dora-runtime.json",
+      "sha256": "sha256:3f15a5df539273be0da0bde270a9c91b6a25e1a5241fc6768fb9f695f63afb05"
     },
     "governance": {
       "path": "docs/benchmark/v1/governance.md",
@@ -51,7 +63,7 @@
     },
     "quickstart": {
       "path": "tools/quickstart.py",
-      "sha256": "sha256:cf07e58ce3dec9b80104eb36f42d49b5e9287e85a5f3763ce110a0c774930d36"
+      "sha256": "sha256:f0170032dd1644083993f9632d96fa8e9a73b85872089a4e1bd96b79cd3e9678"
     },
     "resource_accounting": {
       "path": "docs/benchmark/v1/resource-accounting.md",

@@ -418,3 +418,138 @@ def test_version_identity_changes_when_the_executed_submission_validator_changes
     assert before["manifest_sha256"] != after["manifest_sha256"]
     copied.unlink()
     assert relative.as_posix() in benchmark_release.version_manifest(tmp_path)["missing_surfaces"]
+
+
+def test_quickstart_refuses_unvalidated_source_runtime(
+    quickstart_module, tmp_path, capsys, monkeypatch
+):
+    """BMK-7/CON-5: a candidate source receipt cannot authorize benchmark execution."""
+    import dora_runtime
+
+    calls = []
+    monkeypatch.setattr(
+        dora_runtime,
+        "verify",
+        lambda *a, **k: {"ok": True, "acceptance_ready": False, "commit": "7" * 40},
+    )
+
+    def run(cmd, cwd, env=None):
+        calls.append(cmd)
+        return 0, "", ""
+
+    monkeypatch.setattr(quickstart_module, "_run", run)
+    assert (
+        quickstart_module.main(
+            [
+                "--root",
+                str(tmp_path),
+                "--out",
+                "result",
+                "--runtime-prefix",
+                str(tmp_path / "runtime"),
+            ]
+        )
+        == 1
+    )
+    record = json.loads(capsys.readouterr().out)
+    assert record["runtime"]["acceptance_ready"] is False
+    assert not any("validate" in cmd or "rollout" in cmd for cmd in calls)
+
+
+def test_quickstart_uses_verified_source_binary_for_child_commands(
+    quickstart_module, tmp_path, capsys, monkeypatch
+):
+    """BMK-7/CON-5: a validated source prefix is bound to downstream runtime commands."""
+    import dora_runtime
+
+    checks = []
+    prefix = tmp_path / "runtime"
+
+    def verify(*args):
+        checks.append(args)
+        return {"ok": True, "acceptance_ready": True, "commit": "7" * 40}
+
+    monkeypatch.setattr(dora_runtime, "verify", verify)
+    environments = []
+
+    def run(cmd, cwd, env=None):
+        if env is not None:
+            environments.append(env)
+        if "validate" in cmd:
+            return 1, '{"ok": false}', ""
+        if cmd == ["dora", "--version"]:
+            return 0, "dora-cli 1.0.1", ""
+        if "tools/env_hash.py" in cmd:
+            return 0, '{"env_hash": "abc"}', ""
+        return 0, "3.13.15", ""
+
+    monkeypatch.setattr(quickstart_module, "_run", run)
+    assert (
+        quickstart_module.main(
+            [
+                "--root",
+                str(tmp_path),
+                "--out",
+                "result",
+                "--runtime-prefix",
+                str(prefix),
+            ]
+        )
+        == 1
+    )
+    record = json.loads(capsys.readouterr().out)
+    assert record["runtime"]["commit"] == "7" * 40
+    assert len(checks) >= 2
+    assert environments and all(
+        e["PATH"].split(":")[0] == str(prefix / "bin") for e in environments
+    )
+
+
+def test_benchmark_identity_binds_the_source_runtime_pin(tmp_path, monkeypatch):
+    """BMK-1/CON-5: changing the supported runtime revision changes benchmark identity."""
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "tools"))
+    import benchmark_release
+
+    pin = tmp_path / "dora-runtime.json"
+    pin.write_text('{"commit": "first"}')
+    before = benchmark_release.version_manifest(tmp_path)
+    pin.write_text('{"commit": "second"}')
+    after = benchmark_release.version_manifest(tmp_path)
+    assert before != after
+    assert after["surfaces"]["dora_runtime_pin"]["sha256"]
+
+
+def test_quickstart_rechecks_the_same_runtime_identity(
+    quickstart_module, tmp_path, capsys, monkeypatch
+):
+    """CON-5: replacing both pin and receipt mid-run cannot switch the recorded runtime."""
+    import dora_runtime
+
+    identities = iter(["first", "changed"])
+    monkeypatch.setattr(
+        dora_runtime,
+        "verify",
+        lambda *a: {"ok": True, "acceptance_ready": True, "commit": next(identities)},
+    )
+    calls = []
+
+    def run(cmd, cwd, env=None):
+        calls.append(cmd)
+        return 0, "", ""
+
+    monkeypatch.setattr(quickstart_module, "_run", run)
+    assert (
+        quickstart_module.main(
+            [
+                "--root",
+                str(tmp_path),
+                "--out",
+                "result",
+                "--runtime-prefix",
+                str(tmp_path / "runtime"),
+            ]
+        )
+        == 1
+    )
+    capsys.readouterr()
+    assert len(calls) == 1  # sync only; reject changed identity before the next child
