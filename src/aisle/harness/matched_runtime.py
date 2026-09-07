@@ -35,7 +35,10 @@ def capture_runtime(roots):
                 before = path.lstat()
                 row = {"mode": stat.S_IMODE(before.st_mode)}
                 if stat.S_ISLNK(before.st_mode):
-                    target = path.resolve(strict=True)
+                    # Some Python distributions omit optional framework headers
+                    # but retain their internal links. Bind those links too; a
+                    # later target creation or retargeting changes the inventory.
+                    target = path.resolve(strict=False)
                     if not any(target.is_relative_to(base) for base in roots):
                         raise RuntimeDrift("runtime link points outside inventory roots")
                     row.update(kind="symlink", link=os.readlink(path), target=str(target))

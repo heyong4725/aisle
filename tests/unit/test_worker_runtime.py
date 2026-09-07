@@ -50,3 +50,36 @@ def test_runtime_links_must_remain_inside_inventory_roots(tmp_path):
     (base / "python").write_text("changed executable bytes")
     with pytest.raises(RuntimeDrift):
         verify_runtime(record)
+
+
+@pytest.mark.parametrize("change", ["retarget", "create_target"])
+def test_internal_dangling_runtime_link_is_bound_and_rechecked(tmp_path, change):
+    """MON-13: omitted optional framework headers remain bound, never silently skipped."""
+    from aisle.harness.matched_runtime import RuntimeDrift, capture_runtime, verify_runtime
+
+    root = _runtime(tmp_path)
+    target = root / "Versions/8.6/PrivateHeaders"
+    target.parent.mkdir(parents=True)
+    link = root / "PrivateHeaders"
+    link.symlink_to("Versions/8.6/PrivateHeaders")
+    record = capture_runtime([root])
+    assert record["trees"][str(root)]["PrivateHeaders"]["target"] == str(target)
+    verify_runtime(record)
+    if change == "retarget":
+        link.unlink()
+        link.symlink_to("Versions/8.6/OtherHeaders")
+    else:
+        target.mkdir()
+        (target / "header.h").write_text("new runtime content")
+    with pytest.raises(RuntimeDrift):
+        verify_runtime(record)
+
+
+def test_missing_external_runtime_target_is_still_refused(tmp_path):
+    """MON-6/MON-13: a nonexistent target cannot excuse a link outside the closed runtime."""
+    from aisle.harness.matched_runtime import RuntimeDrift, capture_runtime
+
+    root = _runtime(tmp_path)
+    (root / "link").symlink_to(tmp_path / "outside-missing")
+    with pytest.raises(RuntimeDrift, match="outside"):
+        capture_runtime([root])

@@ -9,8 +9,11 @@ MON-13; issue #519 tracks the enclosing matched-session integration.
 `build_worker_bundle(path)` creates a fresh bundle containing only the worker's
 implementations. `capture_runtime(roots)` in `aisle.harness.matched_runtime`
 records disjoint canonical runtime trees, including directories, modes, file
-hashes and symlinks. Links must resolve inside the declared trees. Verification
-recomputes the inventory, so added files, changed modes and changed targets
+hashes and symlinks. Links must resolve inside the declared trees, including links whose internal
+target is currently absent (for example, omitted optional framework headers).
+Their link text and resolved target remain recorded; later target creation or
+retargeting invalidates the record. Missing external targets are still refused.
+Verification recomputes the inventory, so added files, changed modes and changed targets
 invalidate the record.
 
 `launch_worker(...)` requires the bundle and runtime records, a matching policy

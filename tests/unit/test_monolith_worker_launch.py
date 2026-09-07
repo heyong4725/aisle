@@ -174,7 +174,9 @@ def test_matched_worker_refuses_runtime_drift_and_excess_authority(tmp_path, mon
         extra.mkdir()
         policy = replace(policy, output_roots=(*policy.output_roots, extra))
     elif mutation == "execute":
-        policy = replace(policy, allowed_executables=(*policy.allowed_executables, Path("/bin/sh")))
+        policy = replace(
+            policy, allowed_executables=(*policy.allowed_executables, Path("/bin/sh").resolve())
+        )
     else:
         policy = replace(policy, hidden_roots=(tmp_path / "private",))
     inputs["policy"] = policy
