@@ -5,8 +5,13 @@ quickstart twice on separate fresh Ubuntu 24.04 runners: once from a checkout
 and once from the committed source archive built by `tools/source_archive.py`.
 Linux uses the declared CPU simulation backend. Neither job restores an Actions
 uv cache, pre-installs the project environment, or supplies an existing run.
-The pinned Dora CLI and Ubuntu rendering libraries are installed before the
-quickstart command. Even with CPU physics, Genesis constructs an offscreen
+The declared source-pinned Dora CLI and Ubuntu rendering libraries are installed
+before the quickstart command. The source installer uses a separate bootstrap
+environment containing the pinned Python node API, verifies the immutable source
+and lockfile, and records its executable receipt. This declared bootstrap may
+populate the fresh uv cache; no cache is restored from an earlier run. The
+quickstart installs the project environment and verifies the receipt through
+`--runtime-prefix`. Installation JSON and the receipt are retained as artifacts. Even with CPU physics, Genesis constructs an offscreen
 renderer. On Ubuntu 24.04 the workflow installs `libegl1`, `libgl1` and
 `libgl1-mesa-dri` (including the Mesa EGL dependency) with apt, and retains the
 resolved package versions in `system-packages.txt`. These are declared system
@@ -40,5 +45,8 @@ Candidate jobs are named `diagnostic/linux-*`. Their raw stage output is kept
 as `candidate-quickstart-observed.json`; `quickstart.json` explicitly reports
 `ok: false`, `release_acceptance: false`, and the CLI override even if all runtime
 stages pass. A successful diagnostic check cannot satisfy BMK-7/BMK-8 or justify
-merging this acceptance PR. After adopting a released fix, rerun with an empty
-`dora_commit` to exercise the release-based `benchmark/linux-*` checks.
+merging this acceptance PR. After reviewing and validating a corrected immutable
+source pin, rerun with an empty `dora_commit` to exercise `benchmark/linux-*`
+through the declared installer and verified prefix. No Dora release tag is
+required. A pin still marked `candidate` is refused before rollout, even when
+its installation identity verifies successfully.

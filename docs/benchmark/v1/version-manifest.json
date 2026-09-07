@@ -1,6 +1,6 @@
 {
   "benchmark_version": "aisle-benchmark-v1-draft",
-  "manifest_sha256": "a02aa8ef753127458332b217ccc04aadc6af93b810bdb84a81f9972e5d51c5e4",
+  "manifest_sha256": "0a7e501ea5e31bfc591dd28d80ad3317f73301d7927f74f0ab166fb1a37c7455",
   "missing_surfaces": [],
   "schema_version": "aisle.benchmark.version-manifest.v1",
   "status": "draft",
@@ -27,7 +27,7 @@
     },
     "dora_runtime_contract": {
       "path": "docs/benchmark/v1/dora-runtime.md",
-      "sha256": "sha256:d74da10532c8d5ea5da3c3c4f9e329d892046c8e2236753481b3820934d98b9f"
+      "sha256": "sha256:1ed0a9b9cdbc3c2c0db2c249d8ad694f8d7e6a7a2cbd8806fbb72bc5e545e11c"
     },
     "dora_runtime_installer": {
       "path": "tools/dora_runtime.py",
@@ -35,7 +35,7 @@
     },
     "dora_runtime_pin": {
       "path": "dora-runtime.json",
-      "sha256": "sha256:3f15a5df539273be0da0bde270a9c91b6a25e1a5241fc6768fb9f695f63afb05"
+      "sha256": "sha256:f9eb7ffe285a0f0ed26d50303e31cf1e94d2f93ed62b599071dff5a183c15f53"
     },
     "governance": {
       "path": "docs/benchmark/v1/governance.md",

@@ -11,11 +11,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 pytestmark = pytest.mark.unit
 
 
-def fixture(tmp_path):
+def fixture(tmp_path, *, status="candidate"):
     from dora_runtime import RECEIPT, load_pin
 
     pin_path = Path(__file__).resolve().parents[2] / "dora-runtime.json"
     pin = load_pin(pin_path)
+    pin["upstream_status"] = status
+    pin_path = tmp_path / "pin.json"
+    pin_path.write_text(json.dumps(pin))
     prefix = tmp_path / "runtime"
     (prefix / "bin").mkdir(parents=True)
     binary = prefix / "bin" / "dora"
@@ -33,15 +36,17 @@ def fixture(tmp_path):
     return pin_path, prefix, binary
 
 
-def test_identity_verifies_without_claiming_acceptance(tmp_path):
+@pytest.mark.parametrize("status", ["candidate", "validated"])
+def test_identity_verifies_without_claiming_acceptance(tmp_path, status):
     """CON-5: matching bytes prove installation identity, not upstream correctness."""
     from dora_runtime import verify
 
-    pin, prefix, _ = fixture(tmp_path)
+    pin, prefix, _ = fixture(tmp_path, status=status)
     report = verify(pin, prefix, api_version="1.0.1")
     assert report["ok"] is True
-    assert report["acceptance_ready"] is False
-    assert report["upstream_status"] == "candidate"
+    assert report["acceptance_ready"] is (status == "validated")
+    assert report["upstream_status"] == status
+    assert report["scope"] == "installation_identity"
 
 
 @pytest.mark.parametrize("field", ["binary", "pin", "receipt", "api"])

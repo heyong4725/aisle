@@ -26,14 +26,21 @@ that the upstream implementation is correct. Build output need not be
 bit-identical across machines. Keep the receipt and binary together; moving
 the prefix is permitted because executable identity is checked by content.
 
-The current pin has upstream_status=candidate because Dora #3429 still has an
-unresolved metadata-size finding. A successful install/verify report has
-ok=true for installation identity and acceptance_ready=false. The existing
-candidate GitHub workflow remains the route for unscored Linux diagnostics.
+The current pin is corrected commit `48e96b5b43af7c4d9fae3c964faef88e30d9ae06`,
+marked `validated` for AISLE runtime adoption. This does not declare an upstream
+release or benchmark release readiness. The Python API remains 1.0.1.
 
-After the Dora team fixes that defect, review the corrected immutable commit,
-update the source pin and Cargo.lock hash, retain the regression and AISLE
-runtime evidence, and approve the pin as validated. No release tag is required.
+The [focused upstream review](https://github.com/dora-rs/dora/pull/3429#issuecomment-5564787674)
+verified all seven metadata/frame-budget tests, including delivery of all 80
+metadata-heavy events across bounded frames. A local installation through this
+tool passed receipt verification and the real-process
+`slow_consumer_keeps_backpressure_commit` regression (one test, 12.26 seconds).
+The [corrected-revision Linux diagnostics](https://github.com/heyong4725/aisle/actions/runs/34081090523)
+passed all seven quickstart stages from clone (339.0 seconds) and archive
+(318.4 seconds). Those diagnostic records retain `release_acceptance=false`;
+the normal Linux workflow must separately exercise the supported installer and
+verified prefix. No release tag is required for this adoption.
+
 The supported quickstart then uses the verified prefix explicitly:
 
 ```sh

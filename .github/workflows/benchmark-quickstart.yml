@@ -10,6 +10,9 @@ on:
   pull_request:
     paths:
       - .github/workflows/benchmark-quickstart.yml
+      - dora-runtime.json
+      - tools/dora_runtime.py
+      - tools/quickstart.py
 permissions:
   contents: read
 jobs:
@@ -74,11 +77,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends libegl1 libgl1 libgl1-mesa-dri
           dpkg-query -W libegl1 libegl-mesa0 libgl1 libgl1-mesa-dri > system-packages.txt
-      - name: Install the pinned runtime CLI
+      - uses: dtolnay/rust-toolchain@1.97.1
         if: inputs.dora_commit == ''
-        run: |
-          uv tool install dora-rs-cli==1.0.1
-          echo "$UV_TOOL_BIN_DIR" >> "$GITHUB_PATH"
       - uses: actions/download-artifact@v4
         if: inputs.dora_commit != ''
         with:
@@ -96,18 +96,38 @@ jobs:
           uv run --no-project python source/tools/source_archive.py --root source --output "$RUNNER_TEMP/source.tar" > archive-record.json
           mkdir archive
           uv run --no-project python -m tarfile -e "$RUNNER_TEMP/source.tar" archive
-      # BMK-7/BMK-8: these are separate fresh runners, with no restored uv
-      # cache, pre-installed project environment, or pre-existing runs/.
-      - name: Run the public quickstart
+      - name: Install and verify the declared source runtime
+        if: inputs.dora_commit == ''
         env:
           SOURCE_KIND: ${{ matrix.source }}
+          CARGO_PROFILE_DEV_DEBUG: '0'
         run: |
           if [ "$SOURCE_KIND" = archive ]; then
             cd archive
           else
             cd source
           fi
-          uv run python tools/quickstart.py > "$GITHUB_WORKSPACE/quickstart.json" 2> "$GITHUB_WORKSPACE/quickstart.stderr"
+          # A separate bootstrap environment supplies the pinned node API;
+          # the project environment is installed by the quickstart itself.
+          uv run --no-project --with dora-rs==1.0.1 python tools/dora_runtime.py install --prefix "$RUNNER_TEMP/declared-dora" > "$GITHUB_WORKSPACE/runtime-install.json"
+          cp "$RUNNER_TEMP/declared-dora/aisle-dora-receipt.json" "$GITHUB_WORKSPACE/runtime-receipt.json"
+      # BMK-7/BMK-8: these are separate fresh runners, with no restored uv
+      # cache, pre-installed project environment, or pre-existing runs/.
+      - name: Run the public quickstart
+        env:
+          SOURCE_KIND: ${{ matrix.source }}
+          DORA_COMMIT: ${{ inputs.dora_commit }}
+        run: |
+          if [ "$SOURCE_KIND" = archive ]; then
+            cd archive
+          else
+            cd source
+          fi
+          runtime_args=()
+          if [ -z "$DORA_COMMIT" ]; then
+            runtime_args+=(--runtime-prefix "$RUNNER_TEMP/declared-dora")
+          fi
+          uv run python tools/quickstart.py "${runtime_args[@]}" > "$GITHUB_WORKSPACE/quickstart.json" 2> "$GITHUB_WORKSPACE/quickstart.stderr"
       - name: Classify candidate evidence as an override
         if: always() && inputs.dora_commit != ''
         env:
@@ -144,6 +164,8 @@ jobs:
           path: |
             quickstart.json
             quickstart.stderr
+            runtime-install.json
+            runtime-receipt.json
             candidate-quickstart-observed.json
             candidate-cli/*.txt
             candidate-cli/*.sha256
