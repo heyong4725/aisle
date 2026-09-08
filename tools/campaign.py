@@ -750,6 +750,7 @@ def run_session(
     ceilings: dict,
     env: dict | None = None,
     environment_record: dict | None = None,
+    line_guard=None,
 ) -> dict:
     """Spawn the session, count token spend from the LIVE stdout pipe
     (issue #42: the on-disk log is a tee, never the count's source), kill
@@ -765,6 +766,7 @@ def run_session(
     stopped = "agent_done"
     counter = UsageCounter(agent)
     tee_failure: list[str] = []
+    guard_stop: list[str] = []
     with open(log_path, "w") as log, open(stderr_path, "w") as err:
         stream_options = {
             "stdin": subprocess.DEVNULL,
@@ -805,6 +807,16 @@ def run_session(
                     log.write(line)
                     log.flush()
                     counter.feed(line)
+                    if line_guard is not None and not guard_stop:
+                        reason = line_guard(line)
+                        if reason is not None:
+                            if not isinstance(reason, str) or not reason:
+                                raise ValueError("stream guard returned an invalid stop reason")
+                            guard_stop.append(reason)
+                            try:
+                                os.killpg(proc.pid, signal.SIGKILL)
+                            except (ProcessLookupError, PermissionError):
+                                proc.kill()
             except Exception as exc:  # noqa: BLE001 — any tee death is infra
                 tee_failure.append(repr(exc))
                 try:
@@ -852,6 +864,8 @@ def run_session(
         except OSError:
             pass
         total = counter.total  # pinned before the log handle closes
+    if guard_stop:
+        stopped = guard_stop[0]
     error = None
     if tee_failure:
         error = "telemetry tee failed; token accounting is incomplete (not an agent outcome)"

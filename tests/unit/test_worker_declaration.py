@@ -53,6 +53,81 @@ def test_provisioned_declaration_uses_actual_adapter_and_fresh_roots(tmp_path, a
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="actual macOS sandbox")
+def test_generated_monolithic_declaration_prepares_and_runs_real_worker(tmp_path):
+    """MON-8/MON-12: generated capability feeds source preparation and actual confined RPC."""
+    import shutil
+
+    import numpy
+    import pyarrow
+
+    from aisle.harness.matched_runtime import capture_runtime
+    from aisle.harness.monolithic_run_prepare import prepare_monolithic_run
+    from aisle.harness.treatment_confinement import SANDBOX_EXEC
+    from aisle.harness.worker_declaration import provision_worker_declaration
+    from aisle.monolith.primitives import Primitives
+    from aisle.monolith.worker_config import configured_worker_factory
+
+    inputs = _launch_inputs(tmp_path, direct_python=True)
+    packages = tmp_path / "codec-runtime"
+    packages.mkdir()
+    for package in (numpy, pyarrow):
+        shutil.copytree(
+            Path(package.__file__).parent,
+            packages / package.__name__,
+            ignore=shutil.ignore_patterns("__pycache__"),
+        )
+    _, runtime_root = _worker_interpreter()
+    runtime = capture_runtime((runtime_root, packages))
+    controller = Path(__file__).resolve().parents[2]
+    participant = tmp_path / "participant-source"
+    views = {arm: participant / arm for arm in ("typed", "monolithic")}
+    for view in views.values():
+        view.mkdir()
+    module = views["monolithic"] / "experts/monolithic/expert_t1.py"
+    module.parent.mkdir(parents=True)
+    source = (
+        "API_VERSION='1.0'\nclass Controller:\n"
+        " def __init__(self,p,log): pass\n def on_event(self,e): return []\n"
+    )
+    module.write_text(source)
+    adapter = hashlib.sha256(SANDBOX_EXEC.read_bytes()).hexdigest()
+    declaration = provision_worker_declaration(
+        arm="monolithic",
+        bundle=tmp_path / "generated-bundle",
+        home=tmp_path / "generated-home",
+        evidence=tmp_path / "private/generated-worker",
+        hidden_roots=(controller, participant, tmp_path / "private"),
+        runtime_record=runtime,
+        python=inputs["python"],
+        python_sha256=hashlib.sha256(inputs["python"].read_bytes()).hexdigest(),
+        adapter_sha256=adapter,
+        timeout_s=5,
+    )
+    output = tmp_path / "private/preparation"
+    result = prepare_monolithic_run(
+        controller_root=controller,
+        views=views,
+        output=output,
+        declaration=declaration,
+        runtime=runtime,
+        adapter=adapter,
+        embodiment="franka",
+    )
+    factory = configured_worker_factory(
+        result["worker_config"], result["worker_config_sha256"], phase="check"
+    )
+    with factory(Primitives._load("franka")) as worker:
+        worker.initialize(source, "fixture.py")
+        assert worker.event({"name": "tick", "payload": 1}) == []
+    receipt = json.loads((output / "monolithic-execution/check/launch.json").read_text())
+    assert receipt["python_sha256"] == declaration["python_sha256"]
+    assert (
+        json.loads((output / "monolithic-execution/check/rpc/worker.json").read_text())["state"]
+        == "closed"
+    )
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="actual macOS sandbox")
 def test_generated_typed_declaration_runs_confined_arrow_turn(tmp_path):
     """MON-6/MON-12: actual confinement preserves Arrow transport and host turn ownership."""
     import shutil

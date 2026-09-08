@@ -96,6 +96,13 @@ protocol and seed commitment, and keeps all review, parity, task-band, and
 confinement gates pending. Seed verification is also pending; this is not
 a study freeze or authorization to collect results.
 
+CSE v5 supersedes v4 for the matched engineering controller, worker preparation,
+and retained evidence paths (#519). Its artifact set binds the controller
+sources, runtime selection, dependency lock, treatment table, and documentation.
+The v4 manifest remains unchanged. V5 inherits its seed commitment and keeps
+all review, parity, confinement, and seed-verification gates pending; it does
+not authorize study collection or claim the matched controller is complete.
+
 BND v9 supersedes v8 because the shared CLI gained explicit monolithic worker
 configuration options for #519. Calibration rules, thresholds, seed commitment,
 and pending review/audit gates are unchanged. V8 remains historical evidence.

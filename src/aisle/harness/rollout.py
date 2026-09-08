@@ -397,6 +397,7 @@ def run_gates(
     episodes: int = 0,
     sim_extra: str = "sim",
     graph_snapshot: bytes | None = None,
+    typed_stage: tuple[Path, dict] | None = None,
 ) -> dict:
     """HAR-2: refuse on env-hash mismatch (TRUSTED baseline by default,
     ADR-21: the baseline commit is fetched from the remote SERVER and
@@ -470,13 +471,33 @@ def run_gates(
     # validate against the embodiment that will actually run (M0-5): a
     # graph whose nodes do not support it must refuse HERE, not crash
     # hours into the rollout
-    validation = validate(
-        graph,
-        root,
-        embodiment,
-        allow_unproven=False,
-        graph_snapshot=graph_snapshot,
-    )
+    registry_root = root
+    if typed_stage is None:
+        validation = validate(
+            graph,
+            root,
+            embodiment,
+            allow_unproven=False,
+            graph_snapshot=graph_snapshot,
+        )
+    else:
+        from aisle.harness.typed_graph_stage import validation_for_rollout_gates
+
+        try:
+            validation, registry_root = validation_for_rollout_gates(
+                *typed_stage,
+                authored_bytes=graph.read_bytes() if graph_snapshot is None else graph_snapshot,
+                graph=graph,
+                controller_root=root,
+                embodiment=embodiment,
+            )
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            return {
+                "ok": False,
+                "gate": "typed_stage",
+                "detail": str(exc),
+                "infrastructure_invalid": True,
+            }
     if not validation["ok"]:
         return {"ok": False, "gate": "validate", "detail": validation["errors"]}
     if env_baseline != "local":
@@ -484,7 +505,7 @@ def run_gates(
         from aisle.harness.validate import _clock_topology, load_graph
 
         gate_nodes, _ = load_graph(graph, graph_snapshot)
-        manifest_list, manifest_errors = load_manifests(root)
+        manifest_list, manifest_errors = load_manifests(registry_root)
         manifests = {manifest["id"]: manifest for _, manifest in manifest_list}
         topology = _clock_topology(gate_nodes or [], manifests) if not manifest_errors else {}
         if topology.get("bridge_ids") and not topology.get("barrier_ids"):
@@ -510,6 +531,8 @@ def run_gates(
         "dist_inventory": (dist or {}).get("inventory"),
         "budget": remaining,
     }
+    if typed_stage is not None:
+        gates["typed_stage_id"] = typed_stage[1]["immutable_id"]
     if no_idea_gate:
         return {"ok": True, **gates, "idea": None, "no_idea_gate": True}
     ideas = open_ideas(root, branch)
@@ -612,6 +635,8 @@ def instrumented_graph(
     episode_timeout_s: float = 60.0,
     sim_backend: str | None = None,
     graph_snapshot: bytes | None = None,
+    typed_stage: tuple[Path, dict] | None = None,
+    work_launch: int | None = None,
 ) -> Path:
     """The input graph plus a trace-recorder node (HAR-4) with absolutized
     node paths, written under the run dir (dora's cwd becomes the run dir,
@@ -625,8 +650,15 @@ def instrumented_graph(
     text = (
         graph_snapshot.decode("utf-8")
         if graph_snapshot is not None
-        else graph.read_text(encoding="utf-8")
+        else graph.read_bytes().decode("utf-8")
     )
+    registry_root = root
+    if typed_stage is not None:
+        from aisle.harness.typed_graph_stage import transport_for_instrumentation
+
+        text, registry_root = transport_for_instrumentation(
+            *typed_stage, authored_bytes=text.encode("utf-8"), graph=graph, controller_root=root
+        )
     doc = yaml.safe_load(text)
     for node in doc["nodes"]:
         node["path"] = str((graph.parent / node["path"]).resolve())
@@ -640,7 +672,7 @@ def instrumented_graph(
     # at launch and every wall-clamp relaunch, hours after the HAR-2 gate: a
     # registry broken in between must refuse loudly. The graph content comes
     # from rollout's one capture, so relaunches cannot silently change graphs.
-    manifest_list, manifest_errors = load_manifests(root)
+    manifest_list, manifest_errors = load_manifests(registry_root)
     rung, bridge_ids, rung_errors = graph_perception_rung(
         doc["nodes"], {} if manifest_errors else {m["id"]: m for _, m in manifest_list}
     )
@@ -649,6 +681,24 @@ def instrumented_graph(
             "perception rung unresolvable at instrumentation time (TC-9): "
             + "; ".join(e["detail"] for e in rung_errors)
         )
+    # MON-13: accounting is controller-owned, including its output paths.
+    if any(
+        key.startswith("AISLE_SIM_WORK_")
+        for node in doc["nodes"]
+        for key in (node.get("env") or {})
+    ):
+        raise RuntimeError("authored simulator accounting configuration is forbidden")
+    if work_launch is not None:
+        from aisle.harness.simulator_work import launch_binding
+
+        bridges = [node for node in doc["nodes"] if node["id"] in bridge_ids]
+        trusted_bridge = str((root / "src/aisle/nodes/dora_genesis.py").resolve())
+        if len(bridges) != 1 or bridges[0]["path"] != trusted_bridge:
+            raise RuntimeError("simulator accounting requires one trusted bridge")
+        binding = launch_binding(
+            run_dir / "simulator-work", run_id=run_dir.name, launch=work_launch
+        )
+        bridges[0]["env"] = {**(bridges[0].get("env") or {}), **binding}
     if sim_backend is not None:
         for node in doc["nodes"]:
             if node["id"] in bridge_ids:
@@ -764,6 +814,9 @@ def instrumented_graph(
 # settings that MUST come from the graph (where the graph hash attests them)
 # or from the runner itself, and never from the ambient process environment
 SCRUBBED_ENV = (
+    "AISLE_SIM_WORK_PATH",
+    "AISLE_SIM_WORK_RUN_ID",
+    "AISLE_SIM_WORK_LAUNCH",
     # ADR-30: bridge incarnations are assigned by this runner.  Ambient
     # values could alias a dead process after a wall-clamp relaunch.
     "AISLE_TURN_EPOCH",
@@ -1015,6 +1068,8 @@ def rollout(
     perception: str | None = None,
     sim_extra: str = "sim",
     per_episode_wall_s: int | None = None,
+    typed_stage_factory=None,
+    record_simulator_work: bool = False,
 ) -> dict:
     """HAR-1: the full run. Returns the report dict (CON-8: caller emits)."""
     # A relative root (`--root .`) must be pinned to THIS process's cwd:
@@ -1051,7 +1106,32 @@ def rollout(
                 ],
             },
         }
-    perception_gate = perception_check(root, graph, perception, graph_snapshot)
+    typed_stage = None
+    typed_stages = []
+    typed_stage_error = None
+    typed_postflight = []
+    typed_artifacts = []
+    registry_root = root
+    if typed_stage_factory is not None:
+        from aisle.harness.typed_graph_stage import select_rollout_stage
+
+        try:
+            typed_stage, registry_root = select_rollout_stage(
+                typed_stage_factory,
+                0,
+                typed_stages,
+                authored_bytes=graph_snapshot,
+                graph=graph,
+                controller_root=root,
+                embodiment=embodiment,
+            )
+        except RuntimeError as exc:
+            return {
+                "ok": False,
+                "infrastructure_invalid": True,
+                "refused": {"gate": "typed_stage", "detail": str(exc)},
+            }
+    perception_gate = perception_check(registry_root, graph, perception, graph_snapshot)
     if not perception_gate["ok"]:
         return {"ok": False, "refused": perception_gate}
     authored_graph_hash = hashlib.sha256(graph_snapshot).hexdigest()
@@ -1065,9 +1145,14 @@ def rollout(
         episodes,
         sim_extra,
         graph_snapshot=graph_snapshot,
+        **({"typed_stage": typed_stage} if typed_stage is not None else {}),
     )
     if not gates["ok"]:
-        return {"ok": False, "refused": gates}
+        return {
+            "ok": False,
+            "refused": gates,
+            **({"infrastructure_invalid": True} if gates.get("infrastructure_invalid") else {}),
+        }
     if reset_mode == "behavioral":
         # RST-2 (issue #196): refuse rather than silently degrade. Most
         # graphs wire the reset node with {reset, reset_done} only; on those,
@@ -1114,6 +1199,9 @@ def rollout(
     run_dir = root / "runs" / run_id
     traces_dir = run_dir / "traces"
     traces_dir.mkdir(parents=True, exist_ok=True)
+    work_directory = run_dir / "simulator-work"
+    if record_simulator_work:
+        work_directory.mkdir(exist_ok=False)
     authored_snapshot_path = run_dir / "authored-graph.yaml"
     authored_snapshot_path.write_bytes(graph_snapshot)
     # budgets before the graph: the realistic verifier node needs the episode
@@ -1135,10 +1223,16 @@ def rollout(
             verifier=verifier,
             episode_timeout_s=episode_timeout_s,
             sim_backend=gates["sim_backend"],
+            **({"work_launch": 0} if record_simulator_work else {}),
             graph_snapshot=graph_snapshot,
+            **({"typed_stage": typed_stage} if typed_stage is not None else {}),
         )
     except RuntimeError as exc:
-        return {"ok": False, "refused": {"gate": "perception", "detail": str(exc)}}
+        return {
+            "ok": False,
+            "refused": {"gate": "perception", "detail": str(exc)},
+            **({"infrastructure_invalid": True} if typed_stage is not None else {}),
+        }
     # issue #128: attest what actually RAN, not only what was authored — one
     # hash per launch (a wall-clamp relaunch writes a new exec copy whose
     # trace_dir env differs, so its hash differs)
@@ -1180,7 +1274,71 @@ def rollout(
     # the campaign wall cap also bounds relaunch deadline extensions
     hard_cap_s = gates["budget"]["wall_h_left"] * 3600.0 if env_baseline != "local" else None
     deadline = started + run_budget_s
-    proc = _spawn_dora(exec_graph, run_dir, env)
+
+    def retain_work():
+        if not record_simulator_work:
+            return
+        from aisle.harness.simulator_work import summarize_launches
+
+        summary = summarize_launches(
+            work_directory, run_id=run_id, expected_graph_hashes=exec_graph_hashes
+        )
+        (run_dir / "simulator-work-summary.json").write_text(json.dumps(summary, indent=2))
+
+    def spawn_launch(index):
+        if record_simulator_work:
+            from aisle.harness.simulator_work import reserve_launch
+
+            reserve_launch(
+                work_directory,
+                run_id=run_id,
+                launch=index,
+                graph_sha256=exec_graph_hashes[index],
+            )
+        return _spawn_dora(exec_graph, run_dir, env, **({"relaunch": index} if index else {}))
+
+    proc = None
+    pending_typed_stage = typed_stage
+
+    def audit_stopped_stage():
+        nonlocal pending_typed_stage, typed_stage_error
+        if pending_typed_stage is None:
+            return True
+        from aisle.harness.typed_graph_audit import audit_graph_stage, retain_graph_stage
+
+        stage_path, stage_record = pending_typed_stage
+        launch_index = len(typed_postflight)
+        try:
+            audit = audit_graph_stage(stage_path, stage_record)
+        except Exception as exc:
+            audit = {
+                "ok": False,
+                "stage_id": stage_record["immutable_id"],
+                "errors": [{"node": None, "error": str(exc)}],
+                "process_tree_verified": False,
+                "confirmatory_ready": False,
+            }
+        artifact_path = f"typed-artifacts-{launch_index}"
+        try:
+            collection = retain_graph_stage(stage_path, run_dir / artifact_path, audit)
+        except Exception as exc:
+            collection = {"ok": False, "errors": [str(exc)]}
+        typed_artifacts.append(
+            {"launch": launch_index, "path": artifact_path, "report": collection}
+        )
+        typed_postflight.append(audit)
+        (run_dir / f"typed-postflight-{launch_index}.json").write_text(json.dumps(audit, indent=1))
+        pending_typed_stage = None
+        if audit.get("ok") is not True or collection.get("ok") is not True:
+            typed_stage_error = typed_stage_error or {
+                "launch": launch_index,
+                "error": "typed worker postflight or evidence collection failed",
+                "audit_errors": audit.get("errors", []),
+                "collection_errors": collection.get("errors", []),
+            }
+            return False
+        return True
+
     episode_records: list[dict] = []
     stalled = False
     clamped_seeds: list[int] = []
@@ -1194,6 +1352,7 @@ def rollout(
     last_lines = 0
     last_line_t = time.monotonic()
     try:
+        proc = spawn_launch(0)
         while time.monotonic() < deadline:
             raw = results_path.read_bytes() if results_path.exists() else b""
             # T4 inc-2: recovery records ("recovery": true) are EXTRA
@@ -1254,6 +1413,7 @@ def rollout(
                 # to results/traces (dora-rs/dora#2856) — reap before any
                 # relaunch, not only in the finally (PR #58 review)
                 reap_orphans(run_dir)
+                postflight_ok = audit_stopped_stage()
                 seed = seeds[lines] if lines < len(seeds) else None
                 with open(results_path, "a") as f:
                     f.write(
@@ -1284,7 +1444,7 @@ def rollout(
                 if seed is not None:
                     clamped_seeds.append(seed)
                 remaining = seeds[lines + 1 :]
-                if not remaining:
+                if not remaining or not postflight_ok:
                     break
                 relaunches += 1
                 # the relaunched client continues the RUN-GLOBAL episode
@@ -1309,6 +1469,16 @@ def rollout(
                 relaunch_traces.mkdir(parents=True, exist_ok=True)
                 current_traces = relaunch_traces
                 try:
+                    if typed_stage_factory is not None:
+                        typed_stage, _ = select_rollout_stage(
+                            typed_stage_factory,
+                            relaunches,
+                            typed_stages,
+                            authored_bytes=graph_snapshot,
+                            graph=graph,
+                            controller_root=root,
+                            embodiment=embodiment,
+                        )
                     exec_graph = instrumented_graph(
                         graph,
                         root,
@@ -1318,13 +1488,17 @@ def rollout(
                         verifier=verifier,
                         episode_timeout_s=episode_timeout_s,
                         sim_backend=gates["sim_backend"],
+                        **({"work_launch": relaunches} if record_simulator_work else {}),
                         graph_snapshot=graph_snapshot,
+                        **({"typed_stage": typed_stage} if typed_stage is not None else {}),
                     )
                 except RuntimeError as exc:
                     # fail closed mid-run too: a registry broken since the
                     # gate must not relaunch with an unfiltered recorder —
                     # remaining seeds are lost LOUDLY (they stay short in
                     # the episode count) rather than recorded unattested
+                    if typed_stage_factory is not None:
+                        typed_stage_error = {"launch": relaunches, "error": str(exc)}
                     print(f"relaunch refused: {exc}", file=sys.stderr)
                     break
                 exec_graph_hashes.append(_graph_hash(exec_graph))
@@ -1334,7 +1508,8 @@ def rollout(
                 deadline += GENESIS_BUILD_BUDGET_S
                 if hard_cap_s is not None:
                     deadline = min(deadline, started + hard_cap_s)
-                proc = _spawn_dora(exec_graph, run_dir, env, relaunch=relaunches)
+                pending_typed_stage = typed_stage
+                proc = spawn_launch(relaunches)
                 lines_at_launch = last_lines = lines + 1
                 last_line_t = time.monotonic()
                 last_size = -1
@@ -1342,26 +1517,34 @@ def rollout(
                 continue
             time.sleep(2.0)
     finally:
-        # let the realistic judge finish the LAST episode before teardown
-        # (it judges on the next goal, and the last episode has none)
-        if verifier in ("both", "realistic"):
-            await_realistic_sidecar(run_dir, episodes)
-        # ADR-21 round 3: reconcile the reservation with actuals no matter
-        # how the run ended — crash paths settle too. Count from the RESULTS
-        # FILE, not episode_records: that list is parsed after this
-        # try/finally, so it is always [] here and every settle recorded 0
-        # episodes — the ceiling never decremented (found by the first real
-        # trusted campaign run; wall clamps' synthetic records count, they
-        # consumed attempts)
-        if reservation is not None:
-            actual_episodes = (
-                sum(1 for line in results_path.read_text().splitlines() if line.strip())
-                if results_path.exists()
-                else 0
-            )
-            settle_budget(root, run_id, actual_episodes, time.monotonic() - started)
-        _terminate(proc)
-        reap_orphans(run_dir)
+        from contextlib import ExitStack
+
+        # Every cleanup is attempted, even when an earlier cleanup fails.
+        # Register in reverse order: stop, reap, audit, then retain accounting.
+        with ExitStack() as cleanup:
+            cleanup.callback(retain_work)
+            cleanup.callback(audit_stopped_stage)
+            cleanup.callback(reap_orphans, run_dir)
+            if proc is not None:
+                cleanup.callback(_terminate, proc)
+            # let the realistic judge finish the LAST episode before teardown
+            # (it judges on the next goal, and the last episode has none)
+            if verifier in ("both", "realistic"):
+                await_realistic_sidecar(run_dir, episodes)
+            # ADR-21 round 3: reconcile the reservation with actuals no matter
+            # how the run ended — crash paths settle too. Count from the RESULTS
+            # FILE, not episode_records: that list is parsed after this
+            # try/finally, so it is always [] here and every settle recorded 0
+            # episodes — the ceiling never decremented (found by the first real
+            # trusted campaign run; wall clamps' synthetic records count, they
+            # consumed attempts)
+            if reservation is not None:
+                actual_episodes = (
+                    sum(1 for line in results_path.read_text().splitlines() if line.strip())
+                    if results_path.exists()
+                    else 0
+                )
+                settle_budget(root, run_id, actual_episodes, time.monotonic() - started)
         if verifier in ("both", "realistic"):
             # count AFTER teardown, not before: the node can still land the
             # last record during the SIGTERM grace, and reporting the
@@ -1458,9 +1641,17 @@ def rollout(
         # run record it accompanies.
         "guard_divergence": _guard_divergence_or_none(run_dir),
     }
+    if typed_stage_factory is not None:
+        manifest["campaign_purpose"] = "expert_parity"
+        manifest["typed_stages"] = typed_stages
+        manifest["typed_stage_error"] = typed_stage_error
+        manifest["typed_postflight"] = typed_postflight
+        manifest["typed_artifacts"] = typed_artifacts
     (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=1))
     return {
-        "ok": len(episode_records) >= episodes,
+        "ok": len(episode_records) >= episodes and typed_stage_error is None,
+        **({"campaign_purpose": "expert_parity"} if typed_stage_factory is not None else {}),
+        **({"infrastructure_invalid": True} if typed_stage_error is not None else {}),
         "stalled": stalled,
         "run_id": run_id,
         **metrics,

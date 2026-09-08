@@ -113,6 +113,7 @@ def run(
     no_idea_gate: bool = False,
     worker_config=None,
     worker_config_sha256=None,
+    record_simulator_work: bool = False,
 ) -> dict:
     """Stamp the supported T1 graph and roll it out through the trusted runner."""
     if tier != "T1":
@@ -166,6 +167,7 @@ def run(
         no_idea_gate=no_idea_gate,
         timeout_s=timeout_s,
         embodiment=embodiment,
+        **({"record_simulator_work": True} if record_simulator_work else {}),
     )
     return {**report, "module": pre, "campaign_purpose": CAMPAIGN_PURPOSE}
 

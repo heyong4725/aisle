@@ -144,3 +144,25 @@ def test_host_attaches_transport_only_after_worker_spawn(tmp_path, monkeypatch):
     assert attachments == [True]
     assert children[0].poll() == 0
     assert any(message[0] == "turn_done" for message in raw.sent)
+
+
+def test_typed_transport_finishes_when_turn_input_closes_with_other_inputs_open():
+    """MON-12/MON-13: coordinator closure ends the host stream without waiting on graph cycles."""
+    from aisle.harness.typed_node_host import _DeferredTransport
+
+    consumed = []
+
+    def events():
+        consumed.append("data_closed")
+        yield {"type": "INPUT_CLOSED", "id": "joint_state"}
+        consumed.append("turn_closed")
+        yield {"type": "INPUT_CLOSED", "id": "turn"}
+        pytest.fail("host waited on cyclic inputs after the coordinator closed")
+
+    transport = _DeferredTransport(events)
+    assert consumed == []
+    assert list(transport) == [
+        {"type": "INPUT_CLOSED", "id": "joint_state"},
+        {"type": "INPUT_CLOSED", "id": "turn"},
+    ]
+    assert consumed == ["data_closed", "turn_closed"]

@@ -839,3 +839,28 @@ def test_rollout_refuses_behavioral_before_reserving_any_episodes(tmp_path, monk
 
     control = run("teleport")
     assert control["refused"]["gate"] != "reset_mode", control
+
+
+def test_work_binding_is_in_executed_graph_and_only_on_trusted_bridge(tmp_path):
+    """MON-12/MON-13: a launch's hashed graph binds accounting only to the simulator."""
+    from aisle.harness.simulator_work import launch_binding
+
+    out = instrumented_graph(
+        REPO_ROOT / "graphs/expert_t0.yaml", REPO_ROOT, tmp_path, work_launch=2
+    )
+    nodes = yaml.safe_load(out.read_text())["nodes"]
+    expected = launch_binding(tmp_path / "simulator-work", run_id=tmp_path.name, launch=2)
+    for node in nodes:
+        selected = {k: v for k, v in node.get("env", {}).items() if k.startswith("AISLE_SIM_WORK_")}
+        assert selected == (expected if node["id"] == "dora-genesis" else {})
+
+
+def test_authored_work_binding_is_refused(tmp_path):
+    """MON-13: participant graph fields cannot redirect trusted accounting writes."""
+    graph = REPO_ROOT / "graphs/expert_t0.yaml"
+    doc = yaml.safe_load(graph.read_text())
+    doc["nodes"][0]["env"]["AISLE_SIM_WORK_PATH"] = "/untrusted/work"
+    with pytest.raises(RuntimeError, match="accounting"):
+        instrumented_graph(
+            graph, REPO_ROOT, tmp_path, graph_snapshot=yaml.safe_dump(doc).encode(), work_launch=0
+        )
