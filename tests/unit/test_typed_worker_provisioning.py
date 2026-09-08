@@ -11,6 +11,23 @@ from test_typed_validation_snapshot import ROOT
 pytestmark = pytest.mark.unit
 
 
+def test_actual_provisioning_fixture_selects_direct_worker_interpreter(tmp_path, monkeypatch):
+    """MON-8/TRT-6: actual worker fixtures propagate the direct executable grant."""
+    import test_typed_validation_launch as validation_fixture
+
+    class SelectedDirectInterpreter(Exception):
+        pass
+
+    def selected(path, *, direct_python=False):
+        assert path == tmp_path
+        assert direct_python
+        raise SelectedDirectInterpreter
+
+    monkeypatch.setattr(validation_fixture, "_launch_inputs", selected)
+    with pytest.raises(SelectedDirectInterpreter):
+        _validated(tmp_path, direct_python=True)
+
+
 def test_selection_preserves_renamed_and_repeated_authored_sources():
     """MON-2: worker allocation follows authored paths, not fixed baseline node IDs."""
     from aisle.harness.typed_worker_provisioning import authored_worker_nodes
@@ -30,7 +47,7 @@ def test_validated_snapshot_provisions_distinct_actual_worker_declarations(tmp_p
     from aisle.harness.typed_run_prepare import prepare_typed_stages
     from aisle.harness.typed_worker_provisioning import provision_typed_workers
 
-    inputs = _validated(tmp_path)
+    inputs = _validated(tmp_path, direct_python=True)
     declarations = provision_typed_workers(
         snapshot=inputs["snapshot"],
         snapshot_record=inputs["snapshot_record"],

@@ -18,7 +18,7 @@ def test_provider_selects_fresh_stages_without_predeclared_count(tmp_path):
     from aisle.harness.typed_graph_stage import select_rollout_stage
     from aisle.harness.typed_stage_provider import TypedStageProvider
 
-    inputs = _validated(tmp_path)
+    inputs = _validated(tmp_path, direct_python=True)
     provider = TypedStageProvider(
         controller_root=ROOT,
         snapshot=inputs["snapshot"],
