@@ -409,7 +409,7 @@ def test_committed_registrations_check_clean_with_withheld_seeds():
     registration names it in `superseded`; drift with no successor is the
     refusal the registry promises (analysis/freeze/README.md)."""
     manifests = _committed_manifests()
-    assert len(manifests) == 25
+    assert len(manifests) == 26
     superseded_ids: set[str] = set()
     for path in manifests:
         declaration = json.loads(path.with_name("declaration.json").read_text())
@@ -465,3 +465,28 @@ def test_hardened_perception_registration_requires_a_new_audit(previous_version,
     assert "BND-5 perception audit" in current["pending_gates"]
     assert "BND-5 perception audit" not in current["gate_record_hashes"]
     assert current["frozen"] is False
+
+
+def test_shared_cli_successor_preserves_bnd_protocol_and_review_gates():
+    """BND-12/BND-13: shared CLI changes need a successor without changing calibration rules."""
+    root = REPO_ROOT / "analysis/freeze"
+    previous = json.loads((root / "bnd-task-band-calibration-v8/freeze-manifest.json").read_text())
+    current = json.loads((root / "bnd-task-band-calibration-v9/freeze-manifest.json").read_text())
+    assert current["seed_commitment"] == previous["seed_commitment"]
+    for key in (
+        "analysis",
+        "budgets",
+        "decision_rules",
+        "disposition",
+        "endpoints",
+        "exclusions",
+        "hypotheses",
+        "instrument_set",
+        "integrity_checks",
+    ):
+        assert current["declaration"][key] == previous["declaration"][key]
+    assert current["pending_gates"] == previous["pending_gates"]
+    assert not current["frozen"]
+    assert current["artifact_hashes"]["perception_cli"] == hash_path(
+        REPO_ROOT, "src/aisle/harness/cli.py"
+    )

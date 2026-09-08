@@ -35,10 +35,23 @@ def load_json(root: Path, name: str) -> dict:
 # -- MON-3 launcher ------------------------------------------------------
 
 
-def stamp_graph(root: Path, module: Path, out_dir: Path, template: str = TEMPLATE_GRAPH) -> Path:
+def stamp_graph(
+    root: Path,
+    module: Path,
+    out_dir: Path,
+    template: str = TEMPLATE_GRAPH,
+    *,
+    worker_config=None,
+    worker_config_sha256=None,
+) -> Path:
     """The frozen monolithic graph with `AISLE_MONOLITH_MODULE` pointed at
     the module under test, node and turn-plan paths absolutized, written
     under `out_dir` (graphs/out/ by default, git-ignored)."""
+    worker_selected = worker_config is not None or worker_config_sha256 is not None
+    if worker_selected:
+        from aisle.monolith.worker_config import configured_worker_factory
+
+        configured_worker_factory(worker_config, worker_config_sha256, phase="run")
     template_path = root / template
     doc = yaml.safe_load(template_path.read_text(encoding="utf-8"))
     module = module.resolve()
@@ -47,24 +60,34 @@ def stamp_graph(root: Path, module: Path, out_dir: Path, template: str = TEMPLAT
         env = node.get("env") or {}
         if "AISLE_MONOLITH_MODULE" in env:
             env["AISLE_MONOLITH_MODULE"] = str(module)
+            if worker_selected:
+                env["AISLE_MONOLITH_WORKER_CONFIG"] = str(Path(worker_config).absolute())
+                env["AISLE_MONOLITH_WORKER_CONFIG_SHA256"] = worker_config_sha256
         if "AISLE_TURN_PLAN" in env:
             env["AISLE_TURN_PLAN"] = str((template_path.parent / env["AISLE_TURN_PLAN"]).resolve())
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / f"monolithic-{_sha256(module)[:12]}.yaml"
+    worker_suffix = f"-{worker_config_sha256[:12]}" if worker_selected else ""
+    out = out_dir / f"monolithic-{_sha256(module)[:12]}{worker_suffix}.yaml"
     out.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
     return out
 
 
-def check_module(module: Path, embodiment: str = "franka") -> dict:
+def check_module(module: Path, embodiment: str = "franka", *, worker_factory=None) -> dict:
     """Compile and construct the module's Controller against the broker with
     no simulator: exactly the language/import/runtime failures MON-3
     permits, and nothing else (no topology or type checking)."""
     from aisle.monolith.confinement import ConfinementViolation
+    from aisle.monolith.supervisor import WorkerFailure, WorkerModuleFailure
     from aisle.nodes.monolith_broker import Broker
 
     try:
-        broker = Broker(module.resolve(), embodiment, log=lambda _msg: None)
-    except ConfinementViolation as exc:
+        with Broker(
+            module.resolve(), embodiment, log=lambda _msg: None, worker_factory=worker_factory
+        ) as broker:
+            record = dict(broker.record)
+    except WorkerModuleFailure as exc:
+        return {"ok": False, "module": str(module), "error": str(exc)}
+    except (ConfinementViolation, WorkerFailure) as exc:
         return {
             "ok": False,
             "module": str(module),
@@ -75,7 +98,7 @@ def check_module(module: Path, embodiment: str = "franka") -> dict:
         return {"ok": False, "module": str(module), "error": f"SyntaxError: {exc}"}
     except Exception as exc:  # the module's own failure, reported as-is
         return {"ok": False, "module": str(module), "error": f"{type(exc).__name__}: {exc}"}
-    return {"ok": True, **broker.record}
+    return {"ok": True, **record}
 
 
 def run(
@@ -88,6 +111,8 @@ def run(
     run_id: str | None = None,
     timeout_s: float | None = None,
     no_idea_gate: bool = False,
+    worker_config=None,
+    worker_config_sha256=None,
 ) -> dict:
     """Stamp the supported T1 graph and roll it out through the trusted runner."""
     if tier != "T1":
@@ -101,10 +126,25 @@ def run(
     from aisle.harness.cli import _branch
     from aisle.harness.rollout import rollout
 
-    pre = check_module(module, embodiment)
+    worker_options = {}
+    if worker_config is not None or worker_config_sha256 is not None:
+        from aisle.monolith.supervisor import WorkerFailure
+        from aisle.monolith.worker_config import configured_worker_factory
+
+        try:
+            factory = configured_worker_factory(worker_config, worker_config_sha256, phase="check")
+        except WorkerFailure as exc:
+            return {"ok": False, "infrastructure_invalid": True, "error": str(exc)}
+        pre = check_module(module, embodiment, worker_factory=factory)
+        worker_options = {
+            "worker_config": worker_config,
+            "worker_config_sha256": worker_config_sha256,
+        }
+    else:
+        pre = check_module(module, embodiment)
     if not pre["ok"]:
         return pre
-    graph = stamp_graph(root, module, root / "graphs" / "out")
+    graph = stamp_graph(root, module, root / "graphs" / "out", **worker_options)
     import datetime
     import uuid
 
