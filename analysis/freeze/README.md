@@ -111,3 +111,8 @@ CSE v6 supersedes v5 after the matched-run providers were corrected to bind the
 direct Python framework interpreter under the existing worker executable policy.
 V5 remains unchanged. V6 preserves its seed commitment, collection rules and
 pending gates; it records implementation drift without authorizing collection.
+
+CSE v7 supersedes v6 for simulator render-call accounting and explicitly binds
+the trusted bridge source. V6 remains unchanged. V7 preserves its seed
+commitment, collection rules and pending gates; recorded camera work does not
+establish total simulator coverage or authorize study collection.
