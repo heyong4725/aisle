@@ -5,6 +5,30 @@ import pytest
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize("fault", ["missing", "not_executable"])
+def test_framework_worker_never_falls_back_to_launcher(tmp_path, monkeypatch, fault):
+    """MON-13: an unusable direct interpreter must not widen a Python-only grant."""
+    import sys
+    import sysconfig
+
+    from aisle.harness.matched_runtime import RuntimeDrift, worker_interpreter
+
+    launcher = tmp_path / "bin/python"
+    launcher.parent.mkdir()
+    launcher.write_text("usable launcher must not become a fallback")
+    launcher.chmod(0o755)
+    interpreter = tmp_path / "Resources/Python.app/Contents/MacOS/Python"
+    if fault == "not_executable":
+        interpreter.parent.mkdir(parents=True)
+        interpreter.write_text("non-executable interpreter")
+        interpreter.chmod(0o644)
+    monkeypatch.setattr(sys, "executable", str(launcher))
+    monkeypatch.setattr(sys, "base_prefix", str(tmp_path))
+    monkeypatch.setattr(sysconfig, "get_config_var", lambda name: "Python")
+    with pytest.raises((FileNotFoundError, RuntimeDrift)):
+        worker_interpreter()
+
+
 def _runtime(tmp_path):
     root = tmp_path / "runtime"
     root.mkdir()

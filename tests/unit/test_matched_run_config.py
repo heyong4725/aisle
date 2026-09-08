@@ -14,7 +14,7 @@ pytestmark = pytest.mark.unit
 
 
 def _config(tmp_path):
-    stage, receipt = _stage(tmp_path)
+    stage, receipt = _stage(tmp_path, direct_python=True)
     first = next(iter(receipt["hosts"].values()))
     host = json.loads(Path(first["config_path"]).read_text())
     config = {

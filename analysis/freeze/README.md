@@ -106,3 +106,8 @@ not authorize study collection or claim the matched controller is complete.
 BND v9 supersedes v8 because the shared CLI gained explicit monolithic worker
 configuration options for #519. Calibration rules, thresholds, seed commitment,
 and pending review/audit gates are unchanged. V8 remains historical evidence.
+
+CSE v6 supersedes v5 after the matched-run providers were corrected to bind the
+direct Python framework interpreter under the existing worker executable policy.
+V5 remains unchanged. V6 preserves its seed commitment, collection rules and
+pending gates; it records implementation drift without authorizing collection.

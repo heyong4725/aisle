@@ -120,3 +120,13 @@ receipt writing. The coordinator can schedule no further turns after closing its
 output, so those cyclic inputs cannot authorize additional work. Worker exit,
 runtime verification and host postflight remain required; neither a successful
 episode nor a planned daemon stop substitutes for their records.
+
+Dynamic workers select the current runtime's direct Python interpreter before
+binding its executable digest. On macOS framework builds, the command-line
+launcher starts the interpreter inside `Resources/Python.app`; granting only
+the launcher cannot run it under a single-executable worker policy (see
+[CPython's framework launcher](https://github.com/python/cpython/blob/3.13/Mac/Tools/pythonw.c)).
+Both arm providers and their run-binding check use the direct interpreter.
+It must already belong to the admitted runtime inventory and pass the actual
+capability audit. An absent or non-executable interpreter refuses preparation;
+selection neither adds runtime roots nor permits a fallback launcher.

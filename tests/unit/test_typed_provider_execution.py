@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy
 import pyarrow as pa
 import pytest
+from test_monolith_worker_launch import _worker_interpreter
 from test_turn_node import Raw
 from test_typed_validation_launch import _inputs
 from test_typed_validation_snapshot import ROOT
@@ -71,7 +72,8 @@ def test_dynamic_provider_executes_baseline_hosts_and_audits_stage(tmp_path, ren
             packages / package.__name__,
             ignore=shutil.ignore_patterns("__pycache__"),
         )
-    runtime = capture_runtime((Path(sys.executable).resolve().parent.parent, packages))
+    python, runtime_root = _worker_interpreter()
+    runtime = capture_runtime((runtime_root, packages))
     provider = TypedStageProvider(
         controller_root=ROOT,
         snapshot=inputs["snapshot"],
@@ -81,8 +83,8 @@ def test_dynamic_provider_executes_baseline_hosts_and_audits_stage(tmp_path, ren
         evidence=tmp_path / "private/provider",
         hidden_roots=(tmp_path / "private",),
         runtime_record=runtime,
-        python=sys.executable,
-        python_sha256=hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest(),
+        python=python,
+        python_sha256=hashlib.sha256(python.read_bytes()).hexdigest(),
         adapter_sha256=hashlib.sha256(SANDBOX_EXEC.read_bytes()).hexdigest(),
         timeout_s=10,
     )

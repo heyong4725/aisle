@@ -10,10 +10,9 @@ import argparse
 import hashlib
 import json
 import re
-import sys
 from pathlib import Path
 
-from aisle.harness.matched_runtime import verify_runtime
+from aisle.harness.matched_runtime import verify_runtime, worker_interpreter
 from aisle.harness.treatment_confinement import MacOSPolicy, wrap_verified_command
 from aisle.harness.typed_snapshot import _read
 
@@ -99,7 +98,7 @@ def _worker_binding(launch, config, config_path):
         raise ValueError("worker adapter differs from the run identity")
     if launch["runtime_record"] != config["runtime_record"]:
         raise ValueError("worker runtime differs from bound run runtime")
-    if launch["python_sha256"] != hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest():
+    if launch["python_sha256"] != hashlib.sha256(worker_interpreter().read_bytes()).hexdigest():
         raise ValueError("worker and controller interpreter identities differ")
     policy = MacOSPolicy(
         **{

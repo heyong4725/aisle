@@ -10,6 +10,69 @@ from test_matched_run_config import _config, _write
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize("arm", ["typed", "monolithic"])
+def test_dynamic_provider_selects_framework_interpreter(tmp_path, monkeypatch, arm):
+    """MON-8/MON-13: bind the real framework interpreter under the single-exec policy."""
+    import sysconfig
+
+    from aisle.harness import matched_dynamic_run, worker_declaration
+    from aisle.harness.matched_runtime import capture_runtime
+
+    config, _, receipt = _config(tmp_path)
+    config["arm"] = arm
+    prefix = tmp_path / "Python.framework/Versions/3.13"
+    launcher = prefix / "bin/python3.13"
+    interpreter = prefix / "Resources/Python.app/Contents/MacOS/Python"
+    for path in (launcher, interpreter):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(path.name)
+        path.chmod(0o755)
+    config["runtime_record"] = capture_runtime((*config["runtime_record"]["trees"], prefix))
+    declaration = {"allocation_root": str(tmp_path / "allocated"), "timeout_s": 5}
+    if arm == "typed":
+        snapshot = receipt["snapshot_record"]
+        declaration.update(
+            snapshot=snapshot["snapshot_root"],
+            snapshot_record=snapshot,
+            validation_output=str(tmp_path / "private/evidence"),
+            max_calls=1000,
+        )
+    else:
+        module = Path(config["participant_root"]) / "experts/monolithic/expert_t1.py"
+        module.parent.mkdir(parents=True)
+        module.write_text("API_VERSION='1.0'\n")
+        declaration.update(
+            module_sha256=hashlib.sha256(module.read_bytes()).hexdigest(),
+            max_primitive_calls=1000,
+            max_handles=100,
+        )
+    config["launch"] = {"provider": declaration}
+    path, _ = _write(tmp_path, config)
+    monkeypatch.setattr(sys, "executable", str(launcher))
+    monkeypatch.setattr(sys, "base_prefix", str(prefix))
+    original = sysconfig.get_config_var
+    monkeypatch.setattr(
+        sysconfig,
+        "get_config_var",
+        lambda name: "Python" if name == "PYTHONFRAMEWORK" else original(name),
+    )
+
+    def observe(**kwargs):
+        assert Path(kwargs["python"]) == interpreter
+        assert kwargs["python_sha256"] == hashlib.sha256(interpreter.read_bytes()).hexdigest()
+        assert kwargs["runtime_record"] == config["runtime_record"]
+        raise RuntimeError("observed direct interpreter binding")
+
+    if arm == "typed":
+        monkeypatch.setattr(matched_dynamic_run, "TypedStageProvider", observe)
+        provider = matched_dynamic_run.configured_typed_provider
+    else:
+        monkeypatch.setattr(worker_declaration, "provision_worker_declaration", observe)
+        provider = matched_dynamic_run.configured_monolithic_provider
+    with pytest.raises(RuntimeError, match="observed direct interpreter binding"):
+        provider(config, path)
+
+
 @pytest.mark.skipif(sys.platform != "darwin", reason="actual worker capability adapter")
 def test_serialized_provider_creates_bound_stages_on_demand(tmp_path):
     """MON-8: run configuration selects dynamically generated, identity-bound stages."""

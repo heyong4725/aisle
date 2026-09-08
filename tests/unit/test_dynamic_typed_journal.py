@@ -14,6 +14,7 @@ import venv
 from pathlib import Path
 
 import pytest
+from test_monolith_worker_launch import _worker_interpreter
 from test_typed_run_prepare import _controller
 from test_typed_validation_snapshot import ROOT
 
@@ -50,7 +51,12 @@ def test_ordinary_typed_child_retains_preparation_and_gate_refusal(tmp_path):
         "numpy",
         "pyarrow",
     ):
-        module = importlib.import_module(name)
+        try:
+            module = importlib.import_module(name)
+        except ModuleNotFoundError as exc:
+            if name == "typing_extensions" and exc.name == name and sys.version_info >= (3, 13):
+                continue
+            raise
         source = Path(module.__file__)
         if hasattr(module, "__path__"):
             shutil.copytree(
@@ -60,13 +66,17 @@ def test_ordinary_typed_child_retains_preparation_and_gate_refusal(tmp_path):
             shutil.copyfile(source, packages / source.name)
     runtime_env = tmp_path / "runtime-env"
     venv.EnvBuilder(with_pip=False, symlinks=True).create(runtime_env)
+    direct_python, runtime_root = _worker_interpreter()
+    python = runtime_env / "bin/python"
+    python.unlink()
+    python.symlink_to(direct_python)
     site = next((runtime_env / "lib").glob("python*/site-packages"))
     site.rmdir()
     site.symlink_to(packages, target_is_directory=True)
-    runtime = capture_runtime((Path(sys.executable).resolve().parent.parent, runtime_env, packages))
-    python = runtime_env / "bin/python"
+    runtime = capture_runtime((runtime_root, runtime_env, packages))
     validation = copy.deepcopy(validation)
     validation["python"] = str(python)
+    validation["python_sha256"] = hashlib.sha256(python.read_bytes()).hexdigest()
     private = tmp_path / "actual-validator-audit"
     private.mkdir()
     policy = MacOSPolicy(
@@ -80,6 +90,7 @@ def test_ordinary_typed_child_retains_preparation_and_gate_refusal(tmp_path):
     policy = replace(
         policy,
         runtime_read_roots=tuple(Path(p) for p in runtime["trees"]),
+        allowed_executables=(direct_python,),
         hidden_roots=(*policy.hidden_roots, private),
     )
     validation["policy"] = policy.canonical_dict()
@@ -96,6 +107,7 @@ def test_ordinary_typed_child_retains_preparation_and_gate_refusal(tmp_path):
     run_bindings = copy.deepcopy(controller.plan["run_controller"])
     for binding in run_bindings.values():
         binding["python"] = str(python)
+        binding["python_sha256"] = hashlib.sha256(python.read_bytes()).hexdigest()
     candidates = copy.deepcopy(controller.plan["arms"])
     for candidate in candidates.values():
         candidate.pop("immutable_id")

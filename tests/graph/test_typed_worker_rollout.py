@@ -36,6 +36,7 @@ def test_typed_worker_rollout_retains_real_episode_and_worker_audits(tmp_path, m
     import numpy
     import pyarrow
     from dora_runtime import verify
+    from test_monolith_worker_launch import _worker_interpreter
     from test_typed_validation_launch import _inputs
 
     from aisle.harness.matched_runtime import capture_runtime
@@ -53,7 +54,7 @@ def test_typed_worker_rollout_retains_real_episode_and_worker_audits(tmp_path, m
     run_id = "typed-worker-integration-" + uuid4().hex
     (base / "dora-runtime.json").write_text(json.dumps(identity, indent=2))
 
-    inputs = _inputs(base)
+    inputs = _inputs(base, direct_python=True)
     inputs["attestation"] = audit_worker_capability(
         policy=inputs["policy"],
         profile_path=inputs["profile_path"],
@@ -75,7 +76,8 @@ def test_typed_worker_rollout_retains_real_episode_and_worker_audits(tmp_path, m
             packages / package.__name__,
             ignore=shutil.ignore_patterns("__pycache__"),
         )
-    runtime = capture_runtime((Path(sys.executable).resolve().parent.parent, packages))
+    python, runtime_root = _worker_interpreter()
+    runtime = capture_runtime((runtime_root, packages))
     provider = TypedStageProvider(
         controller_root=ROOT,
         snapshot=inputs["snapshot"],
@@ -85,8 +87,8 @@ def test_typed_worker_rollout_retains_real_episode_and_worker_audits(tmp_path, m
         evidence=base / "private/provider",
         hidden_roots=(base / "private",),
         runtime_record=runtime,
-        python=sys.executable,
-        python_sha256=hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest(),
+        python=python,
+        python_sha256=hashlib.sha256(python.read_bytes()).hexdigest(),
         adapter_sha256=hashlib.sha256(SANDBOX_EXEC.read_bytes()).hexdigest(),
         timeout_s=360,
         max_calls=100000,

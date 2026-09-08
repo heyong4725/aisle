@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import sys
 import threading
 from pathlib import Path
 
+from aisle.harness.matched_runtime import worker_interpreter
 from aisle.harness.typed_node_host import load_host_config
 from aisle.harness.typed_snapshot import _read
 from aisle.harness.typed_stage_provider import TypedStageProvider
@@ -49,6 +49,7 @@ def configured_typed_provider(config, config_path):
                 raise ValueError("participant changed after typed snapshot construction")
 
     current()
+    python = worker_interpreter()
     provider = TypedStageProvider(
         controller_root=config["controller_root"],
         snapshot=declaration["snapshot"],
@@ -58,8 +59,8 @@ def configured_typed_provider(config, config_path):
         evidence=path.parent / "run-controller/typed-provider",
         hidden_roots=(path.parent,),
         runtime_record=config["runtime_record"],
-        python=sys.executable,
-        python_sha256=hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest(),
+        python=python,
+        python_sha256=hashlib.sha256(python.read_bytes()).hexdigest(),
         adapter_sha256=config["worker_adapter_sha256"],
         timeout_s=declaration["timeout_s"],
         max_calls=declaration["max_calls"],
@@ -136,6 +137,7 @@ def configured_monolithic_provider(config, config_path):
     ):
         raise ValueError("monolithic provider requires fresh canonical allocation")
     evidence = path.parent / "run-controller/monolithic-provider"
+    python = worker_interpreter()
     launch = provision_worker_declaration(
         arm="monolithic",
         bundle=allocation / "bundle",
@@ -143,8 +145,8 @@ def configured_monolithic_provider(config, config_path):
         evidence=evidence,
         hidden_roots=(Path(config["controller_root"]), view, path.parent),
         runtime_record=config["runtime_record"],
-        python=sys.executable,
-        python_sha256=hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest(),
+        python=python,
+        python_sha256=hashlib.sha256(python.read_bytes()).hexdigest(),
         adapter_sha256=config["worker_adapter_sha256"],
         timeout_s=declaration["timeout_s"],
         max_calls=declaration["max_primitive_calls"],
