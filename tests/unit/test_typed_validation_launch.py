@@ -22,6 +22,9 @@ def _inputs(tmp_path, *, invalid=False):
     from aisle.harness.typed_validation import build_validation_bundle
 
     inputs = _launch_inputs(tmp_path)
+    # These tests exercise validation and drift, not a five-second speed target.
+    # Timeout behavior is injected explicitly by the interruption fixture.
+    inputs["timeout_s"] = 30
     inputs.pop("primitives")
     inputs.pop("source_roots")
     view = _view(tmp_path)
@@ -83,7 +86,7 @@ def test_validation_launch_retains_real_cli_result(tmp_path, invalid):
 
     inputs = _inputs(tmp_path, invalid=invalid)
     result = run_validation(**inputs)
-    assert result["classification"] == "tool_result"
+    assert result["classification"] == "tool_result", result
     assert result["result"]["ok"] is not invalid
     assert result["process"]["rc"] == int(invalid)
     assert json.loads((inputs["output"] / "result.json").read_text()) == result
@@ -181,7 +184,7 @@ def test_validation_stops_child_and_retains_interrupted_or_changed_attempt(
             typed_validation.run_validation(**inputs)
     else:
         typed_validation.run_validation(**inputs)
-    assert len(children) == 1
+    assert len(children) == 1, json.loads((inputs["output"] / "result.json").read_text())
     assert children[0].poll() is not None
     result = json.loads((inputs["output"] / "result.json").read_text())
     assert result["classification"] == "infrastructure_exclusion"
@@ -233,3 +236,17 @@ def test_validation_runtime_supports_python313_without_typing_extensions(tmp_pat
     assert not (tmp_path / "runtime-packages/typing_extensions.py").exists()
     result = run_validation(**inputs)
     assert result["ok"], result
+
+
+def test_validator_fixture_allows_setup_before_process_assertions(tmp_path, monkeypatch):
+    """MON-12: validator functional checks must reach their child after ordinary setup work."""
+    from types import SimpleNamespace
+
+    from aisle.harness import typed_validation
+
+    inputs = _inputs(tmp_path)
+    ticks = iter([0.0, 6.0, 6.0])
+    monkeypatch.setattr(typed_validation, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+    result = typed_validation.run_validation(**inputs)
+    assert result["ok"], result
+    assert result["process"]["timed_out"] is False
