@@ -96,6 +96,32 @@ def test_partial_worker_binding_never_selects_legacy_execution():
     assert configured_worker_factory(None, None, phase="check") is None
 
 
+def test_worker_configuration_accepts_large_serialized_record(tmp_path):
+    """MON-8/MON-13: exact configuration bytes may exceed the old 1 MiB ceiling."""
+    from aisle.monolith.worker_config import _load
+
+    module = tmp_path / "controller.py"
+    module.write_text("API_VERSION='1.0'\n")
+    path, _, _ = _config(tmp_path, module)
+    original = json.loads(path.read_bytes())
+    # Whitespace grows serialization without changing the launch declaration.
+    data = path.read_bytes() + b" " * (1024 * 1024)
+    path.write_bytes(data)
+    assert _load(path, hashlib.sha256(data).hexdigest()) == original
+
+
+def test_worker_configuration_retains_bounded_read(tmp_path):
+    """MON-13: oversized configuration inputs are refused before JSON parsing."""
+    from aisle.monolith.supervisor import WorkerFailure
+    from aisle.monolith.worker_config import _load
+
+    path = tmp_path / "oversized.json"
+    data = b" " * (16 * 1024 * 1024 + 1)
+    path.write_bytes(data)
+    with pytest.raises(WorkerFailure, match="size limit"):
+        _load(path, hashlib.sha256(data).hexdigest())
+
+
 def test_stamped_graph_binds_worker_configuration_to_broker_only(tmp_path):
     """MON-8/MON-13: the runtime graph carries the exact configuration hash to its broker."""
     from pathlib import Path

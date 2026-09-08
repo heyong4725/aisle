@@ -9,7 +9,7 @@ from pathlib import Path
 
 from aisle.harness.treatment_confinement import MacOSPolicy, wrap_verified_command
 from aisle.harness.typed_snapshot import _read
-from aisle.monolith.worker_config import _LAUNCH_FIELDS, _load
+from aisle.monolith.worker_config import _LAUNCH_FIELDS, MAX_CONFIG_BYTES, _load
 from aisle.monolith.worker_launch import build_worker_bundle, verify_worker_launch
 
 
@@ -94,7 +94,7 @@ def prepare_monolithic_run(
         "launch": launch,
     }
     data = json.dumps(config, sort_keys=True, allow_nan=False).encode()
-    if len(data) > 1024 * 1024:
+    if len(data) > MAX_CONFIG_BYTES:
         raise ValueError("worker configuration exceeds size limit")
     path = destination / "worker-config.json"
     with path.open("xb") as stream:

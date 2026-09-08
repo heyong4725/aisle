@@ -12,6 +12,9 @@ from aisle.harness.treatment_confinement import MacOSPolicy
 from aisle.monolith.supervisor import WorkerFailure
 from aisle.monolith.worker_launch import launch_worker
 
+# Includes the complete runtime inventory, which varies by Python distribution.
+MAX_CONFIG_BYTES = 16 * 1024 * 1024
+
 _LAUNCH_FIELDS = {
     "bundle",
     "bundle_manifest",
@@ -47,8 +50,8 @@ def _load(path, digest):
         raise WorkerFailure("worker configuration path is missing or redirected")
     try:
         with path.open("rb") as stream:
-            raw = stream.read(1024 * 1024 + 1)
-        if len(raw) > 1024 * 1024:
+            raw = stream.read(MAX_CONFIG_BYTES + 1)
+        if len(raw) > MAX_CONFIG_BYTES:
             raise WorkerFailure("worker configuration exceeds size limit")
         if hashlib.sha256(raw).hexdigest() != digest:
             raise WorkerFailure("worker configuration hash has drifted")
