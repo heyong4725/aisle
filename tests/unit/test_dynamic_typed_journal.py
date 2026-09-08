@@ -112,6 +112,9 @@ def test_ordinary_typed_child_retains_preparation_and_gate_refusal(tmp_path):
     for candidate in candidates.values():
         candidate.pop("immutable_id")
         candidate["repository"].pop("visible_files")
+        for binary in candidate["runtime_binaries"]:
+            if binary["name"] == "harness-python":
+                binary["sha256"] = validation["python_sha256"]
         candidate["confinement"]["adapter_binary_sha256"] = hashlib.sha256(
             SANDBOX_EXEC.read_bytes()
         ).hexdigest()

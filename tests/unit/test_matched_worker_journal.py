@@ -13,6 +13,10 @@ pytestmark = pytest.mark.unit
 
 
 def _worker_inputs(tmp_path, *, authored_failure=True):
+    import copy
+
+    from aisle.harness.matched_runtime import capture_runtime
+    from aisle.harness.matched_session import admit_pair
     from aisle.harness.treatment_confinement import MacOSPolicy, compile_macos_profile
 
     controller, views, output = _real_controller(tmp_path, "monolithic")
@@ -24,6 +28,23 @@ def _worker_inputs(tmp_path, *, authored_failure=True):
     path, _, _ = _config(worker_root, module)
     worker = json.loads(path.read_text())
     launch = worker["launch"]
+    candidates = copy.deepcopy(controller.plan["arms"])
+    for candidate in candidates.values():
+        candidate.pop("immutable_id")
+        candidate["repository"].pop("visible_files")
+    runtime = capture_runtime(
+        (*controller.plan["tool_runtime"]["trees"], worker_root / "bound-runtime-assets")
+    )
+    controller.plan = admit_pair(
+        controller.root,
+        candidates,
+        views,
+        confinement=controller.plan["confinement_bindings"],
+        ambient=controller.plan["ambient_bindings"],
+        development=controller.plan["development"],
+        tool_runtime=runtime,
+        run_controller=controller.plan["run_controller"],
+    )
     launch["runtime_record"] = controller.plan["tool_runtime"]
     launch["source_roots"] = [str(controller.root), *(str(p) for p in views.values())]
     launch["policy"]["runtime_read_roots"] = list(controller.plan["tool_runtime"]["trees"])

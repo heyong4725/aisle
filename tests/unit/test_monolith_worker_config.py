@@ -12,7 +12,27 @@ pytestmark = pytest.mark.unit
 
 
 def _config(tmp_path, module):
-    inputs = _launch_inputs(tmp_path)
+    import shutil
+    from pathlib import Path
+
+    import numpy
+    import pyarrow
+
+    from aisle.harness.matched_runtime import capture_runtime
+
+    inputs = _launch_inputs(tmp_path, direct_python=True)
+    packages = tmp_path / "bound-runtime-assets"
+    for package in (numpy, pyarrow):
+        source = Path(package.__file__).parent
+        shutil.copytree(
+            source,
+            packages / package.__name__,
+            ignore=shutil.ignore_patterns("__pycache__"),
+        )
+        native = source.with_name(package.__name__ + ".libs")
+        if native.is_dir():
+            shutil.copytree(native, packages / native.name)
+    inputs["runtime_record"] = capture_runtime(inputs["policy"].runtime_read_roots)
     launch = {key: value for key, value in inputs.items() if key not in {"primitives", "output"}}
     launch["policy"] = inputs["policy"].canonical_dict()
     for name in ("bundle", "profile_path", "python"):
@@ -29,6 +49,47 @@ def _config(tmp_path, module):
     path = tmp_path / "worker-config.json"
     path.write_text(json.dumps(record))
     return path, hashlib.sha256(path.read_bytes()).hexdigest(), inputs["output"]
+
+
+def test_worker_config_binds_direct_framework_interpreter(tmp_path, monkeypatch):
+    """MON-8/MON-13: bind the direct interpreter and adjacent native dependencies."""
+    import sysconfig
+    from pathlib import Path
+
+    import numpy
+
+    package = tmp_path / "installed/numpy"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("# fixture package\n")
+    native = package.with_name("numpy.libs")
+    native.mkdir()
+    (native / "dependency.so").write_bytes(b"bound native dependency")
+    monkeypatch.setattr(numpy, "__file__", str(package / "__init__.py"))
+    prefix = tmp_path / "Python.framework/Versions/3.13"
+    launcher = prefix / "bin/python3.13"
+    interpreter = prefix / "Resources/Python.app/Contents/MacOS/Python"
+    for path in (launcher, interpreter):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(path.name)
+        path.chmod(0o755)
+    monkeypatch.setattr(sys, "executable", str(launcher))
+    monkeypatch.setattr(sys, "base_prefix", str(prefix))
+    original = sysconfig.get_config_var
+    monkeypatch.setattr(
+        sysconfig,
+        "get_config_var",
+        lambda name: "Python" if name == "PYTHONFRAMEWORK" else original(name),
+    )
+    module = tmp_path / "controller.py"
+    module.write_text("API_VERSION='1.0'\n")
+    config, _, _ = _config(tmp_path, module)
+    launch = json.loads(config.read_text())["launch"]
+    assert Path(launch["python"]) == interpreter
+    assert launch["python_sha256"] == hashlib.sha256(interpreter.read_bytes()).hexdigest()
+    assert launch["policy"]["allowed_executables"] == [str(interpreter)]
+    assert (tmp_path / "bound-runtime-assets/numpy.libs/dependency.so").read_bytes() == (
+        native / "dependency.so"
+    ).read_bytes()
 
 
 def test_cli_check_selects_bound_worker(tmp_path):
