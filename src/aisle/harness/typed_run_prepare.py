@@ -47,6 +47,25 @@ def prepare_typed_stages(
                 raise ValueError("worker bundle reservation is redirected")
             bundles.add(bundle)
             protected.append(Path(launch["environment_record"]["home"]))
+    output_protected = [
+        Path(p).absolute()
+        for p in (
+            controller_root,
+            snapshot,
+            validation_output,
+            snapshot_record["participant_root"],
+            *runtime_record["trees"],
+            *(
+                launch["environment_record"]["home"]
+                for launches in declarations
+                for launch in launches.values()
+            ),
+        )
+    ]
+    if output.resolve() != output or any(
+        output.is_relative_to(p) or p.is_relative_to(output) for p in output_protected
+    ):
+        raise ValueError("typed preparation output is redirected or overlaps protected state")
     for bundle in bundles:
         if any(bundle.is_relative_to(p) or p.is_relative_to(bundle) for p in protected):
             raise ValueError("worker bundle reservation overlaps protected state")
