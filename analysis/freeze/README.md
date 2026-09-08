@@ -95,3 +95,7 @@ treatment drift. It binds preflight and postflight code, retains the original
 protocol and seed commitment, and keeps all review, parity, task-band, and
 confinement gates pending. Seed verification is also pending; this is not
 a study freeze or authorization to collect results.
+
+BND v9 supersedes v8 because the shared CLI gained explicit monolithic worker
+configuration options for #519. Calibration rules, thresholds, seed commitment,
+and pending review/audit gates are unchanged. V8 remains historical evidence.

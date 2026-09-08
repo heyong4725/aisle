@@ -170,11 +170,11 @@ stayed outside it).
 | `harness freeze check` | `--manifest`, `--root`, `--allow-withheld-seeds` |
 | `harness hardware dry-run` | `--seed`, `--output` |
 | `harness hardware report` | `--station`, `--output` |
-| `harness monolith check` | `--module`, `--embodiment` |
+| `harness monolith check` | `--module`, `--embodiment`, `--worker-config`, `--worker-config-sha256` |
 | `harness monolith describe` | `--embodiment` |
 | `harness monolith interface` | `--root` |
 | `harness monolith parity` | `--typed`, `--monolithic`, `--output`, `--root` |
-| `harness monolith run` | `--module`, `--tier`, `--embodiment`, `--episodes`, `--seeds`, `--run-id`, `--timeout-s`, `--no-idea-gate`, `--root` |
+| `harness monolith run` | `--module`, `--tier`, `--embodiment`, `--episodes`, `--seeds`, `--run-id`, `--timeout-s`, `--no-idea-gate`, `--root`, `--worker-config`, `--worker-config-sha256` |
 | `harness monolith table` | `--write`, `--root` |
 | `harness perception audit` | `--run`, `--envelope`, `--output` |
 | `harness probe` | `--dataflow`, `--topic`, `--for`, `--root` |

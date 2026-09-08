@@ -291,6 +291,9 @@ def build_parser() -> argparse.ArgumentParser:
     mono_check = monolith_sub.add_parser("check", help="compile/construct the module; no sim")
     mono_check.add_argument("--module", type=Path, required=True)
     mono_check.add_argument("--embodiment", default="franka", choices=["franka", "so101"])
+    for worker_command in (mono_run, mono_check):
+        worker_command.add_argument("--worker-config", type=Path, default=None)
+        worker_command.add_argument("--worker-config-sha256", default=None)
     mono_desc = monolith_sub.add_parser("describe", help="print the primitive API (MON-3)")
     mono_desc.add_argument("--embodiment", default="franka", choices=["franka", "so101"])
     mono_table = monolith_sub.add_parser("table", help="MON-1 treatment table render/check")
@@ -427,6 +430,7 @@ def main() -> int:
 
     if args.command == "monolith":
         from aisle.harness import monolith as mono
+        from aisle.monolith.supervisor import WorkerFailure
 
         try:
             if args.monolith_command == "run":
@@ -442,9 +446,16 @@ def main() -> int:
                     run_id=args.run_id,
                     timeout_s=args.timeout_s,
                     no_idea_gate=args.no_idea_gate,
+                    worker_config=args.worker_config,
+                    worker_config_sha256=args.worker_config_sha256,
                 )
             elif args.monolith_command == "check":
-                report = mono.check_module(args.module, args.embodiment)
+                from aisle.monolith.worker_config import configured_worker_factory
+
+                factory = configured_worker_factory(
+                    args.worker_config, args.worker_config_sha256, phase="check"
+                )
+                report = mono.check_module(args.module, args.embodiment, worker_factory=factory)
             elif args.monolith_command == "describe":
                 from aisle.monolith.primitives import Primitives
 
@@ -458,6 +469,8 @@ def main() -> int:
                 if args.output is not None:
                     args.output.parent.mkdir(parents=True, exist_ok=True)
                     args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+        except WorkerFailure as refused:
+            report = {"ok": False, "infrastructure_invalid": True, "error": str(refused)}
         except (OSError, json.JSONDecodeError, KeyError, ValueError) as refused:
             report = {"ok": False, "error": "monolith command refused", "details": [repr(refused)]}
         print(json.dumps(report, sort_keys=True, default=str))

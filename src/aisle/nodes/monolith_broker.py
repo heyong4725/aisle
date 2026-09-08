@@ -37,6 +37,7 @@ import hashlib
 import json
 import os
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 
 import numpy as np
@@ -116,37 +117,74 @@ def validate_action(action: dict, n_dof: int) -> dict:
 
 
 class Broker:
-    """Transport-free core: observation in, validated actions out, with the
-    confinement checks around every module callback. `main()` is the dora
-    shell around it."""
+    """Trusted observation/action broker with optional worker execution.
 
-    def __init__(self, module_path: Path, embodiment: str, log=None) -> None:
+    A controller-owned worker_factory accepts the pinned primitives and returns
+    a managed WorkerSupervisor context. The default retains local execution.
+    `main()` supplies the Dora shell around this core.
+    """
+
+    def __init__(
+        self, module_path: Path, embodiment: str, log=None, *, worker_factory=None
+    ) -> None:
         self.log = log or (lambda msg: print(msg, file=sys.stderr))
         self.embodiment = embodiment
         self.primitives = Primitives._load(embodiment)
         self.n_dof = int(self.primitives.home.shape[0])
         self.integrity = default_integrity()
         self.integrity.snapshot()
-        source = module_path.read_text(encoding="utf-8")
+        self._worker_resources = ExitStack()
+        self._worker = None
+        source = (
+            module_path.read_bytes().decode("utf-8")
+            if worker_factory is not None
+            else module_path.read_text(encoding="utf-8")
+        )
         self.record = module_record(module_path, source, embodiment)
-        with guarded():
-            namespace = load_module(str(module_path), source)
-            if namespace.get("API_VERSION") != API_VERSION:
-                raise RuntimeError(
-                    f"module declares API_VERSION={namespace.get('API_VERSION')!r}; "
-                    f"broker speaks {API_VERSION}"
-                )
-            controller_cls = namespace.get("Controller")
-            if controller_cls is None:
-                raise RuntimeError("module defines no Controller class")
-            self.controller = controller_cls(self.primitives, self.log)
-        self.integrity.verify()
+        try:
+            if worker_factory is not None:
+                self._worker = self._worker_resources.enter_context(worker_factory(self.primitives))
+                receipt = self._worker.initialize(source, str(module_path))
+                self.record.update(execution="worker", worker_source_receipt=receipt)
+            else:
+                with guarded():
+                    namespace = load_module(str(module_path), source)
+                    if namespace.get("API_VERSION") != API_VERSION:
+                        raise RuntimeError(
+                            f"module declares API_VERSION={namespace.get('API_VERSION')!r}; "
+                            f"broker speaks {API_VERSION}"
+                        )
+                    controller_cls = namespace.get("Controller")
+                    if controller_cls is None:
+                        raise RuntimeError("module defines no Controller class")
+                    self.controller = controller_cls(self.primitives, self.log)
+            self.integrity.verify()
+        except BaseException:
+            self._worker_resources.__exit__(*sys.exc_info())
+            raise
         self.goal_id = ""
         self.goal: dict | None = None
         self.ticks = 0
         self.last_tick_ns = -1
 
+    def close(self):
+        self._worker_resources.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return self._worker_resources.__exit__(exc_type, exc, traceback)
+
     def deliver(self, name: str, payload, sim_time_ns: int, goal_id: str = "") -> list[dict]:
+        try:
+            return self._deliver(name, payload, sim_time_ns, goal_id)
+        except BaseException:
+            if self._worker is not None:
+                self._worker_resources.__exit__(*sys.exc_info())
+            raise
+
+    def _deliver(self, name: str, payload, sim_time_ns: int, goal_id: str = "") -> list[dict]:
         if name not in OBSERVATIONS:
             raise ValueError(f"not an observation: {name}")
         if name == "episode_goal":
@@ -160,8 +198,11 @@ class Broker:
             "payload": payload,
             "goal_id": goal_id or self.goal_id,
         }
-        with guarded():
-            raw = self.controller.on_event(event)
+        if self._worker is not None:
+            raw = self._worker.event(event)
+        else:
+            with guarded():
+                raw = self.controller.on_event(event)
         self.integrity.verify()
         actions = [validate_action(a, self.n_dof) for a in (raw or [])]
         if name == "tick" and self.goal is not None and not any("feedback" in a for a in actions):
@@ -215,87 +256,110 @@ def _invalid_record(reason: str) -> None:
     print(json.dumps(payload), file=sys.stderr)
 
 
+def broker_from_environment(environment):
+    """Build the Dora broker with a paired, hash-bound worker selection."""
+    from aisle.monolith.worker_config import configured_worker_factory
+
+    raw = environment.get("AISLE_MONOLITH_MODULE", "").strip()
+    if not raw:
+        raise RuntimeError("AISLE_MONOLITH_MODULE (graph env) names the monolithic module")
+    factory = configured_worker_factory(
+        environment.get("AISLE_MONOLITH_WORKER_CONFIG"),
+        environment.get("AISLE_MONOLITH_WORKER_CONFIG_SHA256"),
+        phase="run",
+    )
+    return Broker(
+        resolve_module_path(raw),
+        environment.get("AISLE_EMBODIMENT", "franka"),
+        worker_factory=factory,
+    )
+
+
 def main() -> None:  # pragma: no cover — dora runtime
     import pyarrow as pa
 
+    from aisle.monolith.supervisor import WorkerFailure, WorkerModuleFailure
     from aisle.topics import env_accepts, env_pin_from_env, make_sender
     from aisle.turn_node import Node
 
-    raw = os.environ.get("AISLE_MONOLITH_MODULE", "").strip()
-    if not raw:
-        raise RuntimeError("AISLE_MONOLITH_MODULE (graph env) names the monolithic module")
-    embodiment = os.environ.get("AISLE_EMBODIMENT", "franka")
     try:
-        broker = Broker(resolve_module_path(raw), embodiment)
-    except ConfinementViolation as exc:
+        broker = broker_from_environment(os.environ)
+    except (ConfinementViolation, WorkerFailure) as exc:
+        if isinstance(exc, WorkerModuleFailure):
+            raise
         _invalid_record(str(exc))
         raise SystemExit(3) from exc
-    results = os.environ.get("AISLE_RESULTS")
-    if results:
-        (Path(results).parent / "monolith.json").write_text(
-            json.dumps(broker.record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
+    try:
+        results = os.environ.get("AISLE_RESULTS")
+        if results:
+            (Path(results).parent / "monolith.json").write_text(
+                json.dumps(broker.record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
 
-    env_pin = env_pin_from_env(os.environ)
-    node = Node()
-    send = make_sender(node, env_pin)
+        env_pin = env_pin_from_env(os.environ)
+        node = Node()
+        send = make_sender(node, env_pin)
 
-    def publish(actions: list[dict], metadata: dict) -> None:
-        for action in actions:
-            if "joint_cmd" in action:
-                send("joint_cmd", pa.array(action["joint_cmd"]), metadata)
-            elif "gripper_cmd" in action:
-                send(
-                    "gripper_cmd",
-                    pa.array(np.array([action["gripper_cmd"]], dtype=np.float32)),
-                    metadata,
-                )
-            else:
-                send(
-                    "episode_feedback",
-                    pa.array([json.dumps(action["feedback"])]),
-                    {**metadata, "goal_id": broker.goal_id},
-                )
+        def publish(actions: list[dict], metadata: dict) -> None:
+            for action in actions:
+                if "joint_cmd" in action:
+                    send("joint_cmd", pa.array(action["joint_cmd"]), metadata)
+                elif "gripper_cmd" in action:
+                    send(
+                        "gripper_cmd",
+                        pa.array(np.array([action["gripper_cmd"]], dtype=np.float32)),
+                        metadata,
+                    )
+                else:
+                    send(
+                        "episode_feedback",
+                        pa.array([json.dumps(action["feedback"])]),
+                        {**metadata, "goal_id": broker.goal_id},
+                    )
 
-    for event in node:
-        if event["type"] != "INPUT":
-            continue
-        topic, metadata = event["id"], (event.get("metadata") or {})
-        if not env_accepts(metadata, env_pin):
-            continue
-        stamp_ns = int(metadata.get("sim_time_ns", 0))
-        try:
-            if topic == "turn":
-                for _ in broker.ticks_due(stamp_ns):
-                    publish(broker.deliver("tick", broker.ticks, stamp_ns), metadata)
+        for event in node:
+            if event["type"] != "INPUT":
                 continue
-            if topic in ("bridge_info", "violation", "episode_goal", "episode_result"):
-                payload = json.loads(event["value"][0].as_py())
-                actions = broker.deliver(topic, payload, stamp_ns, metadata.get("goal_id", ""))
-            elif topic == "reset_done":
-                actions = broker.deliver(topic, None, stamp_ns)
-            elif topic == "seg_overhead":
-                frame = _frame(event, metadata, np.int32, None)
-                actions = [] if frame is None else broker.deliver(topic, frame, stamp_ns)
-            elif topic == "depth_overhead":
-                frame = _frame(event, metadata, np.float32, None)
-                actions = [] if frame is None else broker.deliver(topic, frame, stamp_ns)
-            elif topic == "rgb_overhead":
-                frame = _frame(event, metadata, np.uint8, 3)
-                actions = [] if frame is None else broker.deliver(topic, frame, stamp_ns)
-            elif topic in ("joint_state", "gripper_state"):
-                vec = np.asarray(
-                    event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
-                ).reshape(-1)
-                actions = broker.deliver(topic, vec, stamp_ns)
-            else:
+            topic, metadata = event["id"], (event.get("metadata") or {})
+            if not env_accepts(metadata, env_pin):
                 continue
-        except ConfinementViolation as exc:
-            _invalid_record(str(exc))
-            node.stop_after_turn()
-            continue
-        clean = {k: v for k, v in metadata.items() if k not in ("enc", "h", "w")}
-        publish(actions, clean)
+            stamp_ns = int(metadata.get("sim_time_ns", 0))
+            try:
+                if topic == "turn":
+                    for _ in broker.ticks_due(stamp_ns):
+                        publish(broker.deliver("tick", broker.ticks, stamp_ns), metadata)
+                    continue
+                if topic in ("bridge_info", "violation", "episode_goal", "episode_result"):
+                    payload = json.loads(event["value"][0].as_py())
+                    actions = broker.deliver(topic, payload, stamp_ns, metadata.get("goal_id", ""))
+                elif topic == "reset_done":
+                    actions = broker.deliver(topic, None, stamp_ns)
+                elif topic == "seg_overhead":
+                    frame = _frame(event, metadata, np.int32, None)
+                    actions = [] if frame is None else broker.deliver(topic, frame, stamp_ns)
+                elif topic == "depth_overhead":
+                    frame = _frame(event, metadata, np.float32, None)
+                    actions = [] if frame is None else broker.deliver(topic, frame, stamp_ns)
+                elif topic == "rgb_overhead":
+                    frame = _frame(event, metadata, np.uint8, 3)
+                    actions = [] if frame is None else broker.deliver(topic, frame, stamp_ns)
+                elif topic in ("joint_state", "gripper_state"):
+                    vec = np.asarray(
+                        event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
+                    ).reshape(-1)
+                    actions = broker.deliver(topic, vec, stamp_ns)
+                else:
+                    continue
+            except (ConfinementViolation, WorkerFailure) as exc:
+                if isinstance(exc, WorkerModuleFailure):
+                    raise
+                _invalid_record(str(exc))
+                node.stop_after_turn()
+                continue
+            clean = {k: v for k, v in metadata.items() if k not in ("enc", "h", "w")}
+            publish(actions, clean)
+    finally:
+        broker.close()
 
 
 if __name__ == "__main__":  # pragma: no cover

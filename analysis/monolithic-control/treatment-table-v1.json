@@ -1,5 +1,5 @@
 {
-  "immutable_id": "sha256:30a157698ebfbe2f66d269d4def0fcb70ee27e6a9649145cc5fb21981d9a568b",
+  "immutable_id": "sha256:5b58bd3e608d44bd4de3de7e051ea21e280860cc91c47aabe946746d2b9a469e",
   "rows": [
     {
       "analysis": "the manipulated factor (SPEC 500 primary contrast)",
@@ -15,7 +15,7 @@
       "classification": "intentionally-different",
       "id": "mon1-02",
       "justification": "part of the bundled treatment; absence is a declared property, not missing data (MON-12)",
-      "monolithic": "src/aisle/harness/monolith.py#sha256:5c1489d1758352be18e47d7c4ab3e8479b5bbf6995109d81f26adde272b1ff99",
+      "monolithic": "src/aisle/harness/monolith.py#sha256:5d8fa430b4836375fdd480968b62d123756bb34607261055a07042411e25d971",
       "surface": "static validation and diagnostics",
       "typed": "src/aisle/harness/validate.py#sha256:55ab8640ce1dc85fac48ba5b21556cfaf1f1827c60cc2056abe12b51ae8d03e2"
     },
@@ -60,7 +60,7 @@
       "classification": "representation-equivalent",
       "id": "mon1-07",
       "justification": "none needed: same semantic fields, different envelope",
-      "monolithic": "src/aisle/nodes/monolith_broker.py#sha256:4a7a1f94e36f6424954482205063fe3cbcd90f491e96b429000b28f21c6eec32",
+      "monolithic": "src/aisle/nodes/monolith_broker.py#sha256:872741da1be8cfa0c89a4ee77ee4fb8a457f130a48228d39ebb8e09a84ee3d46",
       "surface": "actions and authority",
       "typed": "graphs/expert_t1.yaml#sha256:df048626224c172f65b3d4ce7ccb31fa92fec5d660b7b6efd6677c1dffb412e9"
     },
@@ -78,7 +78,7 @@
       "classification": "identical",
       "id": "mon1-09",
       "justification": "none needed: same artifact",
-      "monolithic": "src/aisle/nodes/monolith_broker.py#sha256:4a7a1f94e36f6424954482205063fe3cbcd90f491e96b429000b28f21c6eec32",
+      "monolithic": "src/aisle/nodes/monolith_broker.py#sha256:872741da1be8cfa0c89a4ee77ee4fb8a457f130a48228d39ebb8e09a84ee3d46",
       "surface": "trusted controller (bridge, reset, verifier, rollout client, turn barrier)",
       "typed": "src/aisle/nodes/dora_genesis.py#sha256:61e72b56430806258fe1dcf89d714e9a3212d60205641b6fa787e766d123d6d4"
     },
@@ -87,7 +87,7 @@
       "classification": "intentionally-different",
       "id": "mon1-10",
       "justification": "runtime envelope needed only by the typed transport; carries no task authority",
-      "monolithic": "src/aisle/nodes/monolith_broker.py#sha256:4a7a1f94e36f6424954482205063fe3cbcd90f491e96b429000b28f21c6eec32",
+      "monolithic": "src/aisle/nodes/monolith_broker.py#sha256:872741da1be8cfa0c89a4ee77ee4fb8a457f130a48228d39ebb8e09a84ee3d46",
       "surface": "transport metadata",
       "typed": "src/aisle/topics.py#sha256:a0ae1126468d83e4f7959451d5eeb843b296a8157dc0abeacbb18ced4e675210"
     },
@@ -114,7 +114,7 @@
       "classification": "identical",
       "id": "mon1-13",
       "justification": "none needed: same artifact",
-      "monolithic": "src/aisle/harness/monolith.py#sha256:5c1489d1758352be18e47d7c4ab3e8479b5bbf6995109d81f26adde272b1ff99",
+      "monolithic": "src/aisle/harness/monolith.py#sha256:5d8fa430b4836375fdd480968b62d123756bb34607261055a07042411e25d971",
       "surface": "episode budget, seeds, reset semantics, evaluator",
       "typed": "src/aisle/harness/rollout.py#sha256:6faf01e46a176482c29a11a6fd8f3a9b35c6d86df9f51690974f67d0e08265ed"
     },
