@@ -15,13 +15,13 @@ from test_typed_validation_snapshot import ROOT, _view
 pytestmark = pytest.mark.unit
 
 
-def _inputs(tmp_path, *, invalid=False):
+def _inputs(tmp_path, *, invalid=False, direct_python=False):
     from aisle.harness.matched_runtime import capture_runtime
     from aisle.harness.treatment_confinement import compile_macos_profile
     from aisle.harness.typed_snapshot import build_typed_validation_snapshot
     from aisle.harness.typed_validation import build_validation_bundle
 
-    inputs = _launch_inputs(tmp_path)
+    inputs = _launch_inputs(tmp_path, direct_python=direct_python)
     # These tests exercise validation and drift, not a five-second speed target.
     # Timeout behavior is injected explicitly by the interruption fixture.
     inputs["timeout_s"] = 30
