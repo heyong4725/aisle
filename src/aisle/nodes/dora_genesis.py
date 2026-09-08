@@ -661,6 +661,31 @@ def _metadata(sim_time_ns: int, env_id: int, seq: int, **extra) -> dict:
     return {"sim_time_ns": sim_time_ns, "env_id": env_id, "seq": seq, **extra}
 
 
+def render_frames(cameras, due, work):
+    """BRG-2/TC-9/MON-12: one recorded overhead pass supplies all due outputs."""
+    import numpy as np
+
+    frames = {}
+    need_rgb = "rgb_overhead" in due
+    need_seg = "seg_overhead" in due
+    need_depth = "depth_overhead" in due
+    if need_rgb or need_depth or need_seg:
+        out = work.call(
+            "render", cameras["overhead"].render, rgb=True, depth=need_depth, segmentation=need_seg
+        )
+        frames["rgb_overhead"] = np.asarray(out[0], dtype=np.uint8)
+        if need_depth:
+            frames["depth_overhead"] = np.asarray(out[1], dtype=np.float32)
+        if need_seg:
+            # TC-1: Genesis int64 segmentation is narrowed to the int32 wire contract.
+            frames["seg_overhead"] = np.asarray(out[2], dtype=np.int32)
+    if "rgb_wrist" in due:
+        frames["rgb_wrist"] = np.asarray(
+            work.call("render", cameras["wrist"].render)[0], dtype=np.uint8
+        )
+    return frames
+
+
 def main(
     clock: Callable[[], float] = time.perf_counter,
     work_clock: Callable[[], int] = time.monotonic_ns,
@@ -906,33 +931,7 @@ def main(
             return data[env_id] if cfg.n_envs > 1 else data.reshape(-1)
 
         def render_due(due: list[str]) -> dict[str, np.ndarray]:
-            """BRG-2: one overhead pass serves rgb, depth and segmentation when
-            they are due; nothing renders unless a camera topic is due this tick.
-
-            TC-9: segmentation and depth come from ONE pass, so an L1 estimate
-            that masks the seg and indexes the depth reads one scene rather than
-            two ticks blended (the defect class that already reached the trace
-            recorder and the realistic verifier)."""
-            frames: dict[str, np.ndarray] = {}
-            need_rgb = "rgb_overhead" in due
-            need_seg = "seg_overhead" in due
-            need_depth = "depth_overhead" in due
-            if need_rgb or need_depth or need_seg:
-                out = handle.cams["overhead"].render(
-                    rgb=True, depth=need_depth, segmentation=need_seg
-                )
-                frames["rgb_overhead"] = np.asarray(out[0], dtype=np.uint8)
-                if need_depth:
-                    frames["depth_overhead"] = np.asarray(out[1], dtype=np.float32)
-                if need_seg:
-                    # TC-1: the WIRE type is the contract. Genesis renders int64;
-                    # narrowing here (ids are ~21 in the desk scene) halves a
-                    # 640x480 payload at 15 Hz. A passthrough would be a TC-1
-                    # violation, not an optimization left on the table.
-                    frames["seg_overhead"] = np.asarray(out[2], dtype=np.int32)
-            if "rgb_wrist" in due:
-                frames["rgb_wrist"] = np.asarray(handle.cams["wrist"].render()[0], dtype=np.uint8)
-            return frames
+            return render_frames(handle.cams, due, work)
 
         def publish(topic: str, frames: dict[str, np.ndarray] | None = None) -> None:
             # TC-9: the rung's topic set is the SINGLE source of truth for what

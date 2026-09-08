@@ -14,6 +14,8 @@ from pathlib import Path
 
 _KINDS = {"build", "reset", "step"}
 _SCHEMA = "aisle.simulator-work-journal.v1"
+_RENDER_SCHEMA = "aisle.simulator-work-journal.v2"
+_RENDER_KINDS = _KINDS | {"render"}
 
 
 def _integer(value, minimum=0):
@@ -53,7 +55,7 @@ class WorkJournal:
             self._write(
                 {
                     "event": "launch",
-                    "schema_version": _SCHEMA,
+                    "schema_version": _RENDER_SCHEMA,
                     "run_id": run_id,
                     "launch": launch,
                     "dt_ns": dt_ns,
@@ -78,7 +80,7 @@ class WorkJournal:
 
     @contextmanager
     def operation(self, kind):
-        if kind not in _KINDS or self.active or self.stream.closed:
+        if kind not in _RENDER_KINDS or self.active or self.stream.closed:
             raise ValueError("invalid or overlapping simulator operation")
         self.sequence += 1
         self._write({"event": "started", "sequence": self.sequence, "kind": kind})
@@ -142,7 +144,7 @@ def summarize_work(path, *, run_id, launch):
                         set(row)
                         != {"event", "schema_version", "run_id", "launch", "dt_ns", "n_envs"}
                         or row["event"] != "launch"
-                        or row["schema_version"] != _SCHEMA
+                        or row["schema_version"] not in {_SCHEMA, _RENDER_SCHEMA}
                         or row["run_id"] != run_id
                         or not _integer(row["launch"])
                         or row["launch"] != launch
@@ -151,6 +153,10 @@ def summarize_work(path, *, run_id, launch):
                     ):
                         raise ValueError("simulator journal launch identity or units differ")
                     header = row
+                    if row["schema_version"] == _RENDER_SCHEMA:
+                        report["schema_version"] = _RENDER_SCHEMA
+                        for key in ("attempted", "completed", "failed", "operation_wall_ns"):
+                            report[key]["render"] = 0
                     continue
                 event = row.get("event")
                 if event == "terminal":
@@ -169,7 +175,8 @@ def summarize_work(path, *, run_id, launch):
                     fields.add("wall_ns")
                 if (
                     set(row) != fields
-                    or row.get("kind") not in _KINDS
+                    or row.get("kind")
+                    not in (_RENDER_KINDS if header["schema_version"] == _RENDER_SCHEMA else _KINDS)
                     or not _integer(row.get("sequence"), 1)
                 ):
                     raise ValueError("invalid simulator operation fields")
