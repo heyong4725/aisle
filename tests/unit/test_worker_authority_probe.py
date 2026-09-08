@@ -77,7 +77,7 @@ def test_actual_python_profile_authority(tmp_path, operation, visible):
     from aisle.harness.worker_authority_probe import operation_case, operation_command
     from aisle.harness.worker_network_probe import _capture
 
-    inputs = _launch_inputs(tmp_path)
+    inputs = _launch_inputs(tmp_path, direct_python=True)
     sentinel = b"controller-owned-probe-data"
     if operation == "exec":
         from pathlib import Path

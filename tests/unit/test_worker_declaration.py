@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from test_monolith_worker_launch import _launch_inputs
+from test_monolith_worker_launch import _launch_inputs, _worker_interpreter
 
 pytestmark = pytest.mark.unit
 
@@ -18,7 +18,7 @@ def test_provisioned_declaration_uses_actual_adapter_and_fresh_roots(tmp_path, a
     from aisle.harness.treatment_confinement import SANDBOX_EXEC, MacOSPolicy, compile_macos_profile
     from aisle.harness.worker_declaration import provision_worker_declaration
 
-    inputs = _launch_inputs(tmp_path)
+    inputs = _launch_inputs(tmp_path, direct_python=True)
     kwargs = dict(
         arm=arm,
         bundle=tmp_path / "new-bundle",
@@ -93,7 +93,8 @@ for event in node:
             packages / package.__name__,
             ignore=shutil.ignore_patterns("__pycache__"),
         )
-    runtime = capture_runtime((Path(sys.executable).resolve().parent.parent, packages))
+    python, runtime_root = _worker_interpreter()
+    runtime = capture_runtime((runtime_root, packages))
     launch = provision_worker_declaration(
         arm="typed",
         bundle=tmp_path / "actual-bundle",
@@ -101,8 +102,8 @@ for event in node:
         evidence=tmp_path / "private/actual-declaration",
         hidden_roots=(*inputs["source_roots"], tmp_path / "private"),
         runtime_record=runtime,
-        python=sys.executable,
-        python_sha256=hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest(),
+        python=python,
+        python_sha256=hashlib.sha256(python.read_bytes()).hexdigest(),
         adapter_sha256=hashlib.sha256(SANDBOX_EXEC.read_bytes()).hexdigest(),
         # Functional confinement/transport test; allow cold runtime verification in CI.
         timeout_s=30,

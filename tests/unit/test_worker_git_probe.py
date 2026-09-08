@@ -40,7 +40,7 @@ def test_actual_git_object_read_under_worker_profile(tmp_path, visible):
     from aisle.harness.worker_authority_probe import operation_case, operation_command
     from aisle.harness.worker_network_probe import _capture
 
-    inputs = _launch_inputs(tmp_path)
+    inputs = _launch_inputs(tmp_path, direct_python=True)
     git, _ = _apple_git_runtime(cwd=tmp_path)
     environment = {
         "HOME": str(inputs["policy"].output_roots[0]),
@@ -83,7 +83,7 @@ def test_hidden_file_routes_obey_actual_worker_profile(tmp_path, route):
     from aisle.harness.worker_authority_probe import operation_case, operation_command
     from aisle.harness.worker_network_probe import _capture
 
-    inputs = _launch_inputs(tmp_path)
+    inputs = _launch_inputs(tmp_path, direct_python=True)
     sentinel = b"controller-hidden-route-probe"
     private = tmp_path / "private"
     if route == "alternate_worktree":

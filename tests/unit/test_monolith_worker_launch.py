@@ -3,6 +3,7 @@
 import hashlib
 import json
 import sys
+import sysconfig
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,18 @@ from test_treatment_confinement import _attestation
 pytestmark = pytest.mark.unit
 
 
-def _launch_inputs(tmp_path):
+def _worker_interpreter():
+    """Select the direct interpreter for a single-executable sandbox grant."""
+    framework = sysconfig.get_config_var("PYTHONFRAMEWORK")
+    if framework:
+        root = Path(sys.base_prefix).resolve()
+        python = root / "Resources" / (framework + ".app") / "Contents/MacOS" / framework
+        return python.resolve(strict=True), root
+    python = Path(sys.executable).resolve(strict=True)
+    return python, python.parent.parent
+
+
+def _launch_inputs(tmp_path, *, direct_python=False):
     from aisle.harness.matched_runtime import capture_runtime
     from aisle.harness.treatment_ambient import build_declared_environment
     from aisle.harness.treatment_confinement import MacOSPolicy, compile_macos_profile
@@ -27,6 +39,9 @@ def _launch_inputs(tmp_path):
         home, source_env={"PATH": "/usr/bin:/bin"}
     )
     python = Path(sys.executable)
+    runtime_root = python.resolve().parent.parent
+    if direct_python:
+        python, runtime_root = _worker_interpreter()
     source = tmp_path / "participant-source"
     source.mkdir()
     packages = tmp_path / "bound-runtime-assets"
@@ -35,7 +50,7 @@ def _launch_inputs(tmp_path):
     policy = MacOSPolicy(
         visible_roots=(bundle,),
         output_roots=(home,),
-        runtime_read_roots=(python.resolve().parent.parent, packages),
+        runtime_read_roots=(runtime_root, packages),
         allowed_executables=(python.resolve(),),
         hidden_roots=(private, source),
         network_policy="deny-external",
@@ -208,3 +223,27 @@ def test_worker_runtime_is_rechecked_after_child_teardown(tmp_path):
             (tmp_path / "bound-runtime-assets/runtime.py").write_text("VALUE = 2")
     assert json.loads((inputs["output"] / "rpc/worker.json").read_text())["state"] == "closed"
     assert (inputs["output"] / "failure.json").is_file()
+
+
+def test_framework_fixture_binds_interpreter_instead_of_reexec_launcher(tmp_path, monkeypatch):
+    """MON-8/TRT-6: Python-only profiles must grant the executable that runs Python code."""
+    prefix = tmp_path / "Python.framework/Versions/3.13"
+    launcher = prefix / "bin/python3.13"
+    interpreter = prefix / "Resources/Python.app/Contents/MacOS/Python"
+    for path in (launcher, interpreter):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("synthetic framework executable")
+        path.chmod(0o755)
+    monkeypatch.setattr(sys, "executable", str(launcher))
+    monkeypatch.setattr(sys, "base_prefix", str(prefix))
+    original = sysconfig.get_config_var
+    monkeypatch.setattr(
+        sysconfig,
+        "get_config_var",
+        lambda name: "Python" if name == "PYTHONFRAMEWORK" else original(name),
+    )
+    inputs = _launch_inputs(tmp_path / "inputs", direct_python=True)
+    assert inputs["python"] == interpreter
+    assert inputs["policy"].allowed_executables == (interpreter,)
+    assert prefix in inputs["policy"].runtime_read_roots
+    assert launcher not in inputs["policy"].allowed_executables

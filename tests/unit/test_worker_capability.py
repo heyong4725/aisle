@@ -19,7 +19,7 @@ def test_actual_worker_capability_report_and_cleanup(tmp_path):
     )
     from aisle.harness.worker_capability import audit_worker_capability
 
-    inputs = _launch_inputs(tmp_path)
+    inputs = _launch_inputs(tmp_path, direct_python=True)
     visible_before = sorted(p.relative_to(inputs["bundle"]) for p in inputs["bundle"].rglob("*"))
     home = inputs["policy"].output_roots[0]
     home_before = sorted(p.relative_to(home) for p in home.rglob("*"))
@@ -61,7 +61,7 @@ def test_failed_audit_retains_refusal_and_cleans_worker_roots(tmp_path, monkeypa
     """MON-13/TRT-6: failed or redirected audit cannot retain passing capability evidence."""
     from aisle.harness import worker_capability as capability
 
-    inputs = _launch_inputs(tmp_path)
+    inputs = _launch_inputs(tmp_path, direct_python=True)
     network = capability.probe_worker_network
 
     def probe(**kwargs):

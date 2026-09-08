@@ -23,6 +23,9 @@ exhaustive IPC, descendant containment, runtime closure or independent confineme
 fresh bundle/HOME/evidence paths, compiles the worker policy and runs those actual
 observations. Failed reservations remain retained and cannot be silently reused.
 A successful declaration leaves source capture to the next preparation layer.
+The interpreter must run directly under its single executable grant. For a macOS
+framework Python, select and hash the Python.app interpreter, since the command
+line launcher re-executes it; startup refusal never counts as observed denial.
 
 Tests exercise parser refusals, failed startup, cancellation, listener failure,
 actual macOS profiles and a declared typed worker exchanging Arrow data. Actual

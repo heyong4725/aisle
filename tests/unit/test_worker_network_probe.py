@@ -144,7 +144,7 @@ def test_listener_failure_prevents_success(tmp_path, monkeypatch):
             b"",
         )
 
-    inputs = _launch_inputs(tmp_path)
+    inputs = _launch_inputs(tmp_path, direct_python=True)
     monkeypatch.setattr(probe.socket, "socket", lambda *args: FailedListener())
     monkeypatch.setattr(probe, "_capture", capture)
     output = tmp_path / "private/network-probe"
@@ -168,7 +168,7 @@ def test_python_only_profile_blocks_connection_after_probe_starts(tmp_path):
     """MON-8/TRT-6: positive host control and confined Python run test actual socket authority."""
     from aisle.harness.worker_network_probe import probe_worker_network
 
-    inputs = _launch_inputs(tmp_path)
+    inputs = _launch_inputs(tmp_path, direct_python=True)
     report = probe_worker_network(
         policy=inputs["policy"],
         profile_path=inputs["profile_path"],
