@@ -3,6 +3,7 @@
 import importlib
 import json
 import shutil
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -45,7 +46,12 @@ def _inputs(tmp_path, *, invalid=False):
         "attr",
         "typing_extensions",
     ):
-        module = importlib.import_module(name)
+        try:
+            module = importlib.import_module(name)
+        except ModuleNotFoundError as exc:
+            if name == "typing_extensions" and exc.name == name and sys.version_info >= (3, 13):
+                continue
+            raise
         source = Path(module.__file__)
         if hasattr(module, "__path__"):
             shutil.copytree(
@@ -206,3 +212,24 @@ def test_validation_launch_requires_canonical_source_bindings(tmp_path, roots):
     }
     with pytest.raises(ValidationError, match="source"):
         verify_validation_launch(**kwargs, snapshot_storage=inputs["snapshot"], source_roots=roots)
+
+
+def test_validation_runtime_supports_python313_without_typing_extensions(tmp_path, monkeypatch):
+    """CON-1/MON-12: the default Python 3.13 validator works without optional backports."""
+
+    if sys.version_info < (3, 13):
+        pytest.skip("typing backport remains required before Python 3.13")
+    from aisle.harness.typed_validation import run_validation
+
+    original = importlib.import_module
+
+    def without_backport(name, *args, **kwargs):
+        if name == "typing_extensions":
+            raise ModuleNotFoundError("optional backport absent", name=name)
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib, "import_module", without_backport)
+    inputs = _inputs(tmp_path)
+    assert not (tmp_path / "runtime-packages/typing_extensions.py").exists()
+    result = run_validation(**inputs)
+    assert result["ok"], result
