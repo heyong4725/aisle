@@ -1563,3 +1563,69 @@ def test_resume_refuses_retained_infrastructure_session(tmp_path):
     )
     with pytest.raises(SystemExit, match="infrastructure"):
         c.load_existing(tmp_path, {})
+
+
+@pytest.mark.parametrize("guard_failure", [False, True])
+def test_live_stream_guard_stops_child_and_retains_reason(tmp_path, monkeypatch, guard_failure):
+    """MON-8/MON-12: controller live-event guards stop a child without consulting writable logs."""
+    import sys
+
+    import campaign as c
+
+    monkeypatch.setattr(c, "POLL_S", 0.01)
+    seen = []
+
+    def guard(line):
+        seen.append(line)
+        if guard_failure:
+            raise ValueError("unidentified frontend event")
+        return "frontend_tool_budget"
+
+    kwargs = dict(
+        agent="codex",
+        cmd=[sys.executable, "-c", "import time; print('event', flush=True); time.sleep(30)"],
+        wt=tmp_path,
+        out=tmp_path,
+        ceilings={"prior_tokens": 0, "prior_wall_s": 0, "token_ceiling": 1000, "wall_ceiling_s": 5},
+        line_guard=guard,
+    )
+    if guard_failure:
+        with pytest.raises(c.SessionInfraError) as caught:
+            c.run_session(**kwargs)
+        record = caught.value.session
+        assert record["classification"] == "infrastructure_exclusion"
+    else:
+        record = c.run_session(**kwargs)
+        assert record["stopped"] == "frontend_tool_budget"
+    assert seen == ["event\n"]
+    assert record["rc"] != 0
+    assert record["wall_s"] < 5
+    assert (tmp_path / "session.jsonl").read_text() == "event\n"
+
+
+def test_frontend_budget_stops_real_overrun_child(tmp_path, monkeypatch):
+    """MON-8/MON-12: live identified tool events enforce the frontend ceiling."""
+    import campaign as c
+
+    from aisle.harness.matched_frontend import FrontendToolBudget
+
+    monkeypatch.setattr(c, "POLL_S", 0.01)
+    guard = FrontendToolBudget("codex", 1)
+    code = (
+        "import json,time; "
+        "[print(json.dumps({'type':'item.started','item':{'id':i,'type':'command_execution'}}),"
+        "flush=True) for i in ('first','second')]; time.sleep(30)"
+    )
+    record = c.run_session(
+        "codex",
+        [sys.executable, "-c", code],
+        tmp_path,
+        tmp_path,
+        {"prior_tokens": 0, "prior_wall_s": 0, "token_ceiling": 1000, "wall_ceiling_s": 5},
+        line_guard=guard,
+    )
+    assert record["stopped"] == "frontend_tool_budget"
+    assert record["rc"] != 0
+    assert record["wall_s"] < 5
+    assert guard.report()["observed_calls"] == 2
+    assert guard.report()["pending_ids"] == ["first", "second"]

@@ -114,3 +114,12 @@ def test_bundle_rejects_non_content_drift(tmp_path, mutation):
         source.chmod(0o644)
     with pytest.raises(ExecutionBundleError):
         verify_execution_bundle(bundle, record)
+
+
+def test_bundle_dependencies_are_bound_by_session_identity():
+    """MON-13: the shared admission identity includes every trusted bundle input."""
+    from aisle.harness.matched_session import CONTROLLER_FILES
+    from aisle.harness.typed_execution_bundle import CONTROLLER_FILES as DEPENDENCIES
+
+    assert set(DEPENDENCIES) <= set(CONTROLLER_FILES)
+    assert "src/aisle/harness/typed_execution_bundle.py" in CONTROLLER_FILES

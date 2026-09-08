@@ -661,13 +661,17 @@ def _metadata(sim_time_ns: int, env_id: int, seq: int, **extra) -> dict:
     return {"sim_time_ns": sim_time_ns, "env_id": env_id, "seq": seq, **extra}
 
 
-def main(clock: Callable[[], float] = time.perf_counter) -> None:
+def main(
+    clock: Callable[[], float] = time.perf_counter,
+    work_clock: Callable[[], int] = time.monotonic_ns,
+) -> None:
     """The clock is injected (CON-5): reset timing must never reach for a
     wall clock ad hoc."""
     import genesis
     import pyarrow as pa
     from dora import Node
 
+    from aisle.harness.simulator_work import work_context
     from aisle.mobility.base import base_scan_ranges, integrate_base_pose
     from aisle.scenes.pharmacy import (
         SceneCfg,
@@ -690,768 +694,801 @@ def main(clock: Callable[[], float] = time.perf_counter) -> None:
     profile = physics["embodiment"][cfg.embodiment]
     dt = physics["sim"]["dt"]
 
-    # T15 (ADR-18): the store scene swaps in behind the same topic contract
-    # — entities/oracle/reset/scan come from the scene adapter below; the
-    # pharmacy path is byte-for-byte unchanged.
-    is_store = cfg.scene == "store"
-    if is_store:
-        from aisle.scenes.store import (
-            build_store,
-            generate_episode,
-            load_planogram,
-            store_oracle_state,
-            store_scan_obstacles,
-            teleport_store_reset,
+    with work_context(os.environ, dt_ns=int(dt * 1e9), n_envs=cfg.n_envs, clock=work_clock) as work:
+        # T15 (ADR-18): the store scene swaps in behind the same topic contract
+        # — entities/oracle/reset/scan come from the scene adapter below; the
+        # pharmacy path is byte-for-byte unchanged.
+        is_store = cfg.scene == "store"
+        if is_store:
+            from aisle.scenes.store import (
+                build_store,
+                generate_episode,
+                load_planogram,
+                store_oracle_state,
+                store_scan_obstacles,
+                teleport_store_reset,
+            )
+
+            handle = work.call(
+                "build",
+                build_store,
+                seed=cfg.seed,
+                scenario=cfg.scenario,
+                embodiment=cfg.embodiment,
+                headless=cfg.headless,
+                sim_backend=cfg.sim_backend,
+            )
+        else:
+            handle = work.call(
+                "build",
+                build_scene,
+                seed=cfg.seed,
+                embodiment=cfg.embodiment,
+                n_envs=cfg.n_envs,
+                headless=cfg.headless,
+                cfg=SceneCfg(
+                    labels=cfg.labels, shuffle_colors=cfg.shuffle_colors, occlusion=cfg.occlusion
+                ),
+                sim_backend=cfg.sim_backend,
+            )
+        robot = handle.robot
+        n_dof = robot.n_dofs
+        # carry coupling needs the hand's world position (T15, ADR-18)
+        hand_link = robot.get_link("hand") if is_store else None
+        held_item: str | None = None  # carry latch (T15, ADR-18)
+        held_offset = (0.0, 0.0, 0.0, 0.0)
+        so101_latch = None
+        so101_hand_link = None
+        so101_tcp_offset = None
+        if profile.get("kinematic_carry_latch", False):
+            if cfg.n_envs != 1 or is_store:
+                raise ValueError("SO-101 carry latch requires single-env pharmacy mode")
+            so101_hand_link = robot.get_link(profile["ee_link"])
+            so101_tcp_offset = np.asarray(profile["ee_frame_offset_xyz"], dtype=np.float64)
+            so101_latch = CarryLatch(
+                close_threshold=float(profile["carry_latch_close"]),
+                release_threshold=float(profile["carry_latch_release"]),
+                max_distance_m=float(profile["carry_latch_max_distance_m"]),
+            )
+
+        # the graspable set is named `items` in the store scene and `boxes` on the
+        # desk; the id map itself is name -> seg ids either way
+        graspable = handle.items if is_store else handle.boxes
+        segmentation_ids = (
+            segmentation_id_map(
+                handle.scene.segmentation_idx_dict,
+                {name: entity.idx for name, entity in graspable.items()},
+            )
+            if cfg.perception == "L1"
+            else {}
         )
+        require_usable_segmentation_ids(segmentation_ids, cfg.perception)
 
-        handle = build_store(
-            seed=cfg.seed,
-            scenario=cfg.scenario,
-            embodiment=cfg.embodiment,
-            headless=cfg.headless,
-            sim_backend=cfg.sim_backend,
-        )
-    else:
-        handle = build_scene(
-            seed=cfg.seed,
-            embodiment=cfg.embodiment,
-            n_envs=cfg.n_envs,
-            headless=cfg.headless,
-            cfg=SceneCfg(
-                labels=cfg.labels, shuffle_colors=cfg.shuffle_colors, occlusion=cfg.occlusion
-            ),
-            sim_backend=cfg.sim_backend,
-        )
-    robot = handle.robot
-    n_dof = robot.n_dofs
-    # carry coupling needs the hand's world position (T15, ADR-18)
-    hand_link = robot.get_link("hand") if is_store else None
-    held_item: str | None = None  # carry latch (T15, ADR-18)
-    held_offset = (0.0, 0.0, 0.0, 0.0)
-    so101_latch = None
-    so101_hand_link = None
-    so101_tcp_offset = None
-    if profile.get("kinematic_carry_latch", False):
-        if cfg.n_envs != 1 or is_store:
-            raise ValueError("SO-101 carry latch requires single-env pharmacy mode")
-        so101_hand_link = robot.get_link(profile["ee_link"])
-        so101_tcp_offset = np.asarray(profile["ee_frame_offset_xyz"], dtype=np.float64)
-        so101_latch = CarryLatch(
-            close_threshold=float(profile["carry_latch_close"]),
-            release_threshold=float(profile["carry_latch_release"]),
-            max_distance_m=float(profile["carry_latch_max_distance_m"]),
-        )
+        node = Node()
+        sim_time_ns = 0
+        turn_id = 0
+        try:
+            turn_epoch = int(os.environ.get("AISLE_TURN_EPOCH", "1"))
+        except ValueError as exc:
+            raise ValueError("AISLE_TURN_EPOCH must be a positive integer") from exc
+        if turn_epoch <= 0:
+            raise ValueError("AISLE_TURN_EPOCH must be a positive integer")
+        bridge_outputs = {
+            name for name in os.environ.get("AISLE_TURN_OUTPUTS", "").split(",") if name
+        }
+        seq: dict[tuple[str, int], int] = {}
+        turn_output_counts = {name: 0 for name in bridge_outputs}
 
-    # the graspable set is named `items` in the store scene and `boxes` on the
-    # desk; the id map itself is name -> seg ids either way
-    graspable = handle.items if is_store else handle.boxes
-    segmentation_ids = (
-        segmentation_id_map(
-            handle.scene.segmentation_idx_dict,
-            {name: entity.idx for name, entity in graspable.items()},
-        )
-        if cfg.perception == "L1"
-        else {}
-    )
-    require_usable_segmentation_ids(segmentation_ids, cfg.perception)
+        def emit_bridge(topic: str, value, metadata: dict) -> None:
+            nonlocal turn_output_counts
+            if cfg.lockstep:
+                if topic not in turn_output_counts:
+                    raise ValueError(f"bridge output {topic!r} omitted from AISLE_TURN_OUTPUTS")
+                turn_output_counts[topic] += 1
+                metadata = {
+                    **metadata,
+                    "turn_epoch": turn_epoch,
+                    "turn_id": turn_id,
+                    "sim_time_ns": sim_time_ns,
+                }
+            node.send_output(topic, value, metadata=metadata)
 
-    node = Node()
-    sim_time_ns = 0
-    turn_id = 0
-    try:
-        turn_epoch = int(os.environ.get("AISLE_TURN_EPOCH", "1"))
-    except ValueError as exc:
-        raise ValueError("AISLE_TURN_EPOCH must be a positive integer") from exc
-    if turn_epoch <= 0:
-        raise ValueError("AISLE_TURN_EPOCH must be a positive integer")
-    bridge_outputs = {name for name in os.environ.get("AISLE_TURN_OUTPUTS", "").split(",") if name}
-    seq: dict[tuple[str, int], int] = {}
-    turn_output_counts = {name: 0 for name in bridge_outputs}
-
-    def emit_bridge(topic: str, value, metadata: dict) -> None:
-        nonlocal turn_output_counts
-        if cfg.lockstep:
-            if topic not in turn_output_counts:
-                raise ValueError(f"bridge output {topic!r} omitted from AISLE_TURN_OUTPUTS")
-            turn_output_counts[topic] += 1
-            metadata = {
-                **metadata,
-                "turn_epoch": turn_epoch,
-                "turn_id": turn_id,
-                "sim_time_ns": sim_time_ns,
-            }
-        node.send_output(topic, value, metadata=metadata)
-
-    emit_bridge(
-        "bridge_info",
-        pa.array(
-            [
-                make_bridge_info(
-                    embodiment=cfg.embodiment,
-                    n_dof=n_dof,
-                    n_envs=cfg.n_envs,
-                    genesis_version=genesis.__version__,
-                    env_hash=compute_env_hash(root),
-                    step_without_reset=cfg.step_without_reset,
-                    calibration=realized_calibration(handle, physics, is_store),
-                    perception=cfg.perception,
-                    segmentation_ids=segmentation_ids,
-                    sim_backend=cfg.sim_backend or select_genesis_backend("sim", platform.system()),
-                )
-            ]
-        ),
-        _metadata(0, 0, 0),
-    )
-
-    # SPEC 210 MOB-5: the store frame is published ONCE at startup. base
-    # topics are (x, y, yaw) of the base origin in the store frame; the arm
-    # mounts at the base origin (base frame == store frame at pose 0).
-    if cfg.embodiment == "mobile":
         emit_bridge(
-            "frame_info",
+            "bridge_info",
             pa.array(
                 [
-                    json.dumps(
-                        {
-                            "store_frame": "store",
-                            "base_frame": "base",
-                            "base_pose": "(x, y, yaw) of the base origin in the store frame",
-                            "arm_mount": "the arm root rides the base origin (ADR-13)",
-                        }
+                    make_bridge_info(
+                        embodiment=cfg.embodiment,
+                        n_dof=n_dof,
+                        n_envs=cfg.n_envs,
+                        genesis_version=genesis.__version__,
+                        env_hash=compute_env_hash(root),
+                        step_without_reset=cfg.step_without_reset,
+                        calibration=realized_calibration(handle, physics, is_store),
+                        perception=cfg.perception,
+                        segmentation_ids=segmentation_ids,
+                        sim_backend=cfg.sim_backend
+                        or select_genesis_backend("sim", platform.system()),
                     )
                 ]
             ),
             _metadata(0, 0, 0),
         )
 
-    # SPEC 210 (T11, ADR-13): the mobile embodiment adds the kinematic base
-    # topics. base_pose is integrated from base_cmd each tick and the arm's
-    # root is re-based; base_scan is a planar raycast against the scene.
-    is_mobile = cfg.embodiment == "mobile"
-    topic_rates = rung_topic_rates(cfg.perception, is_mobile)
-    if cfg.lockstep:
-        # A measured graph's declared output set is the executable contract.
-        # Do not render/publish optional sensor ports the graph omitted; their
-        # absence is represented by omission from the bridge's complete
-        # watermark output set, not by an attempted undeclared dora send.
-        topic_rates = {
-            topic: rate for topic, rate in topic_rates.items() if topic in bridge_outputs
-        }
-    base_pose = [float(v) for v in profile.get("base_start", [0.0, 0.0, 0.0])]
-    base_cmd = [0.0, 0.0]
-    if is_store:
-        scan_obstacles = store_scan_obstacles(load_planogram())
-    else:
-        scan_obstacles = desk_scan_obstacles(physics, cfg.embodiment) if is_mobile else []
+        # SPEC 210 MOB-5: the store frame is published ONCE at startup. base
+        # topics are (x, y, yaw) of the base origin in the store frame; the arm
+        # mounts at the base origin (base frame == store frame at pose 0).
+        if cfg.embodiment == "mobile":
+            emit_bridge(
+                "frame_info",
+                pa.array(
+                    [
+                        json.dumps(
+                            {
+                                "store_frame": "store",
+                                "base_frame": "base",
+                                "base_pose": "(x, y, yaw) of the base origin in the store frame",
+                                "arm_mount": "the arm root rides the base origin (ADR-13)",
+                            }
+                        )
+                    ]
+                ),
+                _metadata(0, 0, 0),
+            )
 
-    scheduler = RateScheduler(topic_rates, dt)
-    commands = CommandQueue(cfg.n_envs)
-    dropped_counts: dict[str, dict[int, int]] = {"joint": {}, "gripper": {}, "base": {}}
-    # CON-5/ADR-25 (issue #71): the first physics step must not race the
-    # first reset request — ticks are dropped until it lands, so episode 0
-    # always starts from the seed-injected state at sim step 0. Two attested
-    # expert_s1 runs diverged on whether one settle step ran pre-reset.
-    awaiting_first_reset = not cfg.step_without_reset
-    if awaiting_first_reset:
-        print("holding at sim step 0 until the first reset (CON-5)", file=sys.stderr)
-    quarantine = ResetQuarantine(RESET_SETTLE_TICKS)  # holds arm at home post-reset
-    wire_dof_indices = profile_dof_indices(robot, profile)
-    configured_names = profile_joint_names(profile)
-    if configured_names is None:
-        # one name per DOF in native payload order: multi-dof joints repeat,
-        # zero-dof (fixed) joints vanish
-        joint_names = []
-        for joint in robot.joints:
-            joint_names += [joint.name] * int(getattr(joint, "n_dofs", 1))
-        wire_dof_indices = tuple(range(n_dof))
-    else:
-        joint_names = list(configured_names)
-    assert len(joint_names) == n_dof, (len(joint_names), n_dof)
-
-    home_hold = (
-        from_wire_joint_order(np.asarray(profile["home_qpos"], dtype=np.float32), wire_dof_indices)
-        if "home_qpos" in profile
-        else None
-    )
-    gripper_open = profile.get("gripper_open_qpos", profile.get("gripper_open_m", 0.04))
-    gripper_close = profile.get("gripper_close_qpos", profile.get("gripper_close_m", 0.0))
-    gripper_dofs = int(profile.get("gripper_dofs", 2))
-    finger_idx = list(wire_dof_indices[-gripper_dofs:])
-
-    def send(topic: str, env_id: int, array: np.ndarray, **extra) -> None:
-        key = (topic, env_id)
-        seq[key] = seq.get(key, 0) + 1
-        emit_bridge(
-            topic,
-            pa.array(np.ravel(array)),
-            _metadata(sim_time_ns, env_id, seq[key], **extra),
-        )
-
-    def env_slice(tensor, env_id: int) -> np.ndarray:
-        data = to_numpy(tensor)
-        return data[env_id] if cfg.n_envs > 1 else data.reshape(-1)
-
-    def render_due(due: list[str]) -> dict[str, np.ndarray]:
-        """BRG-2: one overhead pass serves rgb, depth and segmentation when
-        they are due; nothing renders unless a camera topic is due this tick.
-
-        TC-9: segmentation and depth come from ONE pass, so an L1 estimate
-        that masks the seg and indexes the depth reads one scene rather than
-        two ticks blended (the defect class that already reached the trace
-        recorder and the realistic verifier)."""
-        frames: dict[str, np.ndarray] = {}
-        need_rgb = "rgb_overhead" in due
-        need_seg = "seg_overhead" in due
-        need_depth = "depth_overhead" in due
-        if need_rgb or need_depth or need_seg:
-            out = handle.cams["overhead"].render(rgb=True, depth=need_depth, segmentation=need_seg)
-            frames["rgb_overhead"] = np.asarray(out[0], dtype=np.uint8)
-            if need_depth:
-                frames["depth_overhead"] = np.asarray(out[1], dtype=np.float32)
-            if need_seg:
-                # TC-1: the WIRE type is the contract. Genesis renders int64;
-                # narrowing here (ids are ~21 in the desk scene) halves a
-                # 640x480 payload at 15 Hz. A passthrough would be a TC-1
-                # violation, not an optimization left on the table.
-                frames["seg_overhead"] = np.asarray(out[2], dtype=np.int32)
-        if "rgb_wrist" in due:
-            frames["rgb_wrist"] = np.asarray(handle.cams["wrist"].render()[0], dtype=np.uint8)
-        return frames
-
-    def publish(topic: str, frames: dict[str, np.ndarray] | None = None) -> None:
-        # TC-9: the rung's topic set is the SINGLE source of truth for what
-        # this bridge may put on the wire, and the gate belongs here rather
-        # than in the scheduler. The reset path publishes directly, off the
-        # scheduler (RESET_PUBLISH below), so gating the scheduler alone let
-        # ground-truth `poses` reach an L1 wire once per reset — once per
-        # episode, at the freshest possible moment, and into the trace the
-        # recorder keeps. Every future direct call is gated by construction.
-        if not may_publish(topic, topic_rates):
-            return
-        oracle_cache = None
-        frames = frames if frames is not None else render_due([topic])
-        qpos = robot.get_qpos() if topic in ("joint_state", "gripper_state") else None
-        # camera topics: genesis batched scenes render ONE view; publishing
-        # it per env would mislabel pixels (ADR-7) — env 0 only
-        n_targets = 1 if topic in RENDER_TOPICS else cfg.n_envs
-        for env_id in range(n_targets):
-            if topic == "joint_state":
-                send(
-                    topic,
-                    env_id,
-                    to_wire_joint_order(env_slice(qpos, env_id), wire_dof_indices),
-                    names=joint_names,
-                    dropped=dropped_counts["joint"].pop(env_id, 0),
-                )
-            elif topic == "gripper_state":
-                finger = env_slice(qpos, env_id)[finger_idx[0]]
-                width = np.float32((gripper_open - finger) / (gripper_open - gripper_close or 1.0))
-                send(
-                    topic,
-                    env_id,
-                    np.clip(width, 0.0, 1.0),
-                    dropped=dropped_counts["gripper"].pop(env_id, 0),
-                )
-            elif topic in ("oracle_state", "poses"):
-                if oracle_cache is None:
-                    oracle_cache = store_oracle_state(handle) if is_store else oracle_state(handle)
-                send(topic, env_id, oracle_cache[env_id] if cfg.n_envs > 1 else oracle_cache)
-            elif topic in ("rgb_overhead", "rgb_wrist"):
-                rgb = frames[topic]
-                send(topic, env_id, rgb, h=rgb.shape[0], w=rgb.shape[1], enc="rgb8")
-            elif topic == "depth_overhead":
-                depth = frames[topic]
-                send(topic, env_id, depth, h=depth.shape[0], w=depth.shape[1], enc="depth32f")
-            elif topic == "seg_overhead":
-                seg = frames[topic]
-                send(topic, env_id, seg, h=seg.shape[0], w=seg.shape[1], enc="seg_i32")
-            elif topic == "base_pose":
-                # report the PHYSICAL root, not the integrator (PR #21): a
-                # path that moves one but not the other (e.g. a reset that
-                # only re-homed the variable) must be visible on the wire,
-                # never an invisible reported-vs-physical divergence
-                p = to_numpy(robot.get_pos()).reshape(-1)[:3]
-                q = to_numpy(robot.get_quat()).reshape(-1)[:4]
-                yaw = float(
-                    np.arctan2(2 * (q[0] * q[3] + q[1] * q[2]), 1 - 2 * (q[2] * q[2] + q[3] * q[3]))
-                )
-                send(
-                    topic,
-                    env_id,
-                    np.array([p[0], p[1], yaw], dtype=np.float32),
-                    dropped=dropped_counts["base"].pop(env_id, 0),
-                )
-            elif topic == "base_scan":
-                ranges = base_scan_ranges(
-                    base_pose,
-                    scan_obstacles,
-                    n=int(profile["base_scan_n"]),
-                    angle_min=float(profile["base_scan_angle_min"]),
-                    angle_max=float(profile["base_scan_angle_max"]),
-                    range_max=float(profile["base_scan_range_max_m"]),
-                )
-                send(
-                    topic,
-                    env_id,
-                    np.asarray(ranges, dtype=np.float32),
-                    angle_min=float(profile["base_scan_angle_min"]),
-                    angle_max=float(profile["base_scan_angle_max"]),
-                    n=int(profile["base_scan_n"]),
-                )
-
-    def apply_commands() -> None:
-        # BRG-1: apply in arrival order across kinds — the last-arrived
-        # command owns any overlapping dofs
-        for kind, env_id, payload, dropped in commands.drain():
-            if kind == "joint":
-                target = from_wire_joint_order(
-                    np.asarray(payload, dtype=np.float32), wire_dof_indices
-                )
-                if cfg.n_envs > 1:
-                    robot.control_dofs_position(target[None, :], envs_idx=[env_id])
-                else:
-                    robot.control_dofs_position(target)
-            else:
-                width = float(np.asarray(payload).reshape(-1)[0])
-                finger = gripper_open - width * (gripper_open - gripper_close)
-                # ONLY the embodiment's gripper dofs (so101 has one, franka
-                # two): an all-dof write would cancel the arm trajectory
-                finger_target = np.full(len(finger_idx), finger, dtype=np.float32)
-                if cfg.n_envs > 1:
-                    robot.control_dofs_position(
-                        finger_target[None, :], dofs_idx_local=finger_idx, envs_idx=[env_id]
-                    )
-                else:
-                    robot.control_dofs_position(finger_target, dofs_idx_local=finger_idx)
-            dropped_counts[kind][env_id] = dropped_counts[kind].get(env_id, 0) + dropped
-
-    def teleport_reset(seed: int, env_id: int | None = None) -> None:
-        """BRG-4: state injection — no process restart, no scene rebuild.
-        Desk: a fresh placement sample per seed. Store: the SEED's episode
-        layout for the configured scenario (T16, ADR-19) — the same
-        generator that produces the goal drives the physical state, so the
-        two can never disagree (RS-3, CON-5).
-
-        Fleet mode (BRG-5): `env_id` teleports ONLY that env's slice —
-        boxes, arm home, command drain and quarantine are all per-env, so
-        one agent's reset never perturbs its neighbours' episodes.
-        env_id None keeps the legacy whole-scene semantics bit for bit."""
+        # SPEC 210 (T11, ADR-13): the mobile embodiment adds the kinematic base
+        # topics. base_pose is integrated from base_cmd each tick and the arm's
+        # root is re-based; base_scan is a planar raycast against the scene.
+        is_mobile = cfg.embodiment == "mobile"
+        topic_rates = rung_topic_rates(cfg.perception, is_mobile)
+        if cfg.lockstep:
+            # A measured graph's declared output set is the executable contract.
+            # Do not render/publish optional sensor ports the graph omitted; their
+            # absence is represented by omission from the bridge's complete
+            # watermark output set, not by an attempted undeclared dora send.
+            topic_rates = {
+                topic: rate for topic, rate in topic_rates.items() if topic in bridge_outputs
+            }
+        base_pose = [float(v) for v in profile.get("base_start", [0.0, 0.0, 0.0])]
+        base_cmd = [0.0, 0.0]
         if is_store:
-            teleport_store_reset(handle, generate_episode(seed, cfg.scenario))
+            scan_obstacles = store_scan_obstacles(load_planogram())
         else:
-            layout = resolve_layout(physics, cfg.embodiment)
-            placements = sample_placements(seed, list(handle.boxes), layout)
-            if cfg.occlusion:
-                # T3: the reset path is where EPISODE scenes come from —
-                # the build-time layout is overwritten on the first
-                # teleport, so occlusion applied only at build measured
-                # a plain-T1 run while attesting a T3 graph (first
-                # baseline: pass@1 1.0, the giveaway)
-                from aisle.scenes.pharmacy import apply_occlusion
+            scan_obstacles = desk_scan_obstacles(physics, cfg.embodiment) if is_mobile else []
 
-                placements = apply_occlusion(placements, seed, list(handle.boxes), layout)
-            for placement in placements:
-                entity = handle.boxes[placement.name]
-                pos = np.array([placement.x, placement.y, placement.z], dtype=np.float32)
-                quat = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)  # genesis wxyz
-                if cfg.n_envs > 1 and env_id is not None:
-                    entity.set_pos(pos[None, :], envs_idx=[env_id])
-                    entity.set_quat(quat[None, :], envs_idx=[env_id])
-                elif cfg.n_envs > 1:
-                    entity.set_pos(np.tile(pos, (cfg.n_envs, 1)))
-                    entity.set_quat(np.tile(quat, (cfg.n_envs, 1)))
-                else:
-                    entity.set_pos(pos)
-                    entity.set_quat(quat)
-                # velocity zeroing is env-sliced too: the global zero
-                # froze the OTHER agent's carried box mid-swing (fleet
-                # probe: phantom 'dropped')
-                entity.zero_all_dofs_velocity(
-                    envs_idx=[env_id] if cfg.n_envs > 1 and env_id is not None else None
-                )
-        if "home_qpos" in profile:
-            home = from_wire_joint_order(
+        scheduler = RateScheduler(topic_rates, dt)
+        commands = CommandQueue(cfg.n_envs)
+        dropped_counts: dict[str, dict[int, int]] = {"joint": {}, "gripper": {}, "base": {}}
+        # CON-5/ADR-25 (issue #71): the first physics step must not race the
+        # first reset request — ticks are dropped until it lands, so episode 0
+        # always starts from the seed-injected state at sim step 0. Two attested
+        # expert_s1 runs diverged on whether one settle step ran pre-reset.
+        awaiting_first_reset = not cfg.step_without_reset
+        if awaiting_first_reset:
+            print("holding at sim step 0 until the first reset (CON-5)", file=sys.stderr)
+        quarantine = ResetQuarantine(RESET_SETTLE_TICKS)  # holds arm at home post-reset
+        wire_dof_indices = profile_dof_indices(robot, profile)
+        configured_names = profile_joint_names(profile)
+        if configured_names is None:
+            # one name per DOF in native payload order: multi-dof joints repeat,
+            # zero-dof (fixed) joints vanish
+            joint_names = []
+            for joint in robot.joints:
+                joint_names += [joint.name] * int(getattr(joint, "n_dofs", 1))
+            wire_dof_indices = tuple(range(n_dof))
+        else:
+            joint_names = list(configured_names)
+        assert len(joint_names) == n_dof, (len(joint_names), n_dof)
+
+        home_hold = (
+            from_wire_joint_order(
                 np.asarray(profile["home_qpos"], dtype=np.float32), wire_dof_indices
             )
-            if cfg.n_envs > 1 and env_id is not None:
-                robot.set_qpos(home[None, :], envs_idx=[env_id])
-                robot.control_dofs_position(home[None, :], envs_idx=[env_id])
+            if "home_qpos" in profile
+            else None
+        )
+        gripper_open = profile.get("gripper_open_qpos", profile.get("gripper_open_m", 0.04))
+        gripper_close = profile.get("gripper_close_qpos", profile.get("gripper_close_m", 0.0))
+        gripper_dofs = int(profile.get("gripper_dofs", 2))
+        finger_idx = list(wire_dof_indices[-gripper_dofs:])
+
+        def send(topic: str, env_id: int, array: np.ndarray, **extra) -> None:
+            key = (topic, env_id)
+            seq[key] = seq.get(key, 0) + 1
+            emit_bridge(
+                topic,
+                pa.array(np.ravel(array)),
+                _metadata(sim_time_ns, env_id, seq[key], **extra),
+            )
+
+        def env_slice(tensor, env_id: int) -> np.ndarray:
+            data = to_numpy(tensor)
+            return data[env_id] if cfg.n_envs > 1 else data.reshape(-1)
+
+        def render_due(due: list[str]) -> dict[str, np.ndarray]:
+            """BRG-2: one overhead pass serves rgb, depth and segmentation when
+            they are due; nothing renders unless a camera topic is due this tick.
+
+            TC-9: segmentation and depth come from ONE pass, so an L1 estimate
+            that masks the seg and indexes the depth reads one scene rather than
+            two ticks blended (the defect class that already reached the trace
+            recorder and the realistic verifier)."""
+            frames: dict[str, np.ndarray] = {}
+            need_rgb = "rgb_overhead" in due
+            need_seg = "seg_overhead" in due
+            need_depth = "depth_overhead" in due
+            if need_rgb or need_depth or need_seg:
+                out = handle.cams["overhead"].render(
+                    rgb=True, depth=need_depth, segmentation=need_seg
+                )
+                frames["rgb_overhead"] = np.asarray(out[0], dtype=np.uint8)
+                if need_depth:
+                    frames["depth_overhead"] = np.asarray(out[1], dtype=np.float32)
+                if need_seg:
+                    # TC-1: the WIRE type is the contract. Genesis renders int64;
+                    # narrowing here (ids are ~21 in the desk scene) halves a
+                    # 640x480 payload at 15 Hz. A passthrough would be a TC-1
+                    # violation, not an optimization left on the table.
+                    frames["seg_overhead"] = np.asarray(out[2], dtype=np.int32)
+            if "rgb_wrist" in due:
+                frames["rgb_wrist"] = np.asarray(handle.cams["wrist"].render()[0], dtype=np.uint8)
+            return frames
+
+        def publish(topic: str, frames: dict[str, np.ndarray] | None = None) -> None:
+            # TC-9: the rung's topic set is the SINGLE source of truth for what
+            # this bridge may put on the wire, and the gate belongs here rather
+            # than in the scheduler. The reset path publishes directly, off the
+            # scheduler (RESET_PUBLISH below), so gating the scheduler alone let
+            # ground-truth `poses` reach an L1 wire once per reset — once per
+            # episode, at the freshest possible moment, and into the trace the
+            # recorder keeps. Every future direct call is gated by construction.
+            if not may_publish(topic, topic_rates):
+                return
+            oracle_cache = None
+            frames = frames if frames is not None else render_due([topic])
+            qpos = robot.get_qpos() if topic in ("joint_state", "gripper_state") else None
+            # camera topics: genesis batched scenes render ONE view; publishing
+            # it per env would mislabel pixels (ADR-7) — env 0 only
+            n_targets = 1 if topic in RENDER_TOPICS else cfg.n_envs
+            for env_id in range(n_targets):
+                if topic == "joint_state":
+                    send(
+                        topic,
+                        env_id,
+                        to_wire_joint_order(env_slice(qpos, env_id), wire_dof_indices),
+                        names=joint_names,
+                        dropped=dropped_counts["joint"].pop(env_id, 0),
+                    )
+                elif topic == "gripper_state":
+                    finger = env_slice(qpos, env_id)[finger_idx[0]]
+                    width = np.float32(
+                        (gripper_open - finger) / (gripper_open - gripper_close or 1.0)
+                    )
+                    send(
+                        topic,
+                        env_id,
+                        np.clip(width, 0.0, 1.0),
+                        dropped=dropped_counts["gripper"].pop(env_id, 0),
+                    )
+                elif topic in ("oracle_state", "poses"):
+                    if oracle_cache is None:
+                        oracle_cache = (
+                            store_oracle_state(handle) if is_store else oracle_state(handle)
+                        )
+                    send(topic, env_id, oracle_cache[env_id] if cfg.n_envs > 1 else oracle_cache)
+                elif topic in ("rgb_overhead", "rgb_wrist"):
+                    rgb = frames[topic]
+                    send(topic, env_id, rgb, h=rgb.shape[0], w=rgb.shape[1], enc="rgb8")
+                elif topic == "depth_overhead":
+                    depth = frames[topic]
+                    send(topic, env_id, depth, h=depth.shape[0], w=depth.shape[1], enc="depth32f")
+                elif topic == "seg_overhead":
+                    seg = frames[topic]
+                    send(topic, env_id, seg, h=seg.shape[0], w=seg.shape[1], enc="seg_i32")
+                elif topic == "base_pose":
+                    # report the PHYSICAL root, not the integrator (PR #21): a
+                    # path that moves one but not the other (e.g. a reset that
+                    # only re-homed the variable) must be visible on the wire,
+                    # never an invisible reported-vs-physical divergence
+                    p = to_numpy(robot.get_pos()).reshape(-1)[:3]
+                    q = to_numpy(robot.get_quat()).reshape(-1)[:4]
+                    yaw = float(
+                        np.arctan2(
+                            2 * (q[0] * q[3] + q[1] * q[2]), 1 - 2 * (q[2] * q[2] + q[3] * q[3])
+                        )
+                    )
+                    send(
+                        topic,
+                        env_id,
+                        np.array([p[0], p[1], yaw], dtype=np.float32),
+                        dropped=dropped_counts["base"].pop(env_id, 0),
+                    )
+                elif topic == "base_scan":
+                    ranges = base_scan_ranges(
+                        base_pose,
+                        scan_obstacles,
+                        n=int(profile["base_scan_n"]),
+                        angle_min=float(profile["base_scan_angle_min"]),
+                        angle_max=float(profile["base_scan_angle_max"]),
+                        range_max=float(profile["base_scan_range_max_m"]),
+                    )
+                    send(
+                        topic,
+                        env_id,
+                        np.asarray(ranges, dtype=np.float32),
+                        angle_min=float(profile["base_scan_angle_min"]),
+                        angle_max=float(profile["base_scan_angle_max"]),
+                        n=int(profile["base_scan_n"]),
+                    )
+
+        def apply_commands() -> None:
+            # BRG-1: apply in arrival order across kinds — the last-arrived
+            # command owns any overlapping dofs
+            for kind, env_id, payload, dropped in commands.drain():
+                if kind == "joint":
+                    target = from_wire_joint_order(
+                        np.asarray(payload, dtype=np.float32), wire_dof_indices
+                    )
+                    if cfg.n_envs > 1:
+                        robot.control_dofs_position(target[None, :], envs_idx=[env_id])
+                    else:
+                        robot.control_dofs_position(target)
+                else:
+                    width = float(np.asarray(payload).reshape(-1)[0])
+                    finger = gripper_open - width * (gripper_open - gripper_close)
+                    # ONLY the embodiment's gripper dofs (so101 has one, franka
+                    # two): an all-dof write would cancel the arm trajectory
+                    finger_target = np.full(len(finger_idx), finger, dtype=np.float32)
+                    if cfg.n_envs > 1:
+                        robot.control_dofs_position(
+                            finger_target[None, :], dofs_idx_local=finger_idx, envs_idx=[env_id]
+                        )
+                    else:
+                        robot.control_dofs_position(finger_target, dofs_idx_local=finger_idx)
+                dropped_counts[kind][env_id] = dropped_counts[kind].get(env_id, 0) + dropped
+
+        def teleport_reset(seed: int, env_id: int | None = None) -> None:
+            """BRG-4: state injection — no process restart, no scene rebuild.
+            Desk: a fresh placement sample per seed. Store: the SEED's episode
+            layout for the configured scenario (T16, ADR-19) — the same
+            generator that produces the goal drives the physical state, so the
+            two can never disagree (RS-3, CON-5).
+
+            Fleet mode (BRG-5): `env_id` teleports ONLY that env's slice —
+            boxes, arm home, command drain and quarantine are all per-env, so
+            one agent's reset never perturbs its neighbours' episodes.
+            env_id None keeps the legacy whole-scene semantics bit for bit."""
+            if is_store:
+                teleport_store_reset(handle, generate_episode(seed, cfg.scenario))
             else:
-                batched_home = home if cfg.n_envs == 1 else np.tile(home, (cfg.n_envs, 1))
-                robot.set_qpos(batched_home)
-                # re-latch the PD controller: a stale pre-reset target would
-                # drive the arm away from home on the first post-reset tick
-                robot.control_dofs_position(batched_home)
-        robot.zero_all_dofs_velocity(
-            envs_idx=[env_id] if cfg.n_envs > 1 and env_id is not None else None
-        )
-        # pre-reset commands must not leak into the new episode (CON-5);
-        # per-env resets drain only their own env's pending commands
-        commands.drain(env_id)
-        if env_id is None:
-            for counts in dropped_counts.values():
-                counts.clear()
-        else:
-            for counts in dropped_counts.values():
-                counts.pop(env_id, None)
-        # hold the arm at home for the next few ticks: the executor keeps
-        # streaming the ended episode's plan until it sees reset_done, and
-        # those in-flight joint_cmds would otherwise drive the arm off home
-        if home_hold is not None:
-            quarantine.arm(env_id)
+                layout = resolve_layout(physics, cfg.embodiment)
+                placements = sample_placements(seed, list(handle.boxes), layout)
+                if cfg.occlusion:
+                    # T3: the reset path is where EPISODE scenes come from —
+                    # the build-time layout is overwritten on the first
+                    # teleport, so occlusion applied only at build measured
+                    # a plain-T1 run while attesting a T3 graph (first
+                    # baseline: pass@1 1.0, the giveaway)
+                    from aisle.scenes.pharmacy import apply_occlusion
 
-    def open_turn() -> None:
-        """Publish the complete observation declaration for S(k)."""
-        nonlocal turn_output_counts
-        if not cfg.lockstep:
-            return
-        from aisle.turns import TurnStamp, watermark_metadata
+                    placements = apply_occlusion(placements, seed, list(handle.boxes), layout)
+                for placement in placements:
+                    entity = handle.boxes[placement.name]
+                    pos = np.array([placement.x, placement.y, placement.z], dtype=np.float32)
+                    quat = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)  # genesis wxyz
+                    if cfg.n_envs > 1 and env_id is not None:
+                        entity.set_pos(pos[None, :], envs_idx=[env_id])
+                        entity.set_quat(quat[None, :], envs_idx=[env_id])
+                    elif cfg.n_envs > 1:
+                        entity.set_pos(np.tile(pos, (cfg.n_envs, 1)))
+                        entity.set_quat(np.tile(quat, (cfg.n_envs, 1)))
+                    else:
+                        entity.set_pos(pos)
+                        entity.set_quat(quat)
+                    # velocity zeroing is env-sliced too: the global zero
+                    # froze the OTHER agent's carried box mid-swing (fleet
+                    # probe: phantom 'dropped')
+                    entity.zero_all_dofs_velocity(
+                        envs_idx=[env_id] if cfg.n_envs > 1 and env_id is not None else None
+                    )
+            if "home_qpos" in profile:
+                home = from_wire_joint_order(
+                    np.asarray(profile["home_qpos"], dtype=np.float32), wire_dof_indices
+                )
+                if cfg.n_envs > 1 and env_id is not None:
+                    robot.set_qpos(home[None, :], envs_idx=[env_id])
+                    robot.control_dofs_position(home[None, :], envs_idx=[env_id])
+                else:
+                    batched_home = home if cfg.n_envs == 1 else np.tile(home, (cfg.n_envs, 1))
+                    robot.set_qpos(batched_home)
+                    # re-latch the PD controller: a stale pre-reset target would
+                    # drive the arm away from home on the first post-reset tick
+                    robot.control_dofs_position(batched_home)
+            robot.zero_all_dofs_velocity(
+                envs_idx=[env_id] if cfg.n_envs > 1 and env_id is not None else None
+            )
+            # pre-reset commands must not leak into the new episode (CON-5);
+            # per-env resets drain only their own env's pending commands
+            commands.drain(env_id)
+            if env_id is None:
+                for counts in dropped_counts.values():
+                    counts.clear()
+            else:
+                for counts in dropped_counts.values():
+                    counts.pop(env_id, None)
+            # hold the arm at home for the next few ticks: the executor keeps
+            # streaming the ended episode's plan until it sees reset_done, and
+            # those in-flight joint_cmds would otherwise drive the arm off home
+            if home_hold is not None:
+                quarantine.arm(env_id)
 
-        if "sim_turn" not in turn_output_counts:
-            raise ValueError("AISLE_TURN_OUTPUTS must include sim_turn")
-        stamp_ = TurnStamp(turn_epoch, turn_id, sim_time_ns)
-        declared = {**turn_output_counts, "sim_turn": 1}
-        key = ("sim_turn", 0)
-        seq[key] = seq.get(key, 0) + 1
-        node.send_output(
-            "sim_turn",
-            pa.array([turn_id], type=pa.uint64()),
-            metadata={
-                **watermark_metadata(stamp_, declared),
-                "env_id": 0,
-                "seq": seq[key],
-            },
-        )
-        turn_output_counts = {name: 0 for name in bridge_outputs}
+        def open_turn() -> None:
+            """Publish the complete observation declaration for S(k)."""
+            nonlocal turn_output_counts
+            if not cfg.lockstep:
+                return
+            from aisle.turns import TurnStamp, watermark_metadata
 
-    def bridge_events():
-        """Turn raw dora arrivals into deterministic committed bridge work."""
-        nonlocal turn_id
-        if not cfg.lockstep:
-            yield from node
-            return
-        from aisle.turns import BridgeTurn, ProtocolError, TurnStamp
+            if "sim_turn" not in turn_output_counts:
+                raise ValueError("AISLE_TURN_OUTPUTS must include sim_turn")
+            stamp_ = TurnStamp(turn_epoch, turn_id, sim_time_ns)
+            declared = {**turn_output_counts, "sim_turn": 1}
+            key = ("sim_turn", 0)
+            seq[key] = seq.get(key, 0) + 1
+            node.send_output(
+                "sim_turn",
+                pa.array([turn_id], type=pa.uint64()),
+                metadata={
+                    **watermark_metadata(stamp_, declared),
+                    "env_id": 0,
+                    "seq": seq[key],
+                },
+            )
+            turn_output_counts = {name: 0 for name in bridge_outputs}
 
-        current = BridgeTurn(TurnStamp(turn_epoch, turn_id, sim_time_ns), n_envs=cfg.n_envs)
-        pending_shutdown = False
-        open_turn()
+        def bridge_events():
+            """Turn raw dora arrivals into deterministic committed bridge work."""
+            nonlocal turn_id
+            if not cfg.lockstep:
+                yield from node
+                return
+            from aisle.turns import BridgeTurn, ProtocolError, TurnStamp
 
-        def finish_turn(actions, shutdown: bool):
-            """Apply a count-closed turn, then open its realized successor."""
-            nonlocal current, turn_id
-            reset_turn = bool(actions and actions[0][0] == "reset")
-            if turn_id == 0 and not reset_turn:
-                raise ProtocolError("turn zero committed without the required initial reset")
-            turn_id += 1
-            for _, committed_event in actions:
-                yield committed_event
-            if shutdown:
-                return True
-            if not reset_turn:
-                yield {
-                    "type": "INPUT",
-                    "id": "tick",
-                    "value": pa.array([], type=pa.uint8()),
-                    "metadata": {},
-                }
             current = BridgeTurn(TurnStamp(turn_epoch, turn_id, sim_time_ns), n_envs=cfg.n_envs)
+            pending_shutdown = False
             open_turn()
-            return False
 
-        for raw in node:
-            if raw.get("type") != "INPUT":
-                yield raw
-                continue
-            topic = raw.get("id")
-            metadata_ = raw.get("metadata") or {}
-            if topic in ("joint_cmd", "gripper_cmd", "base_cmd", "reset"):
-                current.accept(topic, raw, metadata_)
-                if current.ready_to_commit:
-                    stop = yield from finish_turn(current.finish(), pending_shutdown)
+            def finish_turn(actions, shutdown: bool):
+                """Apply a count-closed turn, then open its realized successor."""
+                nonlocal current, turn_id
+                reset_turn = bool(actions and actions[0][0] == "reset")
+                if turn_id == 0 and not reset_turn:
+                    raise ProtocolError("turn zero committed without the required initial reset")
+                turn_id += 1
+                for _, committed_event in actions:
+                    yield committed_event
+                if shutdown:
+                    return True
+                if not reset_turn:
+                    yield {
+                        "type": "INPUT",
+                        "id": "tick",
+                        "value": pa.array([], type=pa.uint8()),
+                        "metadata": {},
+                    }
+                current = BridgeTurn(TurnStamp(turn_epoch, turn_id, sim_time_ns), n_envs=cfg.n_envs)
+                open_turn()
+                return False
+
+            for raw in node:
+                if raw.get("type") != "INPUT":
+                    yield raw
+                    continue
+                topic = raw.get("id")
+                metadata_ = raw.get("metadata") or {}
+                if topic in ("joint_cmd", "gripper_cmd", "base_cmd", "reset"):
+                    current.accept(topic, raw, metadata_)
+                    if current.ready_to_commit:
+                        stop = yield from finish_turn(current.finish(), pending_shutdown)
+                        pending_shutdown = False
+                        if stop:
+                            return
+                    continue
+                if topic == "tick":
+                    # A wall timer remains only as a liveness opportunity.  It
+                    # never advances or manufactures a commit in lockstep mode.
+                    continue
+                if topic != "turn_commit":
+                    raise ProtocolError(f"unexpected bridge input {topic!r} in lockstep mode")
+                pending_shutdown = metadata_.get("shutdown") is True
+                actions = current.commit(metadata_)
+                if actions is not None:
+                    stop = yield from finish_turn(actions, pending_shutdown)
                     pending_shutdown = False
                     if stop:
                         return
-                continue
-            if topic == "tick":
-                # A wall timer remains only as a liveness opportunity.  It
-                # never advances or manufactures a commit in lockstep mode.
-                continue
-            if topic != "turn_commit":
-                raise ProtocolError(f"unexpected bridge input {topic!r} in lockstep mode")
-            pending_shutdown = metadata_.get("shutdown") is True
-            actions = current.commit(metadata_)
-            if actions is not None:
-                stop = yield from finish_turn(actions, pending_shutdown)
-                pending_shutdown = False
-                if stop:
-                    return
 
-    for event in bridge_events():
-        if event["type"] != "INPUT":
-            continue
-        input_id = event["id"]
-        metadata = event.get("metadata") or {}
-        if input_id == "tick":
-            if awaiting_first_reset:
+        for event in bridge_events():
+            if event["type"] != "INPUT":
                 continue
-            held_envs = (
-                [env for env in range(cfg.n_envs) if quarantine.held(env)]
-                if home_hold is not None
-                else []
-            )
-            quarantine.tick()
-            # mobile keeps the whole-scene semantics (single-env by spec)
-            settling = bool(held_envs) and len(held_envs) == cfg.n_envs
-            if settling:
-                # every env settling (single-env case unchanged): hold the
-                # arm(s) at home and DROP stale in-flight joint_cmds so
-                # they cannot drive the just-homed arm off home
-                commands.drain()
-                batched = home_hold if cfg.n_envs == 1 else np.tile(home_hold, (cfg.n_envs, 1))
-                robot.control_dofs_position(batched)
-            elif held_envs:
-                # fleet mode: only the quarantined envs hold and drain —
-                # the others' episodes keep executing
-                for env in held_envs:
-                    commands.drain(env)
-                    robot.control_dofs_position(home_hold[None, :], envs_idx=[env])
-                apply_commands()
-            else:
-                apply_commands()
-            if is_mobile:
-                # KINEMATIC GRASP ATTACH (T15 rounds 14-18, ADR-18): the
-                # kinematic base teleports the arm, and repeated pinning
-                # destroyed the physical pinch (round 18: the box dropped
-                # the moment physics resumed). Standard sim solution: from
-                # grip close to finger open the held box rides the HAND
-                # LINK every tick — physics never needs to hold it. Latch
-                # captures the hand-frame offset; release hands the box
-                # back to physics at the drop hover.
-                if is_store and hand_link is not None:
-                    fingers = float(np.mean(to_numpy(robot.get_qpos()).reshape(-1)[-2:]))
-                    hand_pos = to_numpy(hand_link.get_pos()).reshape(-1)[:3]
-                    hq = to_numpy(hand_link.get_quat()).reshape(-1)[:4]
-                    # yaw of the wrist-down flange (w,x,y,z quat)
-                    hand_yaw = float(
-                        np.arctan2(
-                            2 * (hq[0] * hq[3] + hq[1] * hq[2]),
-                            1 - 2 * (hq[2] * hq[2] + hq[3] * hq[3]),
-                        )
-                    )
-                    if held_item is None and fingers < 0.025:
-                        best_id, best_d = None, 0.15
-                        for item_id, entity in handle.items.items():
-                            p = to_numpy(entity.get_pos()).reshape(-1)[:3]
-                            d = float(np.linalg.norm(p - hand_pos))
-                            if d < best_d:
-                                best_id, best_d = item_id, d
-                        if best_id is not None:
-                            p = to_numpy(handle.items[best_id].get_pos()).reshape(-1)[:3]
-                            q = to_numpy(handle.items[best_id].get_quat()).reshape(-1)[:4]
-                            item_yaw = 2.0 * float(np.arctan2(float(q[3]), float(q[0])))
-                            cos_h, sin_h = np.cos(-hand_yaw), np.sin(-hand_yaw)
-                            dx, dy = p[0] - hand_pos[0], p[1] - hand_pos[1]
-                            held_item = best_id
-                            held_offset = (
-                                float(dx * cos_h - dy * sin_h),
-                                float(dx * sin_h + dy * cos_h),
-                                float(p[2] - hand_pos[2]),
-                                float(item_yaw - hand_yaw),
-                            )
-                            print(f"carry latch: {best_id}", file=sys.stderr)
-                    elif held_item is not None and fingers > 0.035:
-                        print(f"carry release: {held_item}", file=sys.stderr)
-                        held_item = None
-                    if held_item is not None:
-                        off = held_offset
-                        cos_h, sin_h = np.cos(hand_yaw), np.sin(hand_yaw)
-                        held_entity = handle.items[held_item]
-                        held_entity.set_pos(
-                            np.array(
-                                [
-                                    hand_pos[0] + off[0] * cos_h - off[1] * sin_h,
-                                    hand_pos[1] + off[0] * sin_h + off[1] * cos_h,
-                                    hand_pos[2] + off[2],
-                                ],
-                                dtype=np.float32,
+            input_id = event["id"]
+            metadata = event.get("metadata") or {}
+            if input_id == "tick":
+                if awaiting_first_reset:
+                    continue
+                held_envs = (
+                    [env for env in range(cfg.n_envs) if quarantine.held(env)]
+                    if home_hold is not None
+                    else []
+                )
+                quarantine.tick()
+                # mobile keeps the whole-scene semantics (single-env by spec)
+                settling = bool(held_envs) and len(held_envs) == cfg.n_envs
+                if settling:
+                    # every env settling (single-env case unchanged): hold the
+                    # arm(s) at home and DROP stale in-flight joint_cmds so
+                    # they cannot drive the just-homed arm off home
+                    commands.drain()
+                    batched = home_hold if cfg.n_envs == 1 else np.tile(home_hold, (cfg.n_envs, 1))
+                    robot.control_dofs_position(batched)
+                elif held_envs:
+                    # fleet mode: only the quarantined envs hold and drain —
+                    # the others' episodes keep executing
+                    for env in held_envs:
+                        commands.drain(env)
+                        robot.control_dofs_position(home_hold[None, :], envs_idx=[env])
+                    apply_commands()
+                else:
+                    apply_commands()
+                if is_mobile:
+                    # KINEMATIC GRASP ATTACH (T15 rounds 14-18, ADR-18): the
+                    # kinematic base teleports the arm, and repeated pinning
+                    # destroyed the physical pinch (round 18: the box dropped
+                    # the moment physics resumed). Standard sim solution: from
+                    # grip close to finger open the held box rides the HAND
+                    # LINK every tick — physics never needs to hold it. Latch
+                    # captures the hand-frame offset; release hands the box
+                    # back to physics at the drop hover.
+                    if is_store and hand_link is not None:
+                        fingers = float(np.mean(to_numpy(robot.get_qpos()).reshape(-1)[-2:]))
+                        hand_pos = to_numpy(hand_link.get_pos()).reshape(-1)[:3]
+                        hq = to_numpy(hand_link.get_quat()).reshape(-1)[:4]
+                        # yaw of the wrist-down flange (w,x,y,z quat)
+                        hand_yaw = float(
+                            np.arctan2(
+                                2 * (hq[0] * hq[3] + hq[1] * hq[2]),
+                                1 - 2 * (hq[2] * hq[2] + hq[3] * hq[3]),
                             )
                         )
-                        hh = (hand_yaw + off[3]) / 2
-                        held_entity.set_quat(
-                            np.array([np.cos(hh), 0.0, 0.0, np.sin(hh)], dtype=np.float32)
+                        if held_item is None and fingers < 0.025:
+                            best_id, best_d = None, 0.15
+                            for item_id, entity in handle.items.items():
+                                p = to_numpy(entity.get_pos()).reshape(-1)[:3]
+                                d = float(np.linalg.norm(p - hand_pos))
+                                if d < best_d:
+                                    best_id, best_d = item_id, d
+                            if best_id is not None:
+                                p = to_numpy(handle.items[best_id].get_pos()).reshape(-1)[:3]
+                                q = to_numpy(handle.items[best_id].get_quat()).reshape(-1)[:4]
+                                item_yaw = 2.0 * float(np.arctan2(float(q[3]), float(q[0])))
+                                cos_h, sin_h = np.cos(-hand_yaw), np.sin(-hand_yaw)
+                                dx, dy = p[0] - hand_pos[0], p[1] - hand_pos[1]
+                                held_item = best_id
+                                held_offset = (
+                                    float(dx * cos_h - dy * sin_h),
+                                    float(dx * sin_h + dy * cos_h),
+                                    float(p[2] - hand_pos[2]),
+                                    float(item_yaw - hand_yaw),
+                                )
+                                print(f"carry latch: {best_id}", file=sys.stderr)
+                        elif held_item is not None and fingers > 0.035:
+                            print(f"carry release: {held_item}", file=sys.stderr)
+                            held_item = None
+                        if held_item is not None:
+                            off = held_offset
+                            cos_h, sin_h = np.cos(hand_yaw), np.sin(hand_yaw)
+                            held_entity = handle.items[held_item]
+                            held_entity.set_pos(
+                                np.array(
+                                    [
+                                        hand_pos[0] + off[0] * cos_h - off[1] * sin_h,
+                                        hand_pos[1] + off[0] * sin_h + off[1] * cos_h,
+                                        hand_pos[2] + off[2],
+                                    ],
+                                    dtype=np.float32,
+                                )
+                            )
+                            hh = (hand_yaw + off[3]) / 2
+                            held_entity.set_quat(
+                                np.array([np.cos(hh), 0.0, 0.0, np.sin(hh)], dtype=np.float32)
+                            )
+                            held_entity.zero_all_dofs_velocity()
+                    # MOB-1/ADR-13: integrate the base from the latest base_cmd
+                    # (held at rest during the post-reset settle) and re-base the
+                    # arm's root before stepping
+                    cmd = [0.0, 0.0] if settling else base_cmd
+                    new_pose = integrate_base_pose(base_pose, cmd, dt)
+                    # re-base ONLY when the base actually moved (T15 round 13):
+                    # an every-tick set_pos/set_quat perturbs the solver state
+                    # each step and the gravity-loaded wrist joints chronically
+                    # lagged ~0.1-0.7 rad — the fingers plowed instead of
+                    # pinching. A stationary base leaves the arm's PD untouched,
+                    # matching the (proven) desk behavior.
+                    if new_pose != base_pose:
+                        base_pose = new_pose
+                        half = base_pose[2] / 2
+                        robot.set_pos(np.array([base_pose[0], base_pose[1], 0.0], dtype=np.float32))
+                        robot.set_quat(
+                            np.array([np.cos(half), 0.0, 0.0, np.sin(half)], dtype=np.float32)
                         )
-                        held_entity.zero_all_dofs_velocity()
-                # MOB-1/ADR-13: integrate the base from the latest base_cmd
-                # (held at rest during the post-reset settle) and re-base the
-                # arm's root before stepping
-                cmd = [0.0, 0.0] if settling else base_cmd
-                new_pose = integrate_base_pose(base_pose, cmd, dt)
-                # re-base ONLY when the base actually moved (T15 round 13):
-                # an every-tick set_pos/set_quat perturbs the solver state
-                # each step and the gravity-loaded wrist joints chronically
-                # lagged ~0.1-0.7 rad — the fingers plowed instead of
-                # pinching. A stationary base leaves the arm's PD untouched,
-                # matching the (proven) desk behavior.
-                if new_pose != base_pose:
-                    base_pose = new_pose
-                    half = base_pose[2] / 2
-                    robot.set_pos(np.array([base_pose[0], base_pose[1], 0.0], dtype=np.float32))
-                    robot.set_quat(
-                        np.array([np.cos(half), 0.0, 0.0, np.sin(half)], dtype=np.float32)
+                if so101_latch is not None:
+                    finger = float(to_numpy(robot.get_qpos()).reshape(-1)[finger_idx[0]])
+                    grip = float(
+                        np.clip((gripper_open - finger) / (gripper_open - gripper_close), 0.0, 1.0)
                     )
-            if so101_latch is not None:
-                finger = float(to_numpy(robot.get_qpos()).reshape(-1)[finger_idx[0]])
-                grip = float(
-                    np.clip((gripper_open - finger) / (gripper_open - gripper_close), 0.0, 1.0)
+                    hand_pos = to_numpy(so101_hand_link.get_pos()).reshape(-1)[:3]
+                    hand_quat = to_numpy(so101_hand_link.get_quat()).reshape(-1)[:4]
+                    tcp_pos = frame_point_wxyz(hand_pos, hand_quat, so101_tcp_offset)
+                    candidates = {
+                        name: (
+                            to_numpy(entity.get_pos()).reshape(-1)[:3],
+                            to_numpy(entity.get_quat()).reshape(-1)[:4],
+                        )
+                        for name, entity in handle.boxes.items()
+                    }
+                    before = so101_latch.held_name
+                    attached = so101_latch.update(grip, tcp_pos, hand_quat, candidates)
+                    if before != so101_latch.held_name:
+                        action = "latch" if so101_latch.held_name is not None else "release"
+                        print(
+                            f"so101 carry {action}: {before or so101_latch.held_name}",
+                            file=sys.stderr,
+                        )
+                    if attached is not None:
+                        name, pos, quat = attached
+                        entity = handle.boxes[name]
+                        entity.set_pos(pos)
+                        entity.set_quat(quat)
+                        entity.zero_all_dofs_velocity()
+                work.call("step", handle.scene.step)  # BRG-7: exceptions crash the node loudly
+                sim_time_ns += int(dt * 1e9)
+                due = scheduler.due()
+                frames = render_due(due)
+                for topic in due:
+                    publish(topic, frames)
+            elif input_id == "joint_cmd":
+                payload = np.asarray(
+                    event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
+                ).reshape(-1)
+                if payload.shape[0] != n_dof:
+                    raise ValueError(
+                        f"joint_cmd must be Float32[{n_dof}], got length {payload.shape[0]} (TC-5)"
+                    )
+                commands.push("joint", metadata.get("env_id"), payload)
+                env_id = int(metadata.get("env_id", 0))
+                dropped_counts["joint"][env_id] = dropped_counts["joint"].get(env_id, 0) + int(
+                    metadata.get("dropped", 0)
                 )
-                hand_pos = to_numpy(so101_hand_link.get_pos()).reshape(-1)[:3]
-                hand_quat = to_numpy(so101_hand_link.get_quat()).reshape(-1)[:4]
-                tcp_pos = frame_point_wxyz(hand_pos, hand_quat, so101_tcp_offset)
-                candidates = {
-                    name: (
-                        to_numpy(entity.get_pos()).reshape(-1)[:3],
-                        to_numpy(entity.get_quat()).reshape(-1)[:4],
+            elif input_id == "gripper_cmd":
+                payload = np.asarray(
+                    event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
+                ).reshape(-1)
+                if payload.shape[0] != 1 or not 0.0 <= float(payload[0]) <= 1.0:
+                    raise ValueError(
+                        f"gripper_cmd must be Float32[1] in [0, 1], got {payload!r} (TC table)"
                     )
-                    for name, entity in handle.boxes.items()
-                }
-                before = so101_latch.held_name
-                attached = so101_latch.update(grip, tcp_pos, hand_quat, candidates)
-                if before != so101_latch.held_name:
-                    action = "latch" if so101_latch.held_name is not None else "release"
-                    print(
-                        f"so101 carry {action}: {before or so101_latch.held_name}", file=sys.stderr
-                    )
-                if attached is not None:
-                    name, pos, quat = attached
-                    entity = handle.boxes[name]
-                    entity.set_pos(pos)
-                    entity.set_quat(quat)
-                    entity.zero_all_dofs_velocity()
-            handle.scene.step()  # BRG-7: exceptions crash the node loudly
-            sim_time_ns += int(dt * 1e9)
-            due = scheduler.due()
-            frames = render_due(due)
-            for topic in due:
-                publish(topic, frames)
-        elif input_id == "joint_cmd":
-            payload = np.asarray(
-                event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
-            ).reshape(-1)
-            if payload.shape[0] != n_dof:
-                raise ValueError(
-                    f"joint_cmd must be Float32[{n_dof}], got length {payload.shape[0]} (TC-5)"
+                commands.push("gripper", metadata.get("env_id"), payload)
+                env_id = int(metadata.get("env_id", 0))
+                dropped_counts["gripper"][env_id] = dropped_counts["gripper"].get(env_id, 0) + int(
+                    metadata.get("dropped", 0)
                 )
-            commands.push("joint", metadata.get("env_id"), payload)
-            env_id = int(metadata.get("env_id", 0))
-            dropped_counts["joint"][env_id] = dropped_counts["joint"].get(env_id, 0) + int(
-                metadata.get("dropped", 0)
-            )
-        elif input_id == "gripper_cmd":
-            payload = np.asarray(
-                event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
-            ).reshape(-1)
-            if payload.shape[0] != 1 or not 0.0 <= float(payload[0]) <= 1.0:
-                raise ValueError(
-                    f"gripper_cmd must be Float32[1] in [0, 1], got {payload!r} (TC table)"
+            elif input_id == "base_cmd":
+                # MOB-1: latest diff-drive command [v, omega]; integrated each
+                # tick (the guard has already clamped it, MOB-3)
+                payload = np.asarray(
+                    event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
+                ).reshape(-1)
+                if payload.shape[0] != 2:
+                    raise ValueError(
+                        f"base_cmd must be Float32[2] (v, omega), got {payload!r} (MOB-1)"
+                    )
+                base_cmd = [float(payload[0]), float(payload[1])]
+                env_id = int(metadata.get("env_id", 0))
+                dropped_counts["base"][env_id] = dropped_counts["base"].get(env_id, 0) + int(
+                    metadata.get("dropped", 0)
                 )
-            commands.push("gripper", metadata.get("env_id"), payload)
-            env_id = int(metadata.get("env_id", 0))
-            dropped_counts["gripper"][env_id] = dropped_counts["gripper"].get(env_id, 0) + int(
-                metadata.get("dropped", 0)
-            )
-        elif input_id == "base_cmd":
-            # MOB-1: latest diff-drive command [v, omega]; integrated each
-            # tick (the guard has already clamped it, MOB-3)
-            payload = np.asarray(
-                event["value"].to_numpy(zero_copy_only=False), dtype=np.float32
-            ).reshape(-1)
-            if payload.shape[0] != 2:
-                raise ValueError(f"base_cmd must be Float32[2] (v, omega), got {payload!r} (MOB-1)")
-            base_cmd = [float(payload[0]), float(payload[1])]
-            env_id = int(metadata.get("env_id", 0))
-            dropped_counts["base"][env_id] = dropped_counts["base"].get(env_id, 0) + int(
-                metadata.get("dropped", 0)
-            )
-        elif input_id == "reset":
-            started = clock()
-            payload = np.asarray(event["value"].to_numpy(zero_copy_only=False)).reshape(-1)
-            if payload.shape[0] != 2:
-                raise ValueError(f"reset payload must be UInt32[2], got {payload.shape} (TC-6)")
-            reset_seed, mode = int(payload[0]), int(payload[1])
-            if mode not in (0, 1):
-                raise ValueError(f"reset mode must be 0 or 1, got {mode} (TC-6)")
-            if not metadata.get("request_id"):
-                raise ValueError("reset request missing request_id metadata (TC-6)")
-            # TC-6: no observation may interleave reset -> reset_done; the
-            # loop is single-threaded, so replying before returning to the
-            # event loop guarantees ordering
-            if mode == 1:
-                raise NotImplementedError("behavioral reset lands with SPEC 040 (T06)")
-            # fleet mode (BRG-5): a reset carrying env_id teleports only
-            # that env's slice; the shared publish grid is NOT re-anchored
-            # (it belongs to every env — fleet cadence is anchored to the
-            # first whole-scene reset, a documented fleet-mode difference
-            # from ADR-25's per-episode anchoring)
-            reset_env = metadata.get("env_id") if cfg.n_envs > 1 else None
-            if reset_env is not None:
-                if isinstance(reset_env, bool) or not isinstance(reset_env, int):
-                    raise ValueError(f"reset env_id must be an int, got {reset_env!r} (BRG-5)")
-                if not 0 <= reset_env < cfg.n_envs:
-                    raise ValueError(f"reset env_id {reset_env} outside [0, {cfg.n_envs}) (BRG-5)")
-            teleport_reset(reset_seed, reset_env)
-            awaiting_first_reset = False
-            if reset_env is None:
-                # CON-5/ADR-25: re-anchor the publish-cadence grid to the
-                # reset, so which ticks fire the sub-100 Hz topics (poses,
-                # oracle_state, base_pose...) is a function of the episode,
-                # not of the wall tick the request happened to land on
-                scheduler = RateScheduler(topic_rates, dt)
-            if so101_latch is not None:
-                if so101_latch.held_name is not None:
-                    print(
-                        f"so101 carry release: {so101_latch.held_name} (reset)",
-                        file=sys.stderr,
+            elif input_id == "reset":
+                with work.operation("reset"):
+                    started = clock()
+                    payload = np.asarray(event["value"].to_numpy(zero_copy_only=False)).reshape(-1)
+                    if payload.shape[0] != 2:
+                        raise ValueError(
+                            f"reset payload must be UInt32[2], got {payload.shape} (TC-6)"
+                        )
+                    reset_seed, mode = int(payload[0]), int(payload[1])
+                    if mode not in (0, 1):
+                        raise ValueError(f"reset mode must be 0 or 1, got {mode} (TC-6)")
+                    if not metadata.get("request_id"):
+                        raise ValueError("reset request missing request_id metadata (TC-6)")
+                    # TC-6: no observation may interleave reset -> reset_done; the
+                    # loop is single-threaded, so replying before returning to the
+                    # event loop guarantees ordering
+                    if mode == 1:
+                        raise NotImplementedError("behavioral reset lands with SPEC 040 (T06)")
+                    # fleet mode (BRG-5): a reset carrying env_id teleports only
+                    # that env's slice; the shared publish grid is NOT re-anchored
+                    # (it belongs to every env — fleet cadence is anchored to the
+                    # first whole-scene reset, a documented fleet-mode difference
+                    # from ADR-25's per-episode anchoring)
+                    reset_env = metadata.get("env_id") if cfg.n_envs > 1 else None
+                    if reset_env is not None:
+                        if isinstance(reset_env, bool) or not isinstance(reset_env, int):
+                            raise ValueError(
+                                f"reset env_id must be an int, got {reset_env!r} (BRG-5)"
+                            )
+                        if not 0 <= reset_env < cfg.n_envs:
+                            raise ValueError(
+                                f"reset env_id {reset_env} outside [0, {cfg.n_envs}) (BRG-5)"
+                            )
+                    teleport_reset(reset_seed, reset_env)
+                    awaiting_first_reset = False
+                    if reset_env is None:
+                        # CON-5/ADR-25: re-anchor the publish-cadence grid to the
+                        # reset, so which ticks fire the sub-100 Hz topics (poses,
+                        # oracle_state, base_pose...) is a function of the episode,
+                        # not of the wall tick the request happened to land on
+                        scheduler = RateScheduler(topic_rates, dt)
+                    if so101_latch is not None:
+                        if so101_latch.held_name is not None:
+                            print(
+                                f"so101 carry release: {so101_latch.held_name} (reset)",
+                                file=sys.stderr,
+                            )
+                        so101_latch.reset()
+                    if is_mobile:
+                        # MOB-1/ADR-13: re-home the base to the store-frame start and
+                        # drop the in-flight base command (mirrors the arm re-home).
+                        # The robot ROOT moves too (PR #21): the tick handler re-bases
+                        # only when the integrated pose CHANGES, so a variable-only
+                        # re-home would leave the physical base at the pre-reset pose
+                        base_pose = [float(v) for v in profile.get("base_start", [0.0, 0.0, 0.0])]
+                        base_cmd = [0.0, 0.0]
+                        half = base_pose[2] / 2
+                        robot.set_pos(np.array([base_pose[0], base_pose[1], 0.0], dtype=np.float32))
+                        robot.set_quat(
+                            np.array([np.cos(half), 0.0, 0.0, np.sin(half)], dtype=np.float32)
+                        )
+                        if held_item is not None:
+                            # a mid-carry reset hands the item back to physics: the
+                            # latch would otherwise pin the respawned item to the hand
+                            print(f"carry release: {held_item} (reset)", file=sys.stderr)
+                            held_item = None
+                    reply_env = reset_env if reset_env is not None else 0
+                    emit_bridge(
+                        "reset_done",
+                        pa.array(np.array([1], dtype=np.uint32)),
+                        _metadata(
+                            sim_time_ns,
+                            reply_env,
+                            seq.update(
+                                {
+                                    ("reset_done", reply_env): seq.get(("reset_done", reply_env), 0)
+                                    + 1
+                                }
+                            )
+                            or seq[("reset_done", reply_env)],
+                            request_id=metadata.get("request_id", ""),
+                            seed=reset_seed,
+                            mode=mode,
+                            t_reset_ms=int((clock() - started) * 1000),
+                        ),
                     )
-                so101_latch.reset()
-            if is_mobile:
-                # MOB-1/ADR-13: re-home the base to the store-frame start and
-                # drop the in-flight base command (mirrors the arm re-home).
-                # The robot ROOT moves too (PR #21): the tick handler re-bases
-                # only when the integrated pose CHANGES, so a variable-only
-                # re-home would leave the physical base at the pre-reset pose
-                base_pose = [float(v) for v in profile.get("base_start", [0.0, 0.0, 0.0])]
-                base_cmd = [0.0, 0.0]
-                half = base_pose[2] / 2
-                robot.set_pos(np.array([base_pose[0], base_pose[1], 0.0], dtype=np.float32))
-                robot.set_quat(np.array([np.cos(half), 0.0, 0.0, np.sin(half)], dtype=np.float32))
-                if held_item is not None:
-                    # a mid-carry reset hands the item back to physics: the
-                    # latch would otherwise pin the respawned item to the hand
-                    print(f"carry release: {held_item} (reset)", file=sys.stderr)
-                    held_item = None
-            reply_env = reset_env if reset_env is not None else 0
-            emit_bridge(
-                "reset_done",
-                pa.array(np.array([1], dtype=np.uint32)),
-                _metadata(
-                    sim_time_ns,
-                    reply_env,
-                    seq.update(
-                        {("reset_done", reply_env): seq.get(("reset_done", reply_env), 0) + 1}
-                    )
-                    or seq[("reset_done", reply_env)],
-                    request_id=metadata.get("request_id", ""),
-                    seed=reset_seed,
-                    mode=mode,
-                    t_reset_ms=int((clock() - started) * 1000),
-                ),
-            )
-            # the injected state IS the post-reset observation: snapshot it
-            # before any physics step so the first oracle_state after reset
-            # is a pure function of the seed (TC-A2, CON-5); reset_done was
-            # already sent, so nothing interleaves the service pair (TC-6)
-            for topic in reset_publish_topics(topic_rates):
-                publish(topic)
+                    # the injected state IS the post-reset observation: snapshot it
+                    # before any physics step so the first oracle_state after reset
+                    # is a pure function of the seed (TC-A2, CON-5); reset_done was
+                    # already sent, so nothing interleaves the service pair (TC-6)
+                    for topic in reset_publish_topics(topic_rates):
+                        publish(topic)
 
 
 if __name__ == "__main__":

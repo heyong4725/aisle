@@ -186,7 +186,12 @@ class _DeferredTransport:
         return self.node
 
     def __iter__(self):
-        yield from self._get()
+        for event in self._get():
+            yield event
+            # The trusted coordinator owns the lifetime of lockstep work.
+            # Other inputs may form cycles and remain open indefinitely.
+            if event.get("type") == "INPUT_CLOSED" and event.get("id") == "turn":
+                return
 
     def send_output(self, *args, **kwargs):
         return self._get().send_output(*args, **kwargs)

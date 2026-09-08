@@ -118,6 +118,7 @@ def test_monolithic_worker_rollout_retains_real_episode_and_worker_exit(tmp_path
         perception="L1",
         sim_extra="sim",
         per_episode_wall_s=120,
+        record_simulator_work=True,
     )
     (base / "result.json").write_text(json.dumps(result, indent=2, default=str))
     assert result["ok"], result
@@ -136,3 +137,18 @@ def test_monolithic_worker_rollout_retains_real_episode_and_worker_exit(tmp_path
         )
         assert record["state"] == "closed" and record["rc"] == 0, record
         assert record["error"] is None, record
+
+    from aisle.harness.matched_evidence import retain_run
+
+    collection = retain_run(ROOT / "runs" / run_id, base / "retained-run", run_id=run_id)
+    assert collection["ok"], collection["error"]
+    accounting = collection["simulator_work"]
+    assert accounting["status"] == "recomputed", accounting
+    summary = accounting["summary"]
+    assert len(summary["launches"]) == 1
+    launch = summary["launches"][0]
+    assert launch["attempted"]["build"] == 1
+    assert launch["completed"]["reset"] >= 1
+    assert launch["completed"]["step"] > 0
+    assert summary["completed_env_sim_ns"] > 0
+    assert summary["producer_coverage_complete"] is False

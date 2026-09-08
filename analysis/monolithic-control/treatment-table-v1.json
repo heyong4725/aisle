@@ -1,5 +1,5 @@
 {
-  "immutable_id": "sha256:5b58bd3e608d44bd4de3de7e051ea21e280860cc91c47aabe946746d2b9a469e",
+  "immutable_id": "sha256:65d3593ae700749f864b09a688c9fa770743cd714ce3ff2662e99b3c523027c8",
   "rows": [
     {
       "analysis": "the manipulated factor (SPEC 500 primary contrast)",
@@ -15,7 +15,7 @@
       "classification": "intentionally-different",
       "id": "mon1-02",
       "justification": "part of the bundled treatment; absence is a declared property, not missing data (MON-12)",
-      "monolithic": "src/aisle/harness/monolith.py#sha256:5d8fa430b4836375fdd480968b62d123756bb34607261055a07042411e25d971",
+      "monolithic": "src/aisle/harness/monolith.py#sha256:dc8df6f64df8e48def08a3bcc66ddb2dd250d260035d608e837c712eac95862e",
       "surface": "static validation and diagnostics",
       "typed": "src/aisle/harness/validate.py#sha256:55ab8640ce1dc85fac48ba5b21556cfaf1f1827c60cc2056abe12b51ae8d03e2"
     },
@@ -80,7 +80,7 @@
       "justification": "none needed: same artifact",
       "monolithic": "src/aisle/nodes/monolith_broker.py#sha256:872741da1be8cfa0c89a4ee77ee4fb8a457f130a48228d39ebb8e09a84ee3d46",
       "surface": "trusted controller (bridge, reset, verifier, rollout client, turn barrier)",
-      "typed": "src/aisle/nodes/dora_genesis.py#sha256:61e72b56430806258fe1dcf89d714e9a3212d60205641b6fa787e766d123d6d4"
+      "typed": "src/aisle/nodes/dora_genesis.py#sha256:5d659306d52ccba422ff1554ecbf6643b9ac9401b46ea8ec37aaa3c6e6337170"
     },
     {
       "analysis": "excluded from task authority (MON-4); no analysis treatment",
@@ -114,9 +114,9 @@
       "classification": "identical",
       "id": "mon1-13",
       "justification": "none needed: same artifact",
-      "monolithic": "src/aisle/harness/monolith.py#sha256:5d8fa430b4836375fdd480968b62d123756bb34607261055a07042411e25d971",
+      "monolithic": "src/aisle/harness/monolith.py#sha256:dc8df6f64df8e48def08a3bcc66ddb2dd250d260035d608e837c712eac95862e",
       "surface": "episode budget, seeds, reset semantics, evaluator",
-      "typed": "src/aisle/harness/rollout.py#sha256:6faf01e46a176482c29a11a6fd8f3a9b35c6d86df9f51690974f67d0e08265ed"
+      "typed": "src/aisle/harness/rollout.py#sha256:be0aa7766a5d6f1d93f4857eeb15bbcb4a04569be923e3c8cc43daf161630df2"
     },
     {
       "analysis": "infrastructure-invalid records excluded in both arms; confinement status in the MON-8 tuple",

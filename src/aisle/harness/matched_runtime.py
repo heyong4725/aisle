@@ -10,11 +10,36 @@ import hashlib
 import json
 import os
 import stat
+import sys
+import sysconfig
 from pathlib import Path
 
 
 class RuntimeDrift(ValueError):
     """A runtime tree cannot be reconciled with its retained inventory."""
+
+
+def worker_interpreter():
+    """Select this runtime's direct executable without granting a re-exec launcher.
+
+    Callers must still bind its bytes and verify membership in admitted runtime
+    trees. Selection never adds a read root or an executable grant by itself.
+    """
+    framework = sysconfig.get_config_var("PYTHONFRAMEWORK")
+    if framework:
+        python = (
+            Path(sys.base_prefix)
+            / "Resources"
+            / (framework + ".app")
+            / "Contents/MacOS"
+            / framework
+        )
+    else:
+        python = Path(sys.executable)
+    python = python.resolve(strict=True)
+    if not python.is_file() or not os.access(python, os.X_OK):
+        raise RuntimeDrift("direct worker interpreter is not executable")
+    return python
 
 
 def capture_runtime(roots):

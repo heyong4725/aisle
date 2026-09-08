@@ -453,8 +453,9 @@ def test_launcher_preserves_t1_rollout_arguments(tmp_path, monkeypatch):
         return {"ok": True}
 
     monkeypatch.setattr(rollout, "rollout", launch)
-    report = mono.run(tmp_path, module, [0, 1], 2, run_id="tier-test")
+    report = mono.run(tmp_path, module, [0, 1], 2, run_id="tier-test", record_simulator_work=True)
     assert report["ok"] is True
+    assert observed["record_simulator_work"] is True
     assert observed["tier"] == "T1"
     assert observed["graph"] == graph
     assert observed["seeds"] == [0, 1]
