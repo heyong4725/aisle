@@ -12,6 +12,21 @@ digest, exact invocation/environment, selected provider-request fields,
 scripted SSE responses, CLI stdout/stderr, hook input, and observed side effect.
 Each case requires a new canonical output directory.
 
+Both probes retain `fixture-preflight.json` before launching the measured
+invocation. The report's `fixture_files` binds that manifest and selected input
+files by SHA-256: invocation, sandbox policy, copied probe sources, generated
+hook, and Claude settings. Explicitly absent hook/command files are recorded as
+null. Postflight checks reject changed, missing, oversized, or symlink inputs;
+a successful tool refusal does not make a changed fixture valid.
+
+These checks compare retained files before and after the invocation. They do
+not prove what code was loaded, detect changes restored between checks, or
+authenticate an archive supplied by a participant. The output directory remains
+writable by the fixture frontend. Configuration digests describe this specific
+invocation, including its local transport endpoint; they do not attest the full
+admitted tool surface or campaign confinement. Historical reports without these
+bindings remain partial observations.
+
 On macOS, from the repository root:
 
 ```bash
