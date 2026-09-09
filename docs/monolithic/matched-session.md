@@ -218,6 +218,15 @@ Missing or malformed episode evidence remains an exclusion with
 the partial raw files preserved. Session auditing checks the collection report,
 run identity, complete file index and raw file hashes, including nested files.
 
+Run-evidence collection executes in an isolated controller child with the
+remaining admitted tool wall budget. Blocking collection is stopped and reaped
+with bounded cleanup grace; timeout or cancellation retains an invalid terminal
+attempt and any partial files. The `run-collector` directory records the fixed
+invocation, output streams, process result and cleanup. A partial directory is
+never treated as completed collection. The journal audit checks these receipts
+and their artifact hashes, while independent containment and study admission
+still require their separate evidence.
+
 Successful paired simulation, complete aggregation and final session-evidence
 validation remain unfinished. Live child-process tests exercise both arms with explicit
 engineering fixtures and synthetic adapters; they do not authorize a coding-agent

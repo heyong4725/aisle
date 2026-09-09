@@ -532,6 +532,90 @@ def audit_tool_journal(
                 raise ValueError("tool journal and retained attempt disagree")
             collection = record.get("run_evidence")
             run_directory = output / directory / "run"
+            collection_files = set()
+            incomplete_collection = False
+            if record.get("collection_process") is not None:
+                if (
+                    record["collection_process"] != "run-collector/process.json"
+                    or operation != "run"
+                ):
+                    raise ValueError("invalid collection process reference")
+                receipt = decode(read(f"{directory}/run-collector/process.json"))
+                if (
+                    type(receipt) is not dict
+                    or receipt.get("schema_version") != "aisle.matched-collection-process.v1"
+                    or type(receipt.get("ok")) is not bool
+                    or type(receipt.get("wall_s")) not in (int, float)
+                    or not math.isfinite(receipt["wall_s"])
+                    or receipt["wall_s"] < 0
+                    or type(receipt.get("timeout_s")) not in (int, float)
+                    or not math.isfinite(receipt["timeout_s"])
+                    or receipt["timeout_s"] <= 0
+                    or (
+                        receipt.get("error") is not None
+                        and (type(receipt["error"]) is not str or not receipt["error"])
+                    )
+                ):
+                    raise ValueError("invalid collection process receipt")
+                collection_files = {
+                    "run-collector/" + name
+                    for name in ("process.json", "invocation.json", "stdout.log", "stderr.log")
+                    if "run-collector/" + name in record.get("artifacts", {})
+                }
+                required_collection = {"run-collector/process.json"}
+                process = receipt.get("process")
+                if process is not None:
+                    if (
+                        type(process) is not dict
+                        or type(process.get("rc")) is not int
+                        or type(process.get("timed_out")) is not bool
+                    ):
+                        raise ValueError("collection child lacks a terminal process record")
+                    required_collection.update(
+                        "run-collector/" + name
+                        for name in ("invocation.json", "stdout.log", "stderr.log")
+                    )
+                    invocation = decode(read(f"{directory}/run-collector/invocation.json"))
+                    from aisle.harness.matched_collection import _BOOTSTRAP
+
+                    command = invocation.get("argv") if type(invocation) is dict else None
+                    if (
+                        type(command) is not list
+                        or len(command) != 9
+                        or command[1:5] != ["-I", "-B", "-c", _BOOTSTRAP]
+                        or command[-1] != record["run_id"]
+                    ):
+                        raise ValueError("collection invocation differs from the run")
+                    if process["timed_out"] or receipt.get("cleanup") is not None:
+                        cleanup = receipt.get("cleanup")
+                        if (
+                            type(cleanup) is not dict
+                            or cleanup.get("ok") is not True
+                            or cleanup.get("remaining") != []
+                            or cleanup.get("errors") != []
+                        ):
+                            raise ValueError("collection process cleanup is unresolved")
+                if not required_collection.issubset(collection_files):
+                    raise ValueError("collection process artifacts are missing")
+                if collection is None:
+                    incomplete_collection = (
+                        receipt["ok"] is False
+                        and bool(receipt.get("error"))
+                        and record["classification"] == "infrastructure_exclusion"
+                        and record["ok"] is False
+                    )
+                    if not incomplete_collection:
+                        raise ValueError("collection receipt cannot explain missing evidence")
+                elif (
+                    type(collection) is not dict
+                    or receipt["ok"] is not collection.get("ok")
+                    or receipt.get("error") is not None
+                    or receipt["wall_s"] >= receipt["timeout_s"]
+                    or process is None
+                    or process["timed_out"]
+                    or process["rc"] != int(not collection["ok"])
+                ):
+                    raise ValueError("collection receipt differs from retained verdict")
             if collection is not None:
                 if (
                     operation != "run"
@@ -610,7 +694,9 @@ def audit_tool_journal(
                 if collection["ok"] or collection["guards"]["status"] == "retained":
                     if collection["guards"] != _retained_guard_evidence(run_directory / "raw"):
                         raise ValueError("guard summary differs from raw evidence")
-            elif run_directory.exists() or run_directory.is_symlink():
+            elif (
+                run_directory.exists() or run_directory.is_symlink()
+            ) and not incomplete_collection:
                 raise ValueError("retained run directory lacks a collection record")
             if not isinstance(record.get("artifacts"), dict):
                 raise ValueError("tool artifact index is invalid")
@@ -921,6 +1007,7 @@ def audit_tool_journal(
                     | preparation_files
                     | declaration_files
                     | provider_files
+                    | collection_files
                     | {"profile.sb"}
                 ):
                     raise ValueError("tool artifact name is undeclared")

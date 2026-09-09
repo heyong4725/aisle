@@ -126,3 +126,8 @@ CSE v9 supersedes v8 for the paired simulation session documentation. V8 remains
 unchanged. V9 preserves the seed commitment, collection rules and pending gates;
 the engineering tests do not establish complete session admission or authorize
 study collection.
+
+CSE v10 supersedes v9 for bounded run-evidence collection and binds the collector
+source. V9 remains unchanged. V10 preserves the seed commitment, collection rules
+and pending gates; timeout handling does not establish complete resource coverage
+or authorize study collection.

@@ -748,16 +748,20 @@ class ToolController:
                 if not isinstance(exc, Exception):
                     raise
             finally:
+                collection_interruption = None
                 # Collect after the child stops even when it timed out, crashed,
                 # or never emitted a parseable verdict. Pre-launch refusals must
                 # not adopt evidence from an existing run.
                 if source_run is not None and record["process"] is not None:
                     try:
-                        from aisle.harness.matched_evidence import retain_run
+                        from aisle.harness.matched_collection import retain_run_bounded
 
                         if source_run.exists() or source_run.is_symlink():
-                            collection = retain_run(
-                                source_run, output / "run", run_id=record["run_id"]
+                            collection = retain_run_bounded(
+                                source_run,
+                                output / "run",
+                                run_id=record["run_id"],
+                                timeout_s=wall - self.wall_spent - (self.clock() - started),
                             )
                             record["run_evidence"] = collection
                             if not collection["ok"]:
@@ -775,12 +779,31 @@ class ToolController:
                             raise AdmissionError(
                                 "successful development run has no retained run directory"
                             )
-                    except Exception as exc:
+                    except BaseException as exc:
                         record["classification"] = "infrastructure_exclusion"
                         record["ok"] = False
                         record["error"] = "; ".join(
-                            message for message in (record["error"], str(exc)) if message
+                            message
+                            for message in (record["error"], str(exc) or type(exc).__name__)
+                            if message
                         )
+                        if not isinstance(exc, Exception):
+                            collection_interruption = exc
+                    finally:
+                        collector = output / "run-collector"
+                        if (collector / "process.json").is_file():
+                            record["collection_process"] = "run-collector/process.json"
+                            for name in (
+                                "process.json",
+                                "invocation.json",
+                                "stdout.log",
+                                "stderr.log",
+                            ):
+                                path = collector / name
+                                if path.is_file() and not path.is_symlink():
+                                    record["artifacts"]["run-collector/" + name] = hashlib.sha256(
+                                        path.read_bytes()
+                                    ).hexdigest()
                 elapsed = self.clock() - started
                 self.wall_spent += elapsed
                 record["wall_s"] = elapsed
@@ -795,4 +818,6 @@ class ToolController:
                     json.dumps(record, indent=2, allow_nan=False) + "\n"
                 )
                 self._event({"event": "finished", "record": record})
+                if collection_interruption is not None:
+                    raise collection_interruption
             return record
