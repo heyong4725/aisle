@@ -190,6 +190,8 @@ def test_registered_run_uses_bound_parameters_and_preserves_real_refusal(tmp_pat
 def test_failed_run_retains_partial_files_before_finalizing(tmp_path, monkeypatch, failure):
     """MON-12/MON-13: real failing fixture processes retain partial run evidence.
 
+    CON-5: inject the wait outcome instead of racing a child sleep against
+    the tool deadline. The child is real, so cleanup must still stop and reap it.
     This substitutes a controlled subprocess for simulation, testing failure
     retention only; it is not successful simulation or confinement evidence.
     """
@@ -230,7 +232,7 @@ def test_failed_run_retains_partial_files_before_finalizing(tmp_path, monkeypatc
             start_new_session=True,
         )
         children.append(child)
-        if failure in {"wait_error", "cancelled"}:
+        if failure in {"timeout", "wait_error", "cancelled"}:
             real_wait = child.wait
             interrupted = False
 
@@ -238,6 +240,9 @@ def test_failed_run_retains_partial_files_before_finalizing(tmp_path, monkeypatc
                 nonlocal interrupted
                 if not interrupted:
                     interrupted = True
+                    assert child.poll() is None, "failure fixture must begin with a live child"
+                    if failure == "timeout":
+                        raise subprocess.TimeoutExpired(child.args, kwargs["timeout"])
                     if failure == "cancelled":
                         raise KeyboardInterrupt("fixture cancellation")
                     raise OSError("fixture wait failure")
