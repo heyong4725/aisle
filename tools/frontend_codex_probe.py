@@ -256,12 +256,14 @@ def _hook(output, mode):
     return shlex.join([str(Path(sys.executable).resolve()), str(hook)])
 
 
-def run_probe(binary, output, mode, *, allow_pty=False, mcp_fixture=False):
+def run_probe(binary, output, mode, *, allow_pty=False, mcp_fixture=False, code_mode=False):
     """Retain a bounded actual-CLI probe; never reuse an existing output directory."""
     if sys.platform != "darwin":
         raise ValueError("this probe requires the macOS outer sandbox")
     if mode not in MODES:
         raise ValueError("unknown probe mode")
+    if type(code_mode) is not bool:
+        raise ValueError("code_mode must be boolean")
     if type(allow_pty) is not bool:
         raise ValueError("PTY fixture selection must be a boolean")
     if type(mcp_fixture) is not bool:
@@ -304,6 +306,7 @@ def run_probe(binary, output, mode, *, allow_pty=False, mcp_fixture=False):
         "probe_sha256": _sha(__file__),
         "mode": mode,
         "pty_enabled": allow_pty,
+        "code_mode_enabled": code_mode,
         "mcp_enabled": mcp_fixture,
     }
     (output / Path(__file__).name).write_bytes(Path(__file__).read_bytes())
@@ -378,6 +381,8 @@ def run_probe(binary, output, mode, *, allow_pty=False, mcp_fixture=False):
                     ],
                 }
             )
+        if code_mode:
+            configuration["features.code_mode"] = True
         for key, value in configuration.items():
             args.extend(["-c", f"{key}={json.dumps(value)}"])
         if mode != "baseline":
@@ -476,6 +481,7 @@ def main():
     parser.add_argument(
         "--mcp-fixture", action="store_true", help="enable the fixed local MCP fixture server"
     )
+    parser.add_argument("--code-mode", action="store_true", help="enable Code Mode in the fixture")
     args = parser.parse_args()
     try:
         result = run_probe(
@@ -484,6 +490,7 @@ def main():
             args.mode,
             allow_pty=args.allow_pty,
             mcp_fixture=args.mcp_fixture,
+            code_mode=args.code_mode,
         )
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         result = {
