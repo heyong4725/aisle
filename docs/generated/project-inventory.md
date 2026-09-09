@@ -46,7 +46,7 @@ stayed outside it).
 | Graphs | 24 |
 | Capability manifests | 42 |
 | CLI command entries | 39 |
-| ADR files | 81 |
+| ADR files | 82 |
 
 ## Graphs
 
@@ -262,6 +262,7 @@ inference.
 | [docs/decisions/ADR-60.md](../decisions/ADR-60.md) | ADR-60 — Benchmark v1 is a versioned trust boundary | PROPOSED — owner review required under CON-14. Date: 2026-08-31. |
 | [docs/decisions/ADR-61.md](../decisions/ADR-61.md) | ADR-61 — The monolithic control surface is an in-process broker over the typed nodes' own primitives | PROPOSED — owner review required under CON-14 (SPEC 440 is itself |
 | [docs/decisions/ADR-62.md](../decisions/ADR-62.md) | ADR-62 — Matched session binding of representation documents and process inputs | PROPOSED — engineering interpretation for #519; no study admission. |
+| [docs/decisions/ADR-63.md](../decisions/ADR-63.md) | ADR-63: reserve covered frontend calls before delivery | PROPOSED — engineering interpretation for #536; no study admission. |
 | [docs/decisions/ADR-7.md](../decisions/ADR-7.md) | ADR-7: T05 bridge interpretations and measured performance (SPEC 030) | ACCEPTED |
 | [docs/decisions/ADR-8.md](../decisions/ADR-8.md) | ADR-8: T06 verifier/reset interpretations (SPEC 040) | ACCEPTED |
 | [docs/decisions/ADR-9.md](../decisions/ADR-9.md) | ADR-9: T07 budget-guard interpretations (SPEC 080) | ACCEPTED |
