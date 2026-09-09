@@ -46,3 +46,16 @@ AISLE_CODEX_PROBE_BINARY=/absolute/path/to/codex \
 These fixtures are engineering evidence, not live model/provider conformance or
 campaign outcomes. The test skips when the required platform or explicitly
 selected CLI is absent; such a skip supplies no acceptance evidence.
+
+`verify_dispatch_journal` checks immutable byte snapshots against a separately
+retained controller reference containing session, ceiling, attempt/reservation
+counts and the complete artifact digest map. Acquisition and authentication of
+that reference belong to the caller; participant-supplied matching hashes cannot
+establish identity. Replay checks exact artifact membership, normalized call
+identities, ceiling/replay decisions, frame digests and delivery transitions.
+Missing or contradictory records fail verification. A consistent uncertain
+terminal delivery remains explicitly uncertain even when the evidence audit is
+`ok`; this is not permission to continue the session. The caller supplies the
+verification byte limit and must also bound snapshot acquisition. This verifier
+does not yet connect a frontend call to the service/controller chain or authorize
+matched campaign admission.
