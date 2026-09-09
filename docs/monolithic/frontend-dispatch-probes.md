@@ -70,3 +70,40 @@ boundary that reserves budget before dispatch and prevents side effects when
 authorization fails. Every admitted route and both arm paths remain in scope;
 these fixtures do not close #536 or #519, authorize study collection, or replace
 independent reviewer/operator/private-evaluator gates.
+
+## Claude Bash hook probe
+
+`tools/frontend_claude_probe.py` exercises Claude Code `2.1.263` with a scripted
+localhost Messages endpoint. Select the binary explicitly and use a fresh output
+directory for each of `baseline`, `deny`, `timeout`, `exit1`, `malformed`, and
+`missing_command`:
+
+```bash
+uv run python tools/frontend_claude_probe.py \
+  --binary /absolute/path/to/claude \
+  --mode baseline \
+  --output /private/tmp/aisle-claude-baseline
+```
+
+The fixture sends only a fixed dummy API key; no live provider or model inference
+is involved. The `sonnet` alias in the request is an observed label, not proof of
+a served model. Fresh `CLAUDE_CONFIG_DIR`, temporary directories, empty external
+settings sources and an empty strict MCP configuration isolate the fixture's
+configuration. The built-in catalog remains available. Permissions are bypassed
+inside the same limited outer macOS fixture sandbox described above; `--bare`
+is not used because it skips hooks.
+
+Claude makes a preliminary request with no tools. That request receives a text
+response without consuming the single Bash instruction. The profile requires
+three provider requests, one matching `toolu_fixture` result, normal process
+completion and the expected marker or explicit denial. Denial additionally
+requires a matching retained hook input and no marker. Startup errors, timeouts,
+missing/mismatched results and other failed tool outcomes cannot count as denial.
+
+The report retains binary/version, invocation/environment, full advertised tool
+definitions, scripted responses, hook input, stdout/stderr and marker evidence.
+It binds and copies both the Claude fixture source and the shared Codex helper
+source used for hook generation and artifact writes. This is one Bash-route
+measurement, not a complete frontend profile. Its coverage and confinement flags
+remain false; the MCP identity and production authorization work in #536 remains
+separate.
