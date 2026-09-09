@@ -14,6 +14,7 @@ import json
 import os
 import shlex
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -87,6 +88,52 @@ def _write(path, value):
     with Path(path).open("x") as stream:
         json.dump(value, stream, indent=2, allow_nan=False)
         stream.write("\n")
+
+
+def _fixture_snapshot(output, required, absent):
+    """Hash selected regular inputs; explicit absence is part of the fixture."""
+    result = {}
+    for name in [*required, *absent]:
+        if not name or Path(name).name != name or name in {".", ".."} or name in result:
+            raise ValueError("fixture names must be unique direct children")
+        path = output / name
+        if name in absent:
+            if path.exists() or path.is_symlink():
+                raise ValueError(f"fixture must be absent: {name}")
+            result[name] = None
+            continue
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as stream:
+            metadata = os.fstat(stream.fileno())
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > LIMIT:
+                raise ValueError(f"fixture must be a bounded regular file: {name}")
+            data = stream.read(LIMIT + 1)
+            if len(data) > LIMIT:
+                raise ValueError(f"fixture exceeds size limit: {name}")
+            result[name] = hashlib.sha256(data).hexdigest()
+    return result
+
+
+def _fixture_errors(output, expected):
+    """Compare endpoints only; this cannot attest loaded code or transient drift."""
+    errors = []
+    for name, digest in expected.items():
+        try:
+            actual = _fixture_snapshot(output, [name] if digest else [], [] if digest else [name])
+            if actual[name] != digest:
+                errors.append(f"fixture changed: {name}")
+        except (OSError, ValueError) as exc:
+            errors.append(f"fixture invalid: {name}: {exc}")
+    return errors
+
+
+def _bind_fixture(output, mode, sources, extra=()):
+    required = ["invocation.json", "fixture.sb", *sources, *extra]
+    absent = ["no-such-command"]
+    (absent if mode in {"baseline", "missing_script"} else required).append("hook.py")
+    snapshot = _fixture_snapshot(output, required, absent)
+    _write(output / "fixture-preflight.json", snapshot)
+    return {**snapshot, "fixture-preflight.json": _sha(output / "fixture-preflight.json")}
 
 
 def _events(first):
@@ -248,6 +295,7 @@ def run_probe(binary, output, mode):
         "probe_sha256": _sha(__file__),
         "mode": mode,
     }
+    (output / Path(__file__).name).write_bytes(Path(__file__).read_bytes())
     requests, errors = [], []
     server = _server(requests, errors, output)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -312,6 +360,7 @@ def run_probe(binary, output, mode):
             output / "invocation.json",
             {"argv": args, "environment": env, "cwd": str(workspace), **identity},
         )
+        identity["fixture_files"] = _bind_fixture(output, mode, [Path(__file__).name])
         timed_out = False
         with (
             (output / "stdout.jsonl").open("xb") as stdout,
@@ -346,6 +395,7 @@ def run_probe(binary, output, mode):
         _write(output / "evidence.json", evidence)
         result = summarize_probe(evidence)
         result["errors"].extend(errors)
+        result["errors"].extend(_fixture_errors(output, identity["fixture_files"]))
         if _sha(binary) != identity["binary_sha256"]:
             result["errors"].append("frontend binary changed during probing")
         result["ok"] = result["ok"] and not result["errors"]

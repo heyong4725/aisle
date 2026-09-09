@@ -269,6 +269,9 @@ def run_probe(binary, output, mode):
             output / "invocation.json",
             {"argv": args, "environment": env, "cwd": str(output / "workspace"), **identity},
         )
+        identity["fixture_files"] = common._bind_fixture(
+            output, mode, [Path(__file__).name, Path(common.__file__).name], ["settings.json"]
+        )
         timed_out = False
         with (
             (output / "stdout.jsonl").open("xb") as stdout,
@@ -303,6 +306,7 @@ def run_probe(binary, output, mode):
         common._write(output / "evidence.json", evidence)
         result = summarize_probe(evidence)
         result["errors"].extend(errors)
+        result["errors"].extend(common._fixture_errors(output, identity["fixture_files"]))
         if common._sha(binary) != identity["binary_sha256"]:
             result["errors"].append("frontend binary changed during probing")
         result["ok"] = result["ok"] and not result["errors"]
