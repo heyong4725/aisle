@@ -303,9 +303,10 @@ must still match their hashes. The stamped graph carries the configuration path
 and hash only to the monolithic broker. That broker keeps the primitive objects
 and action validation in its process while executing authored code in the worker.
 
-The matched-session controller does not yet generate and admit these worker
-configurations. Real OS capability/resource checks and common-evidence integration
-remain required before this entry point can complete #519.
+The matched-session controller can provision these configurations from private
+worker-preparation declarations, as described below. This integration does not
+establish complete descendant-resource enforcement, frontend coverage, or the
+independent evidence required to complete #519.
 
 The admitted typed-check path accepts both `tool_runtime` and `typed_validation`
 in the admission request. `typed_validation` uses schema
@@ -357,9 +358,10 @@ operation, with no worker paths, profiles, seeds or gate overrides.
 
 These declarations must contain actual verified capability bindings. This input
 path does not generate arbitrary new worker profiles or independent study
-attestations. Supplying preparations enables the ordinary tool-service run path;
-dynamic declarations for edited typed graphs and complete successful-session
-coverage remain under implementation.
+attestations. Supplying preparations enables the ordinary tool-service run path. Provider
+templates below construct typed stages from the validated current-source snapshot
+and monolithic workers from the sealed current module. Complete successful-session
+coverage remains unverified.
 
 Worker runtime imports: each runtime tree root is also an explicit Python import
 root. Package collections must therefore place their importable packages directly
@@ -415,3 +417,15 @@ captured module hash and the complete indexed inventory of both dynamic provider
 and prepared-input directories. Added, missing or altered retained files are
 refused. Raw capability retention does not itself prove every observation's
 semantic validity or complete descendant resource enforcement.
+
+The opt-in `tests/graph/test_matched_session_simulation.py` exercises ordinary
+filesystem run requests through the session controller and dynamic worker
+provisioning to real Dora/Genesis episodes for both arms. Select it explicitly
+with `AISLE_MATCHED_SESSION_SIM=1` in a macOS simulation environment. It requires
+the normal protected-baseline, distribution, open-idea, and budget gates; these
+runs consume the ordinary run ledger and retain their outcomes. The frontend is
+a deterministic Python fixture, not a coding agent. Actual capability probes
+exercise the selected sandbox profiles, but the access log is deliberately
+incomplete. The test requires successful run evidence and an excluded outer
+session, with no eligibility for study estimates. It does not establish paired
+expert parity, full tool coverage, or external confinement.
