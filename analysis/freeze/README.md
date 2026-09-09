@@ -116,3 +116,8 @@ CSE v7 supersedes v6 for simulator render-call accounting and explicitly binds
 the trusted bridge source. V6 remains unchanged. V7 preserves its seed
 commitment, collection rules and pending gates; recorded camera work does not
 establish total simulator coverage or authorize study collection.
+
+CSE v8 supersedes v7 for internal physics-advance accounting, including the
+compilation advance within scene build. V7 remains unchanged. V8 preserves the
+seed commitment, collection rules and pending gates; operation-journal coverage
+does not establish complete simulator resources or authorize collection.

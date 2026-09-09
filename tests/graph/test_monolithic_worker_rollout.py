@@ -150,5 +150,8 @@ def test_monolithic_worker_rollout_retains_real_episode_and_worker_exit(tmp_path
     assert launch["attempted"]["build"] == 1
     assert launch["completed"]["reset"] >= 1
     assert launch["completed"]["step"] > 0
+    assert launch["schema_version"] == "aisle.simulator-work-journal.v3"
+    assert launch["completed"]["physics_step"] >= launch["completed"]["step"] + 1
+    assert launch["completed_env_steps"] == launch["completed"]["physics_step"]
     assert summary["completed_env_sim_ns"] > 0
     assert summary["producer_coverage_complete"] is False
