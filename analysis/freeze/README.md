@@ -131,3 +131,10 @@ CSE v10 supersedes v9 for bounded run-evidence collection and binds the collecto
 source. V9 remains unchanged. V10 preserves the seed commitment, collection rules
 and pending gates; timeout handling does not establish complete resource coverage
 or authorize study collection.
+
+CSE v11 supersedes v10 for the v4 Unix-socket capability matrix in the
+controller audit and actual Python-only worker profiles (#350). It preserves
+the inherited seed commitment, collection rules and all seven pending gates.
+The additional socket controls are synthetic engineering evidence; the
+registration does not authorize scored collection or attest complete IPC or
+independent confinement.

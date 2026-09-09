@@ -10,11 +10,14 @@ import errno
 import hashlib
 import json
 import os
+import secrets
 import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
+from contextlib import ExitStack
 from pathlib import Path
 
 from aisle.harness.treatment_ambient import spawn_isolated_process, verify_declared_environment
@@ -24,10 +27,10 @@ from aisle.harness.typed_snapshot import _read
 _CODE = """
 import json, socket, sys
 print(json.dumps({"phase": "ready"}), flush=True)
-connection = socket.socket()
+connection = socket.socket(socket.AF_UNIX if sys.argv[3] == "unix" else socket.AF_INET)
 connection.settimeout(2)
 try:
-    connection.connect(("127.0.0.1", int(sys.argv[1])))
+    connection.connect(sys.argv[1] if sys.argv[3] == "unix" else ("127.0.0.1", int(sys.argv[1])))
 except OSError as exc:
     print(json.dumps({"phase": "connect", "errno": exc.errno}), flush=True)
     raise SystemExit(3)
@@ -138,9 +141,20 @@ def _capture(command, cwd, environment, environment_record, output):
 
 
 def probe_worker_network(
-    *, policy, profile_path, python, environment, environment_record, cwd, output, sentinel
+    *,
+    policy,
+    profile_path,
+    python,
+    environment,
+    environment_record,
+    cwd,
+    output,
+    sentinel,
+    transport="tcp",
 ):
     """Run positive and confined controls against one local controller-owned socket."""
+    if transport not in {"tcp", "unix"}:
+        raise ValueError("unsupported worker socket transport")
     if sys.platform != "darwin":
         raise ValueError("worker network capability requires actual macOS sandbox-exec")
     if type(sentinel) is not bytes or not 1 <= len(sentinel) <= 64:
@@ -171,7 +185,10 @@ def probe_worker_network(
     }
     output.mkdir(parents=True, exist_ok=False)
     report = {
-        "schema_version": "aisle.worker-network-probe.v1",
+        "schema_version": "aisle.worker-network-probe.v2"
+        if transport == "unix"
+        else "aisle.worker-network-probe.v1",
+        "transport": transport,
         "ok": False,
         "confirmatory_ready": False,
         "policy_id": compiled.policy_id,
@@ -181,8 +198,27 @@ def probe_worker_network(
         "error": None,
     }
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
-            listener.bind(("127.0.0.1", 0))
+        with ExitStack() as resources:
+            listener = resources.enter_context(
+                socket.socket(
+                    socket.AF_UNIX if transport == "unix" else socket.AF_INET, socket.SOCK_STREAM
+                )
+            )
+            if transport == "unix":
+                # A short controller-owned alias avoids macOS sockaddr_un limits;
+                # the socket itself lives in the existing visible worker directory.
+                alias = Path(
+                    resources.enter_context(
+                        tempfile.TemporaryDirectory(prefix="aisle-ipc-", dir="/private/tmp")
+                    )
+                )
+                (alias / "view").symlink_to(cwd, target_is_directory=True)
+                endpoint = "aisle-unix-" + secrets.token_hex(8) + ".sock"
+                listener.bind(str(alias / "view" / endpoint))
+                resources.callback((cwd / endpoint).unlink, missing_ok=True)
+            else:
+                listener.bind(("127.0.0.1", 0))
+                endpoint = str(listener.getsockname()[1])
             listener.listen()
             listener.settimeout(0.1)
             stopped = threading.Event()
@@ -209,22 +245,41 @@ def probe_worker_network(
                 "-B",
                 "-c",
                 _CODE,
-                str(listener.getsockname()[1]),
+                endpoint,
                 str(len(sentinel)),
+                transport,
             ]
             try:
-                for confined in (False, True):
+                captures = [("baseline", None, False), ("confined", profile_path, True)]
+                if transport == "unix":
+                    control = output / "unix-network-control.sb"
+                    control.write_text(
+                        profile_path.read_text()
+                        + "\n(allow network* (local unix-socket) (remote unix-socket))\n"
+                    )
+                    identities[str(control)] = hashlib.sha256(control.read_bytes()).hexdigest()
+                    captures.append(("network-control", control, False))
+                for capture, selected_profile, confined in captures:
                     argv = (
-                        [str(SANDBOX_EXEC), "-f", str(profile_path)] if confined else []
+                        [str(SANDBOX_EXEC), "-f", str(selected_profile)]
+                        if selected_profile is not None
+                        else []
                     ) + command
                     result = _capture(
                         argv,
                         cwd,
                         environment,
                         environment_record,
-                        output / ("confined" if confined else "baseline"),
+                        output / capture,
                     )
-                    report["cases"].append(connection_case(result, sentinel, confined=confined))
+                    case = connection_case(result, sentinel, confined=confined)
+                    if transport == "unix":
+                        case["id"] = {
+                            "baseline": "unrestricted_unix_socket_baseline",
+                            "confined": "unix_socket_read",
+                            "network-control": "unix_socket_network_control",
+                        }[capture]
+                    report["cases"].append(case)
             finally:
                 stopped.set()
                 server.join(timeout=2)
@@ -235,7 +290,9 @@ def probe_worker_network(
         for path, digest in identities.items():
             if hashlib.sha256(Path(path).read_bytes()).hexdigest() != digest:
                 raise ValueError("worker probe identity changed during execution")
-        report["ok"] = len(report["cases"]) == 2 and all(row["passed"] for row in report["cases"])
+        report["ok"] = len(report["cases"]) == (3 if transport == "unix" else 2) and all(
+            row["passed"] for row in report["cases"]
+        )
     except BaseException as exc:
         report["error"] = str(exc) or type(exc).__name__
         if not isinstance(exc, Exception):

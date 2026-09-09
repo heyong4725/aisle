@@ -81,7 +81,7 @@ def audit_worker_capability(
         "error": None,
         "limitations": [
             "Unscored synthetic fixtures; no study or participant parity evidence",
-            "Loose Git blobs, selected filesystem routes, TCP and one executable",
+            "Loose Git blobs, selected filesystem routes, TCP/Unix sockets and one executable",
             "No exhaustive IPC, descendant-resource or runtime closure proof",
         ],
         "adapter": {
@@ -236,20 +236,28 @@ def audit_worker_capability(
                     name, operation, target, sentinel, confined=False, allowed=True, control=True
                 )
             observe(name, operation, target, sentinel, confined=confined, allowed=allowed)
-        network = probe_worker_network(
-            policy=policy,
-            profile_path=profile_path,
-            python=python,
-            environment=environment,
-            environment_record=environment_record,
-            cwd=visible,
-            output=output / "network",
-            sentinel=secrets.token_bytes(32),
-        )
-        for case, capture in zip(network["cases"], ("baseline", "confined"), strict=False):
-            report["cases"].append({**case, "capture": f"network/{capture}"})
-        if not network["ok"]:
-            raise RuntimeError("worker network capability failed")
+        for transport in ("tcp", "unix"):
+            directory = "network" if transport == "tcp" else "unix-network"
+            network = probe_worker_network(
+                policy=policy,
+                profile_path=profile_path,
+                python=python,
+                environment=environment,
+                environment_record=environment_record,
+                cwd=visible,
+                output=output / directory,
+                sentinel=secrets.token_bytes(32),
+                transport=transport,
+            )
+            captures = (
+                ("baseline", "confined")
+                if transport == "tcp"
+                else ("baseline", "confined", "network-control")
+            )
+            for case, capture in zip(network["cases"], captures, strict=False):
+                report["cases"].append({**case, "capture": f"{directory}/{capture}"})
+            if not network["ok"]:
+                raise RuntimeError(f"worker {transport} network capability failed")
         for name, digest in identities.items():
             path = Path(name)
             if hashlib.sha256(_read(path.parent, path.name)).hexdigest() != digest:

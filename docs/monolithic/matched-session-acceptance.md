@@ -175,11 +175,15 @@ or confined execution path.
   with deterministic frontend processes. They do not establish external coding-
   agent event completeness or participant parity.
 
-The capability producer checks 18 required cases against the supplied Python-only
-profile, with unrestricted controls for denied operations. It retains filesystem,
-Git-object, executable and loopback observations, checks identities and write
-effects, and cleans up only its owned fixtures. These tests do not exhaust every
-IPC/process route or establish independent study confinement.
+The v4 capability producer checks 21 required cases against the supplied
+Python-only profile, with unrestricted controls for denied operations. It retains
+filesystem, Git-object, executable, TCP and Unix-socket observations, checks
+identities and write effects, and cleans up only its owned fixtures. The Unix
+socket also has a control using the same profile plus Unix-network permission;
+its captures and distinct profile are retained separately. The worker executable
+grant remains Python-only. These tests do not exhaust every IPC/process route or
+establish independent study confinement. Earlier v3 records remain historical
+18-case observations and cannot authorize a v4 launch.
 
 ## Actual frontend integration evidence
 
