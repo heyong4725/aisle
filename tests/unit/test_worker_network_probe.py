@@ -185,3 +185,35 @@ def test_python_only_profile_blocks_connection_after_probe_starts(tmp_path):
     assert report["cases"][1]["network_attempted"]
     assert report["cases"][1]["passed"]
     assert (tmp_path / "private/network-probe/confined/stdout.jsonl").exists()
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="actual sandbox-exec probe is macOS-only")
+def test_python_only_profile_blocks_unix_socket_with_matching_control(tmp_path):
+    """TRT-5/TRT-6/TRT-7: worker socket denial preserves its Python-only authority."""
+    from aisle.harness.worker_network_probe import probe_worker_network
+
+    inputs = _launch_inputs(tmp_path, direct_python=True)
+    profile_before = inputs["profile_path"].read_bytes()
+    report = probe_worker_network(
+        policy=inputs["policy"],
+        profile_path=inputs["profile_path"],
+        python=inputs["python"],
+        environment=inputs["environment"],
+        environment_record=inputs["environment_record"],
+        cwd=inputs["bundle"],
+        output=tmp_path / "private/unix-probe",
+        sentinel=b"worker-unix-control",
+        transport="unix",
+    )
+    assert report["ok"], report
+    cases = {row["id"]: row for row in report["cases"]}
+    for name in ("unrestricted_unix_socket_baseline", "unix_socket_network_control"):
+        assert cases[name]["sentinel_exposed"] and cases[name]["passed"]
+    assert cases["unix_socket_read"]["network_attempted"]
+    assert cases["unix_socket_read"]["denied"] and cases["unix_socket_read"]["passed"]
+    assert not cases["unix_socket_read"]["sentinel_exposed"]
+    assert inputs["profile_path"].read_bytes() == profile_before
+    assert report["confirmatory_ready"] is False
+    assert not list(inputs["bundle"].glob("aisle-unix-*.sock"))
+    for capture in ("baseline", "confined", "network-control"):
+        assert (tmp_path / "private/unix-probe" / capture / "process.json").exists()

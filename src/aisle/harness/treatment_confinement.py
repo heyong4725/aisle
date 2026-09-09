@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = "aisle.macos-confinement-capability.v3"
+SCHEMA_VERSION = "aisle.macos-confinement-capability.v4"
 EVIDENCE_CLASS = "synthetic_unscored_capability"
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 SYSTEM_PROFILE = Path("/System/Library/Sandbox/Profiles/system.sb")
@@ -46,6 +46,9 @@ _REQUIRED_CASE_IDS = {
     "visible_read",
     "unrestricted_tcp_baseline",
     "tcp_read",
+    "unrestricted_unix_socket_baseline",
+    "unix_socket_network_control",
+    "unix_socket_read",
     "unrestricted_exec_baseline",
     "unlisted_executable",
 }
@@ -372,6 +375,56 @@ def _socket_capability_cases(profile_path: Path, cwd: Path, sentinel: bytes) -> 
         ]
 
 
+def _unix_socket_capability_cases(profile_path: Path, cwd: Path, sentinel: bytes) -> list[dict]:
+    """Distinguish local socket denial from executable or filesystem failure."""
+    endpoint = cwd / "fixture.sock"
+    control_path = profile_path.with_name("unix-network-control.sb")
+    control_text = profile_path.read_text() + (
+        "\n(allow network* (local unix-socket) (remote unix-socket))\n"
+    )
+    control_path.write_text(control_text)
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+        listener.bind(str(endpoint))
+        listener.listen()
+        listener.settimeout(0.1)
+        stopped = threading.Event()
+
+        def serve():
+            while not stopped.is_set():
+                try:
+                    connection, _ = listener.accept()
+                except TimeoutError:
+                    continue
+                with connection:
+                    connection.settimeout(1)
+                    connection.sendall(sentinel)
+
+        server = threading.Thread(target=serve, daemon=True)
+        server.start()
+        command = ["/usr/bin/nc", "-w", "2", "-U", str(endpoint)]
+        try:
+            baseline = _run(command, cwd=cwd)
+            confined = _run(_wrapped(profile_path, command), cwd=cwd)
+            control = _run(_wrapped(control_path, command), cwd=cwd)
+        finally:
+            stopped.set()
+            server.join(timeout=2)
+        control_case = _case_result(
+            "unix_socket_network_control", control, sentinel, expected="baseline-exposure"
+        )
+        control_case["compiled_profile_sha256"] = _sha256_bytes(control_text.encode())
+        return [
+            _case_result(
+                "unrestricted_unix_socket_baseline",
+                baseline,
+                sentinel,
+                expected="baseline-exposure",
+            ),
+            _case_result("unix_socket_read", confined, sentinel, expected="deny"),
+            control_case,
+        ]
+
+
 def run_macos_capability_audit() -> dict[str, Any]:
     """Run the synthetic deny/allow matrix through the external adapter."""
     if sys.platform != "darwin":
@@ -383,7 +436,10 @@ def run_macos_capability_audit() -> dict[str, Any]:
     if not SYSTEM_PROFILE.is_file():
         raise ConfinementError(f"required imported profile is unavailable: {SYSTEM_PROFILE}")
 
-    with tempfile.TemporaryDirectory(prefix="aisle-confinement-capability-") as temporary:
+    # Keep the Unix socket pathname below macOS sockaddr_un.sun_path limits.
+    with tempfile.TemporaryDirectory(
+        prefix="aisle-confinement-capability-", dir="/private/tmp"
+    ) as temporary:
         root = Path(temporary).resolve()
         visible = root / "visible"
         output = root / "output"
@@ -453,6 +509,7 @@ def run_macos_capability_audit() -> dict[str, Any]:
             allowed_executables=(
                 Path("/bin/bash").resolve(),
                 Path("/bin/cat").resolve(),
+                Path("/usr/bin/nc").resolve(),
                 git,
             ),
             hidden_roots=(hidden,),
@@ -654,6 +711,7 @@ def run_macos_capability_audit() -> dict[str, Any]:
         )
 
         cases.extend(_socket_capability_cases(profile_path, visible, hidden_sentinel))
+        cases.extend(_unix_socket_capability_cases(profile_path, visible, hidden_sentinel))
         executable_command = ["/usr/bin/printf", "%s", hidden_sentinel.decode()]
         cases.append(
             _case_result(
@@ -694,8 +752,10 @@ def run_macos_capability_audit() -> dict[str, Any]:
             "evidence_class": EVIDENCE_CLASS,
             "limitations": [
                 "macOS-only capability; no Linux adapter evaluated",
-                "synthetic filesystem and loopback TCP sentinels; no benchmark fault identities",
-                "TCP read and one unlisted executable tested; not exhaustive IPC/process coverage",
+                "synthetic filesystem, TCP and Unix socket sentinels; "
+                "no benchmark fault identities",
+                "TCP/Unix socket reads and one unlisted executable tested; "
+                "not exhaustive IPC/process coverage",
                 "no vendor network or credential path evaluated",
                 "no Claude/Codex end-to-end parity evaluated",
                 "Git surfaces cover the system Git CLI only, not every future allowed tool",
