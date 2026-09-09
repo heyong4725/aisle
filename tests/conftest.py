@@ -262,7 +262,8 @@ class DataflowRun:
 def run_dataflow(graph: Path, timeout_s: float) -> DataflowRun:
     """Run the dataflow; the bridge never exits on its own, so a timeout
     kill of the whole process group is the NORMAL end of a capture run.
-    Output collected up to the kill is preserved either way."""
+    Output collected up to the kill is preserved either way. Capture exceptions
+    stop the owned process and retain a cleanup report before being re-raised."""
     proc = subprocess.Popen(
         ["dora", "run", str(graph), "--uv"],
         cwd=REPO_ROOT,
@@ -271,19 +272,46 @@ def run_dataflow(graph: Path, timeout_s: float) -> DataflowRun:
         text=True,
         start_new_session=True,
     )
+    capture_error = None
     try:
-        stdout, stderr = proc.communicate(timeout=timeout_s)
-        _reap_orphan_nodes(graph.parent)
-        return DataflowRun(False, proc.returncode, stdout, stderr)
-    except subprocess.TimeoutExpired:
-        os.killpg(proc.pid, signal.SIGTERM)
         try:
-            stdout, stderr = proc.communicate(timeout=15)
+            stdout, stderr = proc.communicate(timeout=timeout_s)
+            return DataflowRun(False, proc.returncode, stdout, stderr)
         except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
-            stdout, stderr = proc.communicate()
-        _reap_orphan_nodes(graph.parent)
-        return DataflowRun(True, proc.returncode, stdout or "", stderr or "")
+            os.killpg(proc.pid, signal.SIGTERM)
+            try:
+                stdout, stderr = proc.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+                stdout, stderr = proc.communicate()
+            return DataflowRun(True, proc.returncode, stdout or "", stderr or "")
+    except BaseException as exc:
+        capture_error = exc
+        try:
+            from aisle.harness.matched_run_launch import _terminate_owned_run
+
+            cleanup = _terminate_owned_run(proc)
+            with (graph.parent / "capture-cleanup.json").open("x") as stream:
+                json.dump(cleanup, stream, indent=2, allow_nan=False)
+            if not cleanup["ok"]:
+                exc.add_note(f"capture process cleanup unresolved: {cleanup['errors']}")
+        except Exception as cleanup_error:
+            exc.add_note(f"capture cleanup failed: {cleanup_error}")
+        finally:
+            for stream in (proc.stdout, proc.stderr):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except Exception as cleanup_error:
+                        exc.add_note(f"capture stream cleanup failed: {cleanup_error}")
+        raise
+    finally:
+        try:
+            _reap_orphan_nodes(graph.parent)
+        except Exception as cleanup_error:
+            if capture_error is None:
+                raise
+            capture_error.add_note(f"run-scoped node cleanup failed: {cleanup_error}")
 
 
 def run_dataflow_until_settled(graph: Path, record_out: Path, deadline_s: float) -> None:
