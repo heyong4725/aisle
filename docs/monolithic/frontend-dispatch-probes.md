@@ -122,3 +122,18 @@ source used for hook generation and artifact writes. This is one Bash-route
 measurement, not a complete frontend profile. Its coverage and confinement flags
 remain false; the MCP identity and production authorization work in #536 remains
 separate.
+
+The continued-input acceptance fixture starts a bounded input-reading process
+through `exec_command`, extracts its actual session ID, and sends `write_stdin`
+as a separately reserved call. The authorized case must retain the delivered
+text; the exhausted-budget case must retain refusal without that side effect.
+Both cases replay the dispatch journal and keep coverage and confinement false.
+Run `tests/accept/test_frontend_continued_input.py` with
+`AISLE_CODEX_PROBE_BINARY` set to the selected binary. This uses a scripted local
+provider and does not consume provider credentials.
+
+The Codex fixture's explicit `allow_pty=True` API option (`--allow-pty` on the CLI)
+allows writes to `/dev/ptmx` and numbered `/dev/ttys` devices so the input route
+can execute. The option is recorded in the invocation and the resulting policy
+is included in the fixture snapshot. It defaults to false. These device grants
+are engineering fixture configuration, not a campaign confinement attestation.
