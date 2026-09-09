@@ -123,6 +123,21 @@ measurement, not a complete frontend profile. Its coverage and confinement flags
 remain false; the MCP identity and production authorization work in #536 remains
 separate.
 
+`tests/accept/test_frontend_claude_reservations.py` exercises two Bash calls
+through the actual Claude CLI with `AISLE_CLAUDE_PROBE_BINARY` set explicitly.
+A controller-owned dispatch journal outside the frontend's writable directory
+reserves each scripted provider delivery before the call becomes available.
+The baseline must write both markers; an exhausted budget or failed reservation
+write must refuse the second delivery after the first call has succeeded.
+Conversation history repeats earlier results, so the test checks identities in
+the final request instead of summing overlapping history. A reservation write
+failure must leave the journal audit invalid even when the second side effect
+was prevented. The cases bind fixture inputs and the binary, retain provider
+requests and delivered responses, and replay the journal. They establish this
+two-call engineering behavior only: nested/hosted routes, complete campaign
+coverage, authenticated controller linkage, and external confinement remain
+unverified. Coverage and confinement flags stay false.
+
 The continued-input acceptance fixture starts a bounded input-reading process
 through `exec_command`, extracts its actual session ID, and sends `write_stdin`
 as a separately reserved call. The authorized case must retain the delivered
