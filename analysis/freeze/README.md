@@ -121,3 +121,8 @@ CSE v8 supersedes v7 for internal physics-advance accounting, including the
 compilation advance within scene build. V7 remains unchanged. V8 preserves the
 seed commitment, collection rules and pending gates; operation-journal coverage
 does not establish complete simulator resources or authorize collection.
+
+CSE v9 supersedes v8 for the paired simulation session documentation. V8 remains
+unchanged. V9 preserves the seed commitment, collection rules and pending gates;
+the engineering tests do not establish complete session admission or authorize
+study collection.
