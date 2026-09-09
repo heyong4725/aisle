@@ -43,12 +43,14 @@ def test_real_bridge_records_render_work_after_reset(tmp_path, dataflow):
     assert any(row["id"] == "rgb_overhead" for row in records)
     assert any(row["id"] == "rgb_wrist" for row in records)
     report = summarize_work(journal, run_id="render-integration", launch=0)
-    assert report["schema_version"] == "aisle.simulator-work-journal.v2"
+    assert report["schema_version"] == "aisle.simulator-work-journal.v3"
     assert report["completed"]["build"] == 1
     assert report["completed"]["reset"] >= 1
     assert report["completed"]["render"] > 0
     assert report["completed"]["step"] > 0
     assert report["operation_wall_ns"]["render"] > 0
-    assert report["completed_env_steps"] == report["completed"]["step"]
+    assert report["completed_env_steps"] == report["completed"]["physics_step"]
+    assert report["completed"]["physics_step"] >= report["completed"]["step"] + 1
+    assert len(report["physics_source_sha256"]) == 64
     # The fixture intentionally stops the live bridge after capture, so its
     # retained prefix proves completed calls, not complete producer coverage.

@@ -692,14 +692,17 @@ def main(
 ) -> None:
     """The clock is injected (CON-5): reset timing must never reach for a
     wall clock ad hoc."""
+    from contextlib import ExitStack
+
     import genesis
     import pyarrow as pa
     from dora import Node
 
-    from aisle.harness.simulator_work import work_context
+    from aisle.harness.simulator_work import observe_physics, work_context
     from aisle.mobility.base import base_scan_ranges, integrate_base_pose
     from aisle.scenes.pharmacy import (
         SceneCfg,
+        _ensure_genesis,
         build_scene,
         desk_scan_obstacles,
         load_physics,
@@ -719,7 +722,29 @@ def main(
     profile = physics["embodiment"][cfg.embodiment]
     dt = physics["sim"]["dt"]
 
-    with work_context(os.environ, dt_ns=int(dt * 1e9), n_envs=cfg.n_envs, clock=work_clock) as work:
+    with (
+        work_context(
+            os.environ,
+            dt_ns=int(dt * 1e9),
+            n_envs=cfg.n_envs,
+            clock=work_clock,
+            physics_source_path=Path(genesis.__file__).parent / "engine/simulator.py"
+            if "AISLE_SIM_WORK_PATH" in os.environ
+            else None,
+        ) as work,
+        ExitStack() as physics_observer,
+    ):
+
+        def observed_build(builder, **kwargs):
+            if "AISLE_SIM_WORK_PATH" in os.environ:
+                _ensure_genesis(cfg.sim_backend)
+                from genesis.engine.simulator import Simulator
+
+                physics_observer.enter_context(
+                    observe_physics(Simulator, work, dt_ns=int(dt * 1e9), n_envs=cfg.n_envs)
+                )
+            return builder(**kwargs)
+
         # T15 (ADR-18): the store scene swaps in behind the same topic contract
         # — entities/oracle/reset/scan come from the scene adapter below; the
         # pharmacy path is byte-for-byte unchanged.
@@ -736,6 +761,7 @@ def main(
 
             handle = work.call(
                 "build",
+                observed_build,
                 build_store,
                 seed=cfg.seed,
                 scenario=cfg.scenario,
@@ -746,6 +772,7 @@ def main(
         else:
             handle = work.call(
                 "build",
+                observed_build,
                 build_scene,
                 seed=cfg.seed,
                 embodiment=cfg.embodiment,

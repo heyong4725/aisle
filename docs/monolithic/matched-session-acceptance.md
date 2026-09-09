@@ -401,3 +401,28 @@ and simulation nanoseconds summed over re-audited run journals, with run and att
 provenance. Missing runs and interrupted journals prevent an exact recorded-step
 claim; no observations produce null quantities. This partial aggregate does not
 change the unclaimed total simulator-work field or session completeness.
+
+### Internal physics-advance accounting
+
+Journal v3 distinguishes public scene `step` calls from internal `physics_step`
+invocations. The bridge installs observation after Genesis initialization and
+before scene construction, inside the recorded build operation. This includes
+Genesis's compilation advance even when the surrounding build later fails.
+A public call that returns without advancing physics contributes no v3
+physical-step count. Completed internal calls contribute `n_envs` environment
+steps and `n_envs * dt_ns` simulation nanoseconds; failed or interrupted internal
+calls leave partial work unresolved. Internal calls can nest under outer
+build/reset/step/render operations and retain their parent sequence. Durations
+are inclusive per-kind call timings: adding child physics time to parent build
+or step time double-counts that interval. V1/v2 retain their original public-call
+counting and replay shape; their histories are not upgraded to v3 observations.
+
+The header records the simulator module-file SHA-256, checked against the loaded
+class's source path when observation begins. This is a source-file binding, not
+an attestation of all loaded code or native dependencies. The observer checks
+producer class, environment count, timestep and thread before invoking physics,
+and rejects overlapping observers or changed observation methods. It covers
+calls reaching that class method in the trusted process; previously captured
+methods, other processes and other simulator producers still require separate
+coverage evidence. Journal completion therefore does not establish total
+simulator resource work, exhaustive producer coverage or session completeness.
