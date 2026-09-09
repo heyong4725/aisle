@@ -173,3 +173,24 @@ linkage, or complete tool coverage. A successful denial is insufficient when
 malformed responses allow execution. Complete coverage and confinement remain
 false; verifying the required nested surface through a control path that refuses
 execution on authorization failures remains part of #536.
+
+
+### Native file editing and model-dependent catalogs
+
+`tests/accept/test_frontend_native_edit.py` retains four actual-CLI cases. The
+synthetic `aisle-fixture` model label does not advertise `apply_patch`; a scripted
+call receives an explicit unsupported-tool reply without a write. The fixture's
+`native_edit=True` option (`--native-edit`) selects the `gpt-5.4` label, which
+advertises and executes the native edit on the tested binary. This remains a
+scripted localhost provider with no model inference; the requested label does
+not attest a served model or the study model profile.
+
+This option selects the `apply_patch` hook matcher and is bound in the retained
+invocation and source snapshot. The ordinary CLI still sends its shell command;
+the acceptance fixture supplies the native-edit frames. A valid hook denial prevents the file write;
+malformed hook output permits it. Each case retains one outer dispatch
+reservation, a matching custom-tool response, and the actual file outcome.
+Successful journal replay does not authenticate the controller linkage or
+establish complete coverage. Both coverage and confinement remain false. An
+unavailable route in the fallback catalog does not justify removing native
+editing from the required treatment surface.

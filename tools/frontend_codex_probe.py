@@ -256,12 +256,16 @@ def _hook(output, mode):
     return shlex.join([str(Path(sys.executable).resolve()), str(hook)])
 
 
-def run_probe(binary, output, mode, *, allow_pty=False, mcp_fixture=False, code_mode=False):
+def run_probe(
+    binary, output, mode, *, allow_pty=False, mcp_fixture=False, code_mode=False, native_edit=False
+):
     """Retain a bounded actual-CLI probe; never reuse an existing output directory."""
     if sys.platform != "darwin":
         raise ValueError("this probe requires the macOS outer sandbox")
     if mode not in MODES:
         raise ValueError("unknown probe mode")
+    if type(native_edit) is not bool:
+        raise ValueError("native_edit must be boolean")
     if type(code_mode) is not bool:
         raise ValueError("code_mode must be boolean")
     if type(allow_pty) is not bool:
@@ -307,6 +311,7 @@ def run_probe(binary, output, mode, *, allow_pty=False, mcp_fixture=False, code_
         "mode": mode,
         "pty_enabled": allow_pty,
         "code_mode_enabled": code_mode,
+        "native_edit_enabled": native_edit,
         "mcp_enabled": mcp_fixture,
     }
     (output / Path(__file__).name).write_bytes(Path(__file__).read_bytes())
@@ -340,7 +345,7 @@ def run_probe(binary, output, mode, *, allow_pty=False, mcp_fixture=False, code_
             "-s",
             "danger-full-access",
             "-m",
-            "aisle-fixture",
+            "gpt-5.4" if native_edit else "aisle-fixture",
         ]
         configuration = {
             "sqlite_home": str(output / "state"),
@@ -387,13 +392,16 @@ def run_probe(binary, output, mode, *, allow_pty=False, mcp_fixture=False, code_
             args.extend(["-c", f"{key}={json.dumps(value)}"])
         if mode != "baseline":
             hook = _hook(output, mode)
+            matcher = "apply_patch" if native_edit else "Bash"
             args.extend(
                 [
                     "--dangerously-bypass-hook-trust",
                     "-c",
                     "features.hooks=true",
                     "-c",
-                    'hooks.PreToolUse=[{matcher="Bash",hooks=[{type="command",timeout=1,command='
+                    "hooks.PreToolUse=[{matcher="
+                    + json.dumps(matcher)
+                    + ',hooks=[{type="command",timeout=1,command='
                     + json.dumps(hook)
                     + "}]}]",
                 ]
@@ -482,6 +490,11 @@ def main():
         "--mcp-fixture", action="store_true", help="enable the fixed local MCP fixture server"
     )
     parser.add_argument("--code-mode", action="store_true", help="enable Code Mode in the fixture")
+    parser.add_argument(
+        "--native-edit",
+        action="store_true",
+        help="select the native-edit model label and hook matcher for the fixture",
+    )
     args = parser.parse_args()
     try:
         result = run_probe(
@@ -491,6 +504,7 @@ def main():
             allow_pty=args.allow_pty,
             mcp_fixture=args.mcp_fixture,
             code_mode=args.code_mode,
+            native_edit=args.native_edit,
         )
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         result = {
