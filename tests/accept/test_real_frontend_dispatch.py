@@ -1,6 +1,7 @@
 """MON-8/MON-12/MON-13: actual CLI calls cannot pass a refused delivery reservation."""
 
 import gzip
+import hashlib
 import json
 import os
 import sys
@@ -156,3 +157,20 @@ def test_actual_cli_cannot_execute_second_call_without_retained_authorization(
             json.loads((authority / "00000002-reservation.json").read_text())["decision"]
             == "refused"
         )
+
+    from aisle.harness.frontend_dispatch_audit import verify_dispatch_journal
+
+    artifacts = {path.name: path.read_bytes() for path in authority.iterdir()}
+    reference = {
+        "session_id": "session",
+        "ceiling": 1 if failure == "ceiling" else 2,
+        "attempts": 2,
+        "reserved": 1 if failure == "ceiling" else 2,
+        "artifacts": {name: hashlib.sha256(data).hexdigest() for name, data in artifacts.items()},
+    }
+    audit = verify_dispatch_journal(artifacts, expected=reference, byte_limit=65536)
+    # Failed retention leaves incomplete evidence even though excess execution
+    # was prevented; do not turn absence of a marker into a passing audit.
+    assert audit["ok"] is (failure != "retention"), audit
+    assert audit["complete_coverage"] is False
+    assert audit["confinement_verified"] is False
