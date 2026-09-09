@@ -111,6 +111,17 @@ boundaries and the controller's expected launch inventory are connected and
 verified, these receipts cannot populate total session simulator work or satisfy
 CSE-4's protocol-level units and aggregation gate.
 
+Journal v2 additionally records each camera render invocation as `render`, with
+the same start/completion/failure lifecycle and monotonic call duration. One
+overhead invocation can supply RGB, depth and segmentation; those outputs do not
+multiply the render count. Wrist rendering is a separate invocation. Render
+calls do not advance the recorded environment-step or simulated-time totals.
+The bridge performs these calls after stepping; its reset publication topics
+are state observations and do not invoke cameras. Overlapping operations remain
+invalid. V1 journals retain their original replay shape and meaning, including
+the absence of render observations. These durations measure synchronous call
+wall time, not total accelerator work or complete simulator resource coverage.
+
 The trusted typed host treats closure of its coordinator-owned `turn` input as
 the end of lockstep work. It delivers that closure event, then ends its transport
 iterator even if other graph inputs remain open. The real accounting acceptance

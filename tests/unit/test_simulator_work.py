@@ -21,10 +21,10 @@ def test_work_journal_counts_resets_and_steps_without_episode_clocks(tmp_path):
         work.call("step", lambda: None)
     report = summarize_work(path, run_id="run", launch=0)
     assert report["journal_complete"]
-    assert report["attempted"] == {"build": 1, "reset": 1, "step": 1}
+    assert report["attempted"] == {"build": 1, "reset": 1, "step": 1, "render": 0}
     assert report["completed_env_steps"] == 2
     assert report["completed_env_sim_ns"] == 8
-    assert report["operation_wall_ns"] == {"build": 10, "reset": 30, "step": 40}
+    assert report["operation_wall_ns"] == {"build": 10, "reset": 30, "step": 40, "render": 0}
 
 
 def test_failed_step_preserves_attempt_but_not_recorded_step_work_exact(tmp_path):
