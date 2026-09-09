@@ -256,7 +256,7 @@ def _hook(output, mode):
     return shlex.join([str(Path(sys.executable).resolve()), str(hook)])
 
 
-def run_probe(binary, output, mode, *, allow_pty=False):
+def run_probe(binary, output, mode, *, allow_pty=False, mcp_fixture=False):
     """Retain a bounded actual-CLI probe; never reuse an existing output directory."""
     if sys.platform != "darwin":
         raise ValueError("this probe requires the macOS outer sandbox")
@@ -264,6 +264,8 @@ def run_probe(binary, output, mode, *, allow_pty=False):
         raise ValueError("unknown probe mode")
     if type(allow_pty) is not bool:
         raise ValueError("PTY fixture selection must be a boolean")
+    if type(mcp_fixture) is not bool:
+        raise ValueError("MCP fixture selection must be a boolean")
     binary = Path(binary).resolve(strict=True)
     output = Path(output).absolute()
     if output.resolve() != output:
@@ -302,6 +304,7 @@ def run_probe(binary, output, mode, *, allow_pty=False):
         "probe_sha256": _sha(__file__),
         "mode": mode,
         "pty_enabled": allow_pty,
+        "mcp_enabled": mcp_fixture,
     }
     (output / Path(__file__).name).write_bytes(Path(__file__).read_bytes())
     requests, errors = [], []
@@ -348,6 +351,33 @@ def run_probe(binary, output, mode, *, allow_pty=False):
             "model_providers.aisle_fixture.stream_max_retries": 0,
             "model_providers.aisle_fixture.stream_idle_timeout_ms": 5000,
         }
+        mcp_sources = []
+        if mcp_fixture:
+            source = Path(__file__).with_name("frontend_mcp_fixture.py")
+            server_script = output / source.name
+            server_script.write_bytes(source.read_bytes())
+            python = Path(sys.executable).resolve(strict=True)
+            runtime = {
+                "python": str(python),
+                "python_sha256": _sha(python),
+                "version": sys.version,
+                "transport": "stdio",
+                "protocol_version": "2025-06-18",
+            }
+            _write(output / "mcp-runtime.json", runtime)
+            mcp_sources = [source.name, "mcp-runtime.json"]
+            configuration.update(
+                {
+                    "mcp_servers.aisle_fixture.command": str(python),
+                    "mcp_servers.aisle_fixture.args": [
+                        "-I",
+                        "-B",
+                        str(server_script),
+                        "--output",
+                        str(output),
+                    ],
+                }
+            )
         for key, value in configuration.items():
             args.extend(["-c", f"{key}={json.dumps(value)}"])
         if mode != "baseline":
@@ -368,7 +398,7 @@ def run_probe(binary, output, mode, *, allow_pty=False):
             output / "invocation.json",
             {"argv": args, "environment": env, "cwd": str(workspace), **identity},
         )
-        identity["fixture_files"] = _bind_fixture(output, mode, [Path(__file__).name])
+        identity["fixture_files"] = _bind_fixture(output, mode, [Path(__file__).name, *mcp_sources])
         timed_out = False
         with (
             (output / "stdout.jsonl").open("xb") as stdout,
@@ -404,6 +434,8 @@ def run_probe(binary, output, mode, *, allow_pty=False):
         result = summarize_probe(evidence)
         result["errors"].extend(errors)
         result["errors"].extend(_fixture_errors(output, identity["fixture_files"]))
+        if mcp_fixture and _sha(runtime["python"]) != runtime["python_sha256"]:
+            result["errors"].append("MCP fixture interpreter changed during probing")
         if _sha(binary) != identity["binary_sha256"]:
             result["errors"].append("frontend binary changed during probing")
         result["ok"] = result["ok"] and not result["errors"]
@@ -441,9 +473,18 @@ def main():
     parser.add_argument(
         "--allow-pty", action="store_true", help="allow PTY device writes in the fixture"
     )
+    parser.add_argument(
+        "--mcp-fixture", action="store_true", help="enable the fixed local MCP fixture server"
+    )
     args = parser.parse_args()
     try:
-        result = run_probe(args.binary, args.output, args.mode, allow_pty=args.allow_pty)
+        result = run_probe(
+            args.binary,
+            args.output,
+            args.mode,
+            allow_pty=args.allow_pty,
+            mcp_fixture=args.mcp_fixture,
+        )
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         result = {
             "ok": False,
