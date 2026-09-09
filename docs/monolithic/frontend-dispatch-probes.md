@@ -137,3 +137,17 @@ allows writes to `/dev/ptmx` and numbered `/dev/ttys` devices so the input route
 can execute. The option is recorded in the invocation and the resulting policy
 is included in the fixture snapshot. It defaults to false. These device grants
 are engineering fixture configuration, not a campaign confinement attestation.
+
+The MCP acceptance fixture in `tests/accept/test_frontend_mcp_dispatch.py` uses
+the actual Codex stdio client and a fixed local server. Each `record` call writes
+one marker. Separate dispatch reservations must allow both calls or refuse the
+second before its marker appears. The test checks the advertised namespace,
+the forwarded `callId` and `itemId`, and the retained dispatch journal. Matching
+metadata is an observed link, not independent authentication or complete coverage.
+
+`mcp_fixture=True` (`--mcp-fixture` on the CLI) enables this server in the probe's
+configuration. It defaults to false. The fixture copies its server source and
+records the Python interpreter identity, stdio transport and protocol version
+before frontend execution. These inputs join the preflight/postflight snapshot;
+the interpreter digest is also checked afterward. The ordinary CLI probe still
+uses its fixed command scenario; the acceptance test supplies the MCP calls.
