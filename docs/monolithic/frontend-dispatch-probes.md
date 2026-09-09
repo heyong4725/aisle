@@ -151,3 +151,25 @@ records the Python interpreter identity, stdio transport and protocol version
 before frontend execution. These inputs join the preflight/postflight snapshot;
 the interpreter digest is also checked afterward. The ordinary CLI probe still
 uses its fixed command scenario; the acceptance test supplies the MCP calls.
+
+### Nested Code Mode calls
+
+The Codex fixture accepts `code_mode=True` (`--code-mode` in the CLI) to enable
+Code Mode explicitly. The invocation records the option and exact configuration
+before dispatch; the existing fixture snapshot binds that invocation and the
+probe source. The option defaults to false. The CLI retains its ordinary command
+scenario; the nested acceptance test supplies the custom Code Mode provider frame.
+
+`tests/accept/test_frontend_nested_dispatch.py` exercises the actual pinned
+frontend with one reserved outer `exec` frame containing two nested shell calls.
+The baseline writes both markers while retaining only one outer reservation.
+A valid `PreToolUse` denial blocks the first nested command and aborts the script.
+Malformed hook output lets both commands execute. The test retains the actual
+hook input, nested tool response, side effects, and the outer dispatch journal.
+
+These cases measure the scope and failure behavior of the existing boundaries.
+They do not establish per-nested-call reservations, authenticated controller
+linkage, or complete tool coverage. A successful denial is insufficient when
+malformed responses allow execution. Complete coverage and confinement remain
+false; verifying the required nested surface through a control path that refuses
+execution on authorization failures remains part of #536.
