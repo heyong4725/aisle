@@ -256,12 +256,14 @@ def _hook(output, mode):
     return shlex.join([str(Path(sys.executable).resolve()), str(hook)])
 
 
-def run_probe(binary, output, mode):
+def run_probe(binary, output, mode, *, allow_pty=False):
     """Retain a bounded actual-CLI probe; never reuse an existing output directory."""
     if sys.platform != "darwin":
         raise ValueError("this probe requires the macOS outer sandbox")
     if mode not in MODES:
         raise ValueError("unknown probe mode")
+    if type(allow_pty) is not bool:
+        raise ValueError("PTY fixture selection must be a boolean")
     binary = Path(binary).resolve(strict=True)
     output = Path(output).absolute()
     if output.resolve() != output:
@@ -288,12 +290,18 @@ def run_probe(binary, output, mode):
         "(allow network* (local unix-socket) (remote unix-socket))\n"
         "(deny file-write*)\n"
         f'(allow file-write* (subpath {json.dumps(str(output))}) (literal "/dev/null"))\n'
+        + (
+            '(allow file-write* (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))\n'
+            if allow_pty
+            else ""
+        )
     )
     identity = {
         "binary": str(binary),
         "binary_sha256": _sha(binary),
         "probe_sha256": _sha(__file__),
         "mode": mode,
+        "pty_enabled": allow_pty,
     }
     (output / Path(__file__).name).write_bytes(Path(__file__).read_bytes())
     requests, errors = [], []
@@ -430,9 +438,12 @@ def main():
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--mode", choices=MODES, required=True)
+    parser.add_argument(
+        "--allow-pty", action="store_true", help="allow PTY device writes in the fixture"
+    )
     args = parser.parse_args()
     try:
-        result = run_probe(args.binary, args.output, args.mode)
+        result = run_probe(args.binary, args.output, args.mode, allow_pty=args.allow_pty)
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         result = {
             "ok": False,
