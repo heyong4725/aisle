@@ -12,12 +12,15 @@ from test_treatment_confinement import _attestation
 pytestmark = pytest.mark.unit
 
 
-def _controller(tmp_path, arm, development=None):
+def _controller(tmp_path, arm, development=None, *, model=None):
     from aisle.harness.matched_session import admit_pair
     from aisle.harness.matched_tools import ToolController
     from aisle.harness.treatment_confinement import MacOSPolicy, compile_macos_profile
 
     root, candidates, views = prepared_pair(tmp_path)
+    if model is not None:
+        for candidate in candidates.values():
+            candidate["model"]["requested_identity"] = model
     bindings = _confinement_pair(tmp_path, root, candidates, views)
     ambient = _ambient_pair(candidates, bindings)
     adapter = tmp_path / "synthetic-adapter"

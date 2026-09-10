@@ -79,6 +79,10 @@ CONTROLLER_FILES = (
     "src/aisle/harness/frontend_request_audit.py",
     "src/aisle/harness/frontend_dispatch.py",
     "src/aisle/harness/frontend_dispatch_audit.py",
+    "src/aisle/harness/provider_response_authority.py",
+    "src/aisle/harness/provider_relay.py",
+    "src/aisle/harness/provider_runner.py",
+    "src/aisle/harness/provider_source_audit.py",
     "src/aisle/harness/code_mode_authority.py",
     "src/aisle/harness/code_mode_proxy.py",
     "src/aisle/harness/code_mode_runner.py",
@@ -362,13 +366,24 @@ def _verify_launches(candidates: dict, launches: dict, root: Path, prompt_row: s
         app_server = "app_server" in launch
         if app_server:
             if (
-                set(launch) - {"tool_python", "code_mode_host"} != {"argv", "app_server"}
+                set(launch) - {"tool_python", "code_mode_host", "provider"}
+                != {"argv", "app_server"}
                 or candidates[arm]["agent"]["kind"] != "codex"
                 or type(launch["app_server"]) is not dict
                 or set(launch["app_server"]) != {"baseInstructions", "developerInstructions"}
                 or any(type(value) is not str for value in launch["app_server"].values())
             ):
                 raise AdmissionError("unsupported app-server launch binding")
+            if "provider" in launch:
+                from aisle.harness.provider_relay import verify_provider
+
+                try:
+                    verify_provider(launch["provider"])
+                    ceiling = candidates[arm]["budget"].get("frontend_tool_ceiling")
+                    if type(ceiling) is not int or ceiling <= 0:
+                        raise ValueError("provider requires a shared frontend dispatch ceiling")
+                except (ValueError, TypeError) as exc:
+                    raise AdmissionError("invalid provider binding: " + str(exc)) from exc
             if "code_mode_host" in launch:
                 from aisle.harness.code_mode_runner import verify_host
 
@@ -1089,6 +1104,7 @@ def execute_session(
             "frontend-protocol-reference.json",
             "frontend-dispatch-reference.json",
             "code-mode-reference.json",
+            "provider-reference.json",
             "code-mode/host.stdout",
             "code-mode/host.stderr",
         ):
@@ -1121,6 +1137,8 @@ def execute_session(
                             snapshots["code-mode/rpc"] = authority_evidence["code_mode"][
                                 "artifacts"
                             ]
+                        if "provider" in authority_evidence:
+                            snapshots["provider"] = authority_evidence["provider"]["artifacts"]
                         for directory, snapshot in snapshots.items():
                             for name, data in snapshot.items():
                                 if Path(name).name != name:

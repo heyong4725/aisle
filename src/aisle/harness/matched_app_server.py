@@ -75,7 +75,9 @@ def acquire_authority_evidence(output, references):
         },
     }
     if "dispatch" in references:
-        dispatch_limit = 64 * 1024 * 1024 if "code_mode" in references else 4 * 1024 * 1024
+        dispatch_limit = (
+            64 * 1024 * 1024 if {"code_mode", "provider"} & references.keys() else 4 * 1024 * 1024
+        )
         result["dispatch"] = {
             "artifacts": snapshot(
                 output / "frontend-dispatch",
@@ -99,6 +101,17 @@ def acquire_authority_evidence(output, references):
             ),
             "expected": nested["proxy"],
             "delegated_tools": set(nested["delegated_tools"]),
+            "byte_limit": 64 * 1024 * 1024,
+        }
+    if "provider" in references:
+        result["provider"] = {
+            "artifacts": snapshot(
+                output / "provider",
+                references["provider"],
+                frame_limit=16 * 1024 * 1024,
+                byte_limit=64 * 1024 * 1024,
+            ),
+            "expected": references["provider"],
             "byte_limit": 64 * 1024 * 1024,
         }
     return result
@@ -215,7 +228,29 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
                     token_ceiling=budget["ceiling"],
                     on_message=guard,
                 )
-                if "code_mode_host" in launch:
+                if "provider" in launch:
+                    from aisle.harness.provider_runner import run_provider_app_server
+
+                    delegated = {("harness", op, "function_call") for op in operations}
+                    if "code_mode_host" in launch:
+                        delegated.update(
+                            {
+                                (None, "exec", "custom_tool_call"),
+                                ("functions", "exec", "custom_tool_call"),
+                            }
+                        )
+                    result = run_provider_app_server(
+                        binding=launch["provider"],
+                        dispatch=dispatch,
+                        delegated_tools=delegated,
+                        provider_output=output / "provider",
+                        references=references,
+                        argv=command,
+                        code_mode_host=launch.get("code_mode_host"),
+                        code_mode_output=output / "code-mode",
+                        **options,
+                    )
+                elif "code_mode_host" in launch:
                     from aisle.harness.code_mode_runner import run_code_mode_app_server
 
                     async def asynchronous_handle(call, source):
@@ -273,8 +308,18 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
             if "code_mode" in references:
                 _json(output / "code-mode-reference.json", references["code_mode"])
 
+        def retain_provider():
+            if "provider" in references:
+                _json(output / "provider-reference.json", references["provider"])
+
         failure = primary_error
-        for retain in (retain_dispatch, retain_protocol, retain_observations, retain_code_mode):
+        for retain in (
+            retain_dispatch,
+            retain_protocol,
+            retain_observations,
+            retain_code_mode,
+            retain_provider,
+        ):
             try:
                 retain()
             except BaseException as cleanup_error:

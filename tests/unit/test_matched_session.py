@@ -1908,3 +1908,37 @@ def test_nested_host_binding_is_admitted_equally_and_rechecked(tmp_path):
     host.write_bytes(b"#!/bin/sh\nexit 1\n")
     with pytest.raises(AdmissionError, match="host"):
         verify_plan(plan, control, roots)
+
+
+@pytest.mark.parametrize(
+    "drift", [None, "peer", "ceiling", "credentials", "remote_http", "auth_mode"]
+)
+def test_provider_binding_requires_equal_admitted_transport_and_budget(tmp_path, drift):
+    """MON-8/MON-13: provider selection is bound to both arms before launch."""
+    from aisle.harness.matched_session import AdmissionError, admit_pair, verify_plan
+
+    control, candidates, roots = prepared_pair(tmp_path)
+    launches = _app_server_launch_pair(candidates)
+    for arm, launch in launches.items():
+        candidates[arm]["budget"]["frontend_tool_ceiling"] = 2
+        launch["provider"] = {"base_url": "http://127.0.0.1:1234/v1", "requires_openai_auth": False}
+    if drift == "peer":
+        launches["monolithic"]["provider"]["base_url"] = "http://127.0.0.1:4321/v1"
+    elif drift == "ceiling":
+        for candidate in candidates.values():
+            del candidate["budget"]["frontend_tool_ceiling"]
+    elif drift == "credentials":
+        for launch in launches.values():
+            launch["provider"]["base_url"] = "https://user:password@example.test/v1"
+    elif drift == "remote_http":
+        for launch in launches.values():
+            launch["provider"]["base_url"] = "http://example.test/v1"
+    elif drift == "auth_mode":
+        for launch in launches.values():
+            launch["provider"]["requires_openai_auth"] = "false"
+    if drift is None:
+        plan = admit_pair(control, candidates, roots, launches=launches)
+        assert verify_plan(plan, control, roots)["launch_bindings"] == launches
+    else:
+        with pytest.raises(AdmissionError):
+            admit_pair(control, candidates, roots, launches=launches)

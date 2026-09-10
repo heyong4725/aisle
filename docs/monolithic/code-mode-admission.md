@@ -3,9 +3,11 @@
 The matched App Server runner can own an external Codex Code Mode host and place
 AISLE's RPC relay between that host and the frontend. This implements the nested
 callback portion of MON-8/MON-12/MON-13 under issue #536. It does not close #536 or
-#519: direct native calls outside Code Mode, hosted tools, subagents, continued
-process input, equivalent Claude routes, and independent confinement still need
-complete evidence. No scored campaign is authorized by these engineering checks.
+#519: hosted tools, subagents, equivalent Claude routes, complete conformance and
+independent confinement still need evidence. The optional
+[provider admission relay](provider-admission.md) covers direct native calls and
+continued input in the matched runner. No scored campaign is authorized by
+these engineering checks.
 
 Both arm launch bindings must declare the same `code_mode_host` object with an
 absolute executable `path` and its unprefixed SHA-256 `sha256`. Both budgets must

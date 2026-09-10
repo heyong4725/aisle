@@ -90,10 +90,9 @@ actual binary revision and hashes of the fixture inputs. Separate delivery tests
 altered/unissued grants. These are engineering tests, not paid model inference,
 treatment outcomes or independently reviewed confinement evidence.
 
-The full admitted surface still needs verified pre-execution control paths:
-native commands/edits, nested calls, hosted tools, subagents and continued input,
-as well as equivalent supported-frontend integration. This change does not remove
-those tools or reinterpret partial observations as complete enforcement. Issue
+The full admitted surface still needs complete conformance evidence, including
+hosted tools, subagents and equivalent supported-frontend integration. This work
+does not remove tools or reinterpret partial observations as complete enforcement. Issue
 #536, #519 and independent confinement/operator/private-evaluator/physical-evidence
 and study-collection gates remain open.
 
@@ -107,3 +106,11 @@ adds native nested callback reservations to the same controller budget. Its RPC
 journal is replayed separately, then every shared dispatch entry must belong to
 either that verified native subset or the existing App Server source/grant chain.
 It preserves the incomplete-coverage and independent-confinement gates.
+
+The optional [provider admission relay](../../monolithic/provider-admission.md)
+reserves direct native, custom and client-tool-search items before delivering
+their executable provider events. Both-arm actual tests include MCP, native
+editing, continued input, multi-call responses and nested host composition.
+Provider-native, host-native and harness calls share one journal; postflight
+verifies their disjoint subsets and the provider-to-harness source link. The
+relay retains the same incomplete-coverage and external-evidence gates.
