@@ -143,7 +143,12 @@ def dynamic_tools(operations=("check", "run")):
     ]
 
 
-def run_app_server(
+def run_app_server(*args, **kwargs):
+    """Run the owned transport from a synchronous session controller."""
+    return asyncio.run(run_app_server_async(*args, **kwargs))
+
+
+async def run_app_server_async(
     argv,
     *,
     cwd,
@@ -363,7 +368,7 @@ def run_app_server(
                         raise ValueError("app-server did not exit cleanly after turn completion")
 
     try:
-        result = asyncio.run(run())
+        result = await run()
     except BaseException as exc:
         try:
             retain("failure.json", encode({"error_type": type(exc).__name__, "error": str(exc)}))

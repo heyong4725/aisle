@@ -179,3 +179,50 @@ def test_last_usage_cannot_exceed_cumulative_usage():
     value["tokenUsage"]["last"] = _usage(input_tokens=20)["tokenUsage"]["total"]
     with pytest.raises(ValueError):
         AppServerUsage("thread", "turn").feed(value)
+
+
+def test_async_transport_cancellation_reaps_owned_frontend(tmp_path):
+    """MON-13: a failed nested authority can cancel the frontend while its pipe is idle."""
+    import asyncio
+    import os
+    import sys
+
+    from aisle.harness.frontend_app_server import run_app_server_async
+
+    async def exercise():
+        pidfile = tmp_path / "pid"
+        script = tmp_path / "idle.py"
+        script.write_text(
+            "import os,pathlib,sys,time\n"
+            "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))\n"
+            "time.sleep(60)\n"
+        )
+        task = asyncio.create_task(
+            run_app_server_async(
+                [sys.executable, "-I", str(script), str(pidfile)],
+                cwd=tmp_path,
+                env={"PATH": os.defpath},
+                output=tmp_path / "protocol",
+                thread_params={},
+                input_items=[],
+                handle_call=lambda *_: pytest.fail("unexpected tool"),
+                timeout_s=60,
+            )
+        )
+        try:
+            async with asyncio.timeout(2):
+                while not pidfile.exists():
+                    if task.done():
+                        await task
+                    await asyncio.sleep(0.01)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, 2)
+            with pytest.raises(ProcessLookupError):
+                os.kill(int(pidfile.read_text()), 0)
+            assert (tmp_path / "protocol/failure.json").is_file()
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    asyncio.run(exercise())

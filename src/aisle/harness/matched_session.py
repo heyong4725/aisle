@@ -79,6 +79,13 @@ CONTROLLER_FILES = (
     "src/aisle/harness/frontend_request_audit.py",
     "src/aisle/harness/frontend_dispatch.py",
     "src/aisle/harness/frontend_dispatch_audit.py",
+    "src/aisle/harness/code_mode_authority.py",
+    "src/aisle/harness/code_mode_proxy.py",
+    "src/aisle/harness/code_mode_runner.py",
+    "src/aisle/harness/code_mode_audit.py",
+    "src/aisle/harness/_code_mode_protocol/__init__.py",
+    "src/aisle/harness/_code_mode_protocol/protocol.proto",
+    "src/aisle/harness/_code_mode_protocol/descriptor.pb",
     "src/aisle/harness/cli.py",
     "src/aisle/harness/common.py",
     "src/aisle/harness/rollout.py",
@@ -355,13 +362,23 @@ def _verify_launches(candidates: dict, launches: dict, root: Path, prompt_row: s
         app_server = "app_server" in launch
         if app_server:
             if (
-                set(launch) not in ({"argv", "app_server"}, {"argv", "app_server", "tool_python"})
+                set(launch) - {"tool_python", "code_mode_host"} != {"argv", "app_server"}
                 or candidates[arm]["agent"]["kind"] != "codex"
                 or type(launch["app_server"]) is not dict
                 or set(launch["app_server"]) != {"baseInstructions", "developerInstructions"}
                 or any(type(value) is not str for value in launch["app_server"].values())
             ):
                 raise AdmissionError("unsupported app-server launch binding")
+            if "code_mode_host" in launch:
+                from aisle.harness.code_mode_runner import verify_host
+
+                try:
+                    verify_host(launch["code_mode_host"])
+                    ceiling = candidates[arm]["budget"].get("frontend_tool_ceiling")
+                    if type(ceiling) is not int or ceiling <= 0:
+                        raise ValueError("host requires a shared frontend dispatch ceiling")
+                except (OSError, ValueError, TypeError) as exc:
+                    raise AdmissionError("invalid nested host binding: " + str(exc)) from exc
         else:
             if "system_prompt_arg" not in launch:
                 raise AdmissionError("system prompt argument binding is required")
@@ -1071,6 +1088,9 @@ def execute_session(
             "frontend-authority-reference.json",
             "frontend-protocol-reference.json",
             "frontend-dispatch-reference.json",
+            "code-mode-reference.json",
+            "code-mode/host.stdout",
+            "code-mode/host.stderr",
         ):
             path = output / name
             try:
@@ -1095,6 +1115,10 @@ def execute_session(
                             ]
                         if "dispatch" in authority_evidence:
                             snapshots["frontend-dispatch"] = authority_evidence["dispatch"][
+                                "artifacts"
+                            ]
+                        if "code_mode" in authority_evidence:
+                            snapshots["code-mode/rpc"] = authority_evidence["code_mode"][
                                 "artifacts"
                             ]
                         for directory, snapshot in snapshots.items():
