@@ -14,8 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 pytestmark = pytest.mark.accept
 
 
-def _frame():
-    script = (
+def _frame(script=None):
+    script = script or (
         'await tools.exec_command({cmd:"printf first > nested-first.txt",login:false}); '
         'await tools.exec_command({cmd:"printf second > nested-second.txt",login:false});'
     )

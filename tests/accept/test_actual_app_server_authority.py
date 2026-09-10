@@ -30,11 +30,16 @@ pytestmark = pytest.mark.accept
         "delivery_retention",
     ],
 )
-def test_app_server_request_reaches_authorized_controller(tmp_path, monkeypatch, arm, failure):
+def test_app_server_request_reaches_authorized_controller(
+    tmp_path, monkeypatch, arm, failure, *, nested=False, nested_ceiling=2
+):
     """MON-12/MON-13: request origin is the owned frontend pipe, not a participant call ID."""
     binary = os.environ.get("AISLE_CODEX_PROBE_BINARY")
     if sys.platform != "darwin" or not binary:
         pytest.skip("requires explicitly selected actual Codex and macOS sandbox")
+    host = os.environ.get("AISLE_CODE_MODE_HOST_BINARY") if nested else None
+    if nested and not host:
+        pytest.skip("requires explicitly selected actual Code Mode host")
     import frontend_codex_probe as probe
     from test_matched_tools import _controller
 
@@ -55,6 +60,7 @@ def test_app_server_request_reaches_authorized_controller(tmp_path, monkeypatch,
     profile.write_text(
         "(version 1)\n(allow default)\n(deny network*)\n"
         '(allow network-outbound (remote ip "localhost:*"))\n'
+        "(allow network* (local unix-socket) (remote unix-socket))\n"
         "(deny file-write*)\n"
         f'(allow file-write* (subpath {json.dumps(str(frontend))}) (literal "/dev/null"))\n'
         f"(deny file-read* (subpath {json.dumps(str(tmp_path / 'authority'))}))\n"
@@ -77,6 +83,16 @@ def test_app_server_request_reaches_authorized_controller(tmp_path, monkeypatch,
                 if len(requests) == 1 or (failure == "ceiling" and len(requests) == 2)
                 else probe._events(False)
             )
+            if nested and len(requests) == 1:
+                from test_frontend_nested_dispatch import _frame as nested_frame
+
+                frame = nested_frame(
+                    'await tools.exec_command({cmd:"printf first > nested-first.txt",'
+                    "login:false}); "
+                    "await tools.harness__check({}); "
+                    'await tools.exec_command({cmd:"printf second > nested-second.txt",'
+                    "login:false});"
+                )
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Content-Length", str(len(frame)))
@@ -176,7 +192,7 @@ def test_app_server_request_reaches_authorized_controller(tmp_path, monkeypatch,
                 return None
 
             monkeypatch.setattr(FrontendToolBudget, "__call__", record_without_stopping)
-        ceiling = 1 if failure == "ceiling" else 2
+        ceiling = nested_ceiling if nested else (1 if failure == "ceiling" else 2)
         references = {}
 
         def execute():
@@ -191,10 +207,20 @@ def test_app_server_request_reaches_authorized_controller(tmp_path, monkeypatch,
                     "TMPDIR": str(frontend),
                 },
                 launch={
+                    **(
+                        {
+                            "code_mode_host": {
+                                "path": host,
+                                "sha256": hashlib.sha256(Path(host).read_bytes()).hexdigest(),
+                            }
+                        }
+                        if nested
+                        else {}
+                    ),
                     "app_server": {
                         "baseInstructions": "system prompt",
                         "developerInstructions": "research contract",
-                    }
+                    },
                 },
                 budget={
                     **controller.plan["arms"][arm]["budget"],
@@ -246,6 +272,12 @@ def test_app_server_request_reaches_authorized_controller(tmp_path, monkeypatch,
         assert result["tokens_generated"] > 0
         assert result["rc"] == 0
         assert references["protocol"]["dynamic_calls"] == controller.attempts == 1
+        if nested:
+            assert (frontend / "nested-first.txt").read_text() == "first"
+            assert (frontend / "nested-second.txt").exists() == (nested_ceiling == 3)
+            assert references["dispatch"]["reserved"] == nested_ceiling
+            assert references["dispatch"]["attempts"] == 3
+            assert references["code_mode"]["failure"] is None
     finally:
         server.shutdown()
         server.server_close()
@@ -254,3 +286,12 @@ def test_app_server_request_reaches_authorized_controller(tmp_path, monkeypatch,
             assert identities == {
                 name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in inputs.items()
             }
+
+
+@pytest.mark.parametrize("arm", ["typed", "monolithic"])
+@pytest.mark.parametrize("ceiling", [2, 3])
+def test_actual_mixed_nested_calls_share_controller_budget(tmp_path, monkeypatch, arm, ceiling):
+    """MON-8/MON-12/MON-13: native commands and real harness checks share one audited ceiling."""
+    test_app_server_request_reaches_authorized_controller(
+        tmp_path, monkeypatch, arm, None, nested=True, nested_ceiling=ceiling
+    )

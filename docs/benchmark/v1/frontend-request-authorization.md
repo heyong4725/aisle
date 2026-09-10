@@ -101,3 +101,9 @@ Protocol reference: [official App Server documentation](https://learn.chatgpt.co
 Compatibility work used the pinned binary's generated experimental schema for
 `DynamicToolCallParams` and namespaced `DynamicToolSpec`; online documentation
 alone does not attest a pinned frontend revision.
+
+The optional [Code Mode host binding](../../monolithic/code-mode-admission.md)
+adds native nested callback reservations to the same controller budget. Its RPC
+journal is replayed separately, then every shared dispatch entry must belong to
+either that verified native subset or the existing App Server source/grant chain.
+It preserves the incomplete-coverage and independent-confinement gates.

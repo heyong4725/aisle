@@ -1165,6 +1165,14 @@ def audit_tool_journal(
                         {"artifacts", "expected", "byte_limit"},
                         {"artifacts", "expected", "byte_limit", "protocol"},
                         {"artifacts", "expected", "byte_limit", "protocol", "dispatch"},
+                        {
+                            "artifacts",
+                            "expected",
+                            "byte_limit",
+                            "protocol",
+                            "dispatch",
+                            "code_mode",
+                        },
                     )
                     or type(request_authority["expected"]) is not dict
                     or request_authority["expected"].get("session_id") != session_id
@@ -1202,6 +1210,7 @@ def audit_tool_journal(
                         grants=[link["frontend_authorization"] for link in index],
                         dispatch=request_authority.get("dispatch"),
                         dispatch_ceiling=frontend_dispatch_ceiling,
+                        code_mode=request_authority.get("code_mode"),
                     )
                     if not source["ok"]:
                         raise ValueError(

@@ -32,7 +32,7 @@ def _constant(value):
 
 
 def verify_app_server_sources(
-    artifacts, *, expected, grants, byte_limit, dispatch=None, dispatch_ceiling=None
+    artifacts, *, expected, grants, byte_limit, dispatch=None, dispatch_ceiling=None, code_mode=None
 ):
     """Recompute one source call and one reply per grant, without adding counts."""
     result = {
@@ -197,7 +197,7 @@ def verify_app_server_sources(
             linked == set(calls) and len(linked) == expected["dynamic_calls"],
             "unmatched source calls",
         )
-        if dispatch is not None or dispatch_ceiling is not None:
+        if dispatch is not None or dispatch_ceiling is not None or code_mode is not None:
             from aisle.harness.frontend_dispatch_audit import verify_dispatch_journal
 
             _require(
@@ -213,19 +213,32 @@ def verify_app_server_sources(
                 reservation_audit["ok"],
                 "dispatch journal audit failed: " + "; ".join(reservation_audit["errors"]),
             )
+            native = set()
+            if code_mode is not None:
+                from aisle.harness.code_mode_audit import verify_code_mode_sources
+
+                nested = verify_code_mode_sources(**code_mode, dispatch=dispatch)
+                _require(nested["ok"], "nested RPC audit failed: " + "; ".join(nested["errors"]))
+                native = set(nested["native_attempts"])
             _require(
                 dispatch["expected"]["ceiling"] == dispatch_ceiling
-                and reservation_audit["attempts"] == reservation_audit["reserved"] == len(grants)
+                and reservation_audit["attempts"] == len(grants) + len(native)
                 and reservation_audit["delivery_uncertain"] is False,
                 "reservation ceiling, call count, or delivery differs",
             )
-            for number, grant in enumerate(grants, 1):
+            harness_numbers = [
+                number
+                for number in range(1, reservation_audit["attempts"] + 1)
+                if number not in native
+            ]
+            for number, grant in zip(harness_numbers, grants, strict=True):
                 prefix = f"{number:08d}"
                 reservation = json.loads(dispatch["artifacts"][prefix + "-reservation.json"])
                 call = grant["call"]
                 identity = (call["turn_id"], call["call_id"])
                 _require(
-                    reservation["call"] == call
+                    reservation["decision"] == "authorized"
+                    and reservation["call"] == call
                     and grant.get("session_id") == dispatch["expected"]["session_id"]
                     and dispatch["artifacts"][prefix + ".frame"] == call_frames[identity],
                     "reservation does not bind the exact source/grant chain",

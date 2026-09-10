@@ -1884,3 +1884,27 @@ def test_app_server_declared_document_bundle_is_bound_for_each_arm(tmp_path):
             bundle, ensure_ascii=False, separators=(",", ":")
         )
     assert admit_pair(control, candidates, roots, launches=launches, prompt_row=row["id"])
+
+
+def test_nested_host_binding_is_admitted_equally_and_rechecked(tmp_path):
+    """MON-8/MON-13: both arms bind one host and drift invalidates the admitted plan."""
+    import hashlib
+
+    from aisle.harness.matched_session import AdmissionError, admit_pair, verify_plan
+
+    control, candidates, roots = prepared_pair(tmp_path)
+    host = tmp_path / "host"
+    host.write_bytes(b"#!/bin/sh\nexit 0\n")
+    host.chmod(0o700)
+    launches = _app_server_launch_pair(candidates)
+    for arm, launch in launches.items():
+        candidates[arm]["budget"]["frontend_tool_ceiling"] = 2
+        launch["code_mode_host"] = {
+            "path": str(host),
+            "sha256": hashlib.sha256(host.read_bytes()).hexdigest(),
+        }
+    plan = admit_pair(control, candidates, roots, launches=launches)
+    assert verify_plan(plan, control, roots)["launch_bindings"] == launches
+    host.write_bytes(b"#!/bin/sh\nexit 1\n")
+    with pytest.raises(AdmissionError, match="host"):
+        verify_plan(plan, control, roots)

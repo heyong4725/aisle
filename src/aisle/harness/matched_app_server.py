@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
+import stat
 import time
 import uuid
 from contextlib import nullcontext
@@ -14,7 +16,7 @@ from aisle.harness.frontend_app_server import dynamic_tools, run_app_server
 from aisle.harness.frontend_dispatch import DispatchBudget
 from aisle.harness.frontend_request_authority import RequestAuthority
 from aisle.harness.matched_frontend import FrontendToolBudget
-from aisle.harness.matched_tool_service import ToolService, _directory, _read, _write
+from aisle.harness.matched_tool_service import ToolService, _directory, _write
 
 
 def _json(path, value):
@@ -30,7 +32,7 @@ def acquire_authority_evidence(output, references):
     if not references or not {"authority", "protocol"}.issubset(references):
         return None
 
-    def snapshot(directory, expected, *, extra=()):
+    def snapshot(directory, expected, *, extra=(), frame_limit=65536, byte_limit=4 * 1024 * 1024):
         fd = _directory(directory)
         try:
             names = expected["artifacts"]
@@ -41,11 +43,20 @@ def acquire_authority_evidence(output, references):
             for name in names:
                 if Path(name).name != name:
                     raise ValueError("invalid authorization artifact name")
-                data = _read(fd, name, 65536)
-                if data is None:
-                    raise ValueError("unfinished authorization evidence")
+                handle = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+                with os.fdopen(handle, "rb") as stream:
+                    info = os.fstat(stream.fileno())
+                    if (
+                        not stat.S_ISREG(info.st_mode)
+                        or info.st_nlink != 1
+                        or info.st_size > frame_limit
+                    ):
+                        raise ValueError("authorization artifact is not a bounded private file")
+                    data = stream.read(frame_limit + 1)
+                if len(data) > frame_limit or hashlib.sha256(data).hexdigest() != names[name]:
+                    raise ValueError("authorization artifact differs from closed reference")
                 total += len(data)
-                if total > 4 * 1024 * 1024:
+                if total > byte_limit:
                     raise ValueError("authorization evidence exceeds acquisition limit")
                 result[name] = data
             return result
@@ -64,10 +75,31 @@ def acquire_authority_evidence(output, references):
         },
     }
     if "dispatch" in references:
+        dispatch_limit = 64 * 1024 * 1024 if "code_mode" in references else 4 * 1024 * 1024
         result["dispatch"] = {
-            "artifacts": snapshot(output / "frontend-dispatch", references["dispatch"]),
+            "artifacts": snapshot(
+                output / "frontend-dispatch",
+                references["dispatch"],
+                frame_limit=16 * 1024 * 1024,
+                byte_limit=dispatch_limit,
+            ),
             "expected": references["dispatch"],
-            "byte_limit": 4 * 1024 * 1024,
+            "byte_limit": dispatch_limit,
+        }
+    if "code_mode" in references:
+        nested = references["code_mode"]
+        if nested["failure"] is not None or nested["proxy"] is None:
+            raise ValueError("nested host did not finish cleanly")
+        result["code_mode"] = {
+            "artifacts": snapshot(
+                output / "code-mode" / "rpc",
+                nested["proxy"],
+                frame_limit=24 * 1024 * 1024,
+                byte_limit=64 * 1024 * 1024,
+            ),
+            "expected": nested["proxy"],
+            "delegated_tools": set(nested["delegated_tools"]),
+            "byte_limit": 64 * 1024 * 1024,
         }
     return result
 
@@ -166,8 +198,7 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
                     dispatch.dispatch(call, source, deliver)
                     return response
 
-                result = run_app_server(
-                    command,
+                options = dict(
                     cwd=cwd,
                     env=env,
                     output=protocol_root,
@@ -184,6 +215,27 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
                     token_ceiling=budget["ceiling"],
                     on_message=guard,
                 )
+                if "code_mode_host" in launch:
+                    from aisle.harness.code_mode_runner import run_code_mode_app_server
+
+                    async def asynchronous_handle(call, source):
+                        return await asyncio.to_thread(handle, call, source)
+
+                    options["handle_call"] = asynchronous_handle
+                    options["protocol_output"] = options.pop("output")
+                    result = asyncio.run(
+                        run_code_mode_app_server(
+                            host=launch["code_mode_host"],
+                            dispatch=dispatch,
+                            delegated_tools={"harness." + op for op in operations},
+                            output=output / "code-mode",
+                            references=references,
+                            argv=command,
+                            **options,
+                        )
+                    )
+                else:
+                    result = run_app_server(command, **options)
             if not service.report["ok"]:
                 raise ValueError("authorized tool service did not finish cleanly")
         references.update(
@@ -217,8 +269,12 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
             if guard is not None:
                 _json(output / "frontend-live.json", guard.report())
 
+        def retain_code_mode():
+            if "code_mode" in references:
+                _json(output / "code-mode-reference.json", references["code_mode"])
+
         failure = primary_error
-        for retain in (retain_dispatch, retain_protocol, retain_observations):
+        for retain in (retain_dispatch, retain_protocol, retain_observations, retain_code_mode):
             try:
                 retain()
             except BaseException as cleanup_error:

@@ -152,3 +152,9 @@ dispatch authority and auditor to the controller fingerprint. V12 remains
 unchanged; the seed commitment, collection rules and all seven pending gates
 are preserved. Covered-call reservations do not establish full frontend coverage
 or authorize study collection.
+
+CSE v14 supersedes v13 for the owned Code Mode host and nested dispatch audit
+(#536). BND v10 supersedes v9 because the shared lock now includes the RPC runtime.
+Both retain the previous seed commitments through byte-bound predecessor
+manifests and preserve all pending gates. These remain registrations pending
+review, not study freezes or authorization to collect results.
