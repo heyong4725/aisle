@@ -1,10 +1,9 @@
 # ADR-64 — a halt ends the episode: no in-episode resume
 
-Status: PROPOSED (agent-drafted 2026-09-10 at the owner's direction; CON-15
-interpretation recorded, proceeding). Answers open question 2 of issue #562.
-Touches nothing frozen today; binds the wording of the future #562
-spec-change and the H6 turn-aware swap follow-up. Human sign-off per CON-10
-when #562 lands.
+Status: ACCEPTED 2026-09-10 (owner sign-off per CON-10, after merge of #563;
+agent-drafted the same day at the owner's direction). Answers open question 2
+of issue #562. Touches nothing frozen today; binds the wording of the future
+#562 spec-change and the H6 turn-aware swap follow-up.
 
 ## Context
 
