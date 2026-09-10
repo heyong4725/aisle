@@ -32,7 +32,15 @@ def _constant(value):
 
 
 def verify_app_server_sources(
-    artifacts, *, expected, grants, byte_limit, dispatch=None, dispatch_ceiling=None, code_mode=None
+    artifacts,
+    *,
+    expected,
+    grants,
+    byte_limit,
+    dispatch=None,
+    dispatch_ceiling=None,
+    code_mode=None,
+    provider=None,
 ):
     """Recompute one source call and one reply per grant, without adding counts."""
     result = {
@@ -197,7 +205,12 @@ def verify_app_server_sources(
             linked == set(calls) and len(linked) == expected["dynamic_calls"],
             "unmatched source calls",
         )
-        if dispatch is not None or dispatch_ceiling is not None or code_mode is not None:
+        if (
+            dispatch is not None
+            or dispatch_ceiling is not None
+            or code_mode is not None
+            or provider is not None
+        ):
             from aisle.harness.frontend_dispatch_audit import verify_dispatch_journal
 
             _require(
@@ -220,6 +233,45 @@ def verify_app_server_sources(
                 nested = verify_code_mode_sources(**code_mode, dispatch=dispatch)
                 _require(nested["ok"], "nested RPC audit failed: " + "; ".join(nested["errors"]))
                 native = set(nested["native_attempts"])
+            if provider is not None:
+                from aisle.harness.provider_source_audit import verify_provider_sources
+
+                delegated = {
+                    (namespace["name"], tool["name"], "function_call")
+                    for namespace in invocation["thread_params"]["dynamicTools"]
+                    for tool in namespace["tools"]
+                }
+                if code_mode is not None:
+                    delegated.update(
+                        {
+                            (None, "exec", "custom_tool_call"),
+                            ("functions", "exec", "custom_tool_call"),
+                        }
+                    )
+                upstream = verify_provider_sources(
+                    **provider, dispatch=dispatch, delegated_tools=delegated
+                )
+                _require(upstream["ok"], "provider audit failed: " + "; ".join(upstream["errors"]))
+                provider_links = set()
+                for delegated_call in upstream["delegated_calls"]:
+                    if delegated_call["namespace"] != "harness":
+                        continue
+                    identity = (turn, delegated_call["call_id"])
+                    _require(
+                        identity in calls
+                        and identity not in provider_links
+                        and calls[identity]["tool_name"] == "harness." + delegated_call["name"]
+                        and delegated_call["kind"] == "function_call"
+                        and delegated_call["payload"]
+                        == json.loads(call_frames[identity])["params"]["arguments"],
+                        "delegated provider call differs from frontend source",
+                    )
+                    provider_links.add(identity)
+                if code_mode is None:
+                    _require(provider_links == set(calls), "frontend call lacks provider source")
+                provider_attempts = set(upstream["native_attempts"])
+                _require(not provider_attempts & native, "provider and nested reservations overlap")
+                native.update(provider_attempts)
             _require(
                 dispatch["expected"]["ceiling"] == dispatch_ceiling
                 and reservation_audit["attempts"] == len(grants) + len(native)

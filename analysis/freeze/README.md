@@ -158,3 +158,11 @@ CSE v14 supersedes v13 for the owned Code Mode host and nested dispatch audit
 Both retain the previous seed commitments through byte-bound predecessor
 manifests and preserve all pending gates. These remain registrations pending
 review, not study freezes or authorization to collect results.
+
+CSE v15 supersedes v14 for the owned Responses provider relay, per-item native
+reservations, and provider-to-frontend/controller source auditing (#536). It
+binds the complete controller source set and provider documentation while
+preserving the inherited seed commitment, collection rules and all seven pending
+gates. BND v10 remains current because its declared inputs did not change.
+Engineering route tests do not establish complete frontend conformance,
+independent confinement, or permission to collect study results.

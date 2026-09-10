@@ -1165,6 +1165,16 @@ def audit_tool_journal(
                         {"artifacts", "expected", "byte_limit"},
                         {"artifacts", "expected", "byte_limit", "protocol"},
                         {"artifacts", "expected", "byte_limit", "protocol", "dispatch"},
+                        {"artifacts", "expected", "byte_limit", "protocol", "dispatch", "provider"},
+                        {
+                            "artifacts",
+                            "expected",
+                            "byte_limit",
+                            "protocol",
+                            "dispatch",
+                            "provider",
+                            "code_mode",
+                        },
                         {
                             "artifacts",
                             "expected",
@@ -1211,6 +1221,7 @@ def audit_tool_journal(
                         dispatch=request_authority.get("dispatch"),
                         dispatch_ceiling=frontend_dispatch_ceiling,
                         code_mode=request_authority.get("code_mode"),
+                        provider=request_authority.get("provider"),
                     )
                     if not source["ok"]:
                         raise ValueError(
