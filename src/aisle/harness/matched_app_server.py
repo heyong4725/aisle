@@ -7,9 +7,11 @@ import json
 import os
 import time
 import uuid
+from contextlib import nullcontext
 from pathlib import Path
 
 from aisle.harness.frontend_app_server import dynamic_tools, run_app_server
+from aisle.harness.frontend_dispatch import DispatchBudget
 from aisle.harness.frontend_request_authority import RequestAuthority
 from aisle.harness.matched_frontend import FrontendToolBudget
 from aisle.harness.matched_tool_service import ToolService, _directory, _read, _write
@@ -25,7 +27,7 @@ def _json(path, value):
 
 def acquire_authority_evidence(output, references):
     """Acquire bounded snapshots against references held by the session controller."""
-    if not references:
+    if not references or not {"authority", "protocol"}.issubset(references):
         return None
 
     def snapshot(directory, expected, *, extra=()):
@@ -51,7 +53,7 @@ def acquire_authority_evidence(output, references):
             os.close(fd)
 
     authority, protocol = references["authority"], references["protocol"]
-    return {
+    result = {
         "artifacts": snapshot(output / "frontend-authority", authority),
         "expected": authority,
         "byte_limit": 4 * 1024 * 1024,
@@ -61,6 +63,13 @@ def acquire_authority_evidence(output, references):
             "byte_limit": 4 * 1024 * 1024,
         },
     }
+    if "dispatch" in references:
+        result["dispatch"] = {
+            "artifacts": snapshot(output / "frontend-dispatch", references["dispatch"]),
+            "expected": references["dispatch"],
+            "byte_limit": 4 * 1024 * 1024,
+        }
+    return result
 
 
 def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, references):
@@ -86,13 +95,25 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
     deadline = time.monotonic() + budget["wall_ceiling_s"]
     protocol_root = output / "frontend-protocol"
     primary_error = None
+    dispatch = None
     try:
-        with RequestAuthority(
-            output / "frontend-authority", session_id=controller.session_id
-        ) as authority:
+        with (
+            RequestAuthority(
+                output / "frontend-authority", session_id=controller.session_id
+            ) as authority,
+            (
+                DispatchBudget(
+                    output / "frontend-dispatch",
+                    session_id=controller.session_id,
+                    ceiling=budget["frontend_tool_ceiling"],
+                )
+                if "frontend_tool_ceiling" in budget
+                else nullcontext(None)
+            ) as dispatch,
+        ):
             with ToolService(controller, request_authority=authority) as service:
 
-                def handle(call, source):
+                def request(call, source):
                     if call["tool_name"] not in allowed:
                         raise ValueError("frontend requested an unadmitted harness tool")
                     operation = call["tool_name"].split(".")[1]
@@ -133,6 +154,18 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
                     finally:
                         os.close(fd)
 
+                def handle(call, source):
+                    if dispatch is None:
+                        return request(call, source)
+                    response = None
+
+                    def deliver(frame):
+                        nonlocal response
+                        response = request(call, frame)
+
+                    dispatch.dispatch(call, source, deliver)
+                    return response
+
                 result = run_app_server(
                     command,
                     cwd=cwd,
@@ -165,7 +198,13 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
         primary_error = exc
         raise
     finally:
-        try:
+
+        def retain_dispatch():
+            if dispatch is not None:
+                references["dispatch"] = dispatch.reference()
+                _json(output / "frontend-dispatch-reference.json", references["dispatch"])
+
+        def retain_protocol():
             if protocol_root.is_dir():
                 with (output / "session.jsonl").open("xb") as transcript:
                     for path in sorted(protocol_root.glob("*-received.json")):
@@ -173,12 +212,22 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
                 stderr = protocol_root / "stderr.log"
                 if stderr.is_file():
                     (output / "session.stderr").write_bytes(stderr.read_bytes())
+
+        def retain_observations():
             if guard is not None:
                 _json(output / "frontend-live.json", guard.report())
-        except BaseException as cleanup_error:
-            if primary_error is None:
-                raise
-            primary_error.add_note(f"frontend finalization failed: {cleanup_error}")
+
+        failure = primary_error
+        for retain in (retain_dispatch, retain_protocol, retain_observations):
+            try:
+                retain()
+            except BaseException as cleanup_error:
+                if failure is None:
+                    failure = cleanup_error
+                else:
+                    failure.add_note(f"frontend finalization failed: {cleanup_error}")
+        if primary_error is None and failure is not None:
+            raise failure
     _json(
         output / "token_samples.jsonl",
         {

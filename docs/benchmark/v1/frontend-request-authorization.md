@@ -34,6 +34,15 @@ calling the controller. Altered requests and unissued or consumed grants cannot
 start another authorized attempt. The frontend receives the controller-owned
 response, not bytes read back from the participant-writable response channel.
 
+When the admitted plan declares `budget.frontend_tool_ceiling`, the controller
+also reserves each covered harness call before issuing its request grant. The
+reservation binds the normalized call and exact source frame, is flushed before
+delivery, and is never refunded after uncertain delivery. A replay or exhausted
+reservation budget cannot issue another grant or reach another controller attempt;
+failed retention closes the authority. The observed-event guard remains active.
+These are separate checks against the declared upper bound, not additive totals
+or complete enforcement of native frontend routes.
+
 ## Evidence and accounting
 
 On closure, the authority returns hashes recorded when receipts were durably
@@ -48,6 +57,14 @@ pipe's thread setup, source calls and replies. App Server sessions require this
 source audit: grant-only evidence cannot silently satisfy it. Missing, changed,
 duplicate or unmatched records produce an infrastructure exclusion. The common
 record indexes the authority/protocol artifacts and their references.
+
+For a declared ceiling, postflight also requires the closed dispatch authority's
+write-time reference and verifies the reservation → source call → grant → request
+→ controller-attempt links. A different ceiling, frame, call, missing reservation,
+or uncertain delivery cannot pass as a successful session. The common record
+indexes the dispatch artifacts and reference. Failed sessions retain available
+transcript and observation diagnostics even when reservation-reference retention
+fails; such evidence does not become a successful audit.
 
 Token accounting uses cumulative App Server usage updates, counts new input
 plus output once, and retains output tokens separately. Missing or inconsistent
@@ -66,7 +83,10 @@ write-time references, altered/missing source records, participant response
 replacement, invalid accounting, protocol failure, process cleanup and both-arm
 runner/postflight integration. Actual pinned Codex acceptance uses a scripted
 local provider and the shared production helper in both arms, including an
-unavailable controller and grant-retention failure. Separate delivery tests cover
+unavailable controller, quota exhaustion, and reservation/grant/delivery-retention
+failures. The quota fixture suppresses the reactive observation stop to prove that
+source-call admission independently refuses excess work. Captures record the
+actual binary revision and hashes of the fixture inputs. Separate delivery tests cover
 altered/unissued grants. These are engineering tests, not paid model inference,
 treatment outcomes or independently reviewed confinement evidence.
 

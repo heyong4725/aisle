@@ -145,3 +145,10 @@ controller-owned responses, and their retained source-to-attempt evidence
 preserving the inherited seed commitment, collection rules and all seven pending
 gates. V11 remains unchanged. Engineering fixtures do not establish complete
 frontend coverage, independent confinement, or authorization for study collection.
+
+CSE v13 supersedes v12 for durable App Server harness-call reservations and
+source-to-attempt reservation auditing (#536; MON-8/MON-12/MON-13). It adds the
+dispatch authority and auditor to the controller fingerprint. V12 remains
+unchanged; the seed commitment, collection rules and all seven pending gates
+are preserved. Covered-call reservations do not establish full frontend coverage
+or authorize study collection.

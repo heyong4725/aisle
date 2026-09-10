@@ -31,12 +31,15 @@ def _constant(value):
     raise ValueError("non-finite protocol value")
 
 
-def verify_app_server_sources(artifacts, *, expected, grants, byte_limit):
+def verify_app_server_sources(
+    artifacts, *, expected, grants, byte_limit, dispatch=None, dispatch_ceiling=None
+):
     """Recompute one source call and one reply per grant, without adding counts."""
     result = {
         "ok": False,
         "errors": [],
         "linked_calls": None,
+        "reservations_verified": False,
         "complete_coverage": False,
         "confinement_verified": False,
     }
@@ -82,6 +85,7 @@ def verify_app_server_sources(artifacts, *, expected, grants, byte_limit):
             "unverified protocol transport or coverage promotion",
         )
         sequences = {}
+        frames = {}
         for direction in ("received", "sent"):
             names = sorted(
                 name for name in rows if re.fullmatch(r"[0-9]{8}-" + direction + r"\.json", name)
@@ -91,6 +95,7 @@ def verify_app_server_sources(artifacts, *, expected, grants, byte_limit):
                 "protocol sequence has missing frames",
             )
             sequences[direction] = [rows.pop(name) for name in names]
+            frames[direction] = [artifacts[name] for name in names]
         _require(not rows, "unmatched protocol artifacts")
         received, sent = sequences["received"], sequences["sent"]
         _require(
@@ -111,7 +116,8 @@ def verify_app_server_sources(artifacts, *, expected, grants, byte_limit):
         )
         calls, wire_ids, setup = {}, set(), {}
         complete = False
-        for row in received:
+        call_frames = {}
+        for row, raw in zip(received, frames["received"], strict=True):
             _require(not complete, "protocol continues after terminal turn")
             if "method" not in row:
                 identity = row.get("id")
@@ -135,6 +141,7 @@ def verify_app_server_sources(artifacts, *, expected, grants, byte_limit):
                 wire = (type(row["id"]), row["id"])
                 _require(identity not in calls and wire not in wire_ids, "duplicate source call")
                 calls[identity] = call
+                call_frames[identity] = raw
                 wire_ids.add(wire)
             else:
                 _require("id" not in row, "unsupported server request")
@@ -190,6 +197,40 @@ def verify_app_server_sources(artifacts, *, expected, grants, byte_limit):
             linked == set(calls) and len(linked) == expected["dynamic_calls"],
             "unmatched source calls",
         )
+        if dispatch is not None or dispatch_ceiling is not None:
+            from aisle.harness.frontend_dispatch_audit import verify_dispatch_journal
+
+            _require(
+                type(dispatch_ceiling) is int and dispatch_ceiling > 0,
+                "invalid admitted reservation ceiling",
+            )
+            _require(
+                type(dispatch) is dict and set(dispatch) == {"artifacts", "expected", "byte_limit"},
+                "trusted dispatch evidence is missing",
+            )
+            reservation_audit = verify_dispatch_journal(**dispatch)
+            _require(
+                reservation_audit["ok"],
+                "dispatch journal audit failed: " + "; ".join(reservation_audit["errors"]),
+            )
+            _require(
+                dispatch["expected"]["ceiling"] == dispatch_ceiling
+                and reservation_audit["attempts"] == reservation_audit["reserved"] == len(grants)
+                and reservation_audit["delivery_uncertain"] is False,
+                "reservation ceiling, call count, or delivery differs",
+            )
+            for number, grant in enumerate(grants, 1):
+                prefix = f"{number:08d}"
+                reservation = json.loads(dispatch["artifacts"][prefix + "-reservation.json"])
+                call = grant["call"]
+                identity = (call["turn_id"], call["call_id"])
+                _require(
+                    reservation["call"] == call
+                    and grant.get("session_id") == dispatch["expected"]["session_id"]
+                    and dispatch["artifacts"][prefix + ".frame"] == call_frames[identity],
+                    "reservation does not bind the exact source/grant chain",
+                )
+            result["reservations_verified"] = True
         result.update(ok=True, linked_calls=len(linked))
     except (ValueError, KeyError, TypeError, AttributeError, RecursionError) as exc:
         result["errors"].append(str(exc))

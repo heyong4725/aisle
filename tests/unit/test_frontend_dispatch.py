@@ -159,3 +159,38 @@ def test_retention_failure_after_write_never_reopens_authority(tmp_path, monkeyp
     if stage == "delivery":
         error = json.loads((output / "00000001-delivery-error.json").read_text())
         assert error["status"] == "uncertain"
+
+
+def test_closed_reference_uses_write_time_hashes(tmp_path):
+    """MON-13: replacing retained bytes cannot replace the controller's expected identity."""
+    import hashlib
+
+    from aisle.harness.frontend_dispatch import DispatchBudget, DispatchRefused
+
+    output = tmp_path / "dispatch"
+    with DispatchBudget(output, session_id="session", ceiling=1) as budget:
+        budget.dispatch(call(1), b"original", lambda frame: None)
+        with pytest.raises(DispatchRefused, match="closed"):
+            budget.reference()
+    (output / "00000001.frame").write_bytes(b"replacement")
+    reference = budget.reference()
+    assert reference["artifacts"]["00000001.frame"] == hashlib.sha256(b"original").hexdigest()
+    assert reference["attempts"] == reference["reserved"] == 1
+    reference["artifacts"].clear()
+    assert budget.reference()["artifacts"]
+
+
+def test_retention_failure_cannot_publish_complete_reference(tmp_path, monkeypatch):
+    """MON-13: incomplete durable evidence cannot be advertised as an auditable authority."""
+    from aisle.harness.frontend_dispatch import DispatchBudget, DispatchRefused
+
+    with DispatchBudget(tmp_path / "dispatch", session_id="session", ceiling=1) as budget:
+
+        def fail(*args):
+            raise OSError("retention failure")
+
+        monkeypatch.setattr(budget, "_retain", fail)
+        with pytest.raises(OSError):
+            budget.dispatch(call(1), b"frame", lambda frame: None)
+    with pytest.raises(DispatchRefused, match="retention"):
+        budget.reference()

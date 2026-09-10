@@ -373,6 +373,7 @@ def audit_tool_journal(
     development=None,
     request_authority=None,
     require_frontend_source=False,
+    frontend_dispatch_ceiling=None,
 ) -> dict:
     """Bind journal entries to session identity, immutable attempts and retained bytes."""
     import hashlib
@@ -394,6 +395,7 @@ def audit_tool_journal(
         "service_verified": False,
         "frontend_authorization_verified": False,
         "frontend_source_verified": False,
+        "frontend_reservation_verified": False,
         "files": {},
         "attempt_ids": [],
         "runs": [],
@@ -424,6 +426,10 @@ def audit_tool_journal(
     try:
         if type(require_frontend_source) is not bool:
             raise ValueError("invalid frontend source requirement")
+        if frontend_dispatch_ceiling is not None and (
+            type(frontend_dispatch_ceiling) is not int or frontend_dispatch_ceiling <= 0
+        ):
+            raise ValueError("invalid admitted frontend dispatch ceiling")
         events = lines("tool-events.jsonl")
         if len(events) % 2:
             raise ValueError("tool journal lacks a finished attempt")
@@ -1146,6 +1152,7 @@ def audit_tool_journal(
             if (
                 requires_authority
                 or require_frontend_source
+                or frontend_dispatch_ceiling is not None
                 or request_authority is not None
                 or any("frontend_authorization" in link for link in index)
             ):
@@ -1157,6 +1164,7 @@ def audit_tool_journal(
                     not in (
                         {"artifacts", "expected", "byte_limit"},
                         {"artifacts", "expected", "byte_limit", "protocol"},
+                        {"artifacts", "expected", "byte_limit", "protocol", "dispatch"},
                     )
                     or type(request_authority["expected"]) is not dict
                     or request_authority["expected"].get("session_id") != session_id
@@ -1176,7 +1184,11 @@ def audit_tool_journal(
                     )
                 report["frontend_authorization_verified"] = True
                 protocol = request_authority.get("protocol")
-                if require_frontend_source or protocol is not None:
+                if (
+                    require_frontend_source
+                    or protocol is not None
+                    or frontend_dispatch_ceiling is not None
+                ):
                     from aisle.harness.frontend_app_server_audit import verify_app_server_sources
 
                     if type(protocol) is not dict or set(protocol) != {
@@ -1186,15 +1198,23 @@ def audit_tool_journal(
                     }:
                         raise ValueError("trusted frontend source evidence is missing")
                     source = verify_app_server_sources(
-                        **protocol, grants=[link["frontend_authorization"] for link in index]
+                        **protocol,
+                        grants=[link["frontend_authorization"] for link in index],
+                        dispatch=request_authority.get("dispatch"),
+                        dispatch_ceiling=frontend_dispatch_ceiling,
                     )
                     if not source["ok"]:
                         raise ValueError(
                             "frontend source audit failed: " + "; ".join(source["errors"])
                         )
                     report["frontend_source_verified"] = True
+                    report["frontend_reservation_verified"] = source["reservations_verified"]
             report["service_verified"] = True
-        elif request_authority is not None or require_frontend_source:
+        elif (
+            request_authority is not None
+            or require_frontend_source
+            or frontend_dispatch_ceiling is not None
+        ):
             raise ValueError("request authority evidence requires a service journal")
         report["ok"] = True
     except (OSError, ValueError, KeyError, TypeError) as exc:

@@ -38,13 +38,15 @@ class DispatchBudget:
         output = Path(output).absolute()
         if output.resolve() != output:
             raise ValueError("dispatch authority path is redirected")
-        output.mkdir(parents=True, exist_ok=False)
+        output.mkdir(parents=True, exist_ok=False, mode=0o700)
         self._fd = os.open(output, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         self._lock = threading.Lock()
         self._closed = False
         self._seen = set()
         self._attempts = 0
         self._reserved = 0
+        self._digests = {}
+        self._retention_failed = False
         self.session_id = session_id
         self.ceiling = ceiling
         try:
@@ -76,6 +78,7 @@ class DispatchBudget:
             stream.flush()
             os.fsync(stream.fileno())
         os.fsync(self._fd)
+        self._digests[name] = hashlib.sha256(data).hexdigest()
 
     def dispatch(self, call, frame, deliver):
         """Retain the decision before invoking the adapter's delivery callback."""
@@ -120,6 +123,7 @@ class DispatchBudget:
                 self._retain(f"{prefix}.frame", frame)
                 self._retain(f"{prefix}-reservation.json", reservation)
             except BaseException:
+                self._retention_failed = True
                 self._closed = True
                 raise
             if reason is not None:
@@ -140,17 +144,33 @@ class DispatchBudget:
                 self._retain(f"{prefix}-delivery.json", delivery)
             except BaseException as exc:
                 self._closed = True
+                if callback_returned:
+                    self._retention_failed = True
                 delivery["status"] = "uncertain"
                 delivery["error_type"] = type(exc).__name__
                 try:
                     suffix = "delivery-error" if callback_returned else "delivery"
                     self._retain(f"{prefix}-{suffix}.json", delivery)
-                except OSError:
-                    # The reservation remains charged even if its terminal
-                    # observation cannot be retained. No further calls release.
-                    pass
+                except BaseException as retention_error:
+                    self._retention_failed = True
+                    exc.add_note(f"dispatch failure retention failed: {retention_error}")
                 raise
             return {"reservation": reservation, "delivery": delivery}
+
+    def reference(self):
+        """Return the closed controller's write-time identities without rereading files."""
+        with self._lock:
+            if not self._closed or self._fd is not None:
+                raise DispatchRefused("dispatch authority must be closed before audit")
+            if self._retention_failed:
+                raise DispatchRefused("dispatch retention failed")
+            return {
+                "session_id": self.session_id,
+                "ceiling": self.ceiling,
+                "attempts": self._attempts,
+                "reserved": self._reserved,
+                "artifacts": dict(self._digests),
+            }
 
     def close(self):
         with self._lock:
