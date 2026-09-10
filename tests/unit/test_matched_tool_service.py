@@ -97,7 +97,8 @@ def test_duplicate_request_fields_are_refused_before_execution(tmp_path, field):
 
 
 @pytest.mark.parametrize("arm", ["typed", "monolithic"])
-def test_session_runner_hosts_requests_for_the_live_child(tmp_path, arm):
+@pytest.mark.parametrize("app_server", [False, True])
+def test_session_runner_hosts_requests_for_the_live_child(tmp_path, arm, app_server):
     """MON-8/MON-12: the actual agent-process runner hosts one tool service for its lifetime.
 
     The child and confinement adapter are explicit engineering fixtures, not
@@ -131,6 +132,44 @@ def test_session_runner_hosts_requests_for_the_live_child(tmp_path, arm):
     fixture.write_text(
         "#!/bin/sh\nexec " + shlex.quote(sys.executable) + " -c " + shlex.quote(code) + "\n"
     )
+    if app_server:
+        program = """import json,sys
+
+def emit(value):
+    print(json.dumps(value),flush=True)
+
+def call(number):
+    emit({'id':number,'method':'item/tool/call','params':{
+        'threadId':'thread','turnId':'turn','callId':'call'+str(number),
+        'namespace':'harness','tool':'check','arguments':{}}})
+
+for raw in sys.stdin:
+    row=json.loads(raw)
+    if 'method' not in row:
+        if row['id']==1:
+            call(2)
+        else:
+            emit({'method':'turn/completed','params':{'threadId':'thread',
+                'turn':{'id':'turn','status':'completed'}}})
+        continue
+    if 'id' not in row:
+        continue
+    result={}
+    if row['id']=='thread':
+        result={'thread':{'id':'thread'}}
+    elif row['id']=='turn':
+        result={'turn':{'id':'turn'}}
+    emit({'id':row['id'],'result':result})
+    if row['id']=='turn':
+        usage={'inputTokens':10,'cachedInputTokens':2,'outputTokens':3,
+            'reasoningOutputTokens':0,'totalTokens':13}
+        emit({'method':'thread/tokenUsage/updated','params':{'threadId':'thread',
+            'turnId':'turn','tokenUsage':{'total':usage,'last':usage}}})
+        call(1)
+"""
+        fixture.write_text(
+            "#!/bin/sh\nexec " + shlex.quote(sys.executable) + " -c " + shlex.quote(program) + "\n"
+        )
     fixture.chmod(0o755)
     launches = {}
     compiled_by_arm = {}
@@ -145,6 +184,15 @@ def test_session_runner_hosts_requests_for_the_live_child(tmp_path, arm):
             "research_contract_arg": 2,
             "tool_python": sys.executable,
         }
+        if app_server:
+            launches[name] = {
+                "argv": [str(fixture), "app-server", "--listen", "stdio://"],
+                "tool_python": sys.executable,
+                "app_server": {
+                    "baseInstructions": "system prompt",
+                    "developerInstructions": "research contract",
+                },
+            }
         (Path(ambient[name]["environment"]["HOME"]) / "tool-channel").mkdir()
         bindings[name]["policy"]["allowed_executables"].append(str(fixture))
         declared = bindings[name]["policy"]
@@ -190,6 +238,13 @@ def test_session_runner_hosts_requests_for_the_live_child(tmp_path, arm):
         hidden_access_log=access,
     )
     assert result["ok"] is True, result
+    if app_server:
+        assert result["tool_audit"]["frontend_source_verified"] is True
+        assert result["process"]["tokens"] == 11
+        assert result["process"]["tokens_generated"] == 3
+        assert result["process"]["rc"] == 0
+        assert result["tool_audit"]["attempted_tools"] == 2
+        return
     event = json.loads((output / "session.jsonl").read_text())
     assert event["type"] == "item.completed"
     assert event["item"]["type"] == "agent_message"
@@ -327,3 +382,148 @@ def test_service_audit_rejects_unaccounted_or_inconsistent_requests(tmp_path, dr
     checked = audit()
     assert not checked["ok"], checked
     assert not checked["service_verified"]
+
+
+@pytest.mark.parametrize("arm", ["typed", "monolithic"])
+@pytest.mark.parametrize("authorized", [False, True])
+def test_request_authority_is_consumed_before_controller_attempt(tmp_path, arm, authorized):
+    """MON-8/MON-12/MON-13: missing grants cannot start either arm's controller."""
+    from aisle.harness.frontend_request_authority import RequestAuthority
+    from aisle.harness.matched_tool_service import ToolService
+
+    controller, _, output = _controller(tmp_path, arm)
+    channel = Path(controller.plan["ambient_bindings"][arm]["environment"]["HOME"]) / "tool-channel"
+    channel.mkdir()
+    identity = "d" * 32
+    raw = (
+        json.dumps(
+            {
+                "schema_version": "aisle.matched-tool-request.v1",
+                "id": identity,
+                "operation": "check",
+            }
+        )
+        + "\n"
+    ).encode()
+    with RequestAuthority(tmp_path / "authority", session_id=controller.session_id) as authority:
+        grant = (
+            authority.authorize(
+                call={"turn_id": "turn", "call_id": "call", "tool_name": "harness.check"},
+                request=raw,
+            )
+            if authorized
+            else None
+        )
+        service = ToolService(controller, request_authority=authority)
+        with service:
+            if grant:
+                (channel / f"{identity}.authorization.json").write_text(
+                    json.dumps({"authorization_id": grant["authorization_id"]}) + "\n"
+                )
+            (channel / f"{identity}.request.json").write_bytes(raw)
+            if not authorized:
+                assert service.failed.wait(5)
+                assert controller.attempts == 0
+            else:
+                import time
+
+                deadline = time.monotonic() + 5
+                response = channel / f"{identity}.response.json"
+                while (
+                    not response.exists()
+                    and not service.failed.is_set()
+                    and time.monotonic() < deadline
+                ):
+                    time.sleep(0.01)
+                assert response.exists(), service.error
+                assert controller.attempts == 1
+                records = [
+                    json.loads(line)
+                    for line in (output / "tool-request-index.jsonl").read_text().splitlines()
+                ]
+                assert records[0]["frontend_authorization"] == grant
+                assert (
+                    tmp_path / "authority" / (grant["authorization_id"] + "-consumed.json")
+                ).is_file()
+    if authorized:
+        from aisle.harness.matched_evidence import audit_tool_journal
+
+        arguments = {
+            "session_id": controller.session_id,
+            "plan_id": controller.plan["immutable_id"],
+            "arm": arm,
+        }
+        missing = audit_tool_journal(output, **arguments)
+        assert not missing["ok"], "an authorized service requires its trusted grant snapshot"
+        artifacts = {path.name: path.read_bytes() for path in (tmp_path / "authority").iterdir()}
+        reference = authority.reference()
+        evidence = {"artifacts": artifacts, "expected": reference, "byte_limit": 65536}
+        audited = audit_tool_journal(output, request_authority=evidence, **arguments)
+        assert audited["ok"], audited
+        assert audited["frontend_authorization_verified"] is True
+        source_required = audit_tool_journal(
+            output, request_authority=evidence, require_frontend_source=True, **arguments
+        )
+        assert not source_required["ok"], (
+            "a source-required session must not accept grant-only evidence"
+        )
+        assert audited["attempted_tools"] == 1
+        del artifacts[grant["authorization_id"] + "-consumed.json"]
+        assert not audit_tool_journal(output, request_authority=evidence, **arguments)["ok"]
+
+
+def test_request_retention_failure_prevents_controller_attempt(tmp_path, monkeypatch):
+    """MON-12/MON-13: no request is executed before its raw bytes are durable."""
+    import os
+
+    from aisle.harness.matched_tool_service import ToolService
+
+    controller, _, output = _controller(tmp_path, "typed")
+    channel = (
+        Path(controller.plan["ambient_bindings"]["typed"]["environment"]["HOME"]) / "tool-channel"
+    )
+    channel.mkdir()
+    identity = "f" * 32
+    retained = output / f"request-{identity}.json"
+    original = os.fsync
+
+    def fail(fd):
+        if retained.exists() and os.fstat(fd).st_ino == retained.stat().st_ino:
+            raise OSError("injected request retention failure")
+        original(fd)
+
+    monkeypatch.setattr(os, "fsync", fail)
+    with ToolService(controller) as service:
+        (channel / f"{identity}.request.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "aisle.matched-tool-request.v1",
+                    "id": identity,
+                    "operation": "check",
+                }
+            )
+            + "\n"
+        )
+        assert service.failed.wait(5), "service did not attempt durable request retention"
+        assert "injected request retention failure" in service.error
+        assert controller.attempts == 0
+
+
+def test_controller_response_is_not_replaced_by_participant_channel_contents(tmp_path):
+    """MON-12/MON-13: frontend replies must come from the retained controller result."""
+    from aisle.harness.matched_tool_service import ToolService, request_check
+
+    controller, _, _ = _controller(tmp_path, "typed")
+    channel = (
+        Path(controller.plan["ambient_bindings"]["typed"]["environment"]["HOME"]) / "tool-channel"
+    )
+    channel.mkdir()
+    identity = "c" * 32
+    with ToolService(controller) as service:
+        original = request_check(channel, request_id=identity, timeout_s=5)
+        forged = {**original, "ok": not original["ok"], "error": "participant replacement"}
+        (channel / f"{identity}.response.json").write_text(json.dumps(forged) + "\n")
+        trusted = service.controller_response(identity)
+        assert trusted == original
+        trusted["error"] = "mutated caller copy"
+        assert service.controller_response(identity) == original

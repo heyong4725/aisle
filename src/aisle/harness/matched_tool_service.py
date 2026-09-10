@@ -100,7 +100,10 @@ def _request(operation, channel, *, timeout_s, request_id):
 class ToolService:
     """Serve the active arm's pre-provisioned HOME/tool-channel on one controller."""
 
-    def __init__(self, controller):
+    def __init__(self, controller, *, request_authority=None):
+        if request_authority is not None and request_authority.session_id != controller.session_id:
+            raise AdmissionError("request authority belongs to another session")
+        self.request_authority = request_authority
         self.controller = controller
         home = controller.plan["ambient_bindings"][controller.arm]["environment"]["HOME"]
         self.channel = Path(home) / "tool-channel"
@@ -111,6 +114,14 @@ class ToolService:
         self.error = None
         self.fd = None
         self.thread = None
+        self._responses = {}
+        self._response_lock = threading.Lock()
+
+    def controller_response(self, request_id):
+        """Return a copy of the controller-owned result, never participant channel bytes."""
+        with self._response_lock:
+            value = self._responses.get(request_id)
+            return json.loads(json.dumps(value)) if value is not None else None
 
     def __enter__(self):
         if self.channel.resolve() != self.channel:
@@ -148,6 +159,13 @@ class ToolService:
                     retained = self.controller.output / f"request-{request_id}.json"
                     with retained.open("xb") as stream:
                         stream.write(data)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    retained_directory = _directory(self.controller.output)
+                    try:
+                        os.fsync(retained_directory)
+                    finally:
+                        os.close(retained_directory)
                     request = json.loads(data, object_pairs_hook=_request_object)
                     if (
                         not isinstance(request, dict)
@@ -157,6 +175,18 @@ class ToolService:
                         or request["operation"] not in ("check", "run")
                     ):
                         raise AdmissionError("unsupported or malformed tool request")
+                    authorization = None
+                    if self.request_authority is not None:
+                        try:
+                            token_data = _read(self.fd, f"{request_id}.authorization.json", 4096)
+                        except FileNotFoundError:
+                            token_data = None
+                        token = None
+                        if token_data is not None:
+                            envelope = json.loads(token_data, object_pairs_hook=_request_object)
+                            if type(envelope) is dict and set(envelope) == {"authorization_id"}:
+                                token = envelope["authorization_id"]
+                        authorization = self.request_authority.consume(data, authorization_id=token)
                     record = (
                         self.controller.check()
                         if request["operation"] == "check"
@@ -176,12 +206,19 @@ class ToolService:
                                     "request_sha256": hashlib.sha256(data).hexdigest(),
                                     "attempt_id": record["immutable_id"],
                                     "attempt": record["attempt"],
+                                    **(
+                                        {"frontend_authorization": authorization}
+                                        if authorization is not None
+                                        else {}
+                                    ),
                                 }
                             )
                             + "\n"
                         )
                         stream.flush()
                         os.fsync(stream.fileno())
+                    with self._response_lock:
+                        self._responses[request_id] = response
                     _write(self.fd, f"{request_id}.response.json", response)
                 self.stop.wait(0.01)
         except Exception as exc:
@@ -203,6 +240,11 @@ class ToolService:
                 "plan_id": self.controller.plan["immutable_id"],
                 "arm": self.controller.arm,
                 "ok": self.error is None and not pending,
+                **(
+                    {"request_authority_required": True}
+                    if self.request_authority is not None
+                    else {}
+                ),
                 "processed_requests": self.processed,
                 "seen_requests": len(self.seen),
                 "pending_requests": sorted(pending),

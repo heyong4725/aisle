@@ -365,7 +365,14 @@ def _retained_guard_evidence(raw) -> dict:
 
 
 def audit_tool_journal(
-    output, *, session_id: str, plan_id: str, arm: str, development=None
+    output,
+    *,
+    session_id: str,
+    plan_id: str,
+    arm: str,
+    development=None,
+    request_authority=None,
+    require_frontend_source=False,
 ) -> dict:
     """Bind journal entries to session identity, immutable attempts and retained bytes."""
     import hashlib
@@ -385,6 +392,8 @@ def audit_tool_journal(
         "reserved_episodes": 0,
         "wall_s": 0.0,
         "service_verified": False,
+        "frontend_authorization_verified": False,
+        "frontend_source_verified": False,
         "files": {},
         "attempt_ids": [],
         "runs": [],
@@ -413,6 +422,8 @@ def audit_tool_journal(
         return [decode(line) for line in data.splitlines()]
 
     try:
+        if type(require_frontend_source) is not bool:
+            raise ValueError("invalid frontend source requirement")
         events = lines("tool-events.jsonl")
         if len(events) % 2:
             raise ValueError("tool journal lacks a finished attempt")
@@ -1129,7 +1140,62 @@ def audit_tool_journal(
             }
             if retained_requests != {f"request-{identity}.json" for identity in seen}:
                 raise ValueError("retained tool request inventory differs from the index")
+            requires_authority = service.get("request_authority_required", False)
+            if type(requires_authority) is not bool:
+                raise ValueError("invalid request authority requirement")
+            if (
+                requires_authority
+                or require_frontend_source
+                or request_authority is not None
+                or any("frontend_authorization" in link for link in index)
+            ):
+                from aisle.harness.frontend_request_audit import verify_request_authorizations
+
+                if (
+                    type(request_authority) is not dict
+                    or set(request_authority)
+                    not in (
+                        {"artifacts", "expected", "byte_limit"},
+                        {"artifacts", "expected", "byte_limit", "protocol"},
+                    )
+                    or type(request_authority["expected"]) is not dict
+                    or request_authority["expected"].get("session_id") != session_id
+                ):
+                    raise ValueError("trusted request authority evidence is missing or mismatched")
+                authorizations = verify_request_authorizations(
+                    **{
+                        key: request_authority[key]
+                        for key in ("artifacts", "expected", "byte_limit")
+                    },
+                    links=index,
+                    requests={identity: read(f"request-{identity}.json") for identity in seen},
+                )
+                if not authorizations["ok"]:
+                    raise ValueError(
+                        "request authorization audit failed: " + "; ".join(authorizations["errors"])
+                    )
+                report["frontend_authorization_verified"] = True
+                protocol = request_authority.get("protocol")
+                if require_frontend_source or protocol is not None:
+                    from aisle.harness.frontend_app_server_audit import verify_app_server_sources
+
+                    if type(protocol) is not dict or set(protocol) != {
+                        "artifacts",
+                        "expected",
+                        "byte_limit",
+                    }:
+                        raise ValueError("trusted frontend source evidence is missing")
+                    source = verify_app_server_sources(
+                        **protocol, grants=[link["frontend_authorization"] for link in index]
+                    )
+                    if not source["ok"]:
+                        raise ValueError(
+                            "frontend source audit failed: " + "; ".join(source["errors"])
+                        )
+                    report["frontend_source_verified"] = True
             report["service_verified"] = True
+        elif request_authority is not None or require_frontend_source:
+            raise ValueError("request authority evidence requires a service journal")
         report["ok"] = True
     except (OSError, ValueError, KeyError, TypeError) as exc:
         report["error"] = str(exc)

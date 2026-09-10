@@ -44,6 +44,8 @@ def run_engineering_session(
     Adapter capability does not replace the independent study prerequisites.
     """
 
+    authority_references = {}
+
     def launch(destination: Path) -> dict:
         current = verify_plan(plan, root, visible_roots)
         manifest = current["arms"][arm]
@@ -77,6 +79,7 @@ def run_engineering_session(
             json.dump(attestation, stream, indent=2, allow_nan=False)
             stream.write("\n")
         command = wrap_verified_command(argv, compiled, retained_profile, attestation)
+        app_server = "app_server" in current["launch_bindings"][arm]
         with (destination / "launch.json").open("x") as stream:
             json.dump(
                 {
@@ -87,14 +90,18 @@ def run_engineering_session(
                     "environment_sha256": ambient["record"]["environment_sha256"],
                     "compiled_profile_sha256": compiled.sha256,
                     "system_prompt_delivery": {
-                        "transport": "argv",
-                        "argument_index": current["launch_bindings"][arm]["system_prompt_arg"],
+                        "transport": "app_server_thread" if app_server else "argv",
+                        "argument_index": None
+                        if app_server
+                        else current["launch_bindings"][arm]["system_prompt_arg"],
                         "sha256": manifest["prompts"]["system_sha256"],
                         "provider_role_verified": False,
                     },
                     "research_contract_delivery": {
-                        "transport": "argv",
-                        "argument_index": current["launch_bindings"][arm]["research_contract_arg"],
+                        "transport": "app_server_thread" if app_server else "argv",
+                        "argument_index": None
+                        if app_server
+                        else current["launch_bindings"][arm]["research_contract_arg"],
                         "identity_sha256": manifest["prompts"]["research_contract_sha256"],
                         "encoding": "document_bundle_json" if current.get("prompt_row") else "text",
                         "frontend_interpretation_verified": False,
@@ -134,7 +141,7 @@ def run_engineering_session(
                         json.dump(guard.report(), stream, indent=2, allow_nan=False)
                         stream.write("\n")
 
-        if not {"harness.check", "harness.run"}.intersection(
+        if not app_server and not {"harness.check", "harness.run"}.intersection(
             manifest["policy"]["allowed_external_tools"]
         ):
             return run_agent()
@@ -153,11 +160,28 @@ def run_engineering_session(
             attestation=attestation,
             worker_preparations=worker_preparations,
         )
+        if app_server:
+            from aisle.harness.matched_app_server import run_authorized_app_server
+
+            return run_authorized_app_server(
+                controller,
+                command,
+                cwd=Path(visible_roots[arm]),
+                env=ambient["environment"],
+                launch=current["launch_bindings"][arm],
+                budget=budget,
+                references=authority_references,
+            )
         with ToolService(controller) as service:
             result = run_agent()
         if not service.report["ok"]:
             raise campaign.SessionInfraError("tool service failed or left pending requests", result)
         return result
+
+    def authority_evidence():
+        from aisle.harness.matched_app_server import acquire_authority_evidence
+
+        return acquire_authority_evidence(Path(output), authority_references)
 
     return execute_session(
         plan,
@@ -169,6 +193,7 @@ def run_engineering_session(
         launch=launch,
         hidden_access_log=hidden_access_log,
         purpose=purpose,
+        request_authority_evidence=authority_evidence,
     )
 
 

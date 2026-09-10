@@ -138,3 +138,10 @@ the inherited seed commitment, collection rules and all seven pending gates.
 The additional socket controls are synthetic engineering evidence; the
 registration does not authorize scored collection or attest complete IPC or
 independent confinement.
+
+CSE v12 supersedes v11 for authenticated Codex App Server harness requests,
+controller-owned responses, and their retained source-to-attempt evidence
+(#536; MON-8/MON-12/MON-13). It binds the new adapter and audit sources while
+preserving the inherited seed commitment, collection rules and all seven pending
+gates. V11 remains unchanged. Engineering fixtures do not establish complete
+frontend coverage, independent confinement, or authorization for study collection.
