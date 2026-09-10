@@ -21,7 +21,11 @@ class ToolObserver:
         self.agent = agent
         self.calls = {}
         self.line = 0
-        self.error = None if agent in {"codex", "claude"} else "unsupported frontend event schema"
+        self.error = (
+            None
+            if agent in {"codex", "claude", "codex_app_server"}
+            else "unsupported frontend event schema"
+        )
 
     def _observe(self, identity, kind, phase):
         if not isinstance(identity, str) or not identity or not isinstance(kind, str) or not kind:
@@ -51,6 +55,41 @@ class ToolObserver:
             event = json.loads(line)
             if not isinstance(event, dict):
                 raise ValueError("frontend event must be an object")
+            if self.agent == "codex_app_server":
+                method = event.get("method")
+                if method not in {"item/started", "item/completed"}:
+                    return
+                item = event.get("params", {}).get("item")
+                if type(item) is not dict:
+                    raise ValueError("app-server item is missing")
+                kind = item.get("type")
+                if kind in {
+                    "userMessage",
+                    "hookPrompt",
+                    "agentMessage",
+                    "functionCallOutput",
+                    "plan",
+                    "reasoning",
+                    "enteredReviewMode",
+                    "exitedReviewMode",
+                    "contextCompaction",
+                }:
+                    return
+                if kind not in {
+                    "commandExecution",
+                    "fileChange",
+                    "mcpToolCall",
+                    "dynamicToolCall",
+                    "collabAgentToolCall",
+                    "subAgentActivity",
+                    "webSearch",
+                    "imageView",
+                    "sleep",
+                    "imageGeneration",
+                }:
+                    raise ValueError("unknown app-server item type")
+                self._observe(item.get("id"), kind, method.split("/")[1])
+                return
             event_type = event.get("type")
             if not isinstance(event_type, str) or not event_type.strip():
                 raise ValueError("frontend event type is missing or invalid")

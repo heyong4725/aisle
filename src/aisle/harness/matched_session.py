@@ -72,6 +72,11 @@ CONTROLLER_FILES = (
     "src/aisle/harness/registry.py",
     "src/aisle/harness/matched_frontend.py",
     "src/aisle/harness/matched_tool_service.py",
+    "src/aisle/harness/matched_app_server.py",
+    "src/aisle/harness/frontend_app_server.py",
+    "src/aisle/harness/frontend_app_server_audit.py",
+    "src/aisle/harness/frontend_request_authority.py",
+    "src/aisle/harness/frontend_request_audit.py",
     "src/aisle/harness/cli.py",
     "src/aisle/harness/common.py",
     "src/aisle/harness/rollout.py",
@@ -345,15 +350,26 @@ def _verify_launches(candidates: dict, launches: dict, root: Path, prompt_row: s
         launch = launches[arm]
         if not isinstance(launch, dict):
             raise AdmissionError("unsupported launch binding")
-        if "system_prompt_arg" not in launch:
-            raise AdmissionError("system prompt argument binding is required")
-        if "research_contract_arg" not in launch:
-            raise AdmissionError("research contract argument binding is required")
-        if set(launch) not in (
-            {"argv", "system_prompt_arg", "research_contract_arg"},
-            {"argv", "system_prompt_arg", "research_contract_arg", "tool_python"},
-        ):
-            raise AdmissionError("unsupported launch binding")
+        app_server = "app_server" in launch
+        if app_server:
+            if (
+                set(launch) not in ({"argv", "app_server"}, {"argv", "app_server", "tool_python"})
+                or candidates[arm]["agent"]["kind"] != "codex"
+                or type(launch["app_server"]) is not dict
+                or set(launch["app_server"]) != {"baseInstructions", "developerInstructions"}
+                or any(type(value) is not str for value in launch["app_server"].values())
+            ):
+                raise AdmissionError("unsupported app-server launch binding")
+        else:
+            if "system_prompt_arg" not in launch:
+                raise AdmissionError("system prompt argument binding is required")
+            if "research_contract_arg" not in launch:
+                raise AdmissionError("research contract argument binding is required")
+            if set(launch) not in (
+                {"argv", "system_prompt_arg", "research_contract_arg"},
+                {"argv", "system_prompt_arg", "research_contract_arg", "tool_python"},
+            ):
+                raise AdmissionError("unsupported launch binding")
         argv = launch["argv"]
         if (
             not isinstance(argv, list)
@@ -361,24 +377,30 @@ def _verify_launches(candidates: dict, launches: dict, root: Path, prompt_row: s
             or not all(isinstance(value, str) and value and "\0" not in value for value in argv)
         ):
             raise AdmissionError("launch arguments must be a nonempty argv")
-        prompt_arg = launch["system_prompt_arg"]
-        if type(prompt_arg) is not int or not 0 < prompt_arg < len(argv):
-            raise AdmissionError("system prompt argument index is invalid")
+        if app_server:
+            system_prompt = launch["app_server"]["baseInstructions"]
+            research_contract = launch["app_server"]["developerInstructions"]
+        else:
+            prompt_arg = launch["system_prompt_arg"]
+            if type(prompt_arg) is not int or not 0 < prompt_arg < len(argv):
+                raise AdmissionError("system prompt argument index is invalid")
+            contract_arg = launch["research_contract_arg"]
+            if (
+                type(contract_arg) is not int
+                or not 0 < contract_arg < len(argv)
+                or contract_arg == prompt_arg
+            ):
+                raise AdmissionError("research contract argument index is invalid")
+            system_prompt = argv[prompt_arg]
+            research_contract = argv[contract_arg]
         if (
-            hashlib.sha256(argv[prompt_arg].encode()).hexdigest()
+            hashlib.sha256(system_prompt.encode()).hexdigest()
             != candidates[arm]["prompts"]["system_sha256"]
         ):
             raise AdmissionError("system prompt argument differs from admitted bytes")
-        contract_arg = launch["research_contract_arg"]
-        if (
-            type(contract_arg) is not int
-            or not 0 < contract_arg < len(argv)
-            or contract_arg == prompt_arg
-        ):
-            raise AdmissionError("research contract argument index is invalid")
         if prompt_row is None:
             if (
-                hashlib.sha256(argv[contract_arg].encode()).hexdigest()
+                hashlib.sha256(research_contract.encode()).hexdigest()
                 != candidates[arm]["prompts"]["research_contract_sha256"]
             ):
                 raise AdmissionError("research contract argument differs from admitted bytes")
@@ -394,9 +416,14 @@ def _verify_launches(candidates: dict, launches: dict, root: Path, prompt_row: s
                 {"path": name, "text": (root / name).read_bytes().decode("utf-8")}
                 for name in rows[0][arm]["paths"]
             ]
-            if argv[contract_arg] != json.dumps(bundle, ensure_ascii=False, separators=(",", ":")):
+            if research_contract != json.dumps(bundle, ensure_ascii=False, separators=(",", ":")):
                 raise AdmissionError("research contract argument differs from declared documents")
-            comparable[arm]["argv"][contract_arg] = "declared representation document bundle"
+            if app_server:
+                comparable[arm]["app_server"]["developerInstructions"] = (
+                    "declared representation document bundle"
+                )
+            else:
+                comparable[arm]["argv"][contract_arg] = "declared representation document bundle"
         executable = Path(argv[0])
         if (
             not executable.is_absolute()
@@ -869,6 +896,7 @@ def execute_session(
     hidden_access_log: Path,
     purpose: str = "engineering",
     now=_utc_now,
+    request_authority_evidence=None,
 ) -> dict:
     """Execute a controller-owned launcher and retain an unscored common record.
 
@@ -1038,6 +1066,8 @@ def execute_session(
             "tool-events.jsonl",
             "tool-service.json",
             "tool-request-index.jsonl",
+            "frontend-authority-reference.json",
+            "frontend-protocol-reference.json",
         ):
             path = output / name
             try:
@@ -1050,12 +1080,46 @@ def execute_session(
                 record["ok"] = False
                 record["classification"] = "infrastructure_exclusion"
         if "tool-events.jsonl" in record["artifacts"]:
+            authority_evidence = None
+            if request_authority_evidence is not None:
+                try:
+                    authority_evidence = request_authority_evidence()
+                    if authority_evidence is not None:
+                        snapshots = {"frontend-authority": authority_evidence["artifacts"]}
+                        if "protocol" in authority_evidence:
+                            snapshots["frontend-protocol"] = authority_evidence["protocol"][
+                                "artifacts"
+                            ]
+                        for directory, snapshot in snapshots.items():
+                            for name, data in snapshot.items():
+                                if Path(name).name != name:
+                                    raise ValueError("invalid authority evidence name")
+                                path = output / directory / name
+                                if path.resolve() != path:
+                                    raise ValueError("redirected authority evidence")
+                                with path.open("rb") as stream:
+                                    if stream.read(len(data) + 1) != data:
+                                        raise ValueError(
+                                            "authority evidence changed during finalization"
+                                        )
+                                record["artifacts"][f"{directory}/{name}"] = hashlib.sha256(
+                                    data
+                                ).hexdigest()
+                except Exception as exc:
+                    _record_error(record, f"request authority evidence acquisition failed: {exc}")
+                    record["ok"] = False
+                    record["classification"] = "infrastructure_exclusion"
             audit = audit_tool_journal(
                 output,
                 session_id=session_id,
                 plan_id=record["plan_id"],
                 arm=arm,
                 development=plan.get("development"),
+                request_authority=authority_evidence,
+                require_frontend_source=(
+                    manifest is not None
+                    and "app_server" in current.get("launch_bindings", {}).get(arm, {})
+                ),
             )
             record["tool_audit"] = audit
             record["artifacts"].update(audit["files"])
@@ -1084,6 +1148,11 @@ def execute_session(
             from aisle.harness.matched_frontend import observe_tools, verify_live_report
 
             try:
+                observer_kind = (
+                    "codex_app_server"
+                    if "app_server" in current.get("launch_bindings", {}).get(arm, {})
+                    else manifest["agent"]["kind"]
+                )
                 data = (output / "session.jsonl").read_bytes()
                 if hashlib.sha256(data).hexdigest() != record["artifacts"]["session.jsonl"]:
                     raise AdmissionError("frontend transcript changed during finalization")
@@ -1095,13 +1164,13 @@ def execute_session(
                         raise AdmissionError("live frontend report changed during finalization")
                     process = record["process"] if isinstance(record["process"], dict) else {}
                     verify_live_report(
-                        manifest["agent"]["kind"],
+                        observer_kind,
                         manifest["budget"]["frontend_tool_ceiling"],
                         data.decode().splitlines(),
                         json.loads(live_bytes),
                         process.get("stopped"),
                     )
-                observation = observe_tools(manifest["agent"]["kind"], data.decode().splitlines())
+                observation = observe_tools(observer_kind, data.decode().splitlines())
                 observation["transcript_sha256"] = record["artifacts"]["session.jsonl"]
                 if not observation["ok"]:
                     _record_error(record, f"frontend observation failed: {observation['error']}")

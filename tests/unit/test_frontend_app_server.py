@@ -1,0 +1,181 @@
+"""MON-8/MON-12/MON-13: app-server requests are bound to the active thread and turn."""
+
+import copy
+
+import pytest
+
+pytestmark = pytest.mark.unit
+
+
+def _call():
+    return {
+        "id": 7,
+        "method": "item/tool/call",
+        "params": {
+            "threadId": "thread",
+            "turnId": "turn",
+            "callId": "call",
+            "namespace": "harness",
+            "tool": "check",
+            "arguments": {},
+        },
+    }
+
+
+def test_dynamic_call_has_exact_frontend_identity():
+    """MON-12: preserve the app-server call identity before creating a request."""
+    from aisle.harness.frontend_app_server import parse_dynamic_call
+
+    assert parse_dynamic_call(_call(), thread_id="thread", turn_id="turn") == {
+        "turn_id": "turn",
+        "call_id": "call",
+        "tool_name": "harness.check",
+    }
+
+
+@pytest.mark.parametrize(
+    "change", ["thread", "turn", "namespace", "tool", "arguments", "extra", "id"]
+)
+def test_dynamic_call_cannot_change_the_admitted_request(change):
+    """MON-8/MON-13: foreign calls and participant-selected run parameters fail closed."""
+    from aisle.harness.frontend_app_server import parse_dynamic_call
+
+    call = copy.deepcopy(_call())
+    if change in ("thread", "turn"):
+        call["params"][change + "Id"] = "foreign"
+    elif change == "arguments":
+        call["params"]["arguments"] = {"seed": 123}
+    elif change == "extra":
+        call["params"]["authorization_id"] = "invented"
+    elif change == "id":
+        call["id"] = True
+    else:
+        call["params"][change] = "foreign"
+    with pytest.raises(ValueError):
+        parse_dynamic_call(call, thread_id="thread", turn_id="turn")
+
+
+@pytest.mark.parametrize("failure", ["foreign_call", "timeout", "eof", "malformed_then_call"])
+def test_owned_transport_failure_never_calls_controller_and_reaps_process(tmp_path, failure):
+    """MON-12/MON-13: an invalid or unavailable frontend cannot invoke an authorized tool."""
+    import os
+    import sys
+
+    from aisle.harness.frontend_app_server import run_app_server
+
+    script = tmp_path / "server.py"
+    pidfile = tmp_path / "pid"
+    script.write_text("""import json,os,pathlib,sys,time
+pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))
+for raw in sys.stdin:
+    row=json.loads(raw)
+    if 'id' not in row:
+        continue
+    result={}
+    if row['id']=='thread':
+        result={'thread':{'id':'thread'}}
+    if row['id']=='turn':
+        result={'turn':{'id':'turn'}}
+    print(json.dumps({'id':row['id'],'result':result}),flush=True)
+    if row['id']=='turn':
+        if sys.argv[2]=='malformed_then_call':
+            print('{}',flush=True)
+            print(json.dumps({'id':7,'method':'item/tool/call','params':{
+                'threadId':'thread','turnId':'turn','callId':'call',
+                'namespace':'harness','tool':'check','arguments':{}}}),flush=True)
+        elif sys.argv[2]=='foreign_call':
+            print(json.dumps({'id':7,'method':'item/tool/call','params':{
+                'threadId':'foreign','turnId':'turn','callId':'call',
+                'namespace':'harness','tool':'check','arguments':{}}}),flush=True)
+        elif sys.argv[2]=='eof':
+            break
+        time.sleep(60)
+""")
+    called = []
+    with pytest.raises((ValueError, TimeoutError)):
+        run_app_server(
+            [sys.executable, "-I", str(script), str(pidfile), failure],
+            cwd=tmp_path,
+            env={"PATH": os.defpath},
+            output=tmp_path / "protocol",
+            thread_params={},
+            input_items=[],
+            handle_call=lambda *args: called.append(args),
+            timeout_s=0.5,
+        )
+    assert not called
+    assert (tmp_path / "protocol/failure.json").is_file()
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(pidfile.read_text()), 0)
+
+
+def _usage(input_tokens=10, cached=3, output=2):
+    totals = {
+        "inputTokens": input_tokens,
+        "cachedInputTokens": cached,
+        "outputTokens": output,
+        "reasoningOutputTokens": 0,
+        "totalTokens": input_tokens + output,
+    }
+    return {
+        "threadId": "thread",
+        "turnId": "turn",
+        "tokenUsage": {"total": totals, "last": dict(totals)},
+    }
+
+
+def test_app_server_usage_counts_cumulative_updates_once():
+    """MON-8/MON-12: repeated cumulative usage cannot double-count shared token budgets."""
+    from aisle.harness.frontend_app_server import AppServerUsage
+
+    meter = AppServerUsage("thread", "turn")
+    meter.feed(_usage())
+    meter.feed(_usage())
+    assert meter.report() == {"tokens": 9, "tokens_generated": 2}
+    meter.feed(_usage(input_tokens=15, cached=5, output=4))
+    assert meter.report() == {"tokens": 14, "tokens_generated": 4}
+
+
+@pytest.mark.parametrize(
+    "drift", ["missing", "foreign", "negative", "boolean", "cache", "backwards"]
+)
+def test_app_server_usage_rejects_missing_or_invalid_accounting(drift):
+    """MON-8/MON-13: missing or inconsistent usage cannot become a zero-token session."""
+    from aisle.harness.frontend_app_server import AppServerUsage
+
+    meter = AppServerUsage("thread", "turn")
+    value = _usage()
+    if drift == "foreign":
+        value["threadId"] = "foreign"
+    elif drift == "negative":
+        value["tokenUsage"]["total"]["outputTokens"] = -1
+    elif drift == "boolean":
+        value["tokenUsage"]["total"]["outputTokens"] = True
+    elif drift == "cache":
+        value["tokenUsage"]["total"]["cachedInputTokens"] = 11
+    elif drift == "backwards":
+        meter.feed(_usage(input_tokens=20))
+    with pytest.raises(ValueError):
+        if drift != "missing":
+            meter.feed(value)
+        meter.report()
+
+
+def test_cached_usage_cannot_reduce_already_observed_spend():
+    """MON-8/MON-13: growing cumulative cache counts cannot refund observed token spend."""
+    from aisle.harness.frontend_app_server import AppServerUsage
+
+    meter = AppServerUsage("thread", "turn")
+    meter.feed(_usage())
+    with pytest.raises(ValueError):
+        meter.feed(_usage(cached=8))
+
+
+def test_last_usage_cannot_exceed_cumulative_usage():
+    """MON-12/MON-13: a last response cannot exceed the same thread's cumulative totals."""
+    from aisle.harness.frontend_app_server import AppServerUsage
+
+    value = _usage()
+    value["tokenUsage"]["last"] = _usage(input_tokens=20)["tokenUsage"]["total"]
+    with pytest.raises(ValueError):
+        AppServerUsage("thread", "turn").feed(value)

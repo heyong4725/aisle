@@ -1829,3 +1829,58 @@ def test_postflight_revalidates_private_role_directory(tmp_path, replace_private
     if replace_private_directory:
         assert "private" in record["error"], record
         assert record["classification"] == "infrastructure_exclusion"
+
+
+def _app_server_launch_pair(candidates):
+    launches = _launch_pair(candidates)
+    return {
+        arm: {
+            "argv": [launch["argv"][0], "app-server", "--listen", "stdio://"],
+            "app_server": {
+                "baseInstructions": "system prompt",
+                "developerInstructions": "research contract",
+            },
+        }
+        for arm, launch in launches.items()
+    }
+
+
+def test_app_server_prompt_binding_uses_thread_parameters(tmp_path):
+    """MON-8/MON-13: admission binds actual thread prompts instead of unused argv slots."""
+    from aisle.harness.matched_session import admit_pair, verify_plan
+
+    control, candidates, roots = prepared_pair(tmp_path)
+    launches = _app_server_launch_pair(candidates)
+    plan = admit_pair(control, candidates, roots, launches=launches)
+    assert verify_plan(plan, control, roots)["launch_bindings"] == launches
+
+
+@pytest.mark.parametrize("field", ["baseInstructions", "developerInstructions"])
+def test_app_server_prompt_drift_cannot_be_hidden_in_equal_arm_configuration(tmp_path, field):
+    """MON-8/MON-13: equal wrong prompts still fail their admitted content hashes."""
+    from aisle.harness.matched_session import AdmissionError, admit_pair
+
+    control, candidates, roots = prepared_pair(tmp_path)
+    launches = _app_server_launch_pair(candidates)
+    for launch in launches.values():
+        launch["app_server"][field] = "changed prompt"
+    with pytest.raises(AdmissionError, match="differs"):
+        admit_pair(control, candidates, roots, launches=launches)
+
+
+def test_app_server_declared_document_bundle_is_bound_for_each_arm(tmp_path):
+    """MON-1/MON-8: representation-specific documents retain their existing declared exception."""
+    from aisle.harness.matched_session import admit_pair
+
+    control, candidates, roots = prepared_pair(tmp_path)
+    row = _representation_documents(control, candidates, roots)
+    launches = _app_server_launch_pair(candidates)
+    for arm, launch in launches.items():
+        bundle = [
+            {"path": name, "text": (control / name).read_bytes().decode()}
+            for name in row[arm]["paths"]
+        ]
+        launch["app_server"]["developerInstructions"] = json.dumps(
+            bundle, ensure_ascii=False, separators=(",", ":")
+        )
+    assert admit_pair(control, candidates, roots, launches=launches, prompt_row=row["id"])
