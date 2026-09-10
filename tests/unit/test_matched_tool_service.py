@@ -185,6 +185,7 @@ for raw in sys.stdin:
             "tool_python": sys.executable,
         }
         if app_server:
+            candidate["budget"]["frontend_tool_ceiling"] = 2
             launches[name] = {
                 "argv": [str(fixture), "app-server", "--listen", "stdio://"],
                 "tool_python": sys.executable,
@@ -240,6 +241,9 @@ for raw in sys.stdin:
     assert result["ok"] is True, result
     if app_server:
         assert result["tool_audit"]["frontend_source_verified"] is True
+        assert result["tool_audit"]["frontend_reservation_verified"] is True
+        assert "frontend-dispatch-reference.json" in result["artifacts"]
+        assert "frontend-dispatch/00000001.frame" in result["artifacts"]
         assert result["process"]["tokens"] == 11
         assert result["process"]["tokens_generated"] == 3
         assert result["process"]["rc"] == 0

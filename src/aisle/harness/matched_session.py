@@ -77,6 +77,8 @@ CONTROLLER_FILES = (
     "src/aisle/harness/frontend_app_server_audit.py",
     "src/aisle/harness/frontend_request_authority.py",
     "src/aisle/harness/frontend_request_audit.py",
+    "src/aisle/harness/frontend_dispatch.py",
+    "src/aisle/harness/frontend_dispatch_audit.py",
     "src/aisle/harness/cli.py",
     "src/aisle/harness/common.py",
     "src/aisle/harness/rollout.py",
@@ -1068,6 +1070,7 @@ def execute_session(
             "tool-request-index.jsonl",
             "frontend-authority-reference.json",
             "frontend-protocol-reference.json",
+            "frontend-dispatch-reference.json",
         ):
             path = output / name
             try:
@@ -1088,6 +1091,10 @@ def execute_session(
                         snapshots = {"frontend-authority": authority_evidence["artifacts"]}
                         if "protocol" in authority_evidence:
                             snapshots["frontend-protocol"] = authority_evidence["protocol"][
+                                "artifacts"
+                            ]
+                        if "dispatch" in authority_evidence:
+                            snapshots["frontend-dispatch"] = authority_evidence["dispatch"][
                                 "artifacts"
                             ]
                         for directory, snapshot in snapshots.items():
@@ -1119,6 +1126,12 @@ def execute_session(
                 require_frontend_source=(
                     manifest is not None
                     and "app_server" in current.get("launch_bindings", {}).get(arm, {})
+                ),
+                frontend_dispatch_ceiling=(
+                    manifest["budget"].get("frontend_tool_ceiling")
+                    if manifest is not None
+                    and "app_server" in current.get("launch_bindings", {}).get(arm, {})
+                    else None
                 ),
             )
             record["tool_audit"] = audit
