@@ -89,7 +89,8 @@ def test_manifest_attests_authored_and_executed_hashes_end_to_end(tmp_path, monk
             pid = 0
 
             def poll(self):
-                return None
+                # All results were written synchronously before this process was returned.
+                return 0
 
         return FakeProc()
 
@@ -221,7 +222,8 @@ def test_settle_records_actual_episode_count(tmp_path, monkeypatch):
             pid = 0
 
             def poll(self):
-                return None
+                # All results were written synchronously before this process was returned.
+                return 0
 
         return FakeProc()
 
