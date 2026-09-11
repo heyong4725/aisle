@@ -28,7 +28,7 @@ from typing import Any
 
 DECLARATION_SCHEMA = "aisle.freeze.declaration.v1"
 MANIFEST_SCHEMA = "aisle.freeze.manifest.v1"
-PURPOSES = ("pre_registration", "calibration", "ablation", "confirmatory")
+PURPOSES = ("pre_registration", "calibration", "pilot", "ablation", "confirmatory")
 GATE_KINDS = ("machine_check", "external_review")
 GATE_STATUSES = ("pending", "passed", "failed")
 ENDPOINT_STATUSES = ("inferential", "descriptive", "exploratory")
