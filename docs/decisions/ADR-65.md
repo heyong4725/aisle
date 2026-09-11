@@ -1,8 +1,9 @@
 # ADR-65 — pilot first: a labelled pilot evidence tier and the execution order
 
-Status: PROPOSED (agent-drafted 2026-09-11 at the owner's direction after the
-owner agreed the project is rigorous in the wrong order; owner sign-off per
-CON-10). Answers issue #567. Touches no frozen path and no hashed executor
+Status: ACCEPTED 2026-09-11 (owner sign-off per CON-10, triage table accepted
+as proposed, after merge of #569; agent-drafted the same day at the owner's
+direction after the owner agreed the project is rigorous in the wrong
+order). Answers issue #567. Touches no frozen path and no hashed executor
 code; adds the `pilot` purpose to the freeze registry. The Class A gate
 relaxation it names is a separate `spec-change` to CON-9/CON-16.
 
@@ -78,7 +79,7 @@ the judge.
 Nothing new enters `specs/` until items 1 and 2 report, except spec-changes
 those runs force. The PROPOSED specs are triaged once, by the owner, into:
 
-| Spec | Needed by #347 pilot or H6? | Proposed disposition |
+| Spec | Needed by #347 pilot or H6? | Disposition (owner, 2026-09-11) |
 |---|---|---|
 | 400 statistics | yes, pilot analysis | ratify the pilot path now; STA-12 review stays a confirmatory gate |
 | 420 treatment integrity | partly, session admission | ratify what #519 implements; park the rest |
@@ -96,7 +97,7 @@ those runs force. The PROPOSED specs are triaged once, by the owner, into:
 | 530 reproduction archive | no | park |
 | 540 public benchmark | no | park |
 
-Disposition is the owner's; the table is the proposal.
+Dispositions above are the owner's decision, accepted as proposed on 2026-09-11. "Park" means the spec stays PROPOSED and untouched until the moratorium lifts.
 
 ### 5. Freeze discipline and cadence
 
