@@ -12,7 +12,7 @@ from test_typed_validation_snapshot import ROOT
 pytestmark = pytest.mark.unit
 
 
-def _stage(tmp_path, *, share_home=False, direct_python=False):
+def _stage(tmp_path, *, share_home=False, direct_python=True):
     from aisle.harness.treatment_ambient import build_declared_environment
     from aisle.harness.treatment_confinement import MacOSPolicy, compile_macos_profile
     from aisle.harness.typed_graph_stage import stage_typed_graph

@@ -23,7 +23,8 @@ def verify_provider(binding):
     """Require an explicit upstream; local HTTP is for operator-owned fixtures only."""
     _require(
         type(binding) is dict
-        and set(binding) in ({"base_url"}, {"base_url", "requires_openai_auth"}),
+        and set(binding) - {"hosted_tool_contract"}
+        in ({"base_url"}, {"base_url", "requires_openai_auth"}),
         "invalid provider binding",
     )
     _require(type(binding.get("requires_openai_auth", True)) is bool, "invalid provider auth mode")
@@ -45,6 +46,22 @@ def verify_provider(binding):
     )
     _require(not any(ord(c) < 33 for c in value), "invalid provider URL characters")
     _require(url.port is None or 0 < url.port < 65536, "invalid provider port")
+    if "hosted_tool_contract" in binding:
+        contract = binding["hosted_tool_contract"]
+        _require(
+            (
+                contract == "openai.responses.max_tool_calls.v1"
+                and url.scheme == "https"
+                and url.hostname == "api.openai.com"
+                and url.port in (None, 443)
+                and url.path.rstrip("/") == "/v1"
+            )
+            or (
+                contract == "aisle.fixture.responses.max_tool_calls.v1"
+                and url.hostname in ("127.0.0.1", "::1", "localhost")
+            ),
+            "hosted contract is not bound to its supported provider",
+        )
     return url
 
 
@@ -58,6 +75,7 @@ class ProviderRelay:
 
     def __init__(self, binding, *, dispatch, output, timeout_s, delegated_tools=()):
         self.url = verify_provider(binding)
+        self.hosted_contract = binding.get("hosted_tool_contract")
         _require(
             type(timeout_s) in (int, float) and 0 < timeout_s < 86400, "invalid provider deadline"
         )
@@ -200,28 +218,49 @@ class ProviderRelay:
             )
             with self._lock:
                 self._connections.add(upstream)
-            upstream.request("POST", self.url.path.rstrip("/") + "/responses", raw, headers)
-            response = upstream.getresponse()
-            _require(response.status == 200, "provider returned non-success status")
-            _require(
-                response.getheader("Content-Type", "").split(";", 1)[0].strip()
-                == "text/event-stream",
-                "provider did not return SSE",
-            )
-            _require(
-                response.getheader("Content-Encoding", "identity") == "identity",
-                "compressed provider response refused",
-            )
-            size = 0
-            while True:
+
+            def exchange(request):
                 self._check()
-                part = response.read1(min(65536, MAX_FRAME_BYTES + 1 - size))
-                if not part:
-                    break
-                chunks.append(part)
-                size += len(part)
-                _require(size <= MAX_FRAME_BYTES, "unbounded provider response")
-            source = b"".join(chunks)
+                upstream.request("POST", self.url.path.rstrip("/") + "/responses", request, headers)
+                response = upstream.getresponse()
+                _require(response.status == 200, "provider returned non-success status")
+                _require(
+                    response.getheader("Content-Type", "").split(";", 1)[0].strip()
+                    == "text/event-stream",
+                    "provider did not return SSE",
+                )
+                _require(
+                    response.getheader("Content-Encoding", "identity") == "identity",
+                    "compressed provider response refused",
+                )
+                size = 0
+                while True:
+                    self._check()
+                    part = response.read1(min(65536, MAX_FRAME_BYTES + 1 - size))
+                    if not part:
+                        break
+                    chunks.append(part)
+                    size += len(part)
+                    _require(size <= MAX_FRAME_BYTES, "unbounded provider response")
+                return b"".join(chunks)
+
+            if self.hosted_contract is not None:
+                from aisle.harness.provider_hosted import hosted_calls, request_tools
+
+                _require(
+                    headers.get("Content-Encoding", "identity") == "identity",
+                    "compressed hosted request is not qualified",
+                )
+                _, hosted = request_tools(raw)
+                source = (
+                    self.authority.dispatch.hosted_response(prefix, raw, exchange)
+                    if hosted
+                    else exchange(raw)
+                )
+                if not hosted:
+                    _require(not hosted_calls(source), "unadvertised hosted work")
+            else:
+                source = exchange(raw)
             self._retain(prefix + "-response.sse", source)
             source_retained = True
             with self._forward_lock:
@@ -338,6 +377,15 @@ class ProviderRelay:
         try:
             self._server = Server(("127.0.0.1", 0), Handler)
             self.address = self._server.server_address
+            self._retain(
+                "listener.json",
+                {
+                    "schema_version": "aisle.provider-relay-listener.v1",
+                    "session_id": self.authority.dispatch.session_id,
+                    "host": self.address[0],
+                    "port": self.address[1],
+                },
+            )
             self._worker = threading.Thread(
                 target=lambda: self._server.serve_forever(poll_interval=0.05)
             )

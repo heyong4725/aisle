@@ -679,7 +679,7 @@ class ToolController:
                         "--embodiment",
                         "franka",
                     ]
-                command = [str(self.python), "-m", "aisle.harness.cli", *args]
+                command = [str(self.python), "-B", "-m", "aisle.harness.cli", *args]
                 retained_profile = output / "profile.sb"
                 retained_profile.write_bytes(self.profile_path.read_bytes())
                 wrapped = wrap_verified_command(

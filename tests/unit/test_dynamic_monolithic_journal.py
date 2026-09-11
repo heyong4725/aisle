@@ -35,7 +35,8 @@ def test_dynamic_monolithic_child_retains_auditable_authored_failure(tmp_path):
             packages / package.__name__,
             ignore=shutil.ignore_patterns("__pycache__"),
         )
-    runtime = capture_runtime((Path(sys.executable).resolve().parent.parent, packages))
+    runtime_roots = {Path(path) for path in controller.plan["tool_runtime"]["trees"]}
+    runtime = capture_runtime(sorted(runtime_roots | {packages}))
     candidates = copy.deepcopy(controller.plan["arms"])
     for candidate in candidates.values():
         candidate.pop("immutable_id")

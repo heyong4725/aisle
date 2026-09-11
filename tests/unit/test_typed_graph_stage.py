@@ -12,10 +12,10 @@ from test_typed_validation_snapshot import ROOT
 pytestmark = pytest.mark.unit
 
 
-def _validated(tmp_path, *, direct_python=False):
+def _validated(tmp_path, *, direct_python=True):
     from aisle.harness.typed_validation import run_validation
 
-    inputs = _inputs(tmp_path, direct_python=direct_python)
+    inputs = _inputs(tmp_path, direct_python=direct_python, worker_packages=True)
     result = run_validation(**inputs)
     assert result["ok"]
     return inputs

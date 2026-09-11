@@ -64,6 +64,7 @@ async def run_code_mode_app_server(
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
     process = None
     proxy = None
+    listener = None
     tasks = []
     failure = None
     try:
@@ -88,6 +89,13 @@ async def run_code_mode_app_server(
                 os.fsync(stream.fileno())
             authority = CodeModeAuthority(dispatch, delegated_tools=delegated_tools)
             async with CodeModeProxy(endpoint, authority, output=output / "rpc") as proxy:
+                address, port = proxy.address.rsplit(":", 1)
+                listener = {
+                    "schema_version": "aisle.code-mode-listener.v1",
+                    "session_id": dispatch.session_id,
+                    "host": address,
+                    "port": int(port),
+                }
                 frontend = asyncio.create_task(
                     run_app_server_async(
                         [
@@ -117,20 +125,37 @@ async def run_code_mode_app_server(
         failure = type(exc).__name__ + ": " + str(exc)
         raise
     finally:
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        if process is not None:
+
+        async def reap():
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            if process is not None:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                await process.wait()
+
+        cleanup = asyncio.create_task(reap())
+        cancellation = None
+        while not cleanup.done():
             try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            await process.wait()
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError as exc:
+                cancellation = exc
+        cleanup.result()
+        if cancellation is not None and failure is None:
+            failure = "CancelledError: " + str(cancellation)
         references["code_mode"] = {
             "host": dict(host),
+            "listener": listener,
+            "backend": proxy.backend if proxy is not None else None,
             "delegated_tools": sorted(delegated_tools),
             "failure": failure,
             "proxy": proxy.reference() if proxy is not None else None,
             "complete_coverage": False,
             "confinement_verified": False,
         }
+        if cancellation is not None:
+            raise cancellation

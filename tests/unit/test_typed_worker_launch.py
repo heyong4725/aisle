@@ -18,7 +18,7 @@ def _inputs(tmp_path, source=None):
     from aisle.harness.typed_execution_bundle import build_execution_bundle
     from aisle.turn_node import Node
 
-    inputs = validation_inputs(tmp_path)
+    inputs = validation_inputs(tmp_path, worker_packages=True)
     snapshot = inputs.pop("snapshot")
     receipt = inputs.pop("snapshot_record")
     inputs.pop("embodiment")

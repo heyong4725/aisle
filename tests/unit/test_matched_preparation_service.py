@@ -8,12 +8,15 @@ from pathlib import Path
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "accept"))
 pytestmark = pytest.mark.unit
 
 
 @pytest.mark.parametrize("arm", ["typed", "monolithic"])
 def test_frontend_run_request_uses_private_current_source_preparation(tmp_path, arm):
     """MON-8/MON-12: a parameter-free child request reaches real arm preparation and audit."""
+    from conformance_run_fixture import worker_preparation_runs
+
     from aisle.harness.matched_evidence import audit_tool_journal
     from aisle.harness.matched_tool_service import ToolService
     from aisle.harness.matched_tools import ToolController
@@ -34,7 +37,8 @@ def test_frontend_run_request_uses_private_current_source_preparation(tmp_path, 
         old, views, output, validation = _controller(tmp_path)
         declaration, _ = _workers(tmp_path, old, views, output, validation)
     (output / "tool-events.jsonl").unlink()
-    supplied = [declaration]
+    prepared = {arm: declaration if arm == "typed" else [declaration]}
+    supplied = worker_preparation_runs(prepared, arm)
     controller = ToolController(
         old.plan,
         old.root,

@@ -911,7 +911,13 @@ def _spawn_dora(exec_graph: Path, run_dir: Path, env: dict, relaunch: int = 0) -
         # the orphan reaper filters on — with cwd=root the filter matched
         # nothing and leaked nodes raced the cleanup (T09 smoke)
         cwd=run_dir,
-        env=env,
+        # Dora's Python nodes do not inherit the controller's -B flag.
+        # Keep bytecode and Numba's independent JIT cache out of the runtime.
+        env={
+            **env,
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "NUMBA_CACHE_DIR": str(run_dir / ".cache" / "numba"),
+        },
         # The pinned dora tracing subscriber emits the daemon INFO/WARN stream
         # on stdout (issue #201). A file has no PIPE capacity ceiling, preserves
         # the scheduler/startup/exit diagnostics, and cannot block because the
@@ -1372,8 +1378,17 @@ def rollout(
                 if total > lines_at_count:
                     lines_at_count = total
                     count_met_t = time.monotonic()
-                if proc.poll() is not None or time.monotonic() - count_met_t > 90.0:
+                if proc.poll() is not None or (
+                    typed_stage is None and time.monotonic() - count_met_t > 90.0
+                ):
                     break
+                if typed_stage is not None:
+                    # Typed hosts still verify runtime integrity and write their
+                    # terminal records after authored workers finish. Episode
+                    # silence is not a completed host postflight. The enclosing
+                    # run deadline continues to bound this wait.
+                    time.sleep(2.0)
+                    continue
             if lines != last_lines:
                 last_lines = lines
                 last_line_t = time.monotonic()

@@ -102,10 +102,43 @@ def verify_validation_bundle(bundle, manifest):
         raise ValidationError("validator bundle inventory has drifted")
 
 
+def _verify_interpreter_startup(python, runtime_record):
+    """Bind executable selection and both locations Python searches for pyvenv.cfg."""
+    python = Path(python)
+    roots = tuple(Path(root) for root in runtime_record["trees"])
+    if (
+        not python.is_absolute()
+        or python != Path(os.path.abspath(python))
+        or not os.access(python, os.X_OK)
+        or not any(python.resolve().is_relative_to(root) for root in roots)
+    ):
+        raise ValidationError("validation interpreter is outside bound runtime trees")
+    for prefix in (python.parent.parent, python.resolve().parent.parent):
+        if not any(prefix.is_relative_to(root) for root in roots):
+            raise ValidationError("validation startup configuration is outside bound runtime trees")
+
+
 def validation_command(
     python, bundle, manifest, snapshot, snapshot_record, embodiment, *, runtime_record=None
 ):
     """Prepare the fixed normal-validation command; caller must confine its execution."""
+    if runtime_record is not None:
+        verify_runtime(runtime_record)
+    return _validation_command_fields(
+        python,
+        bundle,
+        manifest,
+        snapshot,
+        snapshot_record,
+        embodiment,
+        runtime_record=runtime_record,
+    )
+
+
+def _validation_command_fields(
+    python, bundle, manifest, snapshot, snapshot_record, embodiment, *, runtime_record=None
+):
+    """Check command inputs; the launch boundary separately inventories runtime bytes."""
     bundle, snapshot = Path(bundle).absolute(), Path(snapshot).absolute()
     verify_validation_bundle(bundle, manifest)
     verify_typed_validation_snapshot(snapshot, snapshot_record)
@@ -114,9 +147,9 @@ def validation_command(
     if embodiment not in ("franka", "so101"):
         raise ValidationError("unsupported matched validation embodiment")
     if runtime_record is not None:
-        verify_runtime(runtime_record)
+        _verify_interpreter_startup(python, runtime_record)
     return [
-        str(Path(python).resolve() if runtime_record is not None else Path(python).absolute()),
+        str(Path(python).absolute()),
         "-I",
         "-B",
         "-c",
@@ -153,6 +186,35 @@ def verify_validation_launch(
     environment,
     environment_record,
 ):
+    """Verify current runtime contents and the declared validation authority."""
+    verify_runtime(runtime_record)
+    return _verify_validation_launch_fields(
+        bundle=bundle,
+        bundle_manifest=bundle_manifest,
+        snapshot_storage=snapshot_storage,
+        source_roots=source_roots,
+        policy=policy,
+        python=python,
+        python_sha256=python_sha256,
+        runtime_record=runtime_record,
+        environment=environment,
+        environment_record=environment_record,
+    )
+
+
+def _verify_validation_launch_fields(
+    *,
+    bundle,
+    bundle_manifest,
+    snapshot_storage,
+    source_roots,
+    policy,
+    python,
+    python_sha256,
+    runtime_record,
+    environment,
+    environment_record,
+):
     """Verify static validation authority without executing a participant or validator."""
     bundle, snapshot_storage, python = (
         Path(p).absolute() for p in (bundle, snapshot_storage, python)
@@ -161,13 +223,11 @@ def verify_validation_launch(
         raise ValidationError("validation snapshot storage is redirected or not a directory")
     verify_validation_bundle(bundle, bundle_manifest)
     compiled = compile_macos_profile(policy)
-    verify_runtime(runtime_record)
     runtime_roots = {Path(p) for p in runtime_record["trees"]}
     system_roots = {Path("/System"), Path("/usr/lib")}
     if set(policy.runtime_read_roots) - system_roots != runtime_roots:
         raise ValidationError("validation runtime read grants differ from bound trees")
-    if not any(python.resolve().is_relative_to(p) for p in runtime_roots):
-        raise ValidationError("validation interpreter is outside bound runtime trees")
+    _verify_interpreter_startup(python, runtime_record)
     if any(
         read.is_relative_to(write) or write.is_relative_to(read)
         for read in runtime_roots
@@ -251,7 +311,7 @@ def run_validation(
     try:
         if type(timeout_s) not in (int, float) or not math.isfinite(timeout_s) or timeout_s <= 0:
             raise ValidationError("validation timeout must be finite and positive")
-        compiled = verify_validation_launch(
+        compiled = _verify_validation_launch_fields(
             bundle=bundle,
             bundle_manifest=bundle_manifest,
             snapshot_storage=storage,
@@ -263,7 +323,7 @@ def run_validation(
             environment=environment,
             environment_record=environment_record,
         )
-        command = validation_command(
+        command = _validation_command_fields(
             python,
             bundle,
             bundle_manifest,
@@ -360,6 +420,17 @@ def run_validation(
 
 
 def verify_validation_binding(binding, runtime_record, source_roots, participant_policies):
+    """Verify current runtime contents and the declared validation authority."""
+    verify_runtime(runtime_record)
+    return _verify_validation_binding_fields(
+        binding=binding,
+        runtime_record=runtime_record,
+        source_roots=source_roots,
+        participant_policies=participant_policies,
+    )
+
+
+def _verify_validation_binding_fields(binding, runtime_record, source_roots, participant_policies):
     """Decode and verify a fixed typed-check launch declaration for session admission."""
     fields = {
         "schema_version",
@@ -397,7 +468,7 @@ def verify_validation_binding(binding, runtime_record, source_roots, participant
                     asset.is_relative_to(path) or path.is_relative_to(asset) for asset in protected
                 ):
                     raise ValidationError("validation assets overlap participant authority")
-    compiled = verify_validation_launch(
+    compiled = _verify_validation_launch_fields(
         **{
             key: kwargs[key]
             for key in (

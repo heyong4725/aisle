@@ -324,3 +324,27 @@ def test_live_guard_refuses_invalid_claude_content_discriminator(role, block):
         guard(json.dumps(event))
     assert guard.report()["observed_calls"] is None
     assert guard.report()["complete_coverage"] is False
+
+
+def test_dispatch_guard_retains_attempts_without_preempting_authority():
+    """MON-8/MON-13: attempted telemetry must not preempt the owned pre-execution refusal."""
+    from aisle.harness.matched_frontend import FrontendToolBudget, verify_live_report
+
+    guard = FrontendToolBudget("codex_app_server", 1, admission_controlled=True)
+    lines = [
+        json.dumps({"method": "item/started", "params": {"item": {"id": name, "type": kind}}})
+        for name, kind in [("native", "commandExecution"), ("harness", "dynamicToolCall")]
+    ]
+    for line in lines:
+        assert guard(line) is None
+    assert guard.report()["observed_calls"] == 2
+    assert guard.report()["enforcement"] == "dispatch"
+    verify_live_report(
+        "codex_app_server", 1, lines, guard.report(), None, admission_controlled=True
+    )
+    with pytest.raises(ValueError):
+        verify_live_report("codex_app_server", 1, lines, guard.report(), None)
+    with pytest.raises(ValueError, match="telemetry"):
+        guard("not json")
+    with pytest.raises(ValueError):
+        FrontendToolBudget("codex", 1, admission_controlled=True)

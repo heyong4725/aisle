@@ -148,6 +148,7 @@ def common_envelope(record: dict, manifest: dict | None, validation: dict | None
             "tools": copy.deepcopy(tool_audit),
             "frontend_tools": copy.deepcopy(frontend),
             "private_state": copy.deepcopy(record.get("private_state")),
+            "conformance_profile": copy.deepcopy(record.get("conformance_profile")),
         },
         "exclusions": [record["error"]] if record["error"] else [],
         "content_hashes": copy.deepcopy(artifacts),
@@ -709,7 +710,18 @@ def audit_tool_journal(
                 if collection.get("simulator") != _episode_simulator_time(raw_episodes):
                     raise ValueError("simulator summary differs from raw episode evidence")
                 if collection["ok"] or collection["guards"]["status"] == "retained":
-                    if collection["guards"] != _retained_guard_evidence(run_directory / "raw"):
+                    expected_guards = _retained_guard_evidence(run_directory / "raw")
+                    if expected_guards["status"] == "retained":
+                        summary = collection["guards"].get("summary")
+                        if not isinstance(summary, dict) or not isinstance(
+                            summary.get("run_dir"), str
+                        ):
+                            raise ValueError("guard summary lacks its diagnostic source directory")
+                        # The absolute collection location is diagnostic, not a
+                        # measured guard value. Replay may relocate authenticated
+                        # traces; compare every statistic and trace name unchanged.
+                        expected_guards["summary"]["run_dir"] = summary["run_dir"]
+                    if collection["guards"] != expected_guards:
                         raise ValueError("guard summary differs from raw evidence")
             elif (
                 run_directory.exists() or run_directory.is_symlink()
@@ -1160,7 +1172,11 @@ def audit_tool_journal(
 
                 if (
                     type(request_authority) is not dict
-                    or set(request_authority)
+                    or (
+                        "mcp_harness" in request_authority
+                        and not {"protocol", "provider", "dispatch"}.issubset(request_authority)
+                    )
+                    or set(request_authority) - {"mcp_harness"}
                     not in (
                         {"artifacts", "expected", "byte_limit"},
                         {"artifacts", "expected", "byte_limit", "protocol"},
@@ -1222,6 +1238,7 @@ def audit_tool_journal(
                         dispatch_ceiling=frontend_dispatch_ceiling,
                         code_mode=request_authority.get("code_mode"),
                         provider=request_authority.get("provider"),
+                        mcp_harness=request_authority.get("mcp_harness"),
                     )
                     if not source["ok"]:
                         raise ValueError(

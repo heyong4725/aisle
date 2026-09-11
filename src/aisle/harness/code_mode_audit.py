@@ -18,10 +18,10 @@ from aisle.harness.frontend_dispatch_audit import _constant, _object, verify_dis
 
 
 class _Reservations:
-    def __init__(self, dispatch):
+    def __init__(self, dispatch, *, empty_rpc=False):
         report = verify_dispatch_journal(**dispatch)
         _require(
-            report["ok"] and report["delivery_uncertain"] is False,
+            report["ok"] and (empty_rpc or report["delivery_uncertain"] is False),
             "invalid nested dispatch evidence",
         )
         self.rows = []
@@ -35,6 +35,11 @@ class _Reservations:
                     dispatch["artifacts"][prefix + ".frame"],
                 )
             )
+        _require(
+            not empty_rpc
+            or not any(row["call"]["turn_id"].startswith("code-mode:") for _, row, _ in self.rows),
+            "empty RPC evidence hides nested reservations",
+        )
 
     def dispatch(self, call, frame, deliver):
         matches = [
@@ -51,16 +56,20 @@ class _Reservations:
         return {"reservation": row}
 
 
-def verify_code_mode_sources(artifacts, *, expected, delegated_tools, dispatch, byte_limit):
+def verify_code_mode_sources(
+    artifacts, *, expected, delegated_tools, dispatch, byte_limit, host_failure=None
+):
     """Return the disjoint native reservation numbers after semantic RPC replay."""
     report = {
         "ok": False,
         "errors": [],
         "native_attempts": [],
+        "delegated_calls": [],
         "complete_coverage": False,
         "confinement_verified": False,
     }
     try:
+        _require(host_failure is None, "nested host did not finish cleanly")
         _require(type(byte_limit) is int and byte_limit > 0, "invalid RPC audit byte limit")
         _require(
             type(artifacts) is dict
@@ -88,14 +97,18 @@ def verify_code_mode_sources(artifacts, *, expected, delegated_tools, dispatch, 
             "RPC snapshot differs from closed controller reference",
         )
         _require(
-            0 < len(artifacts) <= 10000
+            0 <= len(artifacts) <= 10000
             and set(artifacts) == {f"{n:08d}.json" for n in range(1, len(artifacts) + 1)},
             "RPC record sequence differs",
         )
-        reservations = _Reservations(dispatch)
+        # An unused nested route has no delivery to certify. A separately
+        # audited native interruption must not invalidate that empty closure;
+        # any nested reservation still requires the strict delivery audit.
+        reservations = _Reservations(dispatch, empty_rpc=not artifacts)
         authority = CodeModeAuthority(reservations, delegated_tools=delegated_tools)
         methods = DESCRIPTOR.services_by_name["CodeModeHost"].methods_by_name
         rpcs = {}
+        delegated_calls = {}
         for filename in sorted(artifacts):
             row = json.loads(
                 artifacts[filename], object_pairs_hook=_object, parse_constant=_constant
@@ -118,6 +131,9 @@ def verify_code_mode_sources(artifacts, *, expected, delegated_tools, dispatch, 
                     authority.execute(raw)
                 elif method == "CompleteToolCall":
                     authority.complete(raw)
+                    key = (request.session_id, request.invocation_id)
+                    if key in delegated_calls and request.WhichOneof("outcome") == "succeeded":
+                        delegated_calls[key]["output_json"] = request.succeeded.output_json
                 elif method != "OpenSession":
                     authority._session(request.session_id)
                 rpcs[rpc] = {
@@ -151,7 +167,20 @@ def verify_code_mode_sources(artifacts, *, expected, delegated_tools, dispatch, 
                 elif method == "SubscribeToToolCalls":
                     _require(value.session_id == request.session_id, "subscription session differs")
                     try:
-                        authority.callback(raw, lambda _: None)
+                        result = authority.callback(raw, lambda _: None)
+                        if result.get("delegated"):
+                            delegated_calls[(value.session_id, value.invocation_id)] = {
+                                "session_id": value.session_id,
+                                "invocation_id": value.invocation_id,
+                                "runtime_call_id": value.runtime_tool_call_id,
+                                "tool_name": value.tool_name.namespace + "." + value.tool_name.name,
+                                "arguments": json.loads(
+                                    value.input_json,
+                                    object_pairs_hook=_object,
+                                    parse_constant=_constant,
+                                ),
+                                "output_json": None,
+                            }
                     except CallbackRetired:
                         disposition = "retired"
                     except DispatchRefused:
@@ -190,7 +219,89 @@ def verify_code_mode_sources(artifacts, *, expected, delegated_tools, dispatch, 
             else:
                 raise ValueError("unsupported RPC evidence phase")
         _require(all(state["ended"] for state in rpcs.values()), "incomplete RPC evidence")
-        report.update(ok=True, native_attempts=sorted(reservations.used))
+        report.update(
+            ok=True,
+            native_attempts=sorted(reservations.used),
+            delegated_calls=list(delegated_calls.values()),
+        )
     except (ValueError, TypeError, KeyError, AttributeError, RecursionError) as exc:
+        report["errors"].append(str(exc))
+    return report
+
+
+def verify_code_mode_hosted_refusal(
+    artifacts,
+    *,
+    expected,
+    delegated_tools,
+    dispatch,
+    byte_limit,
+    host_failure,
+    provider,
+    provider_delegated_tools,
+):
+    """Replay a closed nested refusal alongside a terminal hosted denial.
+
+    This verifies source records, not successful host execution or the cause of
+    cancellation. Both original references remain unchanged; callers still bind
+    launch identities and join controller results before qualifying a scenario.
+    """
+    from aisle.harness.frontend_dispatch_audit import verify_dispatch_journal
+    from aisle.harness.provider_source_audit import verify_hosted_refusal_prefix
+
+    report = {
+        "ok": False,
+        "errors": [],
+        "host_failure": host_failure,
+        "host_cancelled": host_failure == "CancelledError: ",
+        "complete_coverage": False,
+        "confinement_verified": False,
+    }
+    try:
+        _require(
+            host_failure in {"CancelledError: ", "ValueError: app-server turn failed"},
+            "unexpected nested host failure",
+        )
+        upstream = verify_hosted_refusal_prefix(
+            **provider, dispatch=dispatch, delegated_tools=provider_delegated_tools
+        )
+        _require(
+            upstream["ok"] and bool(upstream["linked_requests"]),
+            "cancelled nested host lacks a verified hosted refusal",
+        )
+        nested = verify_code_mode_sources(
+            artifacts,
+            expected=expected,
+            delegated_tools=delegated_tools,
+            dispatch=dispatch,
+            byte_limit=byte_limit,
+        )
+        _require(nested["ok"], "cancelled nested host lacks a closed replayable RPC journal")
+        journal = verify_dispatch_journal(**dispatch)
+        _require(
+            journal["ok"] and not journal["delivery_uncertain"],
+            "cancelled nested host has uncertain dispatch",
+        )
+        refused = [
+            int(row["reservation"].removesuffix("-reservation.json"))
+            for row in journal["budget_refusals"]
+            if row["kind"] == "local" and row["call"]["turn_id"].startswith("code-mode:")
+        ]
+        _require(
+            bool(refused) and set(refused).issubset(nested["native_attempts"]),
+            "cancelled nested host lacks a replayed nested refusal",
+        )
+        _require(
+            not set(nested["native_attempts"]) & set(upstream["native_attempts"]),
+            "nested and provider reservations overlap",
+        )
+        report.update(
+            ok=True,
+            native_attempts=nested["native_attempts"],
+            delegated_calls=nested["delegated_calls"],
+            refused_nested_attempts=sorted(refused),
+            linked_hosted_requests=upstream["linked_requests"],
+        )
+    except (ValueError, KeyError, TypeError, AttributeError, UnicodeError, RecursionError) as exc:
         report["errors"].append(str(exc))
     return report

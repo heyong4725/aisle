@@ -13,7 +13,7 @@ from aisle.harness.frontend_dispatch import DispatchBudget
 pytestmark = pytest.mark.unit
 
 
-@pytest.mark.parametrize("drift", [None, "call_id", "arguments", "missing"])
+@pytest.mark.parametrize("drift", [None, "call_id", "arguments", "missing", "listener"])
 def test_provider_delegation_must_reach_the_exact_frontend_source(tmp_path, drift):
     """MON-13: hash-consistent provider records cannot stand in for another source call."""
     records, grants = _case()
@@ -34,6 +34,14 @@ def test_provider_delegation_must_reach_the_exact_frontend_source(tmp_path, drif
         call["arguments"] = '{"unexpected":true}'
     source = frames([] if drift == "missing" else [call])
     artifacts = {
+        "listener.json": json.dumps(
+            {
+                "schema_version": "aisle.provider-relay-listener.v1",
+                "session_id": "other" if drift == "listener" else "session",
+                "host": "127.0.0.1",
+                "port": 32123,
+            }
+        ).encode(),
         "invocation.json": json.dumps(
             {
                 "schema_version": "aisle.provider-relay.v1",

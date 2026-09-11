@@ -278,18 +278,30 @@ class CodeModeProxy:
                         await self._thread(self.authority.close_session, lease)
 
     async def __aexit__(self, *_):
-        try:
-            if self._server is not None:
-                await self._server.stop(0)
-            if self._handlers:
-                await asyncio.gather(*tuple(self._handlers), return_exceptions=True)
-            if self._channel is not None:
-                await self._channel.close()
-        finally:
-            if self._fd is not None:
-                os.close(self._fd)
-                self._fd = None
-            self._closed = True
+        async def close():
+            try:
+                if self._server is not None:
+                    await self._server.stop(0)
+                if self._handlers:
+                    await asyncio.gather(*tuple(self._handlers), return_exceptions=True)
+                if self._channel is not None:
+                    await self._channel.close()
+            finally:
+                if self._fd is not None:
+                    os.close(self._fd)
+                    self._fd = None
+                self._closed = True
+
+        cleanup = asyncio.create_task(close())
+        cancellation = None
+        while not cleanup.done():
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError as exc:
+                cancellation = exc
+        cleanup.result()
+        if cancellation is not None:
+            raise cancellation
 
     def reference(self):
         _require(self._closed and self._fd is None, "RPC relay must close before audit")

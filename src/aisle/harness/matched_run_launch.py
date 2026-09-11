@@ -24,13 +24,21 @@ from aisle.harness.treatment_ambient import (
 )
 
 _BOOTSTRAP = (
-    "import sys; sys.path.insert(0, sys.argv.pop(1)); "
+    "import json, sys; sys.path[0:0] = json.loads(sys.argv.pop(1)); "
     "from aisle.harness.matched_run import main; raise SystemExit(main())"
 )
 
 
 def verify_controller_binding(binding, runtime_record, source_roots, participant_policies):
     """Bind interpreter and private controller environment, separately from worker grants."""
+    verify_runtime(runtime_record)
+    return _verify_controller_binding_fields(
+        binding, runtime_record, source_roots, participant_policies
+    )
+
+
+def _verify_controller_binding_fields(binding, runtime_record, source_roots, participant_policies):
+    """Check launch fields against runtime contents verified in this pre/postflight."""
     if (
         type(binding) is not dict
         or set(binding)
@@ -44,14 +52,21 @@ def verify_controller_binding(binding, runtime_record, source_roots, participant
         or binding["schema_version"] != "aisle.matched-run-controller.v1"
     ):
         raise ValueError("run controller binding fields are unresolved")
-    verify_runtime(runtime_record)
     python = Path(binding["python"])
     if (
         not python.is_absolute()
+        or python != Path(os.path.abspath(python))
         or not os.access(python, os.X_OK)
         or not any(python.resolve().is_relative_to(Path(p)) for p in runtime_record["trees"])
     ):
         raise ValueError("run controller interpreter is outside bound runtime")
+    # Python searches beside the invocation and one directory above for
+    # pyvenv.cfg. Bind those directories (including an absent config), as well
+    # as the resolved installation, so a symlink cannot select unbound startup
+    # state while retaining the same executable hash.
+    for prefix in (python.parent.parent, python.resolve().parent.parent):
+        if not any(prefix.is_relative_to(Path(root)) for root in runtime_record["trees"]):
+            raise ValueError("run controller startup configuration is outside bound runtime")
     if hashlib.sha256(python.read_bytes()).hexdigest() != binding["python_sha256"]:
         raise ValueError("run controller interpreter identity differs")
     verify_declared_environment(binding["environment"], binding["environment_record"])
@@ -236,7 +251,6 @@ def launch_configured_run(
     try:
         if type(timeout_s) not in (int, float) or not math.isfinite(timeout_s) or timeout_s <= 0:
             raise ValueError("run controller requires a finite positive deadline")
-        verify_controller_binding(**kwargs)
         from aisle.harness.matched_run import _load
 
         config = _load(config_path, config_sha256, controller_root=expected["controller_root"])
@@ -255,6 +269,9 @@ def launch_configured_run(
             raise ValueError("prepared run differs from active session or reserved attempt")
         if config["runtime_record"] != runtime_record:
             raise ValueError("prepared run runtime differs from controller binding")
+        # _load freshly inventories the exact runtime compared above. Do not
+        # immediately inventory those same trees a second time in this phase.
+        _verify_controller_binding_fields(**kwargs)
         for policy in participant_policies:
             for key in ("visible_roots", "output_roots", "runtime_read_roots"):
                 for value in policy[key]:
@@ -273,7 +290,9 @@ def launch_configured_run(
             "-B",
             "-c",
             _BOOTSTRAP,
-            str(Path(config["controller_root"]) / "src"),
+            json.dumps(
+                [str(Path(config["controller_root"]) / "src"), *sorted(runtime_record["trees"])]
+            ),
             "--config",
             str(Path(config_path).absolute()),
             "--config-sha256",
@@ -326,8 +345,8 @@ def launch_configured_run(
         ):
             raise ValueError("run controller exit status differs from JSON verdict")
         record["result"] = result
-        verify_controller_binding(**kwargs)
         _load(config_path, config_sha256, controller_root=expected["controller_root"])
+        _verify_controller_binding_fields(**kwargs)
         record["ok"] = result["ok"]
     except BaseException as exc:
         record["error"] = str(exc) or type(exc).__name__

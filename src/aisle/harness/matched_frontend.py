@@ -63,6 +63,9 @@ class ToolObserver:
                 if type(item) is not dict:
                     raise ValueError("app-server item is missing")
                 kind = item.get("type")
+                if kind == "subAgentActivity" and item.get("kind") == "completed":
+                    # A task finishing is lifecycle telemetry, not a new invocation.
+                    return
                 if kind in {
                     "userMessage",
                     "hookPrompt",
@@ -157,9 +160,16 @@ class ToolObserver:
 class FrontendToolBudget:
     """Live guard for an explicitly declared observed-frontend-call ceiling."""
 
-    def __init__(self, agent, ceiling):
+    def __init__(self, agent, ceiling, *, admission_controlled=False):
         if type(ceiling) is not int or ceiling <= 0:
             raise ValueError("frontend tool ceiling must be a positive integer")
+        if (
+            type(admission_controlled) is not bool
+            or admission_controlled
+            and agent != "codex_app_server"
+        ):
+            raise ValueError("dispatch enforcement requires the owned App Server")
+        self.admission_controlled = admission_controlled
         self.observer = ToolObserver(agent)
         self.ceiling = ceiling
 
@@ -167,10 +177,19 @@ class FrontendToolBudget:
         self.observer.feed(line)
         if self.observer.error is not None:
             raise ValueError(f"frontend telemetry invalid: {self.observer.error}")
-        return "frontend_tool_budget" if len(self.observer.calls) > self.ceiling else None
+        return (
+            "frontend_tool_budget"
+            if not self.admission_controlled and len(self.observer.calls) > self.ceiling
+            else None
+        )
 
     def report(self):
-        return {**self.observer.report(), "ceiling": self.ceiling, "source": "live_stdout_pipe"}
+        return {
+            **self.observer.report(),
+            "ceiling": self.ceiling,
+            "source": "live_stdout_pipe",
+            **({"enforcement": "dispatch"} if self.admission_controlled else {}),
+        }
 
 
 def observe_tools(agent: str, lines) -> dict:
@@ -181,9 +200,9 @@ def observe_tools(agent: str, lines) -> dict:
     return observer.report()
 
 
-def verify_live_report(agent, ceiling, lines, live, stopped):
+def verify_live_report(agent, ceiling, lines, live, stopped, *, admission_controlled=False):
     """Replay the same guarded prefix, allowing buffered output after a stop."""
-    guard = FrontendToolBudget(agent, ceiling)
+    guard = FrontendToolBudget(agent, ceiling, admission_controlled=admission_controlled)
     reason = None
     for line in lines:
         try:

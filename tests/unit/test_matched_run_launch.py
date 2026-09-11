@@ -28,7 +28,7 @@ def _inputs(tmp_path, arm="typed"):
         "environment": environment,
         "environment_record": environment_record,
     }
-    runtime = capture_runtime([python.resolve().parent.parent])
+    runtime = capture_runtime(sorted({python.parent.parent, python.resolve().parent.parent}))
     development = {
         "schema_version": "aisle.matched-development.v1",
         "purpose": "expert_parity",
@@ -305,7 +305,8 @@ def _real_controller(tmp_path, arm):
         dirs_exist_ok=True,
         ignore=shutil.ignore_patterns("__pycache__"),
     )
-    runtime = capture_runtime([Path(sys.executable).resolve().parent.parent])
+    python = Path(sys.executable)
+    runtime = capture_runtime(sorted({python.parent.parent, python.resolve().parent.parent}))
     bindings = {}
     for selected in ("typed", "monolithic"):
         env, env_record = build_declared_environment(
@@ -615,3 +616,42 @@ def test_cleanup_waits_for_changed_identity_to_disappear(monkeypatch, disappears
     if not disappears:
         assert report["remaining"] == [456]
         assert report["errors"]
+
+
+def test_controller_bootstrap_imports_explicit_bound_dependency(tmp_path):
+    """MON-8/MON-13: declared runtime roots supply controller imports independently of
+    installed sites.
+
+    The minimal controller is an import-boundary fixture, not run availability evidence.
+    """
+    from aisle.harness.matched_run_launch import launch_configured_run
+    from aisle.harness.matched_runtime import capture_runtime, worker_interpreter
+
+    inputs = _inputs(tmp_path)
+    root = tmp_path / "controller"
+    package = root / "src/aisle/harness"
+    package.mkdir(parents=True)
+    (package.parent / "__init__.py").write_text("")
+    (package / "__init__.py").write_text("")
+    (package / "matched_run.py").write_text(
+        "import json\nfrom bound_controller_dependency import VALUE\n"
+        'def main():\n print(json.dumps({"ok":True,"dependency":VALUE})); return 0\n'
+    )
+    assets = tmp_path / "runtime-assets"
+    assets.mkdir()
+    (assets / "bound_controller_dependency.py").write_text('VALUE = "bound-only"\n')
+    runtime = capture_runtime([*inputs["runtime_record"]["trees"], assets])
+    inputs["runtime_record"] = runtime
+    inputs["expected"].update(controller_root=str(root), runtime_record=runtime)
+    inputs["source_roots"][0] = root
+    python = worker_interpreter()
+    inputs["binding"].update(
+        python=str(python), python_sha256=hashlib.sha256(python.read_bytes()).hexdigest()
+    )
+    config = json.loads(inputs["config_path"].read_bytes())
+    config.update(inputs["expected"])
+    inputs["config_path"].write_text(json.dumps(config))
+    inputs["config_sha256"] = hashlib.sha256(inputs["config_path"].read_bytes()).hexdigest()
+    result = launch_configured_run(**inputs)
+    assert result["process"]["rc"] == 0, result
+    assert result["result"] == {"ok": True, "dependency": "bound-only"}

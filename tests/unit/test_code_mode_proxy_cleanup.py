@@ -41,3 +41,58 @@ def test_repeated_cancellation_waits_for_pending_evidence_write(tmp_path):
             await asyncio.gather(task, return_exceptions=True)
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("stage", ["server", "handler", "channel"])
+def test_repeated_cancellation_cannot_close_proxy_before_owned_cleanup(tmp_path, stage):
+    """MON-12/MON-13: a closed RPC reference requires every owned cleanup stage to finish."""
+    import os
+
+    from aisle.harness.code_mode_proxy import CodeModeProxy
+
+    async def exercise():
+        entered, release = asyncio.Event(), asyncio.Event()
+        completed = []
+        proxy = CodeModeProxy("http://127.0.0.1:12345", None, output=tmp_path / "rpc")
+        proxy._fd = os.open(tmp_path, os.O_RDONLY)
+
+        async def finish(name):
+            if name == stage:
+                entered.set()
+                await release.wait()
+            completed.append(name)
+
+        class Server:
+            async def stop(self, grace):
+                await finish("server")
+
+        class Channel:
+            async def close(self):
+                await finish("channel")
+
+        proxy._server, proxy._channel = Server(), Channel()
+        handler = asyncio.create_task(finish("handler"))
+        proxy._handlers.add(handler)
+        task = asyncio.create_task(proxy.__aexit__(None, None, None))
+        try:
+            await asyncio.wait_for(entered.wait(), 1)
+            task.cancel()
+            await asyncio.sleep(0)
+            task.cancel()
+            await asyncio.sleep(0)
+            assert not task.done(), "proxy cleanup escaped while owned work remained"
+            assert proxy._fd is not None and not proxy._closed
+            with pytest.raises(ValueError, match="must close"):
+                proxy.reference()
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, 1)
+            assert set(completed) == {"server", "handler", "channel"}
+            assert proxy._fd is None and proxy._closed
+        finally:
+            release.set()
+            await asyncio.gather(task, handler, return_exceptions=True)
+            if proxy._fd is not None:
+                os.close(proxy._fd)
+
+    asyncio.run(exercise())

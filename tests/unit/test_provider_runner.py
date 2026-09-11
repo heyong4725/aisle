@@ -77,3 +77,67 @@ def test_provider_failure_reaps_frontend_and_retains_reference(tmp_path, monkeyp
     assert 'model_provider="aisle_authorized"' in captured["argv"]
     assert "model_providers.aisle_authorized.supports_websockets=false" in captured["argv"]
     assert "model_providers.aisle_authorized.requires_openai_auth=false" in captured["argv"]
+
+
+def test_mcp_closure_failure_still_retains_provider_reference(tmp_path, monkeypatch):
+    """MON-12/MON-13: one adapter's cleanup failure must not discard another's evidence."""
+    from types import SimpleNamespace
+
+    from aisle.harness import mcp_harness_authority, mcp_harness_transport
+
+    class Resource:
+        address = ("127.0.0.1", 12345)
+
+        def __init__(self, *args, **kwargs):
+            self.failed = threading.Event()
+            self._failure = None
+            self.closed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            self.closed = True
+
+        def observe(self, *args, **kwargs):
+            pass
+
+        def reference(self):
+            assert self.closed
+            return {"failure": None}
+
+    class FailedMCP(Resource):
+        def reference(self):
+            assert self.closed
+            return {"failure": "OSError"}
+
+    async def frontend(*args, **kwargs):
+        return {"ok": True}
+
+    monkeypatch.setattr(provider_runner, "ProviderRelay", Resource)
+    monkeypatch.setattr(provider_runner, "run_app_server_async", frontend)
+    monkeypatch.setattr(mcp_harness_authority, "MCPHarnessAuthority", FailedMCP)
+    monkeypatch.setattr(mcp_harness_transport, "MCPHarnessServer", Resource)
+    references = {}
+    with pytest.raises(ValueError, match="MCP harness failed"):
+        provider_runner.run_provider_app_server(
+            binding={"base_url": "http://127.0.0.1:1234/v1"},
+            dispatch=SimpleNamespace(session_id="session"),
+            delegated_tools={("mcp__aisle_harness", "check", "function_call")},
+            provider_output=tmp_path / "provider",
+            references=references,
+            argv=["codex", "app-server"],
+            timeout_s=1,
+            mcp_harness=True,
+            mcp_output=tmp_path / "mcp",
+            output=tmp_path / "protocol",
+            handle_call=lambda *_: None,
+        )
+    assert references["mcp_harness"]["listener"] == {
+        "schema_version": "aisle.mcp-harness-listener.v1",
+        "session_id": "session",
+        "host": "127.0.0.1",
+        "port": 12345,
+    }
+    assert references["mcp_harness"]["failure"] == "OSError"
+    assert references["provider"]["failure"] is None

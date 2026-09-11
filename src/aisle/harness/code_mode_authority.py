@@ -73,13 +73,20 @@ class CodeModeAuthority:
     """Authorize each nested native call once; delegate harness admission explicitly.
 
     ``dispatch`` is shared with the App Server request/grant boundary. Only the
-    launcher-declared dynamic harness tools may defer charging to that boundary.
+    launcher-declared dynamic or owned MCP harness tools may defer charging to that boundary.
     Their callbacks cannot execute controller work without that later reservation.
     """
 
     def __init__(self, dispatch, *, delegated_tools):
         _require(
-            type(delegated_tools) is set and delegated_tools <= {"harness.check", "harness.run"},
+            type(delegated_tools) is set
+            and delegated_tools
+            <= {
+                "harness.check",
+                "harness.run",
+                "mcp__aisle_harness.check",
+                "mcp__aisle_harness.run",
+            },
             "unverified delegated tool boundary",
         )
         self.dispatch = dispatch

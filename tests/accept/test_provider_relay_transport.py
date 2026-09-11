@@ -14,17 +14,118 @@ from aisle.harness.provider_relay import ProviderRelay
 pytestmark = pytest.mark.accept
 
 
-def response_frame(count):
-    items = [
-        {
-            "id": f"item-{i}",
-            "type": "function_call",
-            "call_id": f"call-{i}",
-            "name": "exec_command",
-            "arguments": json.dumps({"cmd": f"touch marker-{i}"}),
-        }
-        for i in range(count)
-    ]
+@pytest.mark.parametrize("exhausted", [False, True])
+def test_hosted_request_is_limited_before_upstream_work_and_replays(tmp_path, exhausted):
+    """MON-8/MON-12/MON-13: real HTTP hosted work shares the same pre-execution ceiling."""
+    from aisle.harness.provider_source_audit import verify_provider_sources
+
+    requests = []
+    effects = []
+    source = response_frame(
+        0,
+        items=[
+            {
+                "type": "web_search_call",
+                "id": "search-1",
+                "status": "completed",
+                "action": {"type": "search", "query": "fixture"},
+            }
+        ],
+    )
+
+    def call(index):
+        return {"turn_id": "local", "call_id": str(index), "tool_name": "exec_command"}
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            requests.append(body)
+            # This operator-owned fixture implements the explicitly bound contract.
+            assert body["max_tool_calls"] == 2
+            effects.append("hosted-search")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(source)))
+            self.end_headers()
+            self.wfile.write(source)
+
+    upstream = HTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=lambda: upstream.serve_forever(poll_interval=0.05))
+    worker.start()
+    root = tmp_path / "provider"
+    try:
+        with DispatchBudget(
+            tmp_path / "budget", session_id="session", ceiling=1 if exhausted else 3
+        ) as budget:
+            budget.dispatch(call(1), b"local-before", lambda _: None)
+            with ProviderRelay(
+                {
+                    "base_url": f"http://127.0.0.1:{upstream.server_port}/v1",
+                    "hosted_tool_contract": "aisle.fixture.responses.max_tool_calls.v1",
+                },
+                dispatch=budget,
+                output=root,
+                timeout_s=5,
+            ) as relay:
+                client = http.client.HTTPConnection(*relay.address, timeout=5)
+                body = json.dumps(
+                    {
+                        "model": "fixture",
+                        "stream": True,
+                        "tools": [{"type": "web_search"}],
+                        "max_tool_calls": 999,
+                    }
+                ).encode()
+                client.request("POST", "/v1/responses", body, {"Content-Type": "application/json"})
+                response = client.getresponse()
+                delivered = response.read()
+                client.close()
+            if not exhausted:
+                budget.dispatch(call(2), b"local-after", lambda _: None)
+        assert len(requests) == len(effects) == (0 if exhausted else 1)
+        assert response.status == (502 if exhausted else 200)
+        if not exhausted:
+            assert delivered == source
+            audited = verify_provider_sources(
+                {path.name: path.read_bytes() for path in root.iterdir()},
+                expected=relay.reference(),
+                byte_limit=100000,
+                delegated_tools=(),
+                dispatch={
+                    "artifacts": {
+                        path.name: path.read_bytes() for path in (tmp_path / "budget").iterdir()
+                    },
+                    "expected": budget.reference(),
+                    "byte_limit": 100000,
+                },
+            )
+            assert audited["ok"], audited
+            assert len(audited["hosted_calls"]) == 1
+            assert audited["native_attempts"] == []
+    finally:
+        upstream.shutdown()
+        upstream.server_close()
+        worker.join(timeout=5)
+
+
+def response_frame(count, *, items=None):
+    items = (
+        items
+        if items is not None
+        else [
+            {
+                "id": f"item-{i}",
+                "type": "function_call",
+                "call_id": f"call-{i}",
+                "name": "exec_command",
+                "arguments": json.dumps({"cmd": f"touch marker-{i}"}),
+            }
+            for i in range(count)
+        ]
+    )
     events = [{"type": "response.created", "response": {"id": "response"}}]
     events.extend(
         {"type": "response.output_item.done", "output_index": i, "item": item}
@@ -77,6 +178,13 @@ def test_http_relay_keeps_exact_source_and_admitted_prefix(tmp_path, case):
                 output=root,
                 timeout_s=5,
             ) as relay:
+                listener = json.loads((root / "listener.json").read_bytes())
+                assert listener == {
+                    "schema_version": "aisle.provider-relay-listener.v1",
+                    "session_id": "session",
+                    "host": relay.address[0],
+                    "port": relay.address[1],
+                }
                 client = http.client.HTTPConnection(*relay.address, timeout=5)
                 body = b'{"model":"fixture","stream":true,"input":[],"tools":[]}'
                 client.request("POST", "/v1/responses", body, {"Content-Type": "application/json"})
@@ -218,3 +326,85 @@ def test_upstream_timeout_retains_received_prefix(tmp_path):
         upstream.shutdown()
         upstream.server_close()
         thread.join()
+
+
+@pytest.mark.parametrize("identity", ["response", "call"])
+def test_http_identity_replay_rejects_before_delivery_and_replays_closed_evidence(
+    tmp_path, identity
+):
+    """MON-13: repeated identities release no SSE and consume no second reservation."""
+    from aisle.harness.provider_source_audit import verify_provider_replay_sources
+
+    original = response_frame(1)
+    repeated = (
+        original
+        if identity == "response"
+        else original.replace(b'"id": "response"', b'"id": "response-2"')
+    )
+    sources = iter([original, repeated])
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            source = next(sources)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(source)))
+            self.end_headers()
+            self.wfile.write(source)
+
+    upstream = HTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=lambda: upstream.serve_forever(poll_interval=0.05))
+    worker.start()
+    root = tmp_path / "provider"
+    try:
+        with DispatchBudget(tmp_path / "budget", session_id="session", ceiling=3) as budget:
+            with ProviderRelay(
+                {"base_url": f"http://127.0.0.1:{upstream.server_port}/v1"},
+                dispatch=budget,
+                output=root,
+                timeout_s=5,
+            ) as relay:
+                replies = []
+                for _ in range(2):
+                    client = http.client.HTTPConnection(*relay.address, timeout=5)
+                    try:
+                        client.request(
+                            "POST", "/v1/responses", b"{}", {"Content-Type": "application/json"}
+                        )
+                        response = client.getresponse()
+                        replies.append((response.status, response.read()))
+                    finally:
+                        client.close()
+        assert replies[0] == (200, original)
+        assert replies[1][0] == 502 and b"response.output_item.done" not in replies[1][1]
+        assert budget.reference()["attempts"] == budget.reference()["reserved"] == 1
+        artifacts = {path.name: path.read_bytes() for path in root.iterdir()}
+        assert json.loads(artifacts["00000002-delivery.json"]) == {
+            "sequence": 2,
+            "events_returned": 0,
+            "error_type": "ValueError",
+        }
+        report = verify_provider_replay_sources(
+            artifacts,
+            expected=relay.reference(),
+            dispatch={
+                "artifacts": {
+                    path.name: path.read_bytes() for path in (tmp_path / "budget").iterdir()
+                },
+                "expected": budget.reference(),
+                "byte_limit": 100000,
+            },
+            byte_limit=100000,
+            delegated_tools=(),
+        )
+        assert report["ok"] and report["native_attempts"] == [1], report
+        assert report["replayed_requests"] == ["00000002"]
+        assert not report["complete_coverage"] and not report["confinement_verified"]
+    finally:
+        upstream.shutdown()
+        upstream.server_close()
+        worker.join(timeout=5)

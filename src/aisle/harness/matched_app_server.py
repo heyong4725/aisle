@@ -12,7 +12,7 @@ import uuid
 from contextlib import nullcontext
 from pathlib import Path
 
-from aisle.harness.frontend_app_server import dynamic_tools, run_app_server
+from aisle.harness.frontend_app_server import MAX_MESSAGE_BYTES, dynamic_tools, run_app_server
 from aisle.harness.frontend_dispatch import DispatchBudget
 from aisle.harness.frontend_request_authority import RequestAuthority
 from aisle.harness.matched_frontend import FrontendToolBudget
@@ -25,6 +25,85 @@ def _json(path, value):
         stream.write("\n")
         stream.flush()
         os.fsync(stream.fileno())
+
+
+def controller_reply(response, *, request_id):
+    """Validate a controller-owned response before exposing it on the frontend pipe."""
+    try:
+        if (
+            type(response) is not dict
+            or set(response) != {"ok", "classification", "result", "error", "attempt", "request_id"}
+            or type(response["ok"]) is not bool
+            or response["request_id"] != request_id
+            or type(response["attempt"]) is not int
+            or response["attempt"] <= 0
+            or response["classification"] not in {"tool_result", "infrastructure_exclusion"}
+            or response["error"] is not None
+            and type(response["error"]) is not str
+        ):
+            raise ValueError("invalid controller response fields")
+        if response["classification"] == "tool_result":
+            result = response["result"]
+            if (
+                type(result) is not dict
+                or type(result.get("ok")) is not bool
+                or result["ok"] is not response["ok"]
+            ):
+                raise ValueError("controller response verdict differs from its result")
+        elif response["ok"]:
+            raise ValueError("controller response promotes an infrastructure failure")
+        reply = {
+            "success": response["ok"],
+            "contentItems": [{"type": "inputText", "text": json.dumps(response, allow_nan=False)}],
+        }
+        if len(json.dumps(reply, allow_nan=False).encode()) > MAX_MESSAGE_BYTES:
+            result = response["result"]
+            evidence = result.get("worker_evidence") if type(result) is dict else None
+            if (
+                type(evidence) is dict
+                and evidence.get("schema_version") == "aisle.monolithic-worker-retention.v1"
+            ):
+                if (
+                    type(evidence.get("ok")) is not bool
+                    or type(evidence.get("files")) is not dict
+                    or type(evidence.get("errors")) is not list
+                    or any(type(error) is not str for error in evidence["errors"])
+                    or type(evidence.get("worker_evidence_present")) is not bool
+                    or evidence.get("eligible_for_estimate") is not False
+                ):
+                    raise ValueError("invalid controller response worker evidence")
+                # The full index remains in the controller's immutable result.
+                # Replay derives this reference from those same retained bytes.
+                reference = {
+                    "schema_version": "aisle.monolithic-worker-reference.v1",
+                    "sha256": hashlib.sha256(
+                        json.dumps(
+                            evidence, sort_keys=True, separators=(",", ":"), allow_nan=False
+                        ).encode()
+                    ).hexdigest(),
+                    "file_count": len(evidence["files"]),
+                    **{
+                        key: evidence[key]
+                        for key in (
+                            "ok",
+                            "errors",
+                            "worker_evidence_present",
+                            "eligible_for_estimate",
+                        )
+                    },
+                }
+                visible = {**response, "result": {**result, "worker_evidence": reference}}
+                reply = {
+                    "success": response["ok"],
+                    "contentItems": [
+                        {"type": "inputText", "text": json.dumps(visible, allow_nan=False)}
+                    ],
+                }
+        if len(json.dumps(reply, allow_nan=False).encode()) > MAX_MESSAGE_BYTES:
+            raise ValueError("controller response exceeds frontend frame limit")
+        return reply
+    except (KeyError, TypeError, RecursionError) as exc:
+        raise ValueError("malformed controller response") from exc
 
 
 def acquire_authority_evidence(output, references):
@@ -90,8 +169,8 @@ def acquire_authority_evidence(output, references):
         }
     if "code_mode" in references:
         nested = references["code_mode"]
-        if nested["failure"] is not None or nested["proxy"] is None:
-            raise ValueError("nested host did not finish cleanly")
+        if nested["proxy"] is None:
+            raise ValueError("nested host lacks a closed proxy reference")
         result["code_mode"] = {
             "artifacts": snapshot(
                 output / "code-mode" / "rpc",
@@ -103,6 +182,9 @@ def acquire_authority_evidence(output, references):
             "delegated_tools": set(nested["delegated_tools"]),
             "byte_limit": 64 * 1024 * 1024,
         }
+        if nested["failure"] is not None:
+            # Acquisition preserves closed bytes even when qualification must fail.
+            result["code_mode"]["host_failure"] = nested["failure"]
     if "provider" in references:
         result["provider"] = {
             "artifacts": snapshot(
@@ -112,6 +194,17 @@ def acquire_authority_evidence(output, references):
                 byte_limit=64 * 1024 * 1024,
             ),
             "expected": references["provider"],
+            "byte_limit": 64 * 1024 * 1024,
+        }
+    if "mcp_harness" in references:
+        result["mcp_harness"] = {
+            "artifacts": snapshot(
+                output / "mcp-harness",
+                references["mcp_harness"],
+                frame_limit=1024 * 1024,
+                byte_limit=64 * 1024 * 1024,
+            ),
+            "expected": references["mcp_harness"],
             "byte_limit": 64 * 1024 * 1024,
         }
     return result
@@ -133,7 +226,11 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
         "dynamicTools": dynamic_tools(operations),
     }
     guard = (
-        FrontendToolBudget("codex_app_server", budget["frontend_tool_ceiling"])
+        FrontendToolBudget(
+            "codex_app_server",
+            budget["frontend_tool_ceiling"],
+            admission_controlled="provider" in launch,
+        )
         if "frontend_tool_ceiling" in budget
         else None
     )
@@ -141,6 +238,7 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
     protocol_root = output / "frontend-protocol"
     primary_error = None
     dispatch = None
+    authority = None
     try:
         with (
             RequestAuthority(
@@ -185,15 +283,19 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
                                 )
                             response = service.controller_response(identity)
                             if response is not None:
-                                return {
-                                    "success": response["ok"],
-                                    "contentItems": [
-                                        {
-                                            "type": "inputText",
-                                            "text": json.dumps(response, allow_nan=False),
-                                        }
-                                    ],
-                                }
+                                try:
+                                    return controller_reply(response, request_id=identity)
+                                except ValueError as exc:
+                                    try:
+                                        authority.retain_response_rejection(
+                                            call=call, request_id=identity, response=response
+                                        )
+                                    except BaseException as retention_error:
+                                        exc.add_note(
+                                            "response rejection retention failed: "
+                                            + str(retention_error)
+                                        )
+                                    raise
                             time.sleep(0.01)
                         raise TimeoutError("authorized tool response deadline expired")
                     finally:
@@ -227,11 +329,16 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
                     timeout_s=budget["wall_ceiling_s"],
                     token_ceiling=budget["ceiling"],
                     on_message=guard,
+                    on_reference=lambda reference: references.update(protocol=reference),
                 )
                 if "provider" in launch:
                     from aisle.harness.provider_runner import run_provider_app_server
 
                     delegated = {("harness", op, "function_call") for op in operations}
+                    if launch.get("mcp_harness"):
+                        delegated.update(
+                            ("mcp__aisle_harness", op, "function_call") for op in operations
+                        )
                     if "code_mode_host" in launch:
                         delegated.update(
                             {
@@ -248,6 +355,8 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
                         argv=command,
                         code_mode_host=launch.get("code_mode_host"),
                         code_mode_output=output / "code-mode",
+                        mcp_harness=launch.get("mcp_harness", False),
+                        mcp_output=output / "mcp-harness",
                         **options,
                     )
                 elif "code_mode_host" in launch:
@@ -273,18 +382,25 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
                     result = run_app_server(command, **options)
             if not service.report["ok"]:
                 raise ValueError("authorized tool service did not finish cleanly")
-        references.update(
-            authority=authority.reference(),
-            protocol={
-                key: result[key] for key in ("thread_id", "turn_id", "dynamic_calls", "artifacts")
-            },
+        references.setdefault(
+            "protocol",
+            {key: result[key] for key in ("thread_id", "turn_id", "dynamic_calls", "artifacts")},
         )
-        _json(output / "frontend-authority-reference.json", references["authority"])
-        _json(output / "frontend-protocol-reference.json", references["protocol"])
+        if "mcp_calls" in result:
+            references["protocol"]["mcp_calls"] = result["mcp_calls"]
     except BaseException as exc:
         primary_error = exc
         raise
     finally:
+
+        def retain_authority_reference():
+            if authority is not None:
+                references["authority"] = authority.reference()
+                _json(output / "frontend-authority-reference.json", references["authority"])
+
+        def retain_protocol_reference():
+            if "protocol" in references:
+                _json(output / "frontend-protocol-reference.json", references["protocol"])
 
         def retain_dispatch():
             if dispatch is not None:
@@ -312,13 +428,20 @@ def run_authorized_app_server(controller, command, *, cwd, env, launch, budget, 
             if "provider" in references:
                 _json(output / "provider-reference.json", references["provider"])
 
+        def retain_mcp():
+            if "mcp_harness" in references:
+                _json(output / "mcp-harness-reference.json", references["mcp_harness"])
+
         failure = primary_error
         for retain in (
+            retain_authority_reference,
+            retain_protocol_reference,
             retain_dispatch,
             retain_protocol,
             retain_observations,
             retain_code_mode,
             retain_provider,
+            retain_mcp,
         ):
             try:
                 retain()

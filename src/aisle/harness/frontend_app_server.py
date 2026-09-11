@@ -119,6 +119,124 @@ class AppServerUsage:
         }
 
 
+class AppServerScope:
+    """Bind child lifetimes from the owned stream and sum per-thread token totals."""
+
+    def __init__(self, thread_id, turn_id):
+        self.root = thread_id
+        self.turns = {thread_id: turn_id}
+        self.paths = {thread_id: "/root"}
+        self.meters = {thread_id: AppServerUsage(thread_id, turn_id)}
+        self.active = {thread_id}
+        self.started = set()
+        self.used_turns = {turn_id}
+        self.accounted_turns = set()
+        self.root_done = False
+        self.complete = False
+
+    def _identity(self, thread, turn):
+        if (
+            type(thread) is not str
+            or type(turn) is not str
+            or thread not in self.active
+            or self.turns.get(thread) != turn
+        ):
+            raise ValueError("unbound or inactive app-server thread or turn")
+
+    def parse_call(self, message):
+        params = message["params"]
+        self._identity(params.get("threadId"), params.get("turnId"))
+        return parse_dynamic_call(message, thread_id=params["threadId"], turn_id=params["turnId"])
+
+    def feed(self, message):
+        if self.complete:
+            raise ValueError("app-server protocol continues after root completion")
+        method = message.get("method")
+        params = message.get("params", {})
+        if type(params) is not dict:
+            raise ValueError("invalid app-server notification parameters")
+        if method in {"item/started", "item/completed"} and type(params.get("item")) is not dict:
+            raise ValueError("invalid app-server item notification")
+        if method in {"turn/started", "turn/completed"} and type(params.get("turn")) is not dict:
+            raise ValueError("invalid app-server turn notification")
+        if method == "item/completed" and params.get("item", {}).get("type") == "subAgentActivity":
+            item = params["item"]
+            if item.get("kind") == "started":
+                parent = params.get("threadId")
+                self._identity(parent, params.get("turnId"))
+                child, path = item.get("agentThreadId"), item.get("agentPath")
+                if (
+                    type(child) is not str
+                    or not 0 < len(child) <= 256
+                    or child in self.turns
+                    or len(self.turns) >= 1024
+                    or type(path) is not str
+                    or not path.startswith(self.paths[parent] + "/")
+                    or "/" in path[len(self.paths[parent]) + 1 :]
+                    or not path[len(self.paths[parent]) + 1 :]
+                    or path in self.paths.values()
+                ):
+                    raise ValueError("unbound or duplicate child-agent identity")
+                self.turns[child] = None
+                self.paths[child] = path
+        elif method == "turn/started":
+            thread, turn = params.get("threadId"), params.get("turn", {}).get("id")
+            if (
+                type(thread) is not str
+                or thread not in self.turns
+                or type(turn) is not str
+                or not 0 < len(turn) <= 256
+            ):
+                raise ValueError("unbound app-server turn start")
+            if thread == self.root and turn == self.turns[thread] and thread not in self.started:
+                self.started.add(thread)
+                return False
+            if thread in self.active or turn in self.used_turns or len(self.used_turns) >= 10000:
+                raise ValueError("overlapping or replayed app-server turn")
+            self.used_turns.add(turn)
+            self.turns[thread] = turn
+            self.active.add(thread)
+            self.started.add(thread)
+            if thread not in self.meters:
+                self.meters[thread] = AppServerUsage(thread, turn)
+            else:
+                self.meters[thread].turn_id = turn
+        elif method == "thread/tokenUsage/updated":
+            thread = params.get("threadId")
+            self._identity(thread, params.get("turnId"))
+            self.meters[thread].feed(params)
+            self.accounted_turns.add(params["turnId"])
+        elif method == "turn/completed":
+            thread, turn = params.get("threadId"), params.get("turn", {})
+            self._identity(thread, turn.get("id"))
+            if turn.get("status") != "completed":
+                raise ValueError("app-server turn failed")
+            if thread == self.root:
+                self.root_done = True
+            self.active.remove(thread)
+            if (
+                self.root_done
+                and not self.active
+                and all(t is not None for t in self.turns.values())
+            ):
+                if (
+                    len(self.turns) > 1 or self.has_usage
+                ) and self.used_turns != self.accounted_turns:
+                    raise ValueError("app-server usage is missing for an owned turn")
+                self.complete = True
+        return self.complete
+
+    @property
+    def has_usage(self):
+        return any(meter.total is not None for meter in self.meters.values())
+
+    def report(self):
+        reports = [meter.report() for meter in self.meters.values() if meter.total is not None]
+        if not reports:
+            raise ValueError("app-server usage is missing")
+        return {key: sum(row[key] for row in reports) for key in ("tokens", "tokens_generated")}
+
+
 def dynamic_tools(operations=("check", "run")):
     """Declare the fixed check/run API without removing other frontend tools."""
     return [
@@ -160,6 +278,8 @@ async def run_app_server_async(
     timeout_s,
     token_ceiling=None,
     on_message=None,
+    on_mcp_source=None,
+    on_reference=None,
 ):
     """Run one fresh thread/turn over a private pipe and retain protocol bytes.
 
@@ -213,7 +333,22 @@ async def run_app_server_async(
         ),
     )
 
+    calls = set()
+    mcp_calls = set()
+    thread_id = turn_id = None
+
+    def reference(*, failure=None):
+        return {
+            "thread_id": thread_id,
+            "turn_id": turn_id,
+            "dynamic_calls": len(calls),
+            **({"mcp_calls": len(mcp_calls)} if on_mcp_source is not None else {}),
+            "artifacts": dict(hashes),
+            **({"stream_complete": False, "failure": failure} if failure is not None else {}),
+        }
+
     async def run():
+        nonlocal thread_id, turn_id
         with (output / "stderr.log").open("xb") as stderr:
             process = await asyncio.create_subprocess_exec(
                 *argv,
@@ -226,9 +361,7 @@ async def run_app_server_async(
                 limit=MAX_MESSAGE_BYTES,
             )
             incoming = outgoing = 0
-            calls = set()
             request_ids = set()
-            thread_id = turn_id = None
             pending = []
             completed = None
 
@@ -301,27 +434,43 @@ async def run_app_server_async(
                         }
                     )
                     turn_id = (await reply_for("turn"))["turn"]["id"]
-                    meter = AppServerUsage(thread_id, turn_id)
+                    scope = AppServerScope(thread_id, turn_id)
 
                     def usage(value):
+                        done = scope.feed(value)
                         if value.get("method") == "thread/tokenUsage/updated":
-                            meter.feed(value["params"])
                             if (
                                 token_ceiling is not None
-                                and meter.report()["tokens"] >= token_ceiling
+                                and scope.report()["tokens"] >= token_ceiling
                             ):
                                 raise ValueError("app-server token budget exhausted")
+                        return done
 
                     for value in pending:
                         usage(value)
                     while True:
                         value, raw = await receive()
-                        usage(value)
+                        done = usage(value)
+                        if (
+                            on_mcp_source is not None
+                            and value.get("method") == "item/started"
+                            and value.get("params", {}).get("item", {}).get("type") == "mcpToolCall"
+                            and value["params"]["item"].get("server") == "aisle_harness"
+                        ):
+                            params = value["params"]
+                            scope._identity(params.get("threadId"), params.get("turnId"))
+                            identity = (params["turnId"], params["item"]["id"])
+                            if identity in calls or identity in mcp_calls:
+                                raise ValueError("app-server MCP source identity replay")
+                            on_mcp_source(
+                                raw, thread_id=params["threadId"], turn_id=params["turnId"]
+                            )
+                            mcp_calls.add(identity)
                         if value.get("method") == "item/tool/call":
-                            call = parse_dynamic_call(value, thread_id=thread_id, turn_id=turn_id)
+                            call = scope.parse_call(value)
                             identity = (call["turn_id"], call["call_id"])
                             wire_id = (type(value["id"]), value["id"])
-                            if identity in calls or wire_id in request_ids:
+                            if identity in calls or identity in mcp_calls or wire_id in request_ids:
                                 raise ValueError("app-server request identity replay")
                             calls.add(identity)
                             request_ids.add(wire_id)
@@ -331,37 +480,48 @@ async def run_app_server_async(
                             await send({"id": value["id"], "result": result})
                         elif "id" in value:
                             raise ValueError("unsupported app-server request or response")
-                        elif value.get("method") == "turn/completed":
-                            params = value["params"]
-                            if (
-                                params["threadId"] != thread_id
-                                or params["turn"]["id"] != turn_id
-                                or params["turn"]["status"] != "completed"
-                            ):
-                                raise ValueError("app-server turn failed or identity differs")
+                        elif done:
                             completed = {
                                 "thread_id": thread_id,
                                 "turn_id": turn_id,
                                 "dynamic_calls": len(calls),
                                 **(
-                                    meter.report()
-                                    if token_ceiling is not None or meter.total is not None
+                                    {"mcp_calls": len(mcp_calls)}
+                                    if on_mcp_source is not None
+                                    else {}
+                                ),
+                                **(
+                                    scope.report()
+                                    if token_ceiling is not None or scope.has_usage
                                     else {}
                                 ),
                             }
                             return completed
             finally:
-                if completed is not None:
-                    process.stdin.close()
+
+                async def reap():
+                    if completed is not None:
+                        process.stdin.close()
+                        try:
+                            await asyncio.wait_for(process.wait(), timeout=1)
+                        except TimeoutError:
+                            pass
                     try:
-                        await asyncio.wait_for(process.wait(), timeout=1)
-                    except TimeoutError:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
                         pass
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                await process.wait()
+                    await process.wait()
+
+                cleanup = asyncio.create_task(reap())
+                cancellation = None
+                while not cleanup.done():
+                    try:
+                        await asyncio.shield(cleanup)
+                    except asyncio.CancelledError as exc:
+                        cancellation = exc
+                cleanup.result()
+                if cancellation is not None:
+                    raise cancellation
                 if completed is not None:
                     completed["rc"] = process.returncode
                     if process.returncode != 0:
@@ -374,7 +534,16 @@ async def run_app_server_async(
             retain("failure.json", encode({"error_type": type(exc).__name__, "error": str(exc)}))
         except BaseException as retention_error:
             exc.add_note(f"failure evidence retention failed: {retention_error}")
+        if on_reference is not None:
+            try:
+                on_reference(
+                    reference(failure={"error_type": type(exc).__name__, "error": str(exc)})
+                )
+            except BaseException as retention_error:
+                exc.add_note(f"protocol reference retention failed: {retention_error}")
         raise
+    if on_reference is not None:
+        on_reference(reference())
     return {
         **result,
         "artifacts": dict(hashes),

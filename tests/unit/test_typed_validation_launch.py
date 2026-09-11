@@ -15,7 +15,7 @@ from test_typed_validation_snapshot import ROOT, _view
 pytestmark = pytest.mark.unit
 
 
-def _inputs(tmp_path, *, invalid=False, direct_python=False):
+def _inputs(tmp_path, *, invalid=False, direct_python=True, worker_packages=False):
     from aisle.harness.matched_runtime import capture_runtime
     from aisle.harness.treatment_confinement import compile_macos_profile
     from aisle.harness.typed_snapshot import build_typed_validation_snapshot
@@ -39,7 +39,7 @@ def _inputs(tmp_path, *, invalid=False, direct_python=False):
     package_root = tmp_path / "runtime-packages"
     package_root.mkdir()
     (package_root / "package.py").write_text("VALUE = 1")
-    for name in (
+    packages = (
         "yaml",
         "jsonschema",
         "jsonschema_specifications",
@@ -48,7 +48,8 @@ def _inputs(tmp_path, *, invalid=False, direct_python=False):
         "attrs",
         "attr",
         "typing_extensions",
-    ):
+    ) + (("numpy", "pyarrow") if worker_packages else ())
+    for name in packages:
         try:
             module = importlib.import_module(name)
         except ModuleNotFoundError as exc:
@@ -64,6 +65,10 @@ def _inputs(tmp_path, *, invalid=False, direct_python=False):
             )
         else:
             shutil.copyfile(source, package_root / source.name)
+        # Linux wheels can keep native libraries beside their Python package.
+        libraries = source.parent.parent / (name + ".libs")
+        if libraries.is_dir():
+            shutil.copytree(libraries, package_root / libraries.name)
     inputs["policy"] = replace(
         inputs["policy"],
         runtime_read_roots=(*inputs["policy"].runtime_read_roots, package_root),
