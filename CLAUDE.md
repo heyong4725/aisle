@@ -30,9 +30,12 @@ benchmark acceptance. Run things:
 CUDA-only deps are forbidden in default extras (CON-1).
 
 ## Quality gates before EVERY commit (inherited from dora-rs/dora practice)
-/review on the diff → /simplify → `uv run ruff format --check .` →
-`uv run ruff check .` → `uv run pytest -m unit` → (+ `-m "sim or graph"` if you
-touched sim/graph code). Conventional commits. One spec concern per PR.
+Class B/C (nodes, harness, frozen set, contracts): /review on the diff →
+/simplify → `uv run ruff format --check .` → `uv run ruff check .` →
+`uv run pytest -m unit` → (+ `-m "sim or graph"` if you touched sim/graph
+code). Class A docs-only (docs/, ADRs, README, generated): format → lint →
+unit only. Class A tests/ or tools/: /review → format → lint → unit.
+Conventional commits. One spec concern per PR. (CON-9 as amended by ADR-65.)
 
 ## Hard rules
 - Never edit specs/ without a `spec-change` PR (CON-14).
