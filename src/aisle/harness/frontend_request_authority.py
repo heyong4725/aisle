@@ -167,6 +167,35 @@ class RequestAuthority:
                 raise
             return json.loads(json.dumps(grant))
 
+    def retain_response_rejection(self, *, call, request_id, response):
+        """Retain a bounded rejected controller result and retire this authority."""
+        with self._lock:
+            if self._closed:
+                raise RequestRefused("request authority is closed")
+            try:
+                matches = [
+                    grant
+                    for grant in self._grants.values()
+                    if grant["request_id"] == request_id and grant["call"] == call
+                ]
+                if len(matches) != 1:
+                    raise RequestRefused("rejected response has no issued request grant")
+                receipt = {
+                    "schema_version": "aisle.frontend-response-rejection.v1",
+                    "session_id": self.session_id,
+                    "request_id": request_id,
+                    "call": dict(call),
+                    "response": response,
+                }
+                if len(json.dumps(receipt, sort_keys=True, allow_nan=False).encode()) + 1 > 65536:
+                    raise RequestRefused("rejected response exceeds retention limit")
+                self._retain(request_id + "-response-rejected.json", receipt)
+            except BaseException:
+                self._failed = True
+                raise
+            finally:
+                self._closed = True
+
     def reference(self):
         """Return write-time hashes after closure, never recomputed from the evidence files.
 

@@ -174,3 +174,83 @@ def test_nested_proxy_relays_headers_and_blocks_second_callback(tmp_path):
             await backend.stop(0)
 
     asyncio.run(asyncio.wait_for(exercise(), 10))
+
+
+def test_rpc_shutdown_cancellation_waits_for_handler_evidence(tmp_path):
+    """MON-12/MON-13: repeated cancellation cannot close a real RPC handler's pending receipt."""
+    import threading
+
+    from aisle.harness.code_mode_authority import CodeModeAuthority
+    from aisle.harness.code_mode_proxy import CodeModeProxy
+
+    async def exercise():
+        entered, release = threading.Event(), threading.Event()
+        stopped = asyncio.Event()
+
+        async def open_session(raw, context):
+            yield message("SessionEvent", opened={"session_id": "host"}).SerializeToString()
+            await stopped.wait()
+
+        backend = grpc.aio.server()
+        backend.add_generic_rpc_handlers(
+            [
+                grpc.method_handlers_generic_handler(
+                    "codex.code_mode.v1.CodeModeHost",
+                    {"OpenSession": grpc.unary_stream_rpc_method_handler(open_session)},
+                )
+            ]
+        )
+        port = backend.add_insecure_port("127.0.0.1:0")
+        await backend.start()
+        close = None
+        proxy = None
+        try:
+            with DispatchBudget(tmp_path / "dispatch", session_id="matched", ceiling=1) as budget:
+                proxy = await CodeModeProxy(
+                    f"http://127.0.0.1:{port}",
+                    CodeModeAuthority(budget, delegated_tools=set()),
+                    output=tmp_path / "rpc",
+                ).__aenter__()
+                retain = proxy._retain
+
+                def held_receipt(rpc, method, phase, raw=b""):
+                    if phase == "cancelled":
+                        entered.set()
+                        assert release.wait(3), "test did not release cancellation receipt"
+                    retain(rpc, method, phase, raw)
+
+                proxy._retain = held_receipt
+                async with grpc.aio.insecure_channel(proxy.address) as client:
+                    lease = client.unary_stream("/codex.code_mode.v1.CodeModeHost/OpenSession")(b"")
+                    assert message("SessionEvent", await lease.read()).opened.session_id == "host"
+                    close = asyncio.create_task(proxy.__aexit__(None, None, None))
+                    assert await asyncio.to_thread(entered.wait, 2)
+                    close.cancel()
+                    await asyncio.sleep(0)
+                    close.cancel()
+                    await asyncio.sleep(0)
+                    assert not close.done() and not proxy._closed and proxy._fd is not None
+                    with pytest.raises(ValueError, match="must close"):
+                        proxy.reference()
+                    release.set()
+                    with pytest.raises(asyncio.CancelledError):
+                        await asyncio.wait_for(close, 2)
+                    lease.cancel()
+                assert not proxy._handlers
+                reference = proxy.reference()
+                rows = {p.name: p.read_bytes() for p in (tmp_path / "rpc").iterdir()}
+                assert reference["artifacts"] == {
+                    name: hashlib.sha256(raw).hexdigest() for name, raw in rows.items()
+                }
+                assert sum(json.loads(raw)["phase"] == "cancelled" for raw in rows.values()) == 1
+            assert budget.reference()["attempts"] == budget.reference()["reserved"] == 0
+        finally:
+            release.set()
+            stopped.set()
+            if close is not None:
+                await asyncio.gather(close, return_exceptions=True)
+            elif proxy is not None:
+                await proxy.__aexit__(None, None, None)
+            await backend.stop(0)
+
+    asyncio.run(asyncio.wait_for(exercise(), 10))

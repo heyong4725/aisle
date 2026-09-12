@@ -409,7 +409,7 @@ def test_committed_registrations_check_clean_with_withheld_seeds():
     registration names it in `superseded`; drift with no successor is the
     refusal the registry promises (analysis/freeze/README.md)."""
     manifests = _committed_manifests()
-    assert len(manifests) == 38
+    assert len(manifests) == 39
     superseded_ids: set[str] = set()
     for path in manifests:
         declaration = json.loads(path.with_name("declaration.json").read_text())
@@ -493,7 +493,7 @@ def test_shared_cli_successor_preserves_bnd_protocol_and_review_gates():
 
 
 def test_pilot_purpose_registers_as_its_own_campaign(tmp_path):
-    """STA-3 / CSE-8 / ADR-65: `pilot` is an accepted registration purpose,
+    """STA-3 / CSE-8 / ADR-66: `pilot` is an accepted registration purpose,
     so a pilot can be registered under its own campaign id and checked like
     any other declaration. Lineage protection (a successor may not change
     purpose) is the generic rule exercised by

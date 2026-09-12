@@ -92,6 +92,7 @@ for raw in sys.stdin:
         time.sleep(60)
 """)
     called = []
+    references = []
     with pytest.raises((ValueError, TimeoutError)):
         run_app_server(
             [sys.executable, "-I", str(script), str(pidfile), failure],
@@ -102,11 +103,21 @@ for raw in sys.stdin:
             input_items=[],
             handle_call=lambda *args: called.append(args),
             timeout_s=0.5,
+            on_reference=references.append,
         )
     assert not called
     assert (tmp_path / "protocol/failure.json").is_file()
     with pytest.raises(ProcessLookupError):
         os.kill(int(pidfile.read_text()), 0)
+    import hashlib
+
+    assert len(references) == 1
+    reference = references[0]
+    assert reference["stream_complete"] is False
+    assert reference["failure"] is not None
+    assert "failure.json" in reference["artifacts"]
+    for name, digest in reference["artifacts"].items():
+        assert hashlib.sha256((tmp_path / "protocol" / name).read_bytes()).hexdigest() == digest
 
 
 def _usage(input_tokens=10, cached=3, output=2):
@@ -122,6 +133,44 @@ def _usage(input_tokens=10, cached=3, output=2):
         "turnId": "turn",
         "tokenUsage": {"total": totals, "last": dict(totals)},
     }
+
+
+def test_cancelled_frontend_preserves_primary_error_when_reference_callback_fails(
+    tmp_path, monkeypatch
+):
+    """MON-12/MON-13: cancellation keeps its identity even if evidence finalization fails."""
+    import asyncio
+
+    from aisle.harness import frontend_app_server as frontend
+
+    async def cancelled(*args, **kwargs):
+        raise asyncio.CancelledError("session cancelled")
+
+    references = []
+
+    def retain(reference):
+        references.append(reference)
+        raise OSError("reference storage unavailable")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", cancelled)
+    with pytest.raises(asyncio.CancelledError, match="session cancelled") as caught:
+        frontend.run_app_server(
+            ["unused"],
+            cwd=tmp_path,
+            env={},
+            output=tmp_path / "protocol",
+            thread_params={},
+            input_items=[],
+            handle_call=lambda *args: None,
+            timeout_s=1,
+            on_reference=retain,
+        )
+    assert len(references) == 1
+    assert references[0]["stream_complete"] is False
+    assert references[0]["thread_id"] is None
+    assert references[0]["failure"]["error_type"] == "CancelledError"
+    assert "failure.json" in references[0]["artifacts"]
+    assert any("reference storage unavailable" in note for note in caught.value.__notes__)
 
 
 def test_app_server_usage_counts_cumulative_updates_once():
@@ -224,5 +273,83 @@ def test_async_transport_cancellation_reaps_owned_frontend(tmp_path):
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+
+    asyncio.run(exercise())
+
+
+def test_cancellation_during_reaping_cannot_publish_reference_early(tmp_path, monkeypatch):
+    """MON-12/MON-13: relay cancellation must not interrupt a frontend's ongoing cleanup."""
+    import asyncio
+    import os
+    import signal
+    import sys
+
+    from aisle.harness.frontend_app_server import run_app_server_async
+
+    async def exercise():
+        entered, release = asyncio.Event(), asyncio.Event()
+        real_spawn = asyncio.create_subprocess_exec
+        process = None
+        original_wait = None
+        reaped = False
+        references = []
+
+        async def spawn(*args, **kwargs):
+            nonlocal process, original_wait
+            process = await real_spawn(*args, **kwargs)
+            original_wait = process.wait
+
+            async def wait():
+                nonlocal reaped
+                entered.set()
+                await release.wait()
+                result = await original_wait()
+                reaped = True
+                return result
+
+            process.wait = wait
+            return process
+
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+        task = asyncio.create_task(
+            run_app_server_async(
+                [
+                    sys.executable,
+                    "-I",
+                    "-c",
+                    "import time; print('invalid', flush=True); time.sleep(60)",
+                ],
+                cwd=tmp_path,
+                env={"PATH": os.defpath},
+                output=tmp_path / "protocol",
+                thread_params={},
+                input_items=[],
+                handle_call=lambda *_: pytest.fail("unexpected tool"),
+                timeout_s=5,
+                on_reference=lambda reference: references.append((reaped, reference)),
+            )
+        )
+        try:
+            await asyncio.wait_for(entered.wait(), 2)
+            task.cancel()
+            await asyncio.sleep(0)
+            task.cancel()
+            await asyncio.sleep(0)
+            assert references == [], "failure reference was published before process cleanup"
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, 2)
+            assert references and references[0][0] is True
+            assert process.returncode is not None
+        finally:
+            release.set()
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            if process is not None:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                await original_wait()
 
     asyncio.run(exercise())

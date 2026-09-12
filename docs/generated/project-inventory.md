@@ -46,7 +46,7 @@ stayed outside it).
 | Graphs | 24 |
 | Capability manifests | 42 |
 | CLI command entries | 39 |
-| ADR files | 84 |
+| ADR files | 85 |
 
 ## Graphs
 
@@ -264,7 +264,8 @@ inference.
 | [docs/decisions/ADR-62.md](../decisions/ADR-62.md) | ADR-62 — Matched session binding of representation documents and process inputs | PROPOSED — engineering interpretation for #519; no study admission. |
 | [docs/decisions/ADR-63.md](../decisions/ADR-63.md) | ADR-63: reserve covered frontend calls before delivery | PROPOSED — engineering interpretation for #536; no study admission. |
 | [docs/decisions/ADR-64.md](../decisions/ADR-64.md) | ADR-64 — a halt ends the episode: no in-episode resume | ACCEPTED 2026-09-10 (owner sign-off per CON-10, after merge of #563; |
-| [docs/decisions/ADR-65.md](../decisions/ADR-65.md) | ADR-65 — pilot first: a labelled pilot evidence tier and the execution order | ACCEPTED 2026-09-11 (owner sign-off per CON-10, triage table accepted |
+| [docs/decisions/ADR-65.md](../decisions/ADR-65.md) | ADR-65: Frontend conformance is a bound evidence gate | PROPOSED — engineering interpretation for #536; no study admission. |
+| [docs/decisions/ADR-66.md](../decisions/ADR-66.md) | ADR-66 — pilot first: a labelled pilot evidence tier and the execution order | ACCEPTED 2026-09-11 (owner sign-off per CON-10, triage table accepted |
 | [docs/decisions/ADR-7.md](../decisions/ADR-7.md) | ADR-7: T05 bridge interpretations and measured performance (SPEC 030) | ACCEPTED |
 | [docs/decisions/ADR-8.md](../decisions/ADR-8.md) | ADR-8: T06 verifier/reset interpretations (SPEC 040) | ACCEPTED |
 | [docs/decisions/ADR-9.md](../decisions/ADR-9.md) | ADR-9: T07 budget-guard interpretations (SPEC 080) | ACCEPTED |

@@ -1,8 +1,11 @@
 """MON-8/MON-12/MON-13: admitted typed validation is a real controller tool path."""
 
 import copy
+import hashlib
 import json
+import shlex
 import shutil
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -51,9 +54,11 @@ def _binding(tmp_path, hidden=()):
 
 
 def _admitted_controller(tmp_path):
+    from test_monolith_worker_launch import _worker_interpreter
+
     from aisle.harness.matched_session import admit_pair
 
-    controller, views, output = _controller(tmp_path, "typed")
+    controller, views, output = _controller(tmp_path, "typed", python=_worker_interpreter()[0])
     shutil.copytree(ROOT / "registry", controller.root / "registry", dirs_exist_ok=True)
     shutil.copytree(
         ROOT / "src/aisle/nodes", controller.root / "src/aisle/nodes", dirs_exist_ok=True
@@ -76,6 +81,27 @@ def _admitted_controller(tmp_path):
         typed_validation=binding,
     )
     return controller, views, output, binding
+
+
+def test_typed_fixture_admits_worker_binary_when_launcher_bytes_differ(tmp_path, monkeypatch):
+    """MON-6/MON-13: framework launchers and worker binaries have distinct identities."""
+    import test_monolith_worker_launch as worker_fixture
+
+    python, runtime_root = worker_fixture._worker_interpreter()
+    launcher = tmp_path / "launcher-runtime/bin/python"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text(f'#!/bin/sh\nexec {shlex.quote(str(python))} "$@"\n')
+    launcher.chmod(0o755)
+    assert (
+        hashlib.sha256(launcher.read_bytes()).digest()
+        != hashlib.sha256(python.read_bytes()).digest()
+    )
+    monkeypatch.setattr(sys, "executable", str(launcher))
+    monkeypatch.setattr(worker_fixture, "_worker_interpreter", lambda: (python, runtime_root))
+    controller, _, _, binding = _admitted_controller(tmp_path / "case")
+    expected = {"name": "harness-python", "sha256": binding["python_sha256"]}
+    assert controller.python == python
+    assert all(expected in arm["runtime_binaries"] for arm in controller.plan["arms"].values())
 
 
 def test_admitted_typed_tool_uses_complete_snapshot_and_retains_result(tmp_path):

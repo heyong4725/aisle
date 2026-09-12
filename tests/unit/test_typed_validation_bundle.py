@@ -102,3 +102,65 @@ def test_bundle_refuses_changed_controller_source(tmp_path, monkeypatch):
     monkeypatch.setattr(typed_validation, "_SOURCE_ROOT", sources)
     with pytest.raises(typed_validation.ValidationError, match="controller sources"):
         typed_validation.verify_validation_bundle(bundle, manifest)
+
+
+def test_bound_virtualenv_runs_real_validator(tmp_path):
+    """MON-6/MON-13: bound venv startup retains validator dependencies without base-site
+    fallback.
+    """
+    from pathlib import Path
+
+    from aisle.harness.matched_runtime import capture_runtime
+    from aisle.harness.typed_snapshot import build_typed_validation_snapshot
+    from aisle.harness.typed_validation import build_validation_bundle, validation_command
+
+    runtime = capture_runtime(sorted({Path(sys.prefix).resolve(), Path(sys.base_prefix).resolve()}))
+    view = _view(tmp_path)
+    snapshot = tmp_path / "snapshot"
+    record = build_typed_validation_snapshot(ROOT, view, snapshot)
+    bundle = tmp_path / "bundle"
+    manifest = build_validation_bundle(bundle)
+    command = validation_command(
+        sys.executable, bundle, manifest, snapshot, record, "franka", runtime_record=runtime
+    )
+    result = subprocess.run(command, cwd=bundle, capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["ok"] is True
+
+
+@pytest.mark.parametrize("case", ["bound", "alias", "prefix", "changed"])
+def test_validator_binds_startup_configuration(tmp_path, case):
+    """MON-13: executable hashes cannot authorize an unbound or changed pyvenv.cfg."""
+    from aisle.harness.matched_runtime import capture_runtime
+    from aisle.harness.typed_snapshot import build_typed_validation_snapshot
+    from aisle.harness.typed_validation import build_validation_bundle, validation_command
+
+    base, venv = tmp_path / "base", tmp_path / "venv"
+    for root in (base, venv):
+        (root / "bin").mkdir(parents=True)
+    executable = base / "bin/python"
+    executable.write_text("#!/bin/sh\nexit 0\n")
+    executable.chmod(0o755)
+    invocation = venv / "bin/python"
+    invocation.symlink_to(executable)
+    config = venv / "pyvenv.cfg"
+    config.write_text(f"home = {base / 'bin'}\ninclude-system-site-packages = false\n")
+    roots = [base] if case == "alias" else [base, venv / "bin" if case == "prefix" else venv]
+    runtime = capture_runtime(roots)
+    view = _view(tmp_path)
+    snapshot = tmp_path / "snapshot"
+    record = build_typed_validation_snapshot(ROOT, view, snapshot)
+    bundle = tmp_path / "bundle"
+    manifest = build_validation_bundle(bundle)
+    if case == "changed":
+        config.write_text(config.read_text().replace("false", "true"))
+    if case == "bound":
+        command = validation_command(
+            invocation, bundle, manifest, snapshot, record, "franka", runtime_record=runtime
+        )
+        assert command[0] == str(invocation)
+    else:
+        with pytest.raises(ValueError, match="runtime|startup"):
+            validation_command(
+                invocation, bundle, manifest, snapshot, record, "franka", runtime_record=runtime
+            )

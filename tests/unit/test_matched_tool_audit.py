@@ -198,11 +198,13 @@ def test_observed_run_requires_protocol_and_attempt_identity(tmp_path, field):
         "false_evaluator",
         "false_guards",
         "false_simulator_work",
+        "relocated",
+        "relocated_false_guard_count",
     ],
 )
 def test_run_audit_covers_nested_retained_files(tmp_path, fault):
     """MON-12/MON-13: session audit hashes every retained run file and rejects drift."""
-    from test_matched_run_evidence import _run
+    from test_matched_run_evidence import _guard_traces, _run
     from test_matched_session import _development_protocol
 
     from aisle.harness.matched_evidence import audit_tool_journal, retain_run
@@ -213,12 +215,16 @@ def test_run_audit_covers_nested_retained_files(tmp_path, fault):
     (views["monolithic"] / "experts/monolithic/expert_t1.py").write_text("invalid python !!!")
     record = controller.run()
     source = _run(tmp_path)
+    if fault in {"relocated", "relocated_false_guard_count"}:
+        _guard_traces(source)
     manifest = json.loads((source / "manifest.json").read_text())
     manifest["run_id"] = record["run_id"]
     (source / "manifest.json").write_text(json.dumps(manifest))
     retained = output / "tool-000001/run"
     record["run_evidence"] = retain_run(source, retained, run_id=record["run_id"])
-    if fault == "missing_evaluator":
+    if fault == "relocated_false_guard_count":
+        record["run_evidence"]["guards"]["summary"]["commands"] += 1
+    elif fault == "missing_evaluator":
         record["run_evidence"].pop("evaluator")
     elif fault == "false_outcome":
         record["run_evidence"]["episodes"][0]["success"] = True
@@ -238,6 +244,7 @@ def test_run_audit_covers_nested_retained_files(tmp_path, fault):
         "false_evaluator",
         "false_guards",
         "false_simulator_work",
+        "relocated_false_guard_count",
     }:
         (retained / "run-evidence.json").write_text(json.dumps(record["run_evidence"]))
     record.pop("immutable_id")
@@ -253,6 +260,12 @@ def test_run_audit_covers_nested_retained_files(tmp_path, fault):
         (retained / "run-evidence.json").unlink()
     elif fault == "extra_raw":
         (retained / "raw/extra.txt").write_text("unindexed")
+    if fault in {"relocated", "relocated_false_guard_count"}:
+        import shutil
+
+        destination = tmp_path / "replayed-session"
+        shutil.copytree(output, destination)
+        output = destination
     report = audit_tool_journal(
         output,
         session_id=controller.session_id,
@@ -260,7 +273,7 @@ def test_run_audit_covers_nested_retained_files(tmp_path, fault):
         arm=controller.arm,
         development=development,
     )
-    if fault is None:
+    if fault in {None, "relocated"}:
         assert report["ok"] is True, report
         assert report["files"]["tool-000001/run/raw/traces/raw.bin"]
         assert report["files"]["tool-000001/run/run-evidence.json"]

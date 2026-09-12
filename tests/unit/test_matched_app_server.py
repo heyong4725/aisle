@@ -48,6 +48,51 @@ def test_cleanup_retention_failure_preserves_frontend_failure(tmp_path, monkeypa
     assert any("secondary report retention" in note for note in caught.value.__notes__)
 
 
+def test_failed_frontend_retains_closed_authority_and_partial_protocol(tmp_path, monkeypatch):
+    """MON-12/MON-13: failed sessions retain controller references without inventing completion."""
+    import json
+    from pathlib import Path
+
+    from aisle.harness import matched_app_server as runner
+
+    controller, _, output = _controller(tmp_path, "typed")
+    channel = (
+        Path(controller.plan["ambient_bindings"]["typed"]["environment"]["HOME"]) / "tool-channel"
+    )
+    channel.mkdir()
+    partial = {
+        "thread_id": "thread",
+        "turn_id": "turn",
+        "dynamic_calls": 0,
+        "artifacts": {},
+        "stream_complete": False,
+        "failure": {"error_type": "ValueError", "error": "frontend failed"},
+    }
+
+    def frontend(*args, **kwargs):
+        kwargs["on_reference"](partial)
+        raise ValueError("frontend failed")
+
+    monkeypatch.setattr(runner, "run_app_server", frontend)
+    references = {}
+    with pytest.raises(ValueError, match="frontend failed"):
+        runner.run_authorized_app_server(
+            controller,
+            ["unused"],
+            cwd=tmp_path,
+            env={},
+            launch={"app_server": {"baseInstructions": "system", "developerInstructions": "task"}},
+            budget={**controller.plan["arms"]["typed"]["budget"], "wall_ceiling_s": 1},
+            references=references,
+        )
+    assert json.loads((output / "frontend-protocol-reference.json").read_bytes()) == partial
+    assert (
+        json.loads((output / "frontend-authority-reference.json").read_bytes())
+        == references["authority"]
+    )
+    assert references["authority"]["session_id"] == controller.session_id
+
+
 @pytest.mark.parametrize("arm", ["typed", "monolithic"])
 @pytest.mark.parametrize("failure", ["ceiling", "retention"])
 def test_source_calls_reserve_before_grant_or_controller(tmp_path, monkeypatch, arm, failure):

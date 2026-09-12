@@ -17,7 +17,7 @@ approval, STA-12 independent statistical review, BND-1 candidate amendment)
 and the machine gates whose instruments are not built yet are listed under
 `pending_gates`. Nothing in this directory authorizes scored collection.
 
-A `pilot` registration (ADR-65) is a distinct campaign identity. Its sessions
+A `pilot` registration (ADR-66) is a distinct campaign identity. Its sessions
 run through the unchanged engineering path (`matched_campaign.py run
 --purpose engineering`, retained and unscored; the executor still refuses any
 scored purpose without CSE-10 gate records) into an output root named by the

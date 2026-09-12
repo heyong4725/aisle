@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import stat
 import sys
 from pathlib import Path
 
@@ -15,7 +17,25 @@ PROTOCOL_VERSION = "2025-06-18"
 MAX_REQUEST_BYTES = 65536
 
 
-def serve(output: Path) -> None:
+def serve(output: Path, *, probe_root=None, probe_target=None, probe_marker=None) -> None:
+    probe = None
+    if any(value is not None for value in (probe_root, probe_target, probe_marker)):
+        if (
+            not isinstance(probe_root, Path)
+            or type(probe_target) is not str
+            or not probe_target
+            or Path(probe_target).is_absolute()
+            or str(Path(probe_target)) != probe_target
+            or ".." in Path(probe_target).parts
+            or type(probe_marker) is not str
+            or not probe_marker.startswith("# AISLE probe ")
+            or len(probe_marker) > 256
+            or any(ord(c) < 32 for c in probe_marker)
+        ):
+            raise ValueError("invalid bound MCP effect probe")
+        probe = probe_root.absolute() / probe_target
+        if probe.resolve() != probe:
+            raise ValueError("redirected MCP effect target")
     calls = 0
     while raw := sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1):
         if len(raw) > MAX_REQUEST_BYTES or not raw.endswith(b"\n"):
@@ -49,6 +69,42 @@ def serve(output: Path) -> None:
                     }
                 ]
             }
+            if probe is not None:
+                result["tools"].append(
+                    {
+                        "name": "append",
+                        "description": "Append the bound engineering probe marker",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "target": {"type": "string", "const": probe_target},
+                                "marker": {"type": "string", "const": probe_marker},
+                            },
+                            "required": ["target", "marker"],
+                            "additionalProperties": False,
+                        },
+                    }
+                )
+        elif (
+            probe is not None
+            and method == "tools/call"
+            and request.get("params", {}).get("name") == "append"
+            and request["params"].get("arguments")
+            == {"target": probe_target, "marker": probe_marker}
+        ):
+            if probe.resolve() != probe:
+                raise ValueError("redirected MCP effect target")
+            fd = os.open(probe, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, "ab") as stream:
+                if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                    raise ValueError("MCP effect target is not a regular file")
+                stream.write(probe_marker.encode() + b"\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            result = {
+                "content": [{"type": "text", "text": "fixture marker appended"}],
+                "isError": False,
+            }
         elif (
             method == "tools/call"
             and request.get("params", {}).get("name") == "record"
@@ -69,4 +125,13 @@ def serve(output: Path) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
-    serve(parser.parse_args().output)
+    parser.add_argument("--probe-root", type=Path)
+    parser.add_argument("--probe-target")
+    parser.add_argument("--probe-marker")
+    args = parser.parse_args()
+    serve(
+        args.output,
+        probe_root=args.probe_root,
+        probe_target=args.probe_target,
+        probe_marker=args.probe_marker,
+    )

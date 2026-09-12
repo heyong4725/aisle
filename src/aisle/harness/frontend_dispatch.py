@@ -47,6 +47,8 @@ class DispatchBudget:
         self._reserved = 0
         self._digests = {}
         self._retention_failed = False
+        self._hosted_requests = 0
+        self._hosted_seen = set()
         self.session_id = session_id
         self.ceiling = ceiling
         try:
@@ -157,6 +159,113 @@ class DispatchBudget:
                 raise
             return {"reservation": reservation, "delivery": delivery}
 
+    def hosted_response(self, request_id, request, exchange):
+        """Hold an allowance before upstream work; release only provably unused slots.
+
+        The owning relay must bind a provider enforcing max_tool_calls. The lock
+        spans the bounded exchange, so concurrent local/hosted requests cannot
+        spend its allowance. Completed calls are never refunded; uncertain work
+        consumes the entire allowance and retires this authority.
+        """
+        from aisle.harness.provider_hosted import hosted_calls, hosted_request
+
+        def retain(name, value):
+            try:
+                self._retain(name, value)
+            except BaseException:
+                self._retention_failed = True
+                raise
+
+        with self._lock:
+            if self._closed:
+                raise DispatchRefused("dispatch authority is closed")
+            if (
+                type(request_id) is not str
+                or not 0 < len(request_id) <= 256
+                or request_id in self._hosted_seen
+                or self._hosted_requests >= 10000
+            ):
+                self._closed = True
+                raise DispatchRefused("invalid or replayed hosted request")
+            self._hosted_seen.add(request_id)
+            before = self._reserved
+            try:
+                frame, allowance = hosted_request(request, self.ceiling - before)
+                self._hosted_requests += 1
+                prefix = f"hosted-{self._hosted_requests:08d}"
+                retain(prefix + "-request.frame", frame)
+                retain(
+                    prefix + "-reservation.json",
+                    {
+                        "schema_version": "aisle.hosted-reservation.v1",
+                        "session_id": self.session_id,
+                        "request_id": request_id,
+                        "local_attempts": self._attempts,
+                        "allowance": allowance,
+                        "reserved_before": before,
+                        "request_sha256": hashlib.sha256(frame).hexdigest(),
+                        "request_bytes": len(frame),
+                    },
+                )
+            except BaseException:
+                self._closed = True
+                self._retention_failed = True
+                raise
+            self._reserved += allowance
+            settlement = {
+                "schema_version": "aisle.hosted-settlement.v1",
+                "session_id": self.session_id,
+                "request_id": request_id,
+                "status": "uncertain",
+                "error_type": None,
+                "calls": None,
+                "reserved_after": self._reserved,
+                "response_sha256": None,
+                "response_bytes": None,
+            }
+            if allowance == 0:
+                settlement.update(status="refused", calls=[])
+                try:
+                    retain(prefix + "-settlement.json", settlement)
+                except BaseException:
+                    self._closed = self._retention_failed = True
+                    raise
+                raise DispatchRefused("dispatch budget exhausted")
+            source = None
+            try:
+                source = exchange(frame)
+                if type(source) is not bytes or len(source) > MAX_FRAME_BYTES:
+                    raise ValueError("unbounded hosted response")
+                retain(prefix + "-response.frame", source)
+                settlement.update(
+                    response_sha256=hashlib.sha256(source).hexdigest(), response_bytes=len(source)
+                )
+                calls = hosted_calls(source)
+                identities = {(call["turn_id"], call["call_id"]) for call in calls}
+                if len(calls) > allowance or identities & self._seen:
+                    raise ValueError("hosted limit breach or call replay")
+                settlement.update(
+                    status="completed", calls=calls, reserved_after=before + len(calls)
+                )
+                retain(prefix + "-settlement.json", settlement)
+                self._seen.update(identities)
+                self._reserved = settlement["reserved_after"]
+                return source
+            except BaseException as exc:
+                self._closed = True
+                settlement.update(
+                    status="uncertain",
+                    error_type=type(exc).__name__,
+                    calls=None,
+                    reserved_after=self._reserved,
+                )
+                try:
+                    retain(prefix + "-settlement.json", settlement)
+                except BaseException as retention_error:
+                    self._retention_failed = True
+                    exc.add_note("hosted failure retention failed: " + str(retention_error))
+                raise
+
     def reference(self):
         """Return the closed controller's write-time identities without rereading files."""
         with self._lock:
@@ -164,13 +273,16 @@ class DispatchBudget:
                 raise DispatchRefused("dispatch authority must be closed before audit")
             if self._retention_failed:
                 raise DispatchRefused("dispatch retention failed")
-            return {
+            result = {
                 "session_id": self.session_id,
                 "ceiling": self.ceiling,
                 "attempts": self._attempts,
                 "reserved": self._reserved,
                 "artifacts": dict(self._digests),
             }
+            if self._hosted_requests:
+                result["hosted_requests"] = self._hosted_requests
+            return result
 
     def close(self):
         with self._lock:

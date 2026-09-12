@@ -80,9 +80,16 @@ CONTROLLER_FILES = (
     "src/aisle/harness/frontend_dispatch.py",
     "src/aisle/harness/frontend_dispatch_audit.py",
     "src/aisle/harness/provider_response_authority.py",
+    "src/aisle/harness/provider_hosted.py",
     "src/aisle/harness/provider_relay.py",
     "src/aisle/harness/provider_runner.py",
     "src/aisle/harness/provider_source_audit.py",
+    "src/aisle/harness/mcp_harness_source.py",
+    "src/aisle/harness/mcp_harness_authority.py",
+    "src/aisle/harness/mcp_harness_transport.py",
+    "src/aisle/harness/frontend_conformance.py",
+    "src/aisle/harness/frontend_qualification.py",
+    "src/aisle/harness/frontend_effects.py",
     "src/aisle/harness/code_mode_authority.py",
     "src/aisle/harness/code_mode_proxy.py",
     "src/aisle/harness/code_mode_runner.py",
@@ -355,7 +362,9 @@ def _permission_ids(
     return identities
 
 
-def _verify_launches(candidates: dict, launches: dict, root: Path, prompt_row: str | None) -> None:
+def _verify_launches(
+    candidates: dict, launches: dict, root: Path, prompt_row: str | None, *, execution=None
+) -> None:
     if not isinstance(launches, dict) or set(launches) != ARMS:
         raise AdmissionError("both launch bindings are required")
     comparable = copy.deepcopy(launches)
@@ -366,7 +375,14 @@ def _verify_launches(candidates: dict, launches: dict, root: Path, prompt_row: s
         app_server = "app_server" in launch
         if app_server:
             if (
-                set(launch) - {"tool_python", "code_mode_host", "provider"}
+                set(launch)
+                - {
+                    "tool_python",
+                    "code_mode_host",
+                    "provider",
+                    "mcp_harness",
+                    "conformance_profile",
+                }
                 != {"argv", "app_server"}
                 or candidates[arm]["agent"]["kind"] != "codex"
                 or type(launch["app_server"]) is not dict
@@ -374,6 +390,16 @@ def _verify_launches(candidates: dict, launches: dict, root: Path, prompt_row: s
                 or any(type(value) is not str for value in launch["app_server"].values())
             ):
                 raise AdmissionError("unsupported app-server launch binding")
+            if "mcp_harness" in launch and (
+                launch["mcp_harness"] is not True
+                or "provider" not in launch
+                or not {"harness.check", "harness.run"}.intersection(
+                    candidates[arm]["policy"]["allowed_external_tools"]
+                )
+            ):
+                raise AdmissionError(
+                    "MCP harness requires owned provider and admitted harness tools"
+                )
             if "provider" in launch:
                 from aisle.harness.provider_relay import verify_provider
 
@@ -485,6 +511,31 @@ def _verify_launches(candidates: dict, launches: dict, root: Path, prompt_row: s
             }
             if expected not in candidates[arm]["runtime_binaries"]:
                 raise AdmissionError("tool interpreter differs from admitted runtime")
+        if "conformance_profile" in launch:
+            from aisle.harness.frontend_conformance import (
+                read_bound_profile,
+                verify_fault_matrix,
+                verify_route_matrix,
+            )
+
+            try:
+                bound_profile = read_bound_profile(
+                    root,
+                    launch["conformance_profile"],
+                    candidate=candidates[arm],
+                    launch=launch,
+                    arm=arm,
+                    execution=execution,
+                )
+                if candidates[arm]["budget"].get("frontend_coverage") == "complete":
+                    verify_route_matrix(
+                        bound_profile, candidate=candidates[arm], launch=launch, arm=arm
+                    )
+                    verify_fault_matrix(
+                        bound_profile, candidate=candidates[arm], launch=launch, arm=arm
+                    )
+            except ValueError as exc:
+                raise AdmissionError("conformance profile binding failed: " + str(exc)) from exc
     if comparable["typed"] != comparable["monolithic"]:
         raise AdmissionError("undeclared launch arguments differ between arms")
 
@@ -600,7 +651,7 @@ def admit_pair(
                         "tool runtime overlaps controller or participant authority"
                     )
         if run_controller is not None:
-            from aisle.harness.matched_run_launch import verify_controller_binding
+            from aisle.harness.matched_run_launch import _verify_controller_binding_fields
             from aisle.harness.treatment_ambient import _GENERATED_PATHS
 
             if tool_runtime is None or confinement is None or set(run_controller) != ARMS:
@@ -609,7 +660,7 @@ def admit_pair(
             controller_environments = []
             for arm in sorted(ARMS):
                 try:
-                    verify_controller_binding(
+                    _verify_controller_binding_fields(
                         run_controller[arm],
                         tool_runtime,
                         roots,
@@ -638,12 +689,12 @@ def admit_pair(
             if len(set(controller_environments)) != 1:
                 raise AdmissionError("run controller environments differ between arms")
         if typed_validation is not None:
-            from aisle.harness.typed_validation import verify_validation_binding
+            from aisle.harness.typed_validation import _verify_validation_binding_fields
 
             if tool_runtime is None or confinement is None:
                 raise AdmissionError("typed validation requires runtime and confinement bindings")
             try:
-                verify_validation_binding(
+                _verify_validation_binding_fields(
                     typed_validation,
                     tool_runtime,
                     roots,
@@ -668,8 +719,38 @@ def admit_pair(
                 raise AdmissionError(f"typed validation binding invalid: {exc}") from exc
         if development is not None:
             _verify_development(development)
+        for arm in sorted(ARMS):
+            budget = candidates[arm]["budget"]
+            if type(budget) is not dict:
+                raise AdmissionError("invalid frontend coverage budget")
+            coverage = budget.get("frontend_coverage", "observed")
+            if type(coverage) is not str or coverage not in {"observed", "complete"}:
+                raise AdmissionError("unsupported frontend coverage policy")
+            if coverage == "complete" and (
+                type(launches) is not dict
+                or type(launches.get(arm)) is not dict
+                or "conformance_profile" not in launches[arm]
+            ):
+                raise AdmissionError(
+                    "complete frontend coverage requires a bound conformance profile"
+                )
         if launches is not None:
-            _verify_launches(candidates, launches, root, prompt_row)
+            _verify_launches(
+                candidates,
+                launches,
+                root,
+                prompt_row,
+                execution={
+                    "development": development,
+                    "tool_runtime": tool_runtime,
+                    "typed_validation": typed_validation,
+                    "run_controller": run_controller,
+                    "confinement_bindings": confinement,
+                    "ambient_bindings": ambient,
+                    "private_roots": private_roots,
+                    "prompt_row": prompt_row,
+                },
+            )
         table = monolith.table_report(root, write=False)
         interface = monolith.interface_report(root)
         if not table["ok"] or not interface["ok"]:
@@ -976,6 +1057,8 @@ def execute_session(
     }
     manifest = None
     validation = None
+    profile_launch = None
+    profile_hashes = None
     try:
         if purpose != "engineering":
             raise AdmissionError("scored collection requires independent CSE-10 gate records")
@@ -991,6 +1074,24 @@ def execute_session(
         }
         view = Path(visible_roots[arm])
         (output / "admission.json").write_text(json.dumps(current, indent=2) + "\n")
+        profile_launch = current.get("launch_bindings", {}).get(arm)
+        if profile_launch is not None and "conformance_profile" in profile_launch:
+            from aisle.harness.frontend_conformance import retain_bound_profile
+
+            record["conformance_profile"] = {
+                "reference": copy.deepcopy(profile_launch["conformance_profile"]),
+                "status": "invalid",
+                "qualification": "not_evaluated",
+            }
+            profile_hashes = retain_bound_profile(
+                root,
+                output / "conformance",
+                profile_launch["conformance_profile"],
+                candidate=manifest,
+                launch=profile_launch,
+                arm=arm,
+                execution=current,
+            )
         record["snapshots"]["authored"] = _snapshot(manifest, view, output / "authored")
         # Snapshot reads are not permission to launch changed inputs.
         verify_plan(plan, root, visible_roots)
@@ -1065,6 +1166,27 @@ def execute_session(
     except (OSError, ValueError, TypeError, KeyError) as exc:
         _record_error(record, str(exc))
     finally:
+        if profile_hashes is not None:
+            from aisle.harness.frontend_conformance import read_retained_profile
+
+            # Preserve write-time identities even if finalization finds changed bytes.
+            record["artifacts"].update(
+                {"conformance/" + name: digest for name, digest in profile_hashes.items()}
+            )
+            try:
+                read_retained_profile(
+                    output / "conformance",
+                    profile_launch["conformance_profile"],
+                    candidate=manifest,
+                    launch=profile_launch,
+                    arm=arm,
+                    execution=current,
+                )
+                record["conformance_profile"]["status"] = "bindings_verified"
+            except (OSError, ValueError) as exc:
+                _record_error(record, f"retained conformance profile failed: {exc}")
+                record["ok"] = False
+                record["classification"] = "infrastructure_exclusion"
         if manifest is not None and current.get("ambient_bindings") is not None:
             fields = (
                 ("HOME", "home_baseline_sha256"),
@@ -1105,6 +1227,7 @@ def execute_session(
             "frontend-dispatch-reference.json",
             "code-mode-reference.json",
             "provider-reference.json",
+            "mcp-harness-reference.json",
             "code-mode/host.stdout",
             "code-mode/host.stderr",
         ):
@@ -1118,46 +1241,42 @@ def execute_session(
                 _record_error(record, f"artifact hash failed for {name}: {exc}")
                 record["ok"] = False
                 record["classification"] = "infrastructure_exclusion"
+        authority_evidence = None
+        if request_authority_evidence is not None:
+            try:
+                authority_evidence = request_authority_evidence()
+                if authority_evidence is not None:
+                    snapshots = {"frontend-authority": authority_evidence["artifacts"]}
+                    if "protocol" in authority_evidence:
+                        snapshots["frontend-protocol"] = authority_evidence["protocol"]["artifacts"]
+                    if "dispatch" in authority_evidence:
+                        snapshots["frontend-dispatch"] = authority_evidence["dispatch"]["artifacts"]
+                    if "code_mode" in authority_evidence:
+                        snapshots["code-mode/rpc"] = authority_evidence["code_mode"]["artifacts"]
+                    if "provider" in authority_evidence:
+                        snapshots["provider"] = authority_evidence["provider"]["artifacts"]
+                    if "mcp_harness" in authority_evidence:
+                        snapshots["mcp-harness"] = authority_evidence["mcp_harness"]["artifacts"]
+                    for directory, snapshot in snapshots.items():
+                        for name, data in snapshot.items():
+                            if Path(name).name != name:
+                                raise ValueError("invalid authority evidence name")
+                            path = output / directory / name
+                            if path.resolve() != path:
+                                raise ValueError("redirected authority evidence")
+                            with path.open("rb") as stream:
+                                if stream.read(len(data) + 1) != data:
+                                    raise ValueError(
+                                        "authority evidence changed during finalization"
+                                    )
+                            record["artifacts"][f"{directory}/{name}"] = hashlib.sha256(
+                                data
+                            ).hexdigest()
+            except Exception as exc:
+                _record_error(record, f"request authority evidence acquisition failed: {exc}")
+                record["ok"] = False
+                record["classification"] = "infrastructure_exclusion"
         if "tool-events.jsonl" in record["artifacts"]:
-            authority_evidence = None
-            if request_authority_evidence is not None:
-                try:
-                    authority_evidence = request_authority_evidence()
-                    if authority_evidence is not None:
-                        snapshots = {"frontend-authority": authority_evidence["artifacts"]}
-                        if "protocol" in authority_evidence:
-                            snapshots["frontend-protocol"] = authority_evidence["protocol"][
-                                "artifacts"
-                            ]
-                        if "dispatch" in authority_evidence:
-                            snapshots["frontend-dispatch"] = authority_evidence["dispatch"][
-                                "artifacts"
-                            ]
-                        if "code_mode" in authority_evidence:
-                            snapshots["code-mode/rpc"] = authority_evidence["code_mode"][
-                                "artifacts"
-                            ]
-                        if "provider" in authority_evidence:
-                            snapshots["provider"] = authority_evidence["provider"]["artifacts"]
-                        for directory, snapshot in snapshots.items():
-                            for name, data in snapshot.items():
-                                if Path(name).name != name:
-                                    raise ValueError("invalid authority evidence name")
-                                path = output / directory / name
-                                if path.resolve() != path:
-                                    raise ValueError("redirected authority evidence")
-                                with path.open("rb") as stream:
-                                    if stream.read(len(data) + 1) != data:
-                                        raise ValueError(
-                                            "authority evidence changed during finalization"
-                                        )
-                                record["artifacts"][f"{directory}/{name}"] = hashlib.sha256(
-                                    data
-                                ).hexdigest()
-                except Exception as exc:
-                    _record_error(record, f"request authority evidence acquisition failed: {exc}")
-                    record["ok"] = False
-                    record["classification"] = "infrastructure_exclusion"
             audit = audit_tool_journal(
                 output,
                 session_id=session_id,
@@ -1224,6 +1343,10 @@ def execute_session(
                         data.decode().splitlines(),
                         json.loads(live_bytes),
                         process.get("stopped"),
+                        admission_controlled=(
+                            observer_kind == "codex_app_server"
+                            and "provider" in current.get("launch_bindings", {}).get(arm, {})
+                        ),
                     )
                 observation = observe_tools(observer_kind, data.decode().splitlines())
                 observation["transcript_sha256"] = record["artifacts"]["session.jsonl"]

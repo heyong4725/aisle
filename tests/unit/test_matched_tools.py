@@ -12,11 +12,12 @@ from test_treatment_confinement import _attestation
 pytestmark = pytest.mark.unit
 
 
-def _controller(tmp_path, arm, development=None, *, model=None):
+def _controller(tmp_path, arm, development=None, *, model=None, tool_ceiling=1, python=None):
     from aisle.harness.matched_session import admit_pair
     from aisle.harness.matched_tools import ToolController
     from aisle.harness.treatment_confinement import MacOSPolicy, compile_macos_profile
 
+    python = Path(sys.executable) if python is None else Path(python)
     root, candidates, views = prepared_pair(tmp_path)
     if model is not None:
         for candidate in candidates.values():
@@ -33,11 +34,11 @@ def _controller(tmp_path, arm, development=None, *, model=None):
         candidate["runtime_binaries"].append(
             {
                 "name": "harness-python",
-                "sha256": hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest(),
+                "sha256": hashlib.sha256(python.read_bytes()).hexdigest(),
             }
         )
         candidate["policy"]["allowed_external_tools"].append("harness.check")
-        candidate["budget"].update({"tool_ceiling": 1, "tool_wall_ceiling_s": 30})
+        candidate["budget"].update({"tool_ceiling": tool_ceiling, "tool_wall_ceiling_s": 30})
         if development is not None:
             candidate["policy"]["allowed_external_tools"].append("harness.run")
             candidate["budget"]["tool_ceiling"] = 3
@@ -65,7 +66,7 @@ def _controller(tmp_path, arm, development=None, *, model=None):
             arm,
             output,
             session_id="tool-fixture",
-            python=Path(sys.executable),
+            python=python,
             profile_path=profile,
             attestation=attestation,
         ),

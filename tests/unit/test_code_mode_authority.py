@@ -260,3 +260,51 @@ def test_execute_stream_requires_one_start_and_one_outcome(tmp_path):
             ).SerializeToString(),
         )
         authority.execution_finished("host-session", "execution")
+
+
+@pytest.mark.parametrize("operation", ["check", "run"])
+def test_owned_mcp_harness_defers_charge_to_authenticated_service(tmp_path, operation):
+    """MON-8/MON-13: combined Code Mode/MCP uses one shared controller reservation."""
+    from aisle.harness.code_mode_authority import CodeModeAuthority
+
+    with DispatchBudget(tmp_path / "dispatch", session_id="matched", ceiling=1) as budget:
+        authority = CodeModeAuthority(budget, delegated_tools={"mcp__aisle_harness." + operation})
+        authority.open_session("host-session")
+        request = message("ExecuteRequest", _execution())
+        request.enabled_tools[1].tool_name.namespace = "mcp__aisle_harness"
+        request.enabled_tools[1].tool_name.name = operation
+        authority.execute(request.SerializeToString())
+        delivered = []
+
+        def service(raw):
+            budget.dispatch(
+                {
+                    "turn_id": "owned-mcp-turn",
+                    "call_id": "owned-mcp-call",
+                    "tool_name": "harness." + operation,
+                },
+                b"owned MCP source",
+                delivered.append,
+            )
+
+        result = authority.callback(
+            _callback(
+                harness=True, tool_name={"namespace": "mcp__aisle_harness", "name": operation}
+            ),
+            service,
+        )
+        assert result == {"delegated": True}
+        with pytest.raises(DispatchRefused, match="budget"):
+            authority.callback(_callback(2), lambda _: pytest.fail("excess callback forwarded"))
+    assert delivered == [b"owned MCP source"]
+    assert budget.reference()["reserved"] == 1
+
+
+@pytest.mark.parametrize("tool", ["mcp__aisle_harness.shell", "mcp__other.check", "exec_command"])
+def test_other_mcp_or_native_tools_cannot_claim_controller_delegation(tmp_path, tool):
+    """MON-13: only the launcher's exact owned check/run service can defer charging."""
+    from aisle.harness.code_mode_authority import CodeModeAuthority
+
+    with DispatchBudget(tmp_path / "dispatch", session_id="matched", ceiling=1) as budget:
+        with pytest.raises(ValueError, match="unverified delegated"):
+            CodeModeAuthority(budget, delegated_tools={tool})

@@ -59,7 +59,8 @@ def verify_dispatch_journal(artifacts, *, expected, byte_limit):
         _require(sum(map(len, artifacts.values())) <= byte_limit, "journal exceeds byte limit")
         _require(
             type(expected) is dict
-            and set(expected) == {"session_id", "ceiling", "attempts", "reserved", "artifacts"},
+            and set(expected) - {"hosted_requests"}
+            == {"session_id", "ceiling", "attempts", "reserved", "artifacts"},
             "invalid controller reference",
         )
         session = expected["session_id"]
@@ -75,10 +76,10 @@ def verify_dispatch_journal(artifacts, *, expected, byte_limit):
         )
         used = set()
 
-        def row(name, schema, fields):
+        def row(name, schema, fields, *, size_limit=65536):
             used.add(name)
             data = artifacts[name]
-            _require(len(data) <= 65536, "metadata exceeds size limit")
+            _require(len(data) <= size_limit, "metadata exceeds size limit")
             value = json.loads(data, object_pairs_hook=_object, parse_constant=_constant)
             _require(type(value) is dict and set(value) == fields, "invalid record fields")
             _require(value["schema_version"] == schema, "unsupported record schema")
@@ -106,7 +107,175 @@ def verify_dispatch_journal(artifacts, *, expected, byte_limit):
         seen = set()
         reserved = 0
         uncertain = False
+        hosted_count = expected.get("hosted_requests", 0)
+        _require(
+            type(hosted_count) is int and 0 <= hosted_count <= 10000, "invalid hosted request count"
+        )
+        hosted_rows = []
+        hosted_seen = set()
+        for number in range(1, hosted_count + 1):
+            prefix = f"hosted-{number:08d}"
+            reservation = row(
+                prefix + "-reservation.json",
+                "aisle.hosted-reservation.v1",
+                {
+                    "schema_version",
+                    "session_id",
+                    "request_id",
+                    "local_attempts",
+                    "allowance",
+                    "reserved_before",
+                    "request_sha256",
+                    "request_bytes",
+                },
+            )
+            request_id = reservation["request_id"]
+            _require(
+                type(request_id) is str
+                and 0 < len(request_id) <= 256
+                and request_id not in hosted_seen,
+                "invalid hosted request identity",
+            )
+            hosted_seen.add(request_id)
+            for key in ("local_attempts", "allowance", "reserved_before", "request_bytes"):
+                _require(
+                    type(reservation[key]) is int and reservation[key] >= 0,
+                    "invalid hosted reservation count",
+                )
+            _require(
+                reservation["local_attempts"] <= expected["attempts"]
+                and (
+                    not hosted_rows
+                    or reservation["local_attempts"] >= hosted_rows[-1][1]["local_attempts"]
+                ),
+                "hosted transaction ordering differs",
+            )
+            hosted_rows.append((prefix, reservation))
+        hosted_index = 0
+        completed_hosted = []
+        budget_refusals = []
+
+        def settle_hosted(local_attempts):
+            nonlocal hosted_index, reserved, uncertain
+            from aisle.harness.provider_hosted import hosted_calls, hosted_request
+
+            while (
+                hosted_index < len(hosted_rows)
+                and hosted_rows[hosted_index][1]["local_attempts"] == local_attempts
+            ):
+                _require(not uncertain, "further request after uncertain hosted work")
+                prefix, reservation = hosted_rows[hosted_index]
+                hosted_index += 1
+                allowance = reservation["allowance"]
+                _require(
+                    reservation["reserved_before"] == reserved
+                    and allowance <= expected["ceiling"] - reserved,
+                    "hosted allowance exceeds shared budget",
+                )
+                frame_name = prefix + "-request.frame"
+                frame = artifacts[frame_name]
+                used.add(frame_name)
+                _require(
+                    len(frame) <= MAX_FRAME_BYTES
+                    and len(frame) == reservation["request_bytes"]
+                    and hashlib.sha256(frame).hexdigest() == reservation["request_sha256"],
+                    "hosted request frame differs",
+                )
+                request = json.loads(frame, object_pairs_hook=_object, parse_constant=_constant)
+                _require(
+                    type(request) is dict
+                    and type(request.get("max_tool_calls")) is int
+                    and request["max_tool_calls"] == allowance,
+                    "upstream hosted limit differs",
+                )
+                del request["max_tool_calls"]
+                prepared, _ = hosted_request(json.dumps(request).encode(), allowance)
+                _require(prepared == frame, "unsupported hosted request encoding")
+                settlement = row(
+                    prefix + "-settlement.json",
+                    "aisle.hosted-settlement.v1",
+                    {
+                        "schema_version",
+                        "session_id",
+                        "request_id",
+                        "status",
+                        "error_type",
+                        "calls",
+                        "reserved_after",
+                        "response_sha256",
+                        "response_bytes",
+                    },
+                    size_limit=MAX_FRAME_BYTES,
+                )
+                _require(
+                    settlement["request_id"] == reservation["request_id"]
+                    and type(settlement["reserved_after"]) is int,
+                    "hosted settlement identity differs",
+                )
+                response_name = prefix + "-response.frame"
+                source = artifacts.get(response_name)
+                if source is not None:
+                    used.add(response_name)
+                    _require(
+                        len(source) <= MAX_FRAME_BYTES
+                        and type(settlement["response_bytes"]) is int
+                        and settlement["response_bytes"] == len(source)
+                        and settlement["response_sha256"] == hashlib.sha256(source).hexdigest(),
+                        "hosted response frame differs",
+                    )
+                else:
+                    _require(
+                        settlement["response_sha256"] is None
+                        and settlement["response_bytes"] is None,
+                        "missing hosted response",
+                    )
+                status = settlement["status"]
+                if allowance == 0:
+                    _require(
+                        reserved == expected["ceiling"]
+                        and status == "refused"
+                        and source is None
+                        and settlement["calls"] == []
+                        and settlement["error_type"] is None,
+                        "invalid exhausted hosted request",
+                    )
+                    budget_refusals.append(
+                        {
+                            "kind": "hosted",
+                            "reservation": prefix + "-reservation.json",
+                            "request_id": reservation["request_id"],
+                        }
+                    )
+                elif status == "completed":
+                    _require(
+                        source is not None and settlement["error_type"] is None,
+                        "incomplete hosted settlement",
+                    )
+                    calls = hosted_calls(source)
+                    identities = {(call["turn_id"], call["call_id"]) for call in calls}
+                    _require(
+                        len(calls) <= allowance
+                        and settlement["calls"] == calls
+                        and not identities & seen,
+                        "hosted call count or identity differs",
+                    )
+                    seen.update(identities)
+                    completed_hosted.extend(calls)
+                    reserved += len(calls)
+                else:
+                    _require(
+                        status == "uncertain"
+                        and settlement["calls"] is None
+                        and type(settlement["error_type"]) is str
+                        and 0 < len(settlement["error_type"]) <= 256,
+                        "invalid uncertain hosted settlement",
+                    )
+                    reserved += allowance
+                    uncertain = True
+                _require(settlement["reserved_after"] == reserved, "hosted settled budget differs")
+
         for attempt in range(1, expected["attempts"] + 1):
+            settle_hosted(attempt - 1)
             _require(not uncertain, "further call after uncertain delivery")
             prefix = f"{attempt:08d}"
             frame_name = f"{prefix}.frame"
@@ -159,6 +328,14 @@ def verify_dispatch_journal(artifacts, *, expected, byte_limit):
                 and reservation["reserved_after"] == reserved,
                 "reservation decision or budget counter differs",
             )
+            if reason == "dispatch budget exhausted":
+                budget_refusals.append(
+                    {
+                        "kind": "local",
+                        "reservation": f"{prefix}-reservation.json",
+                        "call": call,
+                    }
+                )
             terminal_names = [f"{prefix}-delivery.json", f"{prefix}-delivery-error.json"]
             present = [name for name in terminal_names if name in artifacts]
             _require(bool(present) == (reason is None), "missing or unauthorized delivery record")
@@ -199,13 +376,21 @@ def verify_dispatch_journal(artifacts, *, expected, byte_limit):
                     "supplemental receipt requires a returned primary delivery",
                 )
                 uncertain = uncertain or failed
+        settle_hosted(expected["attempts"])
+        _require(hosted_index == len(hosted_rows), "unmatched hosted transactions")
         _require(used == set(artifacts), "unmatched journal artifacts")
         _require(
             reserved == expected["reserved"], "reserved total differs from controller reference"
         )
         result.update(
-            ok=True, attempts=expected["attempts"], reserved=reserved, delivery_uncertain=uncertain
+            ok=True,
+            attempts=expected["attempts"],
+            reserved=reserved,
+            delivery_uncertain=uncertain,
+            budget_refusals=budget_refusals,
         )
+        if hosted_count:
+            result["hosted_calls"] = completed_hosted
     except (ValueError, TypeError, KeyError, RecursionError) as exc:
         result["errors"].append(str(exc))
     return result

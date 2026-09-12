@@ -12,6 +12,8 @@ import os
 import stat
 import sys
 import sysconfig
+from concurrent.futures import ThreadPoolExecutor
+from itertools import islice
 from pathlib import Path
 
 
@@ -52,33 +54,44 @@ def capture_runtime(roots):
             raise RuntimeDrift("runtime root is redirected, missing or unrestricted")
         if any(root.is_relative_to(other) or other.is_relative_to(root) for other in roots[:i]):
             raise RuntimeDrift("runtime roots overlap")
+
+    def entry(path):
+        before = path.lstat()
+        row = {"mode": stat.S_IMODE(before.st_mode)}
+        if stat.S_ISLNK(before.st_mode):
+            # Bind internal dangling links too: later creation or retargeting
+            # changes the inventory, even for optional framework headers.
+            target = path.resolve(strict=False)
+            if not any(target.is_relative_to(base) for base in roots):
+                raise RuntimeDrift("runtime link points outside inventory roots")
+            row.update(kind="symlink", link=os.readlink(path), target=str(target))
+        elif stat.S_ISDIR(before.st_mode):
+            row.update(kind="directory")
+        elif stat.S_ISREG(before.st_mode):
+            with path.open("rb") as stream:
+                row.update(kind="file", sha256=hashlib.file_digest(stream, "sha256").hexdigest())
+        else:
+            raise RuntimeDrift("runtime contains a special file")
+        after = path.lstat()
+        stable = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if any(getattr(before, name) != getattr(after, name) for name in stable):
+            raise RuntimeDrift("runtime entry changed during inventory")
+        return row
+
     inventory = {}
     try:
-        for root in roots:
-            entries = {}
-            for path in [root, *sorted(root.rglob("*"))]:
-                before = path.lstat()
-                row = {"mode": stat.S_IMODE(before.st_mode)}
-                if stat.S_ISLNK(before.st_mode):
-                    # Some Python distributions omit optional framework headers
-                    # but retain their internal links. Bind those links too; a
-                    # later target creation or retargeting changes the inventory.
-                    target = path.resolve(strict=False)
-                    if not any(target.is_relative_to(base) for base in roots):
-                        raise RuntimeDrift("runtime link points outside inventory roots")
-                    row.update(kind="symlink", link=os.readlink(path), target=str(target))
-                elif stat.S_ISDIR(before.st_mode):
-                    row.update(kind="directory")
-                elif stat.S_ISREG(before.st_mode):
-                    row.update(kind="file", sha256=hashlib.sha256(path.read_bytes()).hexdigest())
-                else:
-                    raise RuntimeDrift("runtime contains a special file")
-                after = path.lstat()
-                stable = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
-                if any(getattr(before, name) != getattr(after, name) for name in stable):
-                    raise RuntimeDrift("runtime entry changed during inventory")
-                entries[path.relative_to(root).as_posix()] = row
-            inventory[str(root)] = entries
+        # Opening thousands of package files dominates verification on the
+        # development host. Overlap only four reads, with bounded buffers and
+        # queued work; retain ordered results and every per-entry drift check.
+        # The context joins all readers, including on failure, before return.
+        with ThreadPoolExecutor(max_workers=4) as readers:
+            for root in roots:
+                entries = {}
+                paths = iter([root, *sorted(root.rglob("*"))])
+                while batch := list(islice(paths, 64)):
+                    for path, row in zip(batch, readers.map(entry, batch), strict=True):
+                        entries[path.relative_to(root).as_posix()] = row
+                inventory[str(root)] = entries
     except (OSError, RuntimeError) as exc:
         raise RuntimeDrift(f"runtime inventory failed: {exc}") from exc
     record = {"schema_version": "aisle.matched-runtime.v1", "trees": inventory}

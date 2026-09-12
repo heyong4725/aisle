@@ -11,6 +11,37 @@ import pytest
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize("fault", [None, "foreign", "oversize"])
+def test_rejected_response_retires_authority_and_requires_bounded_owned_evidence(tmp_path, fault):
+    """MON-13: a rejected result cannot leave reusable grants or unverifiable failure receipts."""
+    from aisle.harness.frontend_request_authority import RequestRefused
+
+    authority = _authority(tmp_path)
+    call = {"turn_id": "turn", "call_id": "call", "tool_name": "harness.check"}
+    raw = _request()
+    with authority:
+        grant = authority.authorize(call=call, request=raw)
+        kwargs = {
+            "call": call,
+            "request_id": "b" * 32 if fault == "foreign" else "a" * 32,
+            "response": {"ok": "x" * 65536 if fault == "oversize" else "false"},
+        }
+        if fault:
+            with pytest.raises(RequestRefused):
+                authority.retain_response_rejection(**kwargs)
+        else:
+            authority.retain_response_rejection(**kwargs)
+        with pytest.raises(RequestRefused, match="closed"):
+            authority.consume(raw, authorization_id=grant["authorization_id"])
+        with pytest.raises(RequestRefused, match="closed"):
+            authority.authorize(call={**call, "call_id": "another"}, request=_request("c" * 32))
+    if fault:
+        with pytest.raises(RequestRefused, match="failed"):
+            authority.reference()
+    else:
+        assert "a" * 32 + "-response-rejected.json" in authority.reference()["artifacts"]
+
+
 def _request(identity="a" * 32, operation="check"):
     return (
         json.dumps(
