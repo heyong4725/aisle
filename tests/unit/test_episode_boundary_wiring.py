@@ -81,8 +81,23 @@ def test_only_the_relay_consumes_the_bridges_reset_done(path):
 def test_all_episode_state_consumers_agree_on_the_boundary(path):
     """CON-5: consumers that cut the episode at different instants leave the
     run in mixed state — one node already in episode N+1 while another is
-    still finishing N. Whatever the source is, they must share it."""
+    still finishing N. They must share the service boundary, directly or
+    through the trusted same-stamp public projection (BND-2/BND-3)."""
     consumers = {nid: src for nid, src in _consumers(path).items() if nid != RELAY}
+    for node in yaml.safe_load(path.read_text())["nodes"]:
+        if node.get("path") == "../src/aisle/harness/pilot_policy_surface.py":
+            # Only this tested controller projection preserves the reset event
+            # and its simulation timestamp while removing the private payload.
+            # Arbitrary relays remain different boundaries and fail below.
+            assert _reset_done_source(node) == f"{RELAY}/reset_done"
+            assert node["env"]["AISLE_LOCKSTEP"] == "1"
+            assert node["env"]["AISLE_TURN_NODE"] == node["id"]
+            assert "reset_done" in node["outputs"]
+            projected = f"{node['id']}/reset_done"
+            consumers = {
+                nid: f"{RELAY}/reset_done" if source == projected else source
+                for nid, source in consumers.items()
+            }
     if not consumers:
         pytest.skip(f"{path.name} has no episode-state consumers")
     assert len(set(consumers.values())) == 1, (

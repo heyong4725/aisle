@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 
 from aisle.harness import monolith
 from aisle.harness.matched_evidence import SCHEMA, audit_tool_journal, common_envelope
+from aisle.harness.matched_surface import LEGACY_SURFACE, development_surface
 from aisle.harness.monolithic import TypedSurfaceError, validate_matched_treatment
 from aisle.harness.treatment_integrity import ManifestError, create_treatment_manifest
 from aisle.harness.typed_execution_bundle import CONTROLLER_FILES as TYPED_EXECUTION_FILES
@@ -39,6 +40,7 @@ CONTROLLER_FILES = (
     "tools/matched_campaign.py",
     "tools/campaign.py",
     "src/aisle/harness/matched_session.py",
+    "src/aisle/harness/matched_surface.py",
     "src/aisle/harness/matched_evidence.py",
     "src/aisle/harness/matched_collection.py",
     "src/aisle/harness/monolithic_run_evidence.py",
@@ -102,6 +104,7 @@ CONTROLLER_FILES = (
     "src/aisle/harness/rollout.py",
     "src/aisle/harness/simulator_work.py",
     "src/aisle/harness/rollout_client.py",
+    "src/aisle/harness/pilot_policy_surface.py",
     "src/aisle/harness/guard_divergence.py",
     "src/aisle/harness/traces.py",
     "src/aisle/harness/monolithic.py",
@@ -467,7 +470,11 @@ def _verify_launches(
         else:
             rows = [
                 row
-                for row in monolith.load_json(root, "treatment-table.json")["rows"]
+                for row in monolith.load_json(
+                    root,
+                    "treatment-table.json",
+                    task_surface=development_surface((execution or {}).get("development")).identity,
+                )["rows"]
                 if row["id"] == prompt_row
             ]
             if len(rows) != 1 or rows[0]["surface"] != "documentation given to the agent":
@@ -549,13 +556,17 @@ def _verify_development(protocol: dict) -> None:
         "verifier": "oracle",
         "reset": "teleport",
     }
-    if not isinstance(protocol, dict) or set(protocol) != set(fixed) | {
+    if not isinstance(protocol, dict) or set(protocol) - {"task_surface"} != set(fixed) | {
         "seeds",
         "run_ceiling",
         "episode_ceiling",
         "timeout_s",
     }:
         raise AdmissionError("development protocol fields are unresolved")
+    try:
+        development_surface(protocol)
+    except ValueError as exc:
+        raise AdmissionError(str(exc)) from exc
     if any(protocol[key] != value for key, value in fixed.items()):
         raise AdmissionError("development protocol requests an unsupported run mode")
     seeds = protocol["seeds"]
@@ -751,12 +762,15 @@ def admit_pair(
                     "prompt_row": prompt_row,
                 },
             )
-        table = monolith.table_report(root, write=False)
-        interface = monolith.interface_report(root)
+        surface = development_surface(development)
+        table = monolith.table_report(root, write=False, task_surface=surface.identity)
+        interface = monolith.interface_report(root, task_surface=surface.identity)
         if not table["ok"] or not interface["ok"]:
             raise AdmissionError("controller surface checks failed")
-        allowlist = monolith.load_json(root, "allowlist.json")
-        source_table = monolith.load_json(root, "treatment-table.json")
+        allowlist = monolith.load_json(root, "allowlist.json", task_surface=surface.identity)
+        source_table = monolith.load_json(
+            root, "treatment-table.json", task_surface=surface.identity
+        )
         validation_rows = [
             row
             for row in source_table["rows"]
@@ -819,7 +833,7 @@ def admit_pair(
         paths = {path for row in source_table["rows"] for arm in ARMS for path in row[arm]["paths"]}
         paths.update(CONTROLLER_FILES)
         paths.update(
-            f"docs/monolithic/{name}.json"
+            f"{surface.docs_directory}/{name}.json"
             for name in (
                 "treatment-table",
                 "interface-map",
@@ -846,7 +860,9 @@ def admit_pair(
             "arms": manifests,
             "surface": {
                 "treatment_table_id": table["immutable_id"],
-                "interface_map_id": monolith.load_json(root, "interface-map.json")["id"],
+                "interface_map_id": monolith.load_json(
+                    root, "interface-map.json", task_surface=surface.identity
+                )["id"],
                 "artifact_hashes": artifact_hashes,
                 "common_evidence_schema": {**SCHEMA, "immutable_id": _digest(SCHEMA)},
                 "validation_declaration": {
@@ -854,6 +870,8 @@ def admit_pair(
                 },
             },
         }
+        if surface.identity != LEGACY_SURFACE:
+            record["task_surface"] = surface.identity
         if confinement is not None:
             record["confinement_bindings"] = copy.deepcopy(confinement)
         if private_roots is not None:

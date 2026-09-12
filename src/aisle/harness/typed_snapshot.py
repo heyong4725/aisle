@@ -14,6 +14,9 @@ from pathlib import Path
 
 import yaml
 
+from aisle.harness.matched_surface import LEGACY_SURFACE, record_surface
+from aisle.harness.matched_surface import task_surface as resolve_task_surface
+
 
 class SnapshotError(ValueError):
     """A typed validation snapshot cannot be bound to its declared inputs."""
@@ -49,12 +52,15 @@ def _read(root, name):
         os.close(directory)
 
 
-def build_typed_validation_snapshot(controller_root, participant_root, output):
+def build_typed_validation_snapshot(
+    controller_root, participant_root, output, *, task_surface=LEGACY_SURFACE
+):
     """Overlay the exact typed allowlist on pinned registry validation inputs.
 
     Dependencies come only from controller manifests. Authored manifests cannot
     cause the snapshot builder to read or copy an arbitrary additional path.
     """
+    surface = resolve_task_surface(task_surface)
     controller, participant, output = (
         Path(p).absolute() for p in (controller_root, participant_root, output)
     )
@@ -77,7 +83,7 @@ def build_typed_validation_snapshot(controller_root, participant_root, output):
         inputs[(origin, name)] = data
         captured[name] = (origin, data)
 
-    allowlist_name = "docs/monolithic/allowlist.json"
+    allowlist_name = f"{surface.docs_directory}/allowlist.json"
     capture("controller", allowlist_name)
     try:
         editable = json.loads(captured[allowlist_name][1])["typed"]["editable"]
@@ -141,6 +147,8 @@ def build_typed_validation_snapshot(controller_root, participant_root, output):
         "snapshot_root": str(output),
         "executable": False,
     }
+    if surface.identity != LEGACY_SURFACE:
+        record["task_surface"] = surface.identity
     record["immutable_id"] = _digest(record)
     with (output / "snapshot.json").open("x") as stream:
         stream.write(json.dumps(record, indent=2, allow_nan=False) + "\n")
@@ -150,6 +158,7 @@ def build_typed_validation_snapshot(controller_root, participant_root, output):
 
 def verify_typed_validation_snapshot(output, record):
     """Verify the retained inventory and immutable data identity before validation."""
+    record_surface(record)
     output = Path(output).absolute()
     expected = dict(record)
     identity = expected.pop("immutable_id")

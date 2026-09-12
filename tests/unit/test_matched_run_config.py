@@ -10,11 +10,13 @@ import pytest
 from test_typed_graph_preflight import _stage
 from test_typed_validation_snapshot import ROOT
 
+from aisle.harness.matched_surface import LEGACY_SURFACE, PILOT_L2_SURFACE, task_surface
+
 pytestmark = pytest.mark.unit
 
 
-def _config(tmp_path):
-    stage, receipt = _stage(tmp_path, direct_python=True)
+def _config(tmp_path, *, surface=LEGACY_SURFACE):
+    stage, receipt = _stage(tmp_path, direct_python=True, task_surface=surface)
     first = next(iter(receipt["hosts"].values()))
     host = json.loads(Path(first["config_path"]).read_text())
     config = {
@@ -42,6 +44,8 @@ def _config(tmp_path):
         "worker_adapter_sha256": host["launch"]["attestation"]["adapter"]["sha256"],
         "launch": {"stages": [{"root": str(stage), "stage_id": receipt["immutable_id"]}]},
     }
+    if surface != LEGACY_SURFACE:
+        config["development"]["task_surface"] = surface
     return config, stage, receipt
 
 
@@ -51,11 +55,14 @@ def _write(tmp_path, config):
     return path, hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_bound_typed_dispatch_passes_verified_stage_factory_to_rollout(tmp_path, monkeypatch):
+@pytest.mark.parametrize("surface", [LEGACY_SURFACE, PILOT_L2_SURFACE])
+def test_bound_typed_dispatch_passes_verified_stage_factory_to_rollout(
+    tmp_path, monkeypatch, surface
+):
     """MON-8/MON-12: the run entry selects real staged host inputs and retains session identity."""
     from aisle.harness import matched_run, rollout
 
-    config, stage, receipt = _config(tmp_path)
+    config, stage, receipt = _config(tmp_path, surface=surface)
     path, digest = _write(tmp_path, config)
     calls = []
 
@@ -66,7 +73,7 @@ def test_bound_typed_dispatch_passes_verified_stage_factory_to_rollout(tmp_path,
         assert kwargs["typed_stage_factory"](0) == (stage, receipt)
         assert (
             kwargs["graph"]
-            == Path(receipt["snapshot_record"]["snapshot_root"]) / "graphs/expert_t1.yaml"
+            == Path(receipt["snapshot_record"]["snapshot_root"]) / task_surface(surface).typed_graph
         )
         return {"ok": True, "campaign_purpose": "expert_parity"}
 
@@ -78,7 +85,7 @@ def test_bound_typed_dispatch_passes_verified_stage_factory_to_rollout(tmp_path,
     assert result["matched_run"]["config_sha256"] == digest
 
 
-@pytest.mark.parametrize("mutation", ["hash", "stage", "runtime", "purpose"])
+@pytest.mark.parametrize("mutation", ["hash", "stage", "runtime", "purpose", "surface"])
 def test_invalid_run_binding_refuses_before_rollout(tmp_path, monkeypatch, mutation):
     """MON-13: stale or unscored-purpose violations must not reach graph execution."""
     from aisle.harness import matched_run, rollout
@@ -90,6 +97,8 @@ def test_invalid_run_binding_refuses_before_rollout(tmp_path, monkeypatch, mutat
         config["runtime_record"]["immutable_id"] = "0" * 64
     elif mutation == "purpose":
         config["purpose"] = "confirmatory"
+    elif mutation == "surface":
+        config["development"]["task_surface"] = PILOT_L2_SURFACE
     path, digest = _write(tmp_path, config)
     if mutation == "hash":
         path.write_text(path.read_text() + " ")
@@ -121,8 +130,16 @@ def test_missing_run_config_cli_returns_json_refusal(tmp_path):
     assert report["infrastructure_invalid"]
 
 
-@pytest.mark.parametrize("drift", [False, True, "authored_failure"])
-def test_monolithic_dispatch_uses_bound_worker_configuration(tmp_path, monkeypatch, drift):
+@pytest.mark.parametrize(
+    "drift,surface",
+    [
+        (False, LEGACY_SURFACE),
+        (True, LEGACY_SURFACE),
+        ("authored_failure", LEGACY_SURFACE),
+        (False, PILOT_L2_SURFACE),
+    ],
+)
+def test_monolithic_dispatch_uses_bound_worker_configuration(tmp_path, monkeypatch, drift, surface):
     """MON-8/MON-13: the run interface receives a verified source and worker selection."""
     from test_monolith_worker_config import _config as worker_config
     from test_treatment_confinement import _attestation
@@ -130,9 +147,9 @@ def test_monolithic_dispatch_uses_bound_worker_configuration(tmp_path, monkeypat
     from aisle.harness import matched_run, monolith
     from aisle.harness.treatment_confinement import MacOSPolicy, compile_macos_profile
 
-    config, _, _ = _config(tmp_path)
+    config, _, _ = _config(tmp_path, surface=surface)
     view = Path(config["participant_root"])
-    module = view / "experts/monolithic/expert_t1.py"
+    module = view / task_surface(surface).monolithic_module
     module.parent.mkdir(parents=True)
     module.write_text("API_VERSION='1.0'\nclass Controller:\n def __init__(self,p,log): pass\n")
     if drift == "authored_failure":
@@ -169,6 +186,7 @@ def test_monolithic_dispatch_uses_bound_worker_configuration(tmp_path, monkeypat
     def run(**kwargs):
         calls.append(kwargs)
         assert kwargs["module"] == module
+        assert kwargs["task_surface"] == surface
         assert kwargs["worker_config_sha256"] == config["launch"]["worker_config_sha256"]
         assert kwargs["no_idea_gate"] is False
         assert kwargs["record_simulator_work"] is True

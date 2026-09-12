@@ -27,6 +27,7 @@ deadlock the run: the verifier refuses unknown goals without a result).
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 
@@ -128,6 +129,23 @@ def main() -> None:
     reset_mode = 1 if reset_mode_name == "behavioral" else 0
     results_path = os.environ.get("AISLE_RESULTS", "")
     lockstep = os.environ.get("AISLE_LOCKSTEP", "0").strip().lower() in ("1", "true", "yes")
+    lifecycle = os.environ.get("AISLE_EPISODE_LIFECYCLE", "oracle-result-v1")
+    if lifecycle not in ("oracle-result-v1", "fixed-horizon-t1-v1"):
+        raise SystemExit("rollout-client config refused: unknown episode lifecycle")
+    fixed_horizon = lifecycle == "fixed-horizon-t1-v1"
+    if fixed_horizon and (
+        tier != "T1"
+        or not lockstep
+        or reset_mode_name != "teleport"
+        or not math.isfinite(timeout_s)
+        or timeout_s <= 0
+    ):
+        raise SystemExit(
+            "rollout-client config refused: fixed lifecycle requires lockstep T1 teleport "
+            "and a positive finite timeout"
+        )
+    result_deadline_ns = None
+    pending_result = None
 
     env_pin = env_pin_from_env(os.environ)
     node = Node()
@@ -163,6 +181,25 @@ def main() -> None:
             continue
         if not env_accepts(event.get("metadata") or {}, env_pin):
             continue  # fleet mode (BRG-5): another env's stream
+        if fixed_horizon and phase == "running":
+            # BND-3: keep the oracle's record private until the registered
+            # deadline. Writing it early also leaks through the enclosing
+            # runner, which terminates graphs once enough records exist.
+            if event["id"] == "episode_result":
+                if pending_result is not None:
+                    raise ValueError("duplicate pilot episode result")
+                result = json.loads(event["value"][0].as_py())
+                if result.get("goal_id") != f"ep-{episode_base + episode:04d}":
+                    raise ValueError("unmatched pilot episode result")
+                pending_result = event
+                continue
+            if event["id"] == "turn" and pending_result is not None:
+                stamp = (event.get("metadata") or {}).get("sim_time_ns")
+                if type(stamp) is not int or stamp < 0:
+                    raise ValueError("invalid pilot lifecycle clock")
+                if result_deadline_ns is not None and stamp >= result_deadline_ns:
+                    event = pending_result
+                    pending_result = None
         if event["id"] in ("tick", "turn"):
             if (event["id"] == "tick" and lockstep) or (event["id"] == "turn" and not lockstep):
                 continue
@@ -239,6 +276,8 @@ def main() -> None:
                 "reset_sim_ns": int(reset_meta.get("sim_time_ns", 0)),
             }
             goal_id = f"ep-{episode_base + episode:04d}"
+            if fixed_horizon:
+                result_deadline_ns = goal["reset_sim_ns"] + math.ceil(timeout_s * 1_000_000_000)
             send("episode_goal", pa.array([json.dumps(goal)]), {"goal_id": goal_id})
             if tier == "T4":
                 # ADR-32 §2: the human-sim's script context — goal_id and

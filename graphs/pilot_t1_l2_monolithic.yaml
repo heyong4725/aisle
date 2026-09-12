@@ -1,0 +1,238 @@
+# Proposed paired T1 L2 pilot surface (MON-4/BND-2/BND-3).
+# Maintainer-derived candidate; not independent expert-parity evidence.
+nodes:
+- id: dora-genesis
+  path: ../src/aisle/nodes/dora_genesis.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_OUTPUTS: bridge_info,joint_state,gripper_state,oracle_state,rgb_overhead,rgb_wrist,depth_overhead,reset_done,sim_turn
+    AISLE_PERCEPTION: L2
+  inputs:
+    tick: dora/timer/millis/10
+    joint_cmd:
+      source: budget-guard/joint_cmd_safe
+      queue_size: 100
+    gripper_cmd:
+      source: budget-guard/gripper_cmd_safe
+      queue_size: 100
+    reset:
+      source: reset/bridge_reset
+      queue_size: 100
+    turn_commit:
+      source: turn-barrier/turn_commit
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - bridge_info
+  - joint_state
+  - gripper_state
+  - oracle_state
+  - rgb_overhead
+  - rgb_wrist
+  - depth_overhead
+  - reset_done
+  - sim_turn
+- id: reset
+  path: ../src/aisle/reset/service.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_NODE: reset
+    AISLE_TURN_OUTPUTS: bridge_reset,reset_done,reset_refused,turn_done
+  inputs:
+    reset:
+      source: rollout-client/reset
+      queue_size: 100
+    reset_done:
+      source: dora-genesis/reset_done
+      queue_size: 100
+    turn:
+      source: turn-barrier/turn
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - bridge_reset
+  - reset_done
+  - reset_refused
+  - turn_done
+- id: budget-guard
+  path: ../src/aisle/nodes/budget_guard.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_NODE: budget-guard
+    AISLE_TURN_OUTPUTS: joint_cmd_safe,gripper_cmd_safe,violation,guard_stats,turn_done
+    AISLE_TURN_WALL_OUTPUTS: guard_stats
+  inputs:
+    tick: dora/timer/millis/5000
+    joint_cmd:
+      source: monolith-broker/joint_cmd
+      queue_size: 100
+    gripper_cmd:
+      source: monolith-broker/gripper_cmd
+      queue_size: 100
+    reset_done:
+      source: reset/reset_done
+      queue_size: 100
+    turn:
+      source: turn-barrier/turn
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - joint_cmd_safe
+  - gripper_cmd_safe
+  - violation
+  - guard_stats
+  - turn_done
+- id: monolith-broker
+  path: ../src/aisle/nodes/monolith_broker.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_NODE: monolith-broker
+    AISLE_TURN_OUTPUTS: joint_cmd,gripper_cmd,episode_feedback,turn_done
+    AISLE_MONOLITH_MODULE: experts/monolithic/pilot_t1_l2.py
+  inputs:
+    bridge_info:
+      source: pilot-policy-surface/bridge_info
+      queue_size: 100
+    depth_overhead:
+      source: dora-genesis/depth_overhead
+      queue_size: 100
+    joint_state:
+      source: dora-genesis/joint_state
+      queue_size: 1
+    episode_goal:
+      source: pilot-policy-surface/episode_goal
+      queue_size: 100
+    violation:
+      source: budget-guard/violation
+      queue_size: 100
+    reset_done:
+      source: pilot-policy-surface/reset_done
+      queue_size: 100
+    turn:
+      source: turn-barrier/turn
+      queue_size: 4
+      queue_policy: backpressure
+    rgb_overhead:
+      source: dora-genesis/rgb_overhead
+      queue_size: 100
+  outputs:
+  - joint_cmd
+  - gripper_cmd
+  - episode_feedback
+  - turn_done
+- id: verifier-oracle
+  path: ../src/aisle/verifier/oracle.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_NODE: verifier-oracle
+    AISLE_TURN_OUTPUTS: episode_result,turn_done
+  inputs:
+    oracle_state:
+      source: dora-genesis/oracle_state
+      queue_size: 100
+    joint_state:
+      source: dora-genesis/joint_state
+      queue_size: 100
+    episode_goal:
+      source: rollout-client/episode_goal
+      queue_size: 100
+    turn:
+      source: turn-barrier/turn
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - episode_result
+  - turn_done
+- id: rollout-client
+  path: ../src/aisle/harness/rollout_client.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_NODE: rollout-client
+    AISLE_TURN_OUTPUTS: reset,episode_goal,turn_done
+    AISLE_EPISODE_LIFECYCLE: fixed-horizon-t1-v1
+  inputs:
+    tick: dora/timer/millis/1000
+    reset_done:
+      source: reset/reset_done
+      queue_size: 100
+    reset_refused:
+      source: reset/reset_refused
+      queue_size: 100
+    episode_result:
+      source: verifier-oracle/episode_result
+      queue_size: 100
+    episode_feedback:
+      source: monolith-broker/episode_feedback
+      queue_size: 100
+    turn:
+      source: turn-barrier/turn
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - reset
+  - episode_goal
+  - turn_done
+- id: turn-barrier
+  path: ../src/aisle/nodes/turn_barrier.py
+  env:
+    AISLE_TURN_PLAN: turn_plans/pilot_t1_l2_monolithic.json
+    AISLE_TURN_WATCHDOG_S: '60'
+    AISLE_VERDICT_TURN_WATCHDOG_S: '90'
+  inputs:
+    tick: dora/timer/millis/100
+    sim_turn:
+      source: dora-genesis/sim_turn
+      queue_size: 4
+      queue_policy: backpressure
+    done_0:
+      source: budget-guard/turn_done
+      queue_size: 4
+      queue_policy: backpressure
+    done_1:
+      source: reset/turn_done
+      queue_size: 4
+      queue_policy: backpressure
+    done_2:
+      source: rollout-client/turn_done
+      queue_size: 4
+      queue_policy: backpressure
+    done_3:
+      source: verifier-oracle/turn_done
+      queue_size: 4
+      queue_policy: backpressure
+    done_4:
+      source: monolith-broker/turn_done
+      queue_size: 4
+      queue_policy: backpressure
+    done_5:
+      source: pilot-policy-surface/turn_done
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - turn
+  - turn_commit
+- id: pilot-policy-surface
+  path: ../src/aisle/harness/pilot_policy_surface.py
+  env:
+    AISLE_LOCKSTEP: '1'
+    AISLE_TURN_NODE: pilot-policy-surface
+    AISLE_TURN_OUTPUTS: bridge_info,episode_goal,reset_done,turn_done
+  inputs:
+    bridge_info:
+      source: dora-genesis/bridge_info
+      queue_size: 100
+    episode_goal:
+      source: rollout-client/episode_goal
+      queue_size: 100
+    reset_done:
+      source: reset/reset_done
+      queue_size: 100
+    turn:
+      source: turn-barrier/turn
+      queue_size: 4
+      queue_policy: backpressure
+  outputs:
+  - bridge_info
+  - episode_goal
+  - reset_done
+  - turn_done

@@ -21,6 +21,7 @@ from aisle.monolith.wire import WireError, receive, send
 MODULES = frozenset(
     {
         "aisle.nodes.segmented_pose",
+        "aisle.nodes.l2_pose",
         "aisle.nodes.grasp_topdown",
         "aisle.nodes.ik_trajectory",
         "aisle.nodes.task_state_machine",

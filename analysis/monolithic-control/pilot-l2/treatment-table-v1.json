@@ -1,0 +1,134 @@
+{
+  "immutable_id": "sha256:1c52fda054cab405096b0adcb78810ac275635ed3a639b906cbd8af1b81b3f98",
+  "rows": [
+    {
+      "analysis": "the manipulated factor (SPEC 500 primary contrast)",
+      "classification": "intentionally-different",
+      "id": "mon1-01",
+      "justification": "this is the treatment: bundled typed-dataflow engineering surface versus one ordinary module",
+      "monolithic": "experts/monolithic/pilot_t1_l2.py#sha256:7d8f0cc29d3a131f6bc286be4b32385c1d0b1d3cde1eb270a1ea248aafdfe9de",
+      "surface": "agent deliverable",
+      "typed": "graphs/pilot_t1_l2_typed.yaml#sha256:d0d218464c477e823a0e0d8679e55ef035770abdd1b664c96eb4dba97a956261"
+    },
+    {
+      "analysis": "recorded as treatment property; check/run attempt and error events compared descriptively",
+      "classification": "intentionally-different",
+      "id": "mon1-02",
+      "justification": "part of the bundled treatment; absence is a declared property, not missing data (MON-12)",
+      "monolithic": "src/aisle/harness/monolith.py#sha256:cd952f765801e1ccdaee36a56edb6ab4474094cf34a250e81b09a31c17590fd9",
+      "surface": "static validation and diagnostics",
+      "typed": "src/aisle/harness/validate.py#sha256:55ab8640ce1dc85fac48ba5b21556cfaf1f1827c60cc2056abe12b51ae8d03e2"
+    },
+    {
+      "analysis": "treatment property",
+      "classification": "intentionally-different",
+      "id": "mon1-03",
+      "justification": "part of the bundled treatment",
+      "monolithic": "docs/monolithic/pilot-l2/primitive-api.md#sha256:2d3470849973265a3b5dd2110b2cbfe3e909654fc2356165e632011a7977afa4",
+      "surface": "registry search and resolution",
+      "typed": "src/aisle/harness/registry.py#sha256:d0308d20480f4627c2831ba5f07891b846107c60489a9260de4fa332ed982494"
+    },
+    {
+      "analysis": "documentation hashes in the MON-8 treatment tuple; representation-specific instructions listed here rather than in prose",
+      "classification": "intentionally-different",
+      "id": "mon1-04",
+      "justification": "each arm documents its own representation; task, goals, budgets and evaluator text are shared",
+      "monolithic": "docs/monolithic/pilot-l2/primitive-api.md#sha256:5fcace2a41f89d275add1bdea598fc8a67b2d4f85c6d35aa20f1ac0df6bbc516",
+      "surface": "documentation given to the agent",
+      "typed": "harness/CLAUDE.research.md#sha256:4294608b814889307577e6ade7ed4f0dde5dba098f91a69ca441d070590a3daf"
+    },
+    {
+      "analysis": "Implementation identity held fixed; L2 primitive parity checked by tests/unit/test_monolith_l2_primitives.py",
+      "classification": "identical",
+      "id": "mon1-05",
+      "justification": "none needed: same artifact",
+      "monolithic": "src/aisle/monolith/primitives.py#sha256:ea59646ac80337bc53903ec420cb7c28247c49038445e39d01013862074d256d",
+      "surface": "robot primitives (pose, grasp, trajectory, executor)",
+      "typed": "src/aisle/nodes/l2_pose.py#sha256:d3c2f96c286ef227e1c473dc5bcd709e6970cefdad1bbabab7d3fca8745670a2"
+    },
+    {
+      "analysis": "Semantic field sets checked against both graphs; full runtime leakage qualification remains pending",
+      "classification": "representation-equivalent",
+      "id": "mon1-06",
+      "justification": "none needed: same semantic fields, different envelope",
+      "monolithic": "graphs/pilot_t1_l2_monolithic.yaml#sha256:df5501006c71f170c98cec22fe0d13eb74dc204ac31f38b40e4a61192a33b819",
+      "surface": "semantic observations",
+      "typed": "graphs/pilot_t1_l2_typed.yaml#sha256:2cfef18b994230682f808158b431e6274a404dba2a0c4e62f5d625d052136940"
+    },
+    {
+      "analysis": "held fixed; same names, arity and privilege (interface map)",
+      "classification": "representation-equivalent",
+      "id": "mon1-07",
+      "justification": "none needed: same semantic fields, different envelope",
+      "monolithic": "src/aisle/nodes/monolith_broker.py#sha256:872741da1be8cfa0c89a4ee77ee4fb8a457f130a48228d39ebb8e09a84ee3d46",
+      "surface": "actions and authority",
+      "typed": "graphs/pilot_t1_l2_typed.yaml#sha256:2cfef18b994230682f808158b431e6274a404dba2a0c4e62f5d625d052136940"
+    },
+    {
+      "analysis": "held fixed (MON-5)",
+      "classification": "identical",
+      "id": "mon1-08",
+      "justification": "none needed: same artifact",
+      "monolithic": "graphs/pilot_t1_l2_monolithic.yaml#sha256:bdf0c69127d7fea34b7c1539ef6887e5947436ef46497deff6049947721399bd",
+      "surface": "guard route and limits",
+      "typed": "src/aisle/nodes/budget_guard.py#sha256:0131a0f321f7e8f60c86b18870eeb2d1267a62508029c3c6c04e99b5c61f8e97"
+    },
+    {
+      "analysis": "Controller identity held fixed; full timing and leakage qualification still required",
+      "classification": "identical",
+      "id": "mon1-09",
+      "justification": "none needed: same artifact",
+      "monolithic": "src/aisle/nodes/monolith_broker.py#sha256:872741da1be8cfa0c89a4ee77ee4fb8a457f130a48228d39ebb8e09a84ee3d46",
+      "surface": "trusted controller (bridge, reset, verifier, rollout client, turn barrier)",
+      "typed": "src/aisle/nodes/dora_genesis.py#sha256:000ffd8af403648e00e76839d83960c2388a523c82e83c0ef1349d75b066525e"
+    },
+    {
+      "analysis": "excluded from task authority (MON-4); no analysis treatment",
+      "classification": "intentionally-different",
+      "id": "mon1-10",
+      "justification": "runtime envelope needed only by the typed transport; carries no task authority",
+      "monolithic": "src/aisle/nodes/monolith_broker.py#sha256:872741da1be8cfa0c89a4ee77ee4fb8a457f130a48228d39ebb8e09a84ee3d46",
+      "surface": "transport metadata",
+      "typed": "src/aisle/topics.py#sha256:a0ae1126468d83e4f7959451d5eeb843b296a8157dc0abeacbb18ced4e675210"
+    },
+    {
+      "analysis": "no task-outcome treatment; wall-time is reported per arm, not compared causally",
+      "classification": "intentionally-different",
+      "id": "mon1-11",
+      "justification": "runtime representation of the same synchronous step; ordering of the four typed nodes is fixed by the plan, so the merged participant observes the same data per turn",
+      "monolithic": "graphs/turn_plans/pilot_t1_l2_monolithic.json#sha256:35cc13587c2469f9c44901394cde6775b4da7f405820b96458cd2f3e53e7af83",
+      "surface": "turn accounting",
+      "typed": "graphs/turn_plans/pilot_t1_l2_typed.json#sha256:1ccd29c2f79b7dcfbf09beb29e6baf4e4f31b7bb8f8de0a0d1b978dcec0b26b9"
+    },
+    {
+      "analysis": "retries reported per episode in both arms (episode_feedback.retries)",
+      "classification": "intentionally-different",
+      "id": "mon1-12",
+      "justification": "the typed arm attests retries in YAML because that is where its decisions live; the episode budget (timeout, seeds) is held by the rollout runner in both arms",
+      "monolithic": "experts/monolithic/pilot_t1_l2.py#sha256:976e0a6e9f17a5d002cb755faf45461548f75712c2cde6147a89fc3e4c004c56",
+      "surface": "in-episode retry budget",
+      "typed": "graphs/pilot_t1_l2_typed.yaml#sha256:2cfef18b994230682f808158b431e6274a404dba2a0c4e62f5d625d052136940"
+    },
+    {
+      "analysis": "Same fixed simulation deadline; oracle results remain private until deadline; no policy verdict input",
+      "classification": "identical",
+      "id": "mon1-13",
+      "justification": "none needed: same artifact",
+      "monolithic": "src/aisle/harness/monolith.py#sha256:cd952f765801e1ccdaee36a56edb6ab4474094cf34a250e81b09a31c17590fd9",
+      "surface": "episode budget, seeds, reset semantics, evaluator",
+      "typed": "src/aisle/harness/rollout.py#sha256:9dd7eaf97e8c7f0cc99f18ecfdfa997c78244f34d0c9d0ceab6f82e21dc912df"
+    },
+    {
+      "analysis": "New exact controller/surface needs conformance qualification; independent isolation review remains pending",
+      "classification": "intentionally-different",
+      "id": "mon1-14",
+      "justification": "Different worker representations require separately bound policies; identical excluded privileges",
+      "monolithic": "src/aisle/monolith/confinement.py#sha256:d66f7c6c7af8813a91ba0b04610519a9f7f5de4a099789bf2270e097a57ad435",
+      "surface": "confinement",
+      "typed": "specs/460-actuation-threat-model.md#sha256:3127ee11b74545a2fb4fbef11c3966527ce87fdbab18140975d41d9f40819ec0"
+    }
+  ],
+  "schema_version": "aisle.monolithic-treatment.v1",
+  "source": "docs/monolithic/pilot-l2/treatment-table.json",
+  "status": "shakeout"
+}

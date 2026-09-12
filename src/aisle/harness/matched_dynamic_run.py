@@ -8,6 +8,7 @@ import threading
 from pathlib import Path
 
 from aisle.harness.matched_runtime import worker_interpreter
+from aisle.harness.matched_surface import development_surface, record_surface
 from aisle.harness.typed_node_host import load_host_config
 from aisle.harness.typed_snapshot import _read
 from aisle.harness.typed_stage_provider import TypedStageProvider
@@ -31,6 +32,8 @@ def configured_typed_provider(config, config_path):
     }:
         raise ValueError("invalid typed provider configuration fields")
     snapshot_record = declaration["snapshot_record"]
+    if record_surface(snapshot_record) != development_surface(config["development"]):
+        raise ValueError("typed provider task surface differs from run")
     if (
         snapshot_record["controller_root"] != config["controller_root"]
         or snapshot_record["participant_root"] != config["participant_root"]
@@ -87,7 +90,7 @@ def configured_typed_provider(config, config_path):
                 failed = True
                 raise
 
-    return Path(declaration["snapshot"]) / "graphs/expert_t1.yaml", factory
+    return Path(declaration["snapshot"]) / record_surface(snapshot_record).typed_graph, factory
 
 
 def configured_monolithic_provider(config, config_path):
@@ -114,7 +117,7 @@ def configured_monolithic_provider(config, config_path):
     if config["arm"] != "monolithic":
         raise ValueError("monolithic provider requires the monolithic arm")
     view = Path(config["participant_root"])
-    module = view / "experts/monolithic/expert_t1.py"
+    module = view / development_surface(config["development"]).monolithic_module
 
     def current():
         if _load(path, digest) != config:

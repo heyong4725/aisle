@@ -1,0 +1,20 @@
+{
+  "artifacts": [
+    {
+      "arm": "typed",
+      "author": "AISLE maintainer implementation with full repository access; adapted from existing T1 and L2 sources",
+      "blind": false,
+      "path": "graphs/pilot_t1_l2_typed.yaml",
+      "sha256": "396401c20d0be49ed4c386796594127090415e9b8c80e5c332be013edd93e489"
+    },
+    {
+      "arm": "monolithic",
+      "author": "AISLE maintainer implementation with full repository access; adapted from existing T1 and L2 sources",
+      "blind": false,
+      "path": "experts/monolithic/pilot_t1_l2.py",
+      "sha256": "976e0a6e9f17a5d002cb755faf45461548f75712c2cde6147a89fc3e4c004c56"
+    }
+  ],
+  "frozen": false,
+  "id": "mon-pilot-l2-candidates-v1"
+}

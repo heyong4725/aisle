@@ -1,0 +1,71 @@
+{
+  "artifacts": {
+    "evidence/worker/bundle.json": "75e55cbe3c3545b5bc6b4428314641732edacd34dfcf42a49e6763c84fe318f7",
+    "evidence/worker/capability.json": "36728d773101a11f421885132c3bb7d8353195c54f4658eb738eb4ef8f1fa7e6",
+    "evidence/worker/launch.json": "d894d91dd42064f4bae03309ff87a1592b5d688ab67766ecb10dadfca6208001",
+    "evidence/worker/profile.sb": "c5e2e5fd20a037a04db66ebbc8ae3db7414a9d5517cf61624a3621e378b6a6e5",
+    "evidence/worker/rpc/worker.json": "a09e2358d3fc182910580062d116774247e1979b17bdcf7b238702f918d2592d",
+    "model-cache.json": "6f138ff1dd750d557b4af1dced9a1f77dce2124ed459854ccf63be4818a665f8",
+    "result.json": "a0d4db1bd5ad121240b352059768cab778b98bd4f1d4054a036cb9b6e884e136",
+    "runtime.json": "8173411efa0456501d0b52c5abec322d8ecedc91c92017eecc527c05f7e7d90a"
+  },
+  "evidence_root": "/private/tmp/aisle347-isolated-l2-03",
+  "limitations": [
+    "No sensor events or complete matched session were exercised.",
+    "This is engineering evidence, not independent confinement review or confirmatory qualification."
+  ],
+  "preparation_source_sha256": "17a90497a33015388f5426dad4d5c3e29700a8b48ccb47a6e02380c3274339f5",
+  "prior_attempts": [
+    {
+      "failure": "Probe caller omitted trusted turn wrapper; model loading was not reached.",
+      "root": "/private/tmp/aisle347-isolated-l2-01/evidence/worker"
+    },
+    {
+      "failure": "OfflineModeIsEnabled: pinned snapshot omitted required Hub tree metadata.",
+      "root": "/private/tmp/aisle347-isolated-l2-01/evidence/worker-02"
+    }
+  ],
+  "purpose": "engineering_isolated_l2_startup_only",
+  "result": {
+    "classification": "module_result",
+    "confirmatory_ready": false,
+    "elapsed_s": 129.12099504191428,
+    "ok": true,
+    "schema_version": "aisle.typed-worker-launch-result.v1",
+    "stage": "done",
+    "worker": {
+      "classification": "module_result",
+      "configuration": {
+        "arguments": [],
+        "environment": {
+          "HF_HOME": "/private/tmp/aisle347-l2-runtime-01/model-cache-03",
+          "HF_HUB_OFFLINE": "1",
+          "TRANSFORMERS_OFFLINE": "1"
+        }
+      },
+      "confinement_verified": false,
+      "confirmatory_ready": false,
+      "elapsed_s": 16.22870804206468,
+      "error": null,
+      "input_exhausted": true,
+      "messages": 5,
+      "module": "aisle.nodes.l2_pose",
+      "ok": true,
+      "rc": 0,
+      "requests": 1,
+      "schema_version": "aisle.typed-node-worker.v1",
+      "source_sha256": "f5576aa27eed0696772075e4e9cbc6eddf8b6357e589aeadc705f19c696c5f2e",
+      "stdout_eof": true,
+      "worker_claims": {
+        "input_exhausted": true,
+        "kind": "finished",
+        "module": "aisle.nodes.l2_pose",
+        "node_created": true,
+        "source_sha256": "f5576aa27eed0696772075e4e9cbc6eddf8b6357e589aeadc705f19c696c5f2e"
+      }
+    }
+  },
+  "runtime_id": "3c8124869ff6977249f65c17aaf6b58c56caf7a14691f67448676eb3ab332a7a",
+  "source_status": "uncommitted implementation; retained hashes identify executed bytes",
+  "study_collection_authorized": false
+}

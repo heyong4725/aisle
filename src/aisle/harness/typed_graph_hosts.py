@@ -11,7 +11,8 @@ import shlex
 from decimal import Decimal
 from pathlib import Path
 
-from aisle.harness.typed_execution_bundle import PARTICIPANT_FILES
+from aisle.harness.matched_surface import LEGACY_SURFACE, PILOT_L2_SURFACE
+from aisle.harness.matched_surface import task_surface as resolve_task_surface
 from aisle.harness.typed_node_worker import validate_configuration
 
 
@@ -154,16 +155,75 @@ def node_configuration(node, *, expansion_environment=None):
     return validate_configuration({"environment": environment, "arguments": _arguments(arguments)})
 
 
-def _source(node):
+def _source(node, *, task_surface=LEGACY_SURFACE):
+    surface = resolve_task_surface(task_surface)
     path = node.get("path")
     if type(path) is not str or path.startswith("/"):
         return None
     source = posixpath.normpath("graphs/" + path)
-    return source if source in PARTICIPANT_FILES else None
+    return source if source in surface.participant_files else None
+
+
+def _pilot_routes(authored, baseline, trusted):
+    """BND-2/BND-3: preserve private instruments while allowing public policy wiring."""
+    baseline_policy = {n["id"] for n in baseline["nodes"]} - set(trusted)
+    policy = {n["id"] for n in authored["nodes"]} - set(trusted)
+
+    def source(spec):
+        return spec["source"] if isinstance(spec, dict) else spec
+
+    public = {
+        source(spec)
+        for node in baseline["nodes"]
+        if node["id"] in baseline_policy
+        for spec in node.get("inputs", {}).values()
+        if source(spec).split("/")[0] not in baseline_policy
+    }
+
+    def fixed_inputs(node, policy_nodes):
+        fixed = {}
+        for port, spec in node.get("inputs", {}).items():
+            route = source(spec)
+            parts = route.split("/")
+            policy_ingress = (
+                node["id"] == "budget-guard"
+                and port in {"joint_cmd", "gripper_cmd"}
+                or node["id"] == "rollout-client"
+                and port == "episode_feedback"
+                or node["id"] == "turn-barrier"
+                and re.fullmatch(r"done_\d+", port)
+            )
+            if policy_ingress and len(parts) == 2 and parts[0] in policy_nodes:
+                if node["id"] == "turn-barrier" and parts[1] != "turn_done":
+                    raise GraphHostError("pilot barrier input is not a turn acknowledgement")
+                continue
+            fixed[port] = spec
+        return fixed
+
+    for node in authored["nodes"]:
+        if node["id"] in trusted:
+            if not _json_equal(
+                fixed_inputs(node, policy),
+                fixed_inputs(trusted[node["id"]], baseline_policy),
+            ):
+                raise GraphHostError("pilot trusted instrument inputs have changed")
+        else:
+            for spec in node.get("inputs", {}).values():
+                route = source(spec)
+                if route.split("/")[0] not in policy and route not in public:
+                    raise GraphHostError(
+                        "pilot policy input is outside the public observation surface"
+                    )
 
 
 def replace_authored_nodes(
-    authored, baseline, bindings, controller_root, *, expansion_environments=None
+    authored,
+    baseline,
+    bindings,
+    controller_root,
+    *,
+    expansion_environments=None,
+    task_surface=LEGACY_SURFACE,
 ):
     """Replace only process entries, preserving authored graph inputs and outputs.
 
@@ -173,6 +233,7 @@ def replace_authored_nodes(
     No files are read, created, or repaired by this transformation.
     """
     try:
+        resolve_task_surface(task_surface)
         if type(authored) is not dict or type(baseline) is not dict:
             raise GraphHostError("graph descriptors must be mappings")
         if not _json_equal(
@@ -188,7 +249,11 @@ def replace_authored_nodes(
         expansions = {} if expansion_environments is None else expansion_environments
         if type(expansions) is not dict or not set(expansions) <= set(bindings):
             raise GraphHostError("expansion environment has an undeclared node")
-        trusted = {n["id"]: n for n in baseline["nodes"] if _source(n) is None}
+        trusted = {
+            n["id"]: n for n in baseline["nodes"] if _source(n, task_surface=task_surface) is None
+        }
+        if task_surface == PILOT_L2_SURFACE:
+            _pilot_routes(authored, baseline, trusted)
         result = copy.deepcopy(authored)
         seen, assigned = set(), set()
         for node in result["nodes"]:
@@ -206,7 +271,7 @@ def replace_authored_nodes(
                 ):
                     raise GraphHostError("trusted node definition has changed")
                 continue
-            source = _source(node)
+            source = _source(node, task_surface=task_surface)
             if source is None or node_id not in bindings:
                 raise GraphHostError("authored node has no bound editable implementation")
             # Process execution, restart and logging directives must not become

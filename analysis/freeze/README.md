@@ -174,3 +174,10 @@ preserving the inherited seed commitment, collection rules and all seven pending
 gates. BND v10 remains current because its declared inputs did not change.
 Engineering route tests do not establish complete frontend conformance,
 independent confinement, or permission to collect study results.
+
+CSE v17 supersedes v16 for the named paired T1 L2 pilot surface, public policy
+projection, fixed episode lifecycle and pinned model-cache preparation (#347).
+BND v11 supersedes v10 for the shared CLI and registry changes. Both preserve
+their seed commitments, collection rules, thresholds and pending gates. These
+successors record implementation drift; they are not the separate pilot
+registration and do not authorize pilot or confirmatory collection.

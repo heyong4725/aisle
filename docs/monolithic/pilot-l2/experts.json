@@ -1,0 +1,30 @@
+{
+  "id": "mon-pilot-l2-candidates-v1",
+  "artifacts": [
+    {
+      "arm": "typed",
+      "author": "AISLE maintainer implementation with full repository access; adapted from existing T1 and L2 sources",
+      "path": "graphs/pilot_t1_l2_typed.yaml",
+      "components": [
+        "graphs/pilot_t1_l2_typed.yaml",
+        "graphs/turn_plans/pilot_t1_l2_typed.json",
+        "src/aisle/nodes/l2_pose.py",
+        "src/aisle/nodes/grasp_topdown.py",
+        "src/aisle/nodes/ik_trajectory.py",
+        "src/aisle/nodes/task_state_machine.py"
+      ],
+      "blind": false
+    },
+    {
+      "arm": "monolithic",
+      "author": "AISLE maintainer implementation with full repository access; adapted from existing T1 and L2 sources",
+      "path": "experts/monolithic/pilot_t1_l2.py",
+      "components": [
+        "experts/monolithic/pilot_t1_l2.py"
+      ],
+      "blind": false
+    }
+  ],
+  "frozen": false,
+  "note": "Unfrozen pilot candidates, not independently authored experts. MON-9 independent authorship/operator and measured parity remain pending. No feasibility result is asserted."
+}

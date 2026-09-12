@@ -1,0 +1,25 @@
+{
+  "id": "mon-pilot-l2-allowlist-v1",
+  "monolithic": {
+    "editable": [
+      "experts/monolithic/pilot_t1_l2.py"
+    ],
+    "rule": "exactly one .py file; no package, no sidecar files, no imports of AISLE beyond the primitives object handed to Controller",
+    "denied_imports_source": "src/aisle/monolith/confinement.py#DENIED_IMPORTS"
+  },
+  "typed": {
+    "editable": [
+      "graphs/pilot_t1_l2_typed.yaml",
+      "graphs/turn_plans/pilot_t1_l2_typed.json",
+      "registry/manifests/detected-pose.yaml",
+      "registry/manifests/grasp-planner-topdown.yaml",
+      "registry/manifests/ik-trajectory.yaml",
+      "registry/manifests/task-state-machine.yaml",
+      "src/aisle/nodes/l2_pose.py",
+      "src/aisle/nodes/grasp_topdown.py",
+      "src/aisle/nodes/ik_trajectory.py",
+      "src/aisle/nodes/task_state_machine.py"
+    ],
+    "rule": "the agent region of the graph and its manifests/nodes; trusted nodes are frozen (tools/env_hash.py)"
+  }
+}

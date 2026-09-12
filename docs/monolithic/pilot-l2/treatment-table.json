@@ -1,0 +1,292 @@
+{
+  "id": "mon-pilot-l2-treatment-v1",
+  "spec": "specs/440-monolithic-control.md",
+  "rows": [
+    {
+      "surface": "agent deliverable",
+      "class": "intentionally-different",
+      "typed": {
+        "description": "capability manifests + dora dataflow YAML + node modules of the agent region",
+        "paths": [
+          "graphs/pilot_t1_l2_typed.yaml",
+          "registry/manifests/detected-pose.yaml",
+          "registry/manifests/grasp-planner-topdown.yaml",
+          "registry/manifests/ik-trajectory.yaml",
+          "registry/manifests/task-state-machine.yaml",
+          "src/aisle/nodes/l2_pose.py",
+          "src/aisle/nodes/grasp_topdown.py",
+          "src/aisle/nodes/ik_trajectory.py",
+          "src/aisle/nodes/task_state_machine.py"
+        ]
+      },
+      "monolithic": {
+        "description": "one orchestration module against the primitive API",
+        "paths": [
+          "experts/monolithic/pilot_t1_l2.py",
+          "docs/monolithic/pilot-l2/allowlist.json"
+        ]
+      },
+      "justification": "this is the treatment: bundled typed-dataflow engineering surface versus one ordinary module",
+      "analysis": "the manipulated factor (SPEC 500 primary contrast)",
+      "id": "mon1-01"
+    },
+    {
+      "surface": "static validation and diagnostics",
+      "class": "intentionally-different",
+      "typed": {
+        "description": "harness validate (VAL catalog: schema, topology, motion gating, turn plan)",
+        "paths": [
+          "src/aisle/harness/validate.py"
+        ]
+      },
+      "monolithic": {
+        "description": "none; Python syntax/import/runtime errors only, via harness monolith check",
+        "paths": [
+          "src/aisle/harness/monolith.py"
+        ]
+      },
+      "justification": "part of the bundled treatment; absence is a declared property, not missing data (MON-12)",
+      "analysis": "recorded as treatment property; check/run attempt and error events compared descriptively",
+      "id": "mon1-02"
+    },
+    {
+      "surface": "registry search and resolution",
+      "class": "intentionally-different",
+      "typed": {
+        "description": "registry manifests, harness registry search/lint",
+        "paths": [
+          "src/aisle/harness/registry.py"
+        ]
+      },
+      "monolithic": {
+        "description": "absent; the primitive API is the only capability catalog",
+        "paths": [
+          "docs/monolithic/pilot-l2/primitive-api.md"
+        ]
+      },
+      "justification": "part of the bundled treatment",
+      "analysis": "treatment property",
+      "id": "mon1-03"
+    },
+    {
+      "surface": "documentation given to the agent",
+      "class": "intentionally-different",
+      "typed": {
+        "description": "research-agent contract and the typed graph/manifest docs",
+        "paths": [
+          "harness/CLAUDE.research.md"
+        ]
+      },
+      "monolithic": {
+        "description": "primitive API document and module contract",
+        "paths": [
+          "docs/monolithic/pilot-l2/primitive-api.md",
+          "docs/monolithic/pilot-l2/README.md"
+        ]
+      },
+      "justification": "each arm documents its own representation; task, goals, budgets and evaluator text are shared",
+      "analysis": "documentation hashes in the MON-8 treatment tuple; representation-specific instructions listed here rather than in prose",
+      "id": "mon1-04"
+    },
+    {
+      "surface": "robot primitives (pose, grasp, trajectory, executor)",
+      "class": "identical",
+      "typed": {
+        "description": "Pinned L2 RGB/depth estimator, grasp planner, trajectory solver and streamer used by typed workers",
+        "paths": [
+          "src/aisle/nodes/l2_pose.py",
+          "src/aisle/nodes/grasp_topdown.py",
+          "src/aisle/nodes/ik_trajectory.py"
+        ]
+      },
+      "monolithic": {
+        "description": "the same function objects re-exported by aisle.monolith.primitives",
+        "paths": [
+          "src/aisle/monolith/primitives.py"
+        ]
+      },
+      "justification": "none needed: same artifact",
+      "analysis": "Implementation identity held fixed; L2 primitive parity checked by tests/unit/test_monolith_l2_primitives.py",
+      "id": "mon1-05"
+    },
+    {
+      "surface": "semantic observations",
+      "class": "representation-equivalent",
+      "typed": {
+        "description": "Public L2 calibration, RGB/depth, joint state, T1 goal, reset notification and guard feedback",
+        "paths": [
+          "graphs/pilot_t1_l2_typed.yaml"
+        ]
+      },
+      "monolithic": {
+        "description": "The same public sensor and task fields as broker events; no oracle verdicts",
+        "paths": [
+          "graphs/pilot_t1_l2_monolithic.yaml",
+          "docs/monolithic/pilot-l2/interface-map.json"
+        ]
+      },
+      "justification": "none needed: same semantic fields, different envelope",
+      "analysis": "Semantic field sets checked against both graphs; full runtime leakage qualification remains pending",
+      "id": "mon1-06"
+    },
+    {
+      "surface": "actions and authority",
+      "class": "representation-equivalent",
+      "typed": {
+        "description": "joint_cmd / gripper_cmd edges into budget-guard, episode_feedback to rollout-client",
+        "paths": [
+          "graphs/pilot_t1_l2_typed.yaml"
+        ]
+      },
+      "monolithic": {
+        "description": "action dicts {joint_cmd}, {gripper_cmd}, {feedback} validated and published by the broker on the same edges",
+        "paths": [
+          "src/aisle/nodes/monolith_broker.py"
+        ]
+      },
+      "justification": "none needed: same semantic fields, different envelope",
+      "analysis": "held fixed; same names, arity and privilege (interface map)",
+      "id": "mon1-07"
+    },
+    {
+      "surface": "guard route and limits",
+      "class": "identical",
+      "typed": {
+        "description": "budget-guard node, harness/limits + budget.toml",
+        "paths": [
+          "src/aisle/nodes/budget_guard.py",
+          "harness/budget.toml"
+        ]
+      },
+      "monolithic": {
+        "description": "the same node consuming monolith-broker/joint_cmd and gripper_cmd",
+        "paths": [
+          "graphs/pilot_t1_l2_monolithic.yaml"
+        ]
+      },
+      "justification": "none needed: same artifact",
+      "analysis": "held fixed (MON-5)",
+      "id": "mon1-08"
+    },
+    {
+      "surface": "trusted controller (bridge, reset, verifier, rollout client, turn barrier)",
+      "class": "identical",
+      "typed": {
+        "description": "Bridge, reset, frozen oracle, fixed-horizon rollout client, public projection and turn barrier",
+        "paths": [
+          "src/aisle/nodes/dora_genesis.py",
+          "src/aisle/reset/service.py",
+          "src/aisle/verifier/oracle.py",
+          "src/aisle/harness/rollout_client.py",
+          "src/aisle/nodes/turn_barrier.py",
+          "src/aisle/harness/pilot_policy_surface.py"
+        ]
+      },
+      "monolithic": {
+        "description": "Same trusted controllers and public projection; one policy broker",
+        "paths": [
+          "src/aisle/nodes/monolith_broker.py"
+        ]
+      },
+      "justification": "none needed: same artifact",
+      "analysis": "Controller identity held fixed; full timing and leakage qualification still required",
+      "id": "mon1-09"
+    },
+    {
+      "surface": "transport metadata",
+      "class": "intentionally-different",
+      "typed": {
+        "description": "nodes see dora metadata (sim_time_ns, seq, env_id, turn stamps, h/w/enc)",
+        "paths": [
+          "src/aisle/topics.py"
+        ]
+      },
+      "monolithic": {
+        "description": "the module sees sim_time_ns only; frames arrive reshaped",
+        "paths": [
+          "src/aisle/nodes/monolith_broker.py"
+        ]
+      },
+      "justification": "runtime envelope needed only by the typed transport; carries no task authority",
+      "analysis": "excluded from task authority (MON-4); no analysis treatment",
+      "id": "mon1-10"
+    },
+    {
+      "surface": "turn accounting",
+      "class": "intentionally-different",
+      "typed": {
+        "description": "four lockstep participants in the agent region",
+        "paths": [
+          "graphs/turn_plans/pilot_t1_l2_typed.json"
+        ]
+      },
+      "monolithic": {
+        "description": "one participant (the broker)",
+        "paths": [
+          "graphs/turn_plans/pilot_t1_l2_monolithic.json"
+        ]
+      },
+      "justification": "runtime representation of the same synchronous step; ordering of the four typed nodes is fixed by the plan, so the merged participant observes the same data per turn",
+      "analysis": "no task-outcome treatment; wall-time is reported per arm, not compared causally",
+      "id": "mon1-11"
+    },
+    {
+      "surface": "in-episode retry budget",
+      "class": "intentionally-different",
+      "typed": {
+        "description": "AISLE_MAX_RETRIES=8 attested in the graph",
+        "paths": [
+          "graphs/pilot_t1_l2_typed.yaml"
+        ]
+      },
+      "monolithic": {
+        "description": "module-internal decision, bounded by the same episode timeout",
+        "paths": [
+          "experts/monolithic/pilot_t1_l2.py"
+        ]
+      },
+      "justification": "the typed arm attests retries in YAML because that is where its decisions live; the episode budget (timeout, seeds) is held by the rollout runner in both arms",
+      "analysis": "retries reported per episode in both arms (episode_feedback.retries)",
+      "id": "mon1-12"
+    },
+    {
+      "surface": "episode budget, seeds, reset semantics, evaluator",
+      "class": "identical",
+      "typed": {
+        "description": "harness rollout --graph graphs/pilot_t1_l2_typed.yaml",
+        "paths": [
+          "src/aisle/harness/rollout.py"
+        ]
+      },
+      "monolithic": {
+        "description": "harness monolith run --module (calls the same rollout())",
+        "paths": [
+          "src/aisle/harness/monolith.py"
+        ]
+      },
+      "justification": "none needed: same artifact",
+      "analysis": "Same fixed simulation deadline; oracle results remain private until deadline; no policy verdict input",
+      "id": "mon1-13"
+    },
+    {
+      "surface": "confinement",
+      "class": "intentionally-different",
+      "typed": {
+        "description": "Isolated authored node workers under the admitted external adapter and private controller",
+        "paths": [
+          "specs/460-actuation-threat-model.md"
+        ]
+      },
+      "monolithic": {
+        "description": "Isolated module worker through a trusted primitive broker and admitted external adapter",
+        "paths": [
+          "src/aisle/monolith/confinement.py"
+        ]
+      },
+      "justification": "Different worker representations require separately bound policies; identical excluded privileges",
+      "analysis": "New exact controller/surface needs conformance qualification; independent isolation review remains pending",
+      "id": "mon1-14"
+    }
+  ],
+  "schema_version": "aisle.monolithic-treatment.v1"
+}

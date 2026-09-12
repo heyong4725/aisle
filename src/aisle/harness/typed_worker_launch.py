@@ -11,9 +11,10 @@ import time
 from pathlib import Path
 
 from aisle.harness.matched_runtime import verify_runtime
+from aisle.harness.matched_surface import record_surface
 from aisle.harness.treatment_ambient import spawn_isolated_process, verify_declared_environment
 from aisle.harness.treatment_confinement import compile_macos_profile, wrap_verified_command
-from aisle.harness.typed_execution_bundle import PARTICIPANT_FILES, verify_execution_bundle
+from aisle.harness.typed_execution_bundle import verify_execution_bundle
 from aisle.harness.typed_node_supervisor import supervise_typed_worker
 from aisle.harness.typed_node_worker import validate_configuration
 
@@ -131,7 +132,9 @@ def launch_typed_worker(
             raise TypedLaunchError("worker timeout must be finite and positive")
         if type(max_calls) is not int or max_calls <= 0:
             raise TypedLaunchError("worker call budget must be a positive integer")
-        modules = {p[4:-3].replace("/", "."): p for p in PARTICIPANT_FILES}
+        modules = {
+            p[4:-3].replace("/", "."): p for p in record_surface(bundle_manifest).participant_files
+        }
         if type(module) is not str or module not in modules:
             raise TypedLaunchError("worker module is outside the authored Python surface")
         if type(outputs) not in (set, frozenset) or any(
