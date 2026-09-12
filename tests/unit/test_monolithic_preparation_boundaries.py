@@ -3,6 +3,7 @@
 import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from test_monolith_worker_launch import _launch_inputs
@@ -72,3 +73,47 @@ def test_preparation_accepts_disjoint_private_output(tmp_path):
     config = _load(result["worker_config"], result["worker_config_sha256"])
     assert config["purpose"] == "expert_parity"
     assert Path(result["worker_config"]).parent == inputs["output"] / "monolithic-input"
+
+
+@pytest.mark.parametrize("legacy_present", [True, False])
+@pytest.mark.parametrize("through_controller", [True, False])
+def test_l2_preparation_binds_selected_module(tmp_path, legacy_present, through_controller):
+    """MON-3/MON-13: L2 preparation cannot substitute the legacy L1 deliverable."""
+    from aisle.harness.monolithic_run_prepare import prepare_monolithic_run
+
+    inputs = _inputs(tmp_path)
+    directory = inputs["views"]["monolithic"] / "experts/monolithic"
+    selected = directory / "pilot_t1_l2.py"
+    selected.write_text("API_VERSION='1.0'\n# selected L2 policy\n")
+    if not legacy_present:
+        (directory / "expert_t1.py").unlink()
+    if through_controller:
+        from aisle.harness.matched_tools import ToolController
+
+        controller = SimpleNamespace(
+            root=inputs["controller_root"], views=inputs["views"], arm="monolithic"
+        )
+        current = {
+            "task_surface": "t1-l2-pilot-v1",
+            "run_controller": {},
+            "tool_runtime": inputs["runtime"],
+            "arms": {"monolithic": {"confinement": {"adapter_binary_sha256": inputs["adapter"]}}},
+            "development": {"embodiment": inputs["embodiment"]},
+        }
+        result = ToolController._prepare_monolithic_run(
+            controller, current, inputs["output"], {"artifacts": {}}, inputs["declaration"]
+        )
+    else:
+        result = prepare_monolithic_run(**inputs, task_surface="t1-l2-pilot-v1")
+    archived = Path(result["worker_config"]).parent / "module.py"
+    assert archived.read_bytes() == selected.read_bytes()
+
+
+def test_preparation_refuses_unknown_surface_before_writing(tmp_path):
+    """MON-13: an unknown selection cannot fall back to a different task."""
+    from aisle.harness.monolithic_run_prepare import prepare_monolithic_run
+
+    inputs = _inputs(tmp_path)
+    with pytest.raises(ValueError, match="unsupported matched task surface"):
+        prepare_monolithic_run(**inputs, task_surface="unknown")
+    assert not inputs["output"].exists()

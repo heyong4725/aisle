@@ -236,6 +236,7 @@ class ToolController:
                 runtime=current["tool_runtime"],
                 adapter=current["arms"][self.arm]["confinement"]["adapter_binary_sha256"],
                 embodiment=current["development"]["embodiment"],
+                task_surface=record_surface(current).identity,
             )
         finally:
             for name in ("module.py", "worker-config.json"):
