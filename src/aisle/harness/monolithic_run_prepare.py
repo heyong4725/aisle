@@ -7,6 +7,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from aisle.harness.matched_surface import LEGACY_SURFACE
+from aisle.harness.matched_surface import task_surface as resolve_surface
 from aisle.harness.treatment_confinement import MacOSPolicy, wrap_verified_command
 from aisle.harness.typed_snapshot import _read
 from aisle.monolith.worker_config import _LAUNCH_FIELDS, MAX_CONFIG_BYTES, _load
@@ -14,9 +16,18 @@ from aisle.monolith.worker_launch import build_worker_bundle, verify_worker_laun
 
 
 def prepare_monolithic_run(
-    *, controller_root, views, output, declaration, runtime, adapter, embodiment
+    *,
+    controller_root,
+    views,
+    output,
+    declaration,
+    runtime,
+    adapter,
+    embodiment,
+    task_surface=LEGACY_SURFACE,
 ):
     """Build controller-owned inputs while preserving supplied capability identities."""
+    surface = resolve_surface(task_surface)
     required = _LAUNCH_FIELDS - {"bundle_manifest", "source_roots"}
     if type(declaration) is not dict or set(declaration) != required:
         raise ValueError("monolithic preparation requires exact worker declarations")
@@ -52,7 +63,7 @@ def prepare_monolithic_run(
         output.is_relative_to(p) for p in policy.hidden_roots
     ):
         raise ValueError("monolithic preparation output is not private from the worker")
-    module = Path(views["monolithic"]) / "experts/monolithic/expert_t1.py"
+    module = Path(views["monolithic"]) / surface.monolithic_module
     source = _read(module.parent, module.name)
     destination = output / "monolithic-input"
     destination.mkdir(parents=True, exist_ok=False)

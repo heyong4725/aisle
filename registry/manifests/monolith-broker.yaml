@@ -12,6 +12,7 @@ requires: [episode_verification]
 inputs:
   bridge_info: {schema: json_utf8, rate_hz: 1}
   seg_overhead: {schema: seg_i32, rate_hz: 15}
+  rgb_overhead: {schema: rgb8_image, rate_hz: 30}
   depth_overhead: {schema: depth_f32, rate_hz: 15}
   joint_state: {schema: jointvec_f32, rate_hz: 100}
   gripper_state: {schema: scalar_f32, rate_hz: 100}

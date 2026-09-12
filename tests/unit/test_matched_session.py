@@ -16,29 +16,31 @@ pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def prepared_pair(tmp_path):
+def prepared_pair(tmp_path, *, task_surface="t1-l1-v1"):
     """Use the launcher's real table format in an isolated engineering fixture."""
     from aisle.harness.matched_session import CONTROLLER_FILES
+    from aisle.harness.matched_surface import task_surface as resolve_surface
 
+    surface = resolve_surface(task_surface)
     control = tmp_path / "controller"
-    table = json.loads((ROOT / "docs/monolithic/treatment-table.json").read_text())
+    table = json.loads((ROOT / surface.docs_directory / "treatment-table.json").read_text())
     paths = {
         path
         for row in table["rows"]
         for arm in ("typed", "monolithic")
         for path in row[arm]["paths"]
     }
-    paths.update(str(p.relative_to(ROOT)) for p in (ROOT / "docs/monolithic").glob("*.json"))
-    paths.update({"graphs/expert_t1.yaml", "graphs/monolithic_t1.yaml"})
+    paths.update(str(p.relative_to(ROOT)) for p in (ROOT / surface.docs_directory).glob("*.json"))
+    paths.update({surface.typed_graph, surface.monolithic_graph})
     paths.update(CONTROLLER_FILES)
-    allowlist = json.loads((ROOT / "docs/monolithic/allowlist.json").read_text())
+    allowlist = json.loads((ROOT / surface.docs_directory / "allowlist.json").read_text())
     for arm in ("typed", "monolithic"):
         paths.update(allowlist[arm]["editable"])
     for name in paths:
         target = control / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / name, target)
-    assert monolith.table_report(control, write=True)["ok"]
+    assert monolith.table_report(control, write=True, task_surface=task_surface)["ok"]
     roots, candidates = {}, {}
     for arm in ("typed", "monolithic"):
         view = tmp_path / arm

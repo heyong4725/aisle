@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from aisle.harness.matched_runtime import verify_runtime, worker_interpreter
+from aisle.harness.matched_surface import development_surface, record_surface
 from aisle.harness.treatment_confinement import MacOSPolicy, wrap_verified_command
 from aisle.harness.typed_snapshot import _read
 
@@ -137,6 +138,8 @@ def _typed(config, path):
         if receipt["immutable_id"] != selected["stage_id"]:
             raise ValueError("typed stage identity differs")
         snapshot = receipt["snapshot_record"]
+        if record_surface(snapshot) != development_surface(config["development"]):
+            raise ValueError("typed stage task surface differs from run")
         if snapshot["participant_root"] != config["participant_root"]:
             raise ValueError("typed stage belongs to another participant")
         for name, digest in snapshot["inputs"]["participant"].items():
@@ -146,7 +149,10 @@ def _typed(config, path):
             host = load_host_config(binding["config_path"], binding["config_sha256"])
             _worker_binding(host["launch"], config, path)
         stages.append((stage, receipt))
-    graph = Path(stages[0][1]["snapshot_record"]["snapshot_root"]) / "graphs/expert_t1.yaml"
+    graph = (
+        Path(stages[0][1]["snapshot_record"]["snapshot_root"])
+        / development_surface(config["development"]).typed_graph
+    )
     history = []
     for index in range(len(stages)):
         select_rollout_stage(
@@ -173,7 +179,10 @@ def _monolithic(config, path):
     if set(binding) != {"worker_config", "worker_config_sha256"}:
         raise ValueError("monolithic run requires its worker configuration")
     worker = load_worker(binding["worker_config"], binding["worker_config_sha256"])
-    module = Path(config["participant_root"]) / "experts/monolithic/expert_t1.py"
+    module = (
+        Path(config["participant_root"])
+        / development_surface(config["development"]).monolithic_module
+    )
     if hashlib.sha256(_read(module.parent, module.name)).hexdigest() != worker["module_sha256"]:
         raise ValueError("monolithic source differs from worker binding")
     if worker["embodiment"] != config["development"]["embodiment"]:
@@ -255,7 +264,12 @@ def run_configured(path, digest):
                 path.parent / "run-controller/monolithic-worker",
             ) as worker_evidence:
                 try:
-                    result = run(**common, module=module, **binding)
+                    result = run(
+                        **common,
+                        module=module,
+                        **binding,
+                        task_surface=development_surface(development).identity,
+                    )
                 except Exception as exc:
                     result = {"ok": False, "infrastructure_invalid": True, "error": str(exc)}
             result["worker_evidence"] = worker_evidence

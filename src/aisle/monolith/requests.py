@@ -12,6 +12,7 @@ from aisle.monolith.primitive_api import CALLS, CREATES, READS
 from aisle.monolith.primitives import GraspPlan, Primitives
 from aisle.monolith.wire import decode, encode
 from aisle.nodes.ik_trajectory import Stage, StagedPlan, StageStreamer
+from aisle.nodes.l2_pose import L2Session
 from aisle.nodes.segmented_pose import L1Session
 
 
@@ -22,6 +23,7 @@ class PrimitiveRequestError(ValueError):
 TYPES = {
     Primitives: "primitives",
     L1Session: "pose",
+    L2Session: "pose_l2",
     GraspPlan: "grasp",
     StagedPlan: "staged",
     Stage: "stage",

@@ -12,10 +12,12 @@ from test_typed_validation_snapshot import ROOT
 pytestmark = pytest.mark.unit
 
 
-def _validated(tmp_path, *, direct_python=True):
+def _validated(tmp_path, *, direct_python=True, task_surface="t1-l1-v1"):
     from aisle.harness.typed_validation import run_validation
 
-    inputs = _inputs(tmp_path, direct_python=direct_python, worker_packages=True)
+    inputs = _inputs(
+        tmp_path, direct_python=direct_python, worker_packages=True, task_surface=task_surface
+    )
     result = run_validation(**inputs)
     assert result["ok"]
     return inputs
@@ -24,12 +26,20 @@ def _validated(tmp_path, *, direct_python=True):
 def _declarations(inputs):
     # Stage construction accepts serialized launch declarations. Host preflight
     # remains independently mandatory before any Dora transport is attached.
+    from aisle.harness.matched_surface import record_surface
     from aisle.harness.typed_execution_bundle import build_execution_bundle
 
     bundle = inputs["snapshot"].parent / "execution-bundle"
-    manifest = build_execution_bundle(ROOT, inputs["snapshot"], bundle)
-    graph = yaml.safe_load((inputs["snapshot"] / "graphs/expert_t1.yaml").read_text())
-    names = {"segmented-pose", "grasp-planner-topdown", "ik-trajectory", "task-state-machine"}
+    surface = record_surface(inputs["snapshot_record"])
+    manifest = build_execution_bundle(
+        ROOT, inputs["snapshot"], bundle, task_surface=surface.identity
+    )
+    graph = yaml.safe_load((inputs["snapshot"] / surface.typed_graph).read_text())
+    names = {
+        n["id"]
+        for n in graph["nodes"]
+        if n.get("path", "").removeprefix("../") in surface.participant_files
+    }
     launch = {
         key: copy.deepcopy(inputs[key])
         for key in (

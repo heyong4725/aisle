@@ -48,7 +48,7 @@ def tick():
     return _inp("tick", pa.array(np.zeros(1, dtype=np.uint8)))
 
 
-def run_client(events, monkeypatch, tmp_path, *, lockstep=False):
+def run_client(events, monkeypatch, tmp_path, *, lockstep=False, lifecycle=None):
     node = FakeNode(events)
     fake_dora = types.ModuleType("dora")
     fake_dora.Node = lambda: node
@@ -64,11 +64,62 @@ def run_client(events, monkeypatch, tmp_path, *, lockstep=False):
     monkeypatch.setenv("AISLE_TIER", "T0")
     monkeypatch.setenv("AISLE_RESULTS", str(tmp_path / "episodes.jsonl"))
     monkeypatch.setenv("AISLE_LOCKSTEP", "1" if lockstep else "0")
+    if lifecycle is not None:
+        monkeypatch.setenv("AISLE_EPISODE_LIFECYCLE", lifecycle)
+        monkeypatch.setenv("AISLE_TIER", "T1")
+        monkeypatch.setenv("AISLE_TIMEOUT_S", "30")
 
     from aisle.harness.rollout_client import main
 
     main()
     return node
+
+
+@pytest.mark.parametrize(
+    "result_stamp,status", [(1_000_000_000, "success"), (20_000_000_000, "timeout")]
+)
+def test_pilot_result_cannot_end_attempt_or_publish_record_before_deadline(
+    monkeypatch, tmp_path, result_stamp, status
+):
+    """BND-3/MON-4: verdict timing cannot advance the graph or completion-file reader."""
+
+    def turn(stamp):
+        return _inp("turn", pa.array([0]), {"sim_time_ns": stamp})
+
+    def events():
+        yield turn(0)
+        yield _inp("reset_done", pa.array([1]), {"sim_time_ns": 0})
+        yield _inp(
+            "episode_result",
+            pa.array([json.dumps({"goal_id": "ep-0000", "status": status})]),
+            {"sim_time_ns": result_stamp},
+        )
+        yield turn(29_999_999_999)
+        assert (tmp_path / "episodes.jsonl").read_text() == ""
+        yield turn(30_000_000_000)
+        record = json.loads((tmp_path / "episodes.jsonl").read_text())
+        assert record["status"] == status
+
+    node = run_client(
+        events(), monkeypatch, tmp_path, lockstep=True, lifecycle="fixed-horizon-t1-v1"
+    )
+    assert node.stopped_after_turn
+    assert len(goals(node)) == 1
+
+
+def test_unknown_episode_lifecycle_is_refused(monkeypatch, tmp_path):
+    """BND-3: a mistyped lifecycle cannot silently use oracle-triggered resets."""
+    with pytest.raises(SystemExit, match="lifecycle"):
+        run_client([], monkeypatch, tmp_path, lockstep=True, lifecycle="fixed-horizon-typo")
+
+
+def test_episode_lifecycle_must_be_graph_declared():
+    """BND-3/CON-5: an ambient shell cannot change the attested episode lifecycle."""
+    from aisle.harness.rollout import scrub_bringup_env
+
+    assert scrub_bringup_env(
+        {"AISLE_EPISODE_LIFECYCLE": "fixed-horizon-t1-v1", "PATH": "/bin"}
+    ) == {"PATH": "/bin"}
 
 
 def goals(node) -> list:

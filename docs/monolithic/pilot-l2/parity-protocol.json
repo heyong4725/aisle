@@ -1,0 +1,66 @@
+{
+  "purpose": "expert_parity",
+  "tasks": [
+    {
+      "tier": "T1",
+      "embodiment": "franka",
+      "episodes_per_seed": 1,
+      "pairing": "same seed, same tier, same embodiment, teleport reset, oracle verifier",
+      "reset": "teleport",
+      "verifier": "oracle"
+    }
+  ],
+  "paired_seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "acceptance": {
+    "protocol_id": "mon-pilot-l2-parity-protocol-v1",
+    "functional": {
+      "min_success_rate": 0.875,
+      "min_valid_pairs": 8
+    },
+    "safety": {
+      "forbidden_failures": [
+        "collision",
+        "limit_violation",
+        "workspace_violation"
+      ]
+    },
+    "equivalence": {
+      "rule": "absolute difference of paired success rates",
+      "max_abs_success_difference": 0.125
+    },
+    "interface_checks": [
+      "harness monolith interface --task-surface t1-l2-pilot-v1",
+      "harness monolith table --task-surface t1-l2-pilot-v1"
+    ],
+    "exclusions": [
+      "infrastructure_invalid (confinement or launcher failure) with one retry of the same seed"
+    ],
+    "retry_rule": "one retry of the same seed after an infrastructure-invalid record; the invalid run stays in the record",
+    "preconditions": {
+      "MON-1 treatment table complete": true,
+      "MON-4 interface map exact": true,
+      "MON-9 independent blind authorship of both experts": false,
+      "MON-9 parity seeds revealed by a separate operator": false
+    },
+    "commands": {
+      "typed": "uv run harness rollout --graph graphs/pilot_t1_l2_typed.yaml --tier T1 --episodes 8 --seeds 0..7",
+      "monolithic": "uv run harness monolith run --module experts/monolithic/pilot_t1_l2.py --tier T1 --episodes 8 --seeds 0..7 --task-surface t1-l2-pilot-v1",
+      "gate": "uv run harness monolith parity --typed <typed>/episodes.jsonl --monolithic <mono>/episodes.jsonl --task-surface t1-l2-pilot-v1"
+    },
+    "note": "Proposed L2 candidate engineering parity protocol, inherited acceptance thresholds unchanged. Independent authorship and separate operator remain absent; this protocol cannot pass those gates. These public engineering seeds and records are NOT the six-session-per-arm pilot registration and cannot be pooled with it. No feasibility or parity outcome is asserted."
+  },
+  "resource_ceiling": {
+    "episode_timeout_s": 60,
+    "per_episode_wall_s": null
+  },
+  "stopping_rule": "all listed seeds run once per arm; no post-result additions"
+}

@@ -827,6 +827,9 @@ SCRUBBED_ENV = (
     # stale developer-shell value and renumber every episode (PR #177
     # review — the same class as AISLE_TARGET_MEDS below).
     "AISLE_EPISODE_BASE",
+    # BND-3: fixed-horizon pilot timing belongs to the hashed graph, not
+    # the developer shell. Legacy graphs keep their declared/default mode.
+    "AISLE_EPISODE_LIFECYCLE",
     # HAR-1: which med each episode targets. The rollout runner never sets
     # this, and no graph declares it, so an ambient developer-shell value
     # was the ONLY way it could arrive — silently re-targeting every

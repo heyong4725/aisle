@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
+from aisle.harness.matched_surface import record_surface
 from aisle.harness.typed_execution_bundle import build_execution_bundle
 from aisle.harness.typed_graph_stage import _validation, preflight_graph_stage, stage_typed_graph
 
@@ -83,7 +84,12 @@ def prepare_typed_stages(
         # capture. rmdir refuses anything nonempty; no existing files are removed.
         if bundle.exists():
             bundle.rmdir()
-        manifests[str(bundle)] = build_execution_bundle(controller_root, snapshot, bundle)
+        manifests[str(bundle)] = build_execution_bundle(
+            controller_root,
+            snapshot,
+            bundle,
+            task_surface=record_surface(snapshot_record).identity,
+        )
     stages = []
     for index, launches in enumerate(declarations):
         for launch in launches.values():

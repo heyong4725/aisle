@@ -11,12 +11,13 @@ pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _view(tmp_path):
+def _view(tmp_path, *, task_surface="t1-l1-v1"):
+    from aisle.harness.matched_surface import task_surface as resolve_surface
+
     view = tmp_path / "typed"
     view.mkdir()
-    editable = json.loads((ROOT / "docs/monolithic/allowlist.json").read_text())["typed"][
-        "editable"
-    ]
+    documents = resolve_surface(task_surface).docs_directory
+    editable = json.loads((ROOT / documents / "allowlist.json").read_text())["typed"]["editable"]
     for name in editable:
         target = view / name
         target.parent.mkdir(parents=True, exist_ok=True)

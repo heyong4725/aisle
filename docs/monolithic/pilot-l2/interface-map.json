@@ -1,0 +1,294 @@
+{
+  "id": "mon-pilot-l2-interface-map-v1",
+  "typed": {
+    "graph": "graphs/pilot_t1_l2_typed.yaml",
+    "agent_nodes": [
+      "detected-pose",
+      "grasp-planner-topdown",
+      "ik-trajectory",
+      "task-state-machine"
+    ]
+  },
+  "monolithic": {
+    "graph": "graphs/pilot_t1_l2_monolithic.yaml",
+    "broker": "monolith-broker"
+  },
+  "fields": [
+    {
+      "name": "bridge_info",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "L2 perception marker and recursively enumerated public v1 camera calibration only"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "L2 perception marker and recursively enumerated public v1 camera calibration only"
+      }
+    },
+    {
+      "name": "rgb_overhead",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "rendered overhead RGB uint8 (h, w, 3), sim-time stamped; no semantic mask"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "rendered overhead RGB uint8 (h, w, 3), sim-time stamped; no semantic mask"
+      }
+    },
+    {
+      "name": "depth_overhead",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "sensor depth in metres, float32 (h, w), paired with same-stamp RGB"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "sensor depth in metres, float32 (h, w), paired with same-stamp RGB"
+      }
+    },
+    {
+      "name": "joint_state",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "measured joint vector, float32 n_dof, 100 Hz"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "measured joint vector, float32 n_dof, 100 Hz"
+      }
+    },
+    {
+      "name": "episode_goal",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "public T1 goal: target_med, tier, timeout_s; transport goal_id; no seed/reset state"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "public T1 goal: target_med, tier, timeout_s; transport goal_id; no seed/reset state"
+      }
+    },
+    {
+      "name": "violation",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "guard clamp/refusal record"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "guard clamp/refusal record"
+      }
+    },
+    {
+      "name": "reset_done",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "constant reset-completed notification; no service request id or private payload"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "constant reset-completed notification; no service request id or private payload"
+      }
+    },
+    {
+      "name": "tick",
+      "authority": "task",
+      "typed": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "1 Hz sim-clock tick since the goal"
+      },
+      "monolithic": {
+        "role": "observe",
+        "privileged": false,
+        "semantics": "1 Hz sim-clock tick since the goal"
+      }
+    },
+    {
+      "name": "joint_cmd",
+      "authority": "task",
+      "typed": {
+        "role": "act",
+        "privileged": false,
+        "semantics": "target joint vector, n_dof finite floats, into budget-guard"
+      },
+      "monolithic": {
+        "role": "act",
+        "privileged": false,
+        "semantics": "target joint vector, n_dof finite floats, into budget-guard"
+      }
+    },
+    {
+      "name": "gripper_cmd",
+      "authority": "task",
+      "typed": {
+        "role": "act",
+        "privileged": false,
+        "semantics": "gripper target, finite float, into budget-guard"
+      },
+      "monolithic": {
+        "role": "act",
+        "privileged": false,
+        "semantics": "gripper target, finite float, into budget-guard"
+      }
+    },
+    {
+      "name": "episode_feedback",
+      "authority": "task",
+      "typed": {
+        "role": "feedback",
+        "privileged": false,
+        "semantics": "progress object (t, phase, retries) to rollout-client at 1 Hz"
+      },
+      "monolithic": {
+        "role": "feedback",
+        "privileged": false,
+        "semantics": "progress object (t, phase, retries) to rollout-client at 1 Hz"
+      }
+    }
+  ],
+  "envelopes": {
+    "bridge_info": {
+      "typed": {
+        "edge": "pilot-policy-surface/bridge_info",
+        "schema": "json_utf8"
+      },
+      "monolithic": {
+        "event": "bridge_info",
+        "payload": "dict (perception, calibration public fields)"
+      }
+    },
+    "depth_overhead": {
+      "typed": {
+        "edge": "dora-genesis/depth_overhead",
+        "schema": "depth_f32"
+      },
+      "monolithic": {
+        "event": "depth_overhead",
+        "payload": "float32 array (h, w) with sim_time_ns"
+      }
+    },
+    "joint_state": {
+      "typed": {
+        "edge": "dora-genesis/joint_state",
+        "schema": "jointvec_f32"
+      },
+      "monolithic": {
+        "event": "joint_state",
+        "payload": "float32 vector"
+      }
+    },
+    "episode_goal": {
+      "typed": {
+        "edge": "pilot-policy-surface/episode_goal",
+        "schema": "json_utf8"
+      },
+      "monolithic": {
+        "event": "episode_goal",
+        "payload": "dict (target_med, tier, timeout_s) with goal_id"
+      }
+    },
+    "violation": {
+      "typed": {
+        "edge": "budget-guard/violation",
+        "schema": "json_utf8"
+      },
+      "monolithic": {
+        "event": "violation",
+        "payload": "dict"
+      }
+    },
+    "reset_done": {
+      "typed": {
+        "edge": "pilot-policy-surface/reset_done",
+        "schema": "reset_done_u32"
+      },
+      "monolithic": {
+        "event": "reset_done",
+        "payload": "None"
+      }
+    },
+    "tick": {
+      "typed": {
+        "edge": "turn-derived 1 Hz tick (task-state-machine)",
+        "schema": "timer_tick"
+      },
+      "monolithic": {
+        "event": "tick",
+        "payload": "int ticks since goal"
+      }
+    },
+    "joint_cmd": {
+      "typed": {
+        "edge": "ik-trajectory/joint_cmd -> budget-guard",
+        "schema": "jointvec_f32"
+      },
+      "monolithic": {
+        "action": "joint_cmd",
+        "payload": "n_dof finite floats -> budget-guard"
+      }
+    },
+    "gripper_cmd": {
+      "typed": {
+        "edge": "ik-trajectory/gripper_cmd -> budget-guard",
+        "schema": "scalar_f32"
+      },
+      "monolithic": {
+        "action": "gripper_cmd",
+        "payload": "finite float -> budget-guard"
+      }
+    },
+    "episode_feedback": {
+      "typed": {
+        "edge": "task-state-machine/episode_feedback -> rollout-client",
+        "schema": "json_utf8"
+      },
+      "monolithic": {
+        "action": "feedback",
+        "payload": "JSON object, stamped with goal_id by the broker"
+      }
+    },
+    "rgb_overhead": {
+      "typed": {
+        "edge": "dora-genesis/rgb_overhead",
+        "schema": "rgb8_image"
+      },
+      "monolithic": {
+        "event": "rgb_overhead",
+        "payload": "uint8 array (h, w, 3) with sim_time_ns"
+      }
+    }
+  },
+  "transport_only": {
+    "declared_in": "docs/monolithic/treatment-table.json#mon1-10",
+    "items": [
+      "turn clock",
+      "seq",
+      "env_id",
+      "turn stamps",
+      "h/w/enc frame keys"
+    ]
+  }
+}

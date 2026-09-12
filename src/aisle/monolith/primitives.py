@@ -24,7 +24,7 @@ from typing import Any
 
 import numpy as np
 
-from aisle.nodes import grasp_topdown, ik_trajectory, segmented_pose
+from aisle.nodes import grasp_topdown, ik_trajectory, l2_pose, segmented_pose
 from aisle.scenes.pharmacy import (
     MED_NAMES,
     load_meds,
@@ -45,6 +45,7 @@ PUBLIC_API = (
     "home",
     "layout",
     "pose_session",
+    "l2_pose_session",
     "plan_grasp",
     "staged_plan",
     "streamer",
@@ -77,6 +78,7 @@ class Primitives:
     physics: dict = field(repr=False)
     meds: dict = field(repr=False)
     api_version: str = API_VERSION
+    _l2_model_pair: Any = field(default=None, init=False, repr=False)
 
     @classmethod
     def _load(cls, embodiment: str = "franka") -> Primitives:
@@ -116,6 +118,29 @@ class Primitives:
 
         return segmented_pose.L1Session(
             meds=self.meds,
+            backprojector=lambda calibration: (
+                lambda depth, pixels: backproject_overhead(depth, calibration, pixels)
+            ),
+        )
+
+    def l2_pose_session(self) -> l2_pose.L2Session:
+        """The typed L2 RGB/depth estimator with the same pinned identity model.
+
+        Feed on_bridge_info, on_target_request, on_rgb, on_depth and
+        on_reset_done. Each session owns its frame and request state; the
+        broker loads its private read-only model once. Simulator segmentation
+        is not an input to this primitive. Identity/refusal thresholds remain
+        those of the existing L2Session.
+        """
+        from aisle.verifier.models import detect_meds, load_pinned
+        from aisle.verifier.stages import backproject_overhead
+
+        if self._l2_model_pair is None:
+            self._l2_model_pair = load_pinned("identity")
+        model_pair = self._l2_model_pair
+        return l2_pose.L2Session(
+            meds=self.meds,
+            detector=lambda rgb: detect_meds(rgb, MED_NAMES, model_pair=model_pair),
             backprojector=lambda calibration: (
                 lambda depth, pixels: backproject_overhead(depth, calibration, pixels)
             ),
@@ -202,6 +227,7 @@ class Primitives:
 #: typed nodes call
 PINNED_IMPLEMENTATIONS = {
     "pose": "aisle.nodes.segmented_pose.L1Session",
+    "pose_l2": "aisle.nodes.l2_pose.L2Session",
     "grasp": "aisle.nodes.grasp_topdown.plan_grasp",
     "trajectory": "aisle.nodes.ik_trajectory.StagedPlan",
     "executor": "aisle.nodes.ik_trajectory.StageStreamer",

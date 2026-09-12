@@ -446,7 +446,12 @@ def test_launcher_preserves_t1_rollout_arguments(tmp_path, monkeypatch):
     module = tmp_path / "participant.py"
     graph = tmp_path / "stamped.yaml"
     monkeypatch.setattr(mono, "check_module", lambda *args: {"ok": True})
-    monkeypatch.setattr(mono, "stamp_graph", lambda *args: graph)
+
+    def stamp(*args, template):
+        assert template == "graphs/monolithic_t1.yaml"
+        return graph
+
+    monkeypatch.setattr(mono, "stamp_graph", stamp)
 
     def launch(**kwargs):
         observed.update(kwargs)

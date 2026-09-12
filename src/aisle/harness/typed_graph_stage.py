@@ -10,7 +10,8 @@ from pathlib import Path
 
 import yaml
 
-from aisle.harness.typed_execution_bundle import PARTICIPANT_FILES, verify_execution_bundle
+from aisle.harness.matched_surface import record_surface
+from aisle.harness.typed_execution_bundle import verify_execution_bundle
 from aisle.harness.typed_graph_hosts import (
     _json_equal,
     _source,
@@ -68,16 +69,19 @@ def stage_typed_graph(
         if snapshot_record["controller_root"] != str(controller):
             raise StageError("validation snapshot belongs to another controller root")
         verify_typed_validation_snapshot(snapshot, snapshot_record)
+        surface = record_surface(snapshot_record)
         validation = _validation(validation_output, snapshot_record)
-        baseline_bytes = _read(controller, "graphs/expert_t1.yaml")
+        baseline_bytes = _read(controller, surface.typed_graph)
         baseline = yaml.safe_load(baseline_bytes)
-        authored_bytes = _read(snapshot, "graphs/expert_t1.yaml")
+        authored_bytes = _read(snapshot, surface.typed_graph)
         authored = yaml.safe_load(authored_bytes)
         if type(launches) is not dict or not launches:
             raise StageError("worker launch declarations are missing")
         for launch in launches.values():
             verify_execution_bundle(launch["bundle"], launch["bundle_manifest"])
-            for name in PARTICIPANT_FILES:
+            if record_surface(launch["bundle_manifest"]) != surface:
+                raise StageError("worker bundle task surface differs from snapshot")
+            for name in surface.participant_files:
                 if (
                     launch["bundle_manifest"]["files"][name]["sha256"]
                     != snapshot_record["files"][name]["sha256"]
@@ -96,7 +100,7 @@ def stage_typed_graph(
             node_id = node["id"]
             if node_id not in launches:
                 continue
-            source = _source(node)
+            source = _source(node, task_surface=surface.identity)
             if source is None:
                 raise StageError("worker implementation is outside the typed source surface")
             expansion = launches[node_id]["environment"]
@@ -130,7 +134,12 @@ def stage_typed_graph(
             configs[path.relative_to(output).as_posix()] = raw
             expansions[node_id] = expansion
         graph = replace_authored_nodes(
-            authored, baseline, bindings, controller, expansion_environments=expansions
+            authored,
+            baseline,
+            bindings,
+            controller,
+            expansion_environments=expansions,
+            task_surface=surface.identity,
         )
         # Resolve transport paths only after comparison against the authored graph.
         # The validated turn plan is copied byte-for-byte, never recompiled here.
@@ -142,7 +151,7 @@ def stage_typed_graph(
         files = {
             **configs,
             "graph.yaml": yaml.safe_dump(graph, sort_keys=False).encode(),
-            "turn-plan.json": _read(snapshot, "graphs/turn_plans/expert_t1.json"),
+            "turn-plan.json": _read(snapshot, surface.typed_turn_plan),
         }
         output.mkdir(parents=True, exist_ok=False)
         for name, data in files.items():
@@ -156,7 +165,7 @@ def stage_typed_graph(
         verify_typed_validation_snapshot(snapshot, snapshot_record)
         if (
             not _json_equal(_validation(validation_output, snapshot_record), validation)
-            or _read(controller, "graphs/expert_t1.yaml") != baseline_bytes
+            or _read(controller, surface.typed_graph) != baseline_bytes
         ):
             raise StageError("validation or baseline changed during staging")
         for launch in launches.values():
@@ -211,7 +220,7 @@ def _verify_graph_stage(output, record, worker_roots=()):
         if (
             record["snapshot_id"] != snapshot_record["immutable_id"]
             or record["authored_graph_sha256"]
-            != snapshot_record["files"]["graphs/expert_t1.yaml"]["sha256"]
+            != snapshot_record["files"][record_surface(snapshot_record).typed_graph]["sha256"]
             or record["controller_root"] != snapshot_record["controller_root"]
         ):
             raise StageError("graph stage snapshot binding differs")
@@ -327,7 +336,8 @@ def transport_for_instrumentation(output, record, *, authored_bytes, graph, cont
         snapshot = Path(record["snapshot_record"]["snapshot_root"])
         if (
             hashlib.sha256(authored_bytes).hexdigest() != record["authored_graph_sha256"]
-            or Path(graph).absolute() != snapshot / "graphs/expert_t1.yaml"
+            or Path(graph).absolute()
+            != snapshot / record_surface(record["snapshot_record"]).typed_graph
         ):
             raise StageError("transport stage differs from the authored graph snapshot")
         if str(Path(controller_root).resolve()) != record["controller_root"]:
@@ -354,7 +364,8 @@ def validation_for_rollout_gates(
     if (
         record["validation"].get("embodiment") != embodiment
         or hashlib.sha256(authored_bytes).hexdigest() != record["authored_graph_sha256"]
-        or Path(graph).absolute() != snapshot / "graphs/expert_t1.yaml"
+        or Path(graph).absolute()
+        != snapshot / record_surface(record["snapshot_record"]).typed_graph
         or str(Path(controller_root).resolve()) != record["controller_root"]
         or record["validation"]["result"].get("graph") != str(Path(graph).absolute())
     ):

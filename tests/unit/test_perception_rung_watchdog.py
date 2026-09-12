@@ -41,18 +41,27 @@ def _barrier_env(nodes: list[dict]) -> dict:
 def graphs_with_perception_rung():
     for path in GRAPHS:
         nodes = _nodes(path)
-        if any(str(n.get("path", "")).endswith(PERCEPTION_RUNG) for n in nodes):
+        broker_uses_l2 = any(
+            str(node.get("path", "")).endswith("monolith_broker.py")
+            and isinstance(module := node.get("env", {}).get("AISLE_MONOLITH_MODULE"), str)
+            and (ROOT / module).is_file()
+            and "l2_pose_session" in (ROOT / module).read_text()
+            for node in nodes
+        )
+        if broker_uses_l2 or any(str(n.get("path", "")).endswith(PERCEPTION_RUNG) for n in nodes):
             yield path
 
 
 def test_the_corpus_is_not_empty():
-    """Guards the parametrised test from passing on zero graphs: the three
-    graphs carrying the rung today are enumerated, so a renamed node path
+    """Guards the parametrised test from passing on zero graphs: the
+    graphs carrying the rung directly or through the broker are enumerated, so a renamed node path
     fails here rather than silently dropping out."""
     assert [p.name for p in graphs_with_perception_rung()] == [
         "eval_t2_stack.yaml",
         "expert_t1_l2.yaml",
         "expert_t2.yaml",
+        "pilot_t1_l2_monolithic.yaml",
+        "pilot_t1_l2_typed.yaml",
     ]
 
 

@@ -19,6 +19,9 @@ from pathlib import Path
 
 import yaml
 
+from aisle.harness.matched_surface import LEGACY_SURFACE
+from aisle.harness.matched_surface import task_surface as resolve_task_surface
+
 TEMPLATE_GRAPH = "graphs/monolithic_t1.yaml"
 DOCS_DIR = "docs/monolithic"
 CAMPAIGN_PURPOSE = "expert_parity"  # MON-11: never pooled with agent sessions
@@ -28,8 +31,9 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def load_json(root: Path, name: str) -> dict:
-    return json.loads((root / DOCS_DIR / name).read_text(encoding="utf-8"))
+def load_json(root: Path, name: str, *, task_surface=LEGACY_SURFACE) -> dict:
+    directory = resolve_task_surface(task_surface).docs_directory
+    return json.loads((root / directory / name).read_text(encoding="utf-8"))
 
 
 # -- MON-3 launcher ------------------------------------------------------
@@ -114,8 +118,10 @@ def run(
     worker_config=None,
     worker_config_sha256=None,
     record_simulator_work: bool = False,
+    task_surface: str = LEGACY_SURFACE,
 ) -> dict:
     """Stamp the supported T1 graph and roll it out through the trusted runner."""
+    surface = resolve_task_surface(task_surface)
     if tier != "T1":
         return {
             "ok": False,
@@ -145,7 +151,12 @@ def run(
         pre = check_module(module, embodiment)
     if not pre["ok"]:
         return pre
-    graph = stamp_graph(root, module, root / "graphs" / "out", **worker_options)
+    graph_output = root / "graphs" / "out"
+    if surface.identity != LEGACY_SURFACE:
+        graph_output /= surface.identity
+    graph = stamp_graph(
+        root, module, graph_output, template=surface.monolithic_graph, **worker_options
+    )
     import datetime
     import uuid
 
@@ -277,7 +288,7 @@ def _dump(obj: dict) -> str:
     return json.dumps(obj, indent=2, sort_keys=True) + "\n"
 
 
-def table_report(root: Path, write: bool) -> dict:
+def table_report(root: Path, write: bool, *, task_surface=LEGACY_SURFACE) -> dict:
     """Render/check the MON-1 table and the generated records: the Markdown
     rendering, the v1 treatment record and the MON-9 experts record. The
     records carry current hashes, so an edit to any listed surface needs
@@ -289,7 +300,8 @@ def table_report(root: Path, write: bool) -> dict:
         validate_treatment_table,
     )
 
-    table = load_json(root, "treatment-table.json")
+    surface = resolve_task_surface(task_surface)
+    table = load_json(root, "treatment-table.json", task_surface=surface.identity)
     errors = table_errors(root, table)
     if errors:
         return {"ok": False, "table": table["id"], "rows": len(table["rows"]), "errors": errors}
@@ -300,16 +312,16 @@ def table_report(root: Path, write: bool) -> dict:
         return {"ok": False, "table": table["id"], "rows": len(table["rows"]), "errors": [str(exc)]}
     record["immutable_id"] = identity["immutable_id"]
     record["status"] = "shakeout"
-    record["source"] = f"{DOCS_DIR}/treatment-table.json"
-    experts = experts_record(root, load_json(root, "experts.json"))
+    record["source"] = f"{surface.docs_directory}/treatment-table.json"
+    experts = experts_record(root, load_json(root, "experts.json", task_surface=surface.identity))
     try:
         validate_expert_artifacts(experts["artifacts"])
     except TypedSurfaceError as exc:
         errors.append(str(exc))
     generated = {
-        root / DOCS_DIR / "treatment-table.md": render_table(root, table),
-        root / ANALYSIS_DIR / "treatment-table-v1.json": _dump(record),
-        root / ANALYSIS_DIR / "experts-v1.json": _dump(experts),
+        root / surface.docs_directory / "treatment-table.md": render_table(root, table),
+        root / surface.analysis_directory / "treatment-table-v1.json": _dump(record),
+        root / surface.analysis_directory / "experts-v1.json": _dump(experts),
     }
     for path, content in generated.items():
         current = path.read_text(encoding="utf-8") if path.is_file() else ""
@@ -415,8 +427,8 @@ def _motion_route(graph: dict) -> list[str]:
     return route
 
 
-def interface_report(root: Path) -> dict:
-    imap = load_json(root, "interface-map.json")
+def interface_report(root: Path, *, task_surface=LEGACY_SURFACE) -> dict:
+    imap = load_json(root, "interface-map.json", task_surface=task_surface)
     errors = interface_errors(root, imap)
     return {
         "ok": not errors,
@@ -512,10 +524,12 @@ def parity_decision(protocol: dict, typed: dict[int, dict], mono: dict[int, dict
     }
 
 
-def parity_report(root: Path, typed_path: Path, mono_path: Path) -> dict:
+def parity_report(
+    root: Path, typed_path: Path, mono_path: Path, *, task_surface=LEGACY_SURFACE
+) -> dict:
     from aisle.harness.monolithic import validate_campaign_purpose
 
-    protocol = load_json(root, "parity-protocol.json")
+    protocol = load_json(root, "parity-protocol.json", task_surface=task_surface)
     decision = parity_decision(protocol, _episodes(typed_path), _episodes(mono_path))
     validate_campaign_purpose(decision)
     return {

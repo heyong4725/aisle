@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from aisle.harness.matched_session import AdmissionError, _digest, verify_active_plan, verify_plan
+from aisle.harness.matched_surface import LEGACY_SURFACE, record_surface
 from aisle.harness.treatment_ambient import spawn_isolated_process
 from aisle.harness.treatment_confinement import (
     MacOSPolicy,
@@ -217,7 +218,7 @@ class ToolController:
         try:
             if type(declaration) is dict and set(declaration) == {"provider"}:
                 provider = self._provider_template(current, output, declaration["provider"])
-                module = self.views["monolithic"] / "experts/monolithic/expert_t1.py"
+                module = self.views["monolithic"] / record_surface(current).monolithic_module
                 source = _read(module.parent, module.name)
                 destination = output / "monolithic-input/module.py"
                 destination.parent.mkdir(parents=True, exist_ok=False)
@@ -235,6 +236,7 @@ class ToolController:
                 runtime=current["tool_runtime"],
                 adapter=current["arms"][self.arm]["confinement"]["adapter_binary_sha256"],
                 embodiment=current["development"]["embodiment"],
+                task_surface=record_surface(current).identity,
             )
         finally:
             for name in ("module.py", "worker-config.json"):
@@ -403,7 +405,9 @@ class ToolController:
                 }
             ).split(":")[1]
         )
-        receipt = build_typed_validation_snapshot(self.root, self.views["typed"], snapshot)
+        receipt = build_typed_validation_snapshot(
+            self.root, self.views["typed"], snapshot, task_surface=record_surface(current).identity
+        )
         validation_output = output / "validation"
         try:
             result = run_validation(
@@ -624,6 +628,7 @@ class ToolController:
                     != manifest["confinement"]["adapter_binary_sha256"]
                 ):
                     raise AdmissionError("tool adapter differs from admitted adapter")
+                surface = record_surface(current)
                 view = Path(self.views[self.arm])
                 if operation == "run":
                     common = [
@@ -646,7 +651,7 @@ class ToolController:
                         args = [
                             "rollout",
                             "--graph",
-                            str(view / "graphs/expert_t1.yaml"),
+                            str(view / surface.typed_graph),
                             "--reset",
                             development["reset"],
                             "--verifier",
@@ -658,13 +663,15 @@ class ToolController:
                             "monolith",
                             "run",
                             "--module",
-                            str(view / "experts/monolithic/expert_t1.py"),
+                            str(view / surface.monolithic_module),
                             *common,
                         ]
+                        if surface.identity != LEGACY_SURFACE:
+                            args.extend(["--task-surface", surface.identity])
                 elif self.arm == "typed":
                     args = [
                         "validate",
-                        str(view / "graphs/expert_t1.yaml"),
+                        str(view / surface.typed_graph),
                         "--root",
                         str(view),
                         "--embodiment",
@@ -675,7 +682,7 @@ class ToolController:
                         "monolith",
                         "check",
                         "--module",
-                        str(view / "experts/monolithic/expert_t1.py"),
+                        str(view / surface.monolithic_module),
                         "--embodiment",
                         "franka",
                     ]
