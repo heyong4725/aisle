@@ -80,6 +80,13 @@ docstring. `tools/trace_check.py` (SPEC 070) enforces this in CI.
   `uv run ruff check .`, `uv run pytest -m "unit"` (always) and
   `uv run pytest -m "sim or graph"` when sim/graph code changed. A commit that
   skips gates MUST be reverted, not amended.
+  AMENDED (ADR-65, 2026-09-11): Class A is split by risk. Documentation-only
+  changes (docs/, ADRs, README, generated inventories) run format, lint, and
+  the unit suite only; `/review`, `/simplify`, and the CON-16 cross-review
+  are OPTIONAL. Class A changes touching tests/ or tools/ keep `/review` on
+  the diff (a test that cites a MUST ID is that MUST's only enforcement,
+  CON-13) and drop `/simplify` and the cross-review. Class B and Class C
+  keep the full gate set.
 - CON-10: Risk classes (adapted from dora `docs/agentic-qa-policy.md`):
   Class A (docs, tests, tools) — baseline gates. Class B (nodes, harness) —
   baseline + affected acceptance tests. Class C (anything in the frozen set,
