@@ -1,0 +1,5 @@
+{
+  "details": [],
+  "error": "records.sessions must be a non-empty list",
+  "ok": false
+}
