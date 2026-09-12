@@ -490,3 +490,20 @@ def test_shared_cli_successor_preserves_bnd_protocol_and_review_gates():
     assert current["artifact_hashes"]["perception_cli"] == hash_path(
         REPO_ROOT, "src/aisle/harness/cli.py"
     )
+
+
+def test_pilot_purpose_registers_as_its_own_campaign(tmp_path):
+    """STA-3 / CSE-8 / ADR-66: `pilot` is an accepted registration purpose,
+    so a pilot can be registered under its own campaign id and checked like
+    any other declaration. Lineage protection (a successor may not change
+    purpose) is the generic rule exercised by
+    test_successor_refuses_unbound_or_changed_seed_identity; this test only
+    covers acceptance."""
+    root = _tree(tmp_path)
+    declaration = _declaration()
+    declaration["campaign_id"] = "demo-campaign-pilot-v1"
+    declaration["purpose"] = "pilot"
+    manifest = build_manifest(root, declaration, git_head=None)
+    assert manifest["purpose"] == "pilot"
+    assert manifest["campaign_id"] == "demo-campaign-pilot-v1"
+    assert check_manifest(root, manifest)["ok"] is True

@@ -15,8 +15,14 @@ from test_treatment_confinement import _attestation
 pytestmark = pytest.mark.unit
 
 
-@pytest.mark.parametrize("selected_arm", ["typed", "monolithic"])
-def test_session_runner_provisions_real_arm_precheck(tmp_path, selected_arm):
+@pytest.mark.parametrize(
+    ("selected_arm", "distinct_launcher"),
+    [("typed", False), ("monolithic", False), ("typed", True)],
+    ids=["typed", "monolithic", "typed-framework-launcher"],
+)
+def test_session_runner_provisions_real_arm_precheck(
+    tmp_path, selected_arm, distinct_launcher, monkeypatch
+):
     """MON-8/MON-12: session, frontend, preparation, real worker and final audit share identity.
 
     The fixture frontend and adapter prove process integration, not coding-agent
@@ -41,6 +47,13 @@ def test_session_runner_provisions_real_arm_precheck(tmp_path, selected_arm):
 
         controller, views, output, validation = _controller(tmp_path)
         declaration, _ = _workers(tmp_path, controller, views, output, validation)
+    if distinct_launcher:
+        launcher = tmp_path / "launcher-runtime/bin/python"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n')
+        launcher.chmod(0o755)
+        assert launcher.read_bytes() != controller.python.read_bytes()
+        monkeypatch.setattr(sys, "executable", str(launcher))
     (output / "tool-events.jsonl").unlink()
     fixture = tmp_path / "fixture-agent"
     code = (
@@ -73,7 +86,7 @@ def test_session_runner_provisions_real_arm_precheck(tmp_path, selected_arm):
             "argv": [str(fixture), "system prompt", "research contract"],
             "system_prompt_arg": 1,
             "research_contract_arg": 2,
-            "tool_python": sys.executable,
+            "tool_python": str(controller.python),
         }
         (Path(ambient[arm]["environment"]["HOME"]) / "tool-channel").mkdir()
         bindings[arm]["policy"]["allowed_executables"].append(str(fixture))

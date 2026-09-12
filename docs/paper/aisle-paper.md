@@ -768,6 +768,53 @@ contracts, eval provenance, and human-merge governance. We rebuild
 both axes on open infrastructure and make the loop itself measurable —
 including the places our measurements disagree with the priors (H3's
 economy-not-ceiling; hot-swap's non-transfer to lockstep graphs).
+CaP-X [27] complements this lineage with an environment for composing
+perception/control primitives in executable programs and a benchmark
+that varies abstraction and perceptual grounding, alongside ASPIRE's
+skill-discovery loop.
+
+**Dora beneath an agent-facing tool API.** PhyAgentOS-core v1.0.0 [20]
+also uses dora for device execution, through Forge: its documented path
+is `ForgeToolClient` → HTTP Gateway `/tools` → `ToolInvocation` →
+`ToolEndpoint` → dora/robot nodes. Its runtime renders the selected
+skill's dataflow, while the agent invokes tools with input/output
+schemas. AISLE instead makes capability manifests, topic contracts,
+graph composition and static validation part of the engineering action
+space. The released tool interface is thus an architectural analogue
+of the graph-hidden broker side of our proposed SPEC 440 comparison,
+on the same underlying middleware; it is not an implementation of our
+matched experimental protocol. Issue #347 is intended to test that
+interface distinction and has no confirmatory result yet.
+
+**Semantic acceptance and frozen evaluation.** PhyAgentOS [19]
+separates execution completion from task success and reuses its session
+execution/verification path for benchmarking. Its SessionVerifier can
+compose deterministic predicates, task evaluators, multimodal models
+and tool-assisted review. In its RoboCasa365 protocol, intervention
+can correct a false-negative completion judgment or continue execution
+with a recovery instruction. Those are different mechanisms: changed
+judgment and changed behavior. AISLE freezes its VER-* evaluator under
+CON-7; CAP-6 separately prevents skill candidates from lowering the
+registration pass-rate floor. These architectural comparisons
+do not use PhyAgentOS's reported results as evidence for AISLE.
+
+**Operating-system abstractions and runtime infrastructure.** AIOS [22]
+organizes LLM-agent services as an operating system, and MemGPT [23]
+manages information across memory tiers. TypeGo [21] extends the OS
+analogy to physical resources: its Skill Kernel arbitrates actuators,
+with bounded interruption for interruptible skills and resumption
+rules that depend on task origin. Its skills are developer-authored
+and verified. It overlaps planning with execution, whereas AISLE keeps
+the research LLM outside the lockstep control loop (ADR-30). This is a
+control-organization contrast, not a performance comparison or a claim
+that TypeGo lacks verification.
+Other runtime peers include ROSClaw [24], which connects OpenClaw to
+ROS 2 with capability discovery, action validation and audit logging;
+RoboOS [25], which combines hierarchical planning, a skill library and
+shared memory; and ABot-Claw [26], which combines capability scheduling,
+persistent multimodal memory and critic-guided replanning. These
+systems motivate comparisons at the execution and evidence boundaries,
+beyond the choice of model or middleware alone.
 
 **Robot-learning benchmarks.** RLBench [10], ManiSkill [11], and their
 successors fix environments and compare policies. We fix the
@@ -855,6 +902,30 @@ verification.)*
 18. G. Wang, Y. Xie, Y. Jiang, A. Mandlekar, C. Xiao, Y. Zhu, L. Fan,
     A. Anandkumar. *Voyager: An Open-Ended Embodied Agent with Large
     Language Models.* arXiv:2305.16291, 2023.
+19. Y. Liu, W. Chen, X. Song, et al. *PhyAgentOS: A Self-Evolving
+    Operating System for Embodied Agents with Decoupled Cognitive
+    Planning and Physical Execution.* [arXiv:2607.16636](https://arxiv.org/abs/2607.16636), 2026.
+20. PhyAgentOS contributors. *PhyAgentOS-core*, v1.0.0:
+    [Unified Tool API](https://github.com/PhyAgentOS/PhyAgentOS-core/blob/v1.0.0/docs/forge/UNIFIED_TOOL_API.md)
+    and [Forge runtime guide](https://github.com/PhyAgentOS/PhyAgentOS-core/blob/v1.0.0/docs/forge/README.md), 2026.
+21. G. Chen, A. Schott, L. Zhong. *TypeGo: An OS Runtime for Embodied
+    Agents.* [arXiv:2607.05482](https://arxiv.org/abs/2607.05482), 2026.
+22. K. Mei, Z. Li, S. Xu, et al. *AIOS: LLM Agent Operating System.*
+    [arXiv:2403.16971](https://arxiv.org/abs/2403.16971), 2024.
+23. C. Packer, S. Wooders, K. Lin, et al. *MemGPT: Towards LLMs as
+    Operating Systems.* [arXiv:2310.08560](https://arxiv.org/abs/2310.08560), 2023.
+24. I. S. Cardenas, M. A. Arnett, N. C. Yeo, et al. *ROSClaw: An
+    OpenClaw ROS 2 Framework for Agentic Robot Control and Interaction.*
+    [arXiv:2603.26997](https://arxiv.org/abs/2603.26997), 2026.
+25. H. Tan, X. Hao, C. Chi, et al. *RoboOS: A Hierarchical Embodied
+    Framework for Cross-Embodiment and Multi-Agent Collaboration.*
+    [arXiv:2505.03673](https://arxiv.org/abs/2505.03673), 2025.
+26. D. Huo, H. Liu, G. Liu, et al. *ABot-Claw: A Foundation for
+    Persistent, Cooperative, and Self-Evolving Robotic Agents.*
+    [arXiv:2604.10096](https://arxiv.org/abs/2604.10096), 2026.
+27. L. Fu, J. Yu, K. El-Refai, et al. *CaP-X: A Framework for
+    Benchmarking and Improving Coding Agents for Robot Manipulation.*
+    [arXiv:2603.22435](https://arxiv.org/abs/2603.22435), 2026.
 
 ## Reproducibility
 

@@ -17,6 +17,14 @@ approval, STA-12 independent statistical review, BND-1 candidate amendment)
 and the machine gates whose instruments are not built yet are listed under
 `pending_gates`. Nothing in this directory authorizes scored collection.
 
+A `pilot` registration (ADR-66) is a distinct campaign identity. Its sessions
+run through the unchanged engineering path (`matched_campaign.py run
+--purpose engineering`, retained and unscored; the executor still refuses any
+scored purpose without CSE-10 gate records) into an output root named by the
+pilot campaign id. Pilot records may calibrate the CSE-8 power inputs and
+never enter a confirmatory estimate (STA-3); a confirmatory declaration cannot
+inherit a pilot's seed commitment.
+
 ## Seeds are withheld
 
 Held-out seed values live outside every worktree under
