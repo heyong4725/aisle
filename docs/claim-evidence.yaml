@@ -163,11 +163,35 @@ claims:
     evidence:
       - value: not_applicable
         rationale: "Issue #347 remains dependent on controls and protocol freeze."
+      - kind: protocol
+        path: analysis/freeze/cse-causal-study-pilot-v1/declaration.json
+        scope: simulation
+        rationale: >-
+          CSE-8 power-input source (ADR-66 pilot tier): the pilot registration
+          cse-causal-study-pilot-v1 (purpose pilot, fresh seed commitment,
+          6 sessions per arm). Zero sessions were collected; see the report.
+      - kind: protocol
+        path: analysis/reports/cse_pilot_v1.md
+        scope: simulation
+        rationale: >-
+          CSE-8 power inputs as recorded by the pilot: control success = not
+          collected (0 of 0), effect direction = unobserved, per-session
+          tokens/wall/rollouts = none, validate-fix cycles = none. The
+          confirmatory sample size stays an assumption-based 49 per arm
+          (control 0.40, risk difference 0.25) until a pilot runs.
+      - kind: raw_record
+        path: analysis/freeze/cse-causal-study-pilot-v1/executor-preflight.json
+        scope: simulation
+        rationale: >-
+          Refusal receipts for why the pilot could not collect with the current
+          infrastructure (T1-only development mode, oracle state on the policy
+          path, no eligible BND stratum).
     counterevidence:
       - Historical single-session ablations do not isolate typed dataflow structure.
       - The monolithic equal-capability control exists (SPEC 440 surface, docs/monolithic/) and passed an 8/8 seeds 0..7 engineering shakeout, but expert parity is blocked on independent authorship (MON-9) and no agent session has used it.
     limitations:
       - No superiority, equivalence, or non-inferiority conclusion is currently allowed.
+      - The 2026-09-12 pilot registration (cse-causal-study-pilot-v1) collected zero sessions; every CSE-8 power input is still an assumption and the pilot's gates are all pending.
     allowed_wording:
       readme: "UNRUN: typed-versus-monolithic superiority is the confirmatory claim under test."
       technical_report: "UNRUN: historical development results do not establish the causal effect."
