@@ -71,6 +71,11 @@ recorded as `failed` at that report (22 of 22 strata below the floor), the
 disposition stays "not perception-eligible", and the seed commitment is
 inherited unverified as before.
 
+cse-causal-study-v17 and cse-causal-study-pilot-v2 supersede v16 and pilot-v1
+after the matched executor gained the development protocol v2 bound to
+`docs/monolithic/candidates.json` (hashed controller sources changed; seed
+commitments inherited, pending gates preserved, pilot design unchanged).
+
 To make such a pending successor, set `seed_commitment.inherited_from` and
 `artifacts.seed_commitment_predecessor` to the same predecessor manifest path,
 name its campaign in `superseded`, preserve its seed rules and source paths,

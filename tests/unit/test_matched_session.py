@@ -1169,6 +1169,52 @@ def test_development_protocol_is_bound_and_reverified(tmp_path):
     assert plan["confirmatory_ready"] is False
 
 
+def test_v2_development_protocol_binds_the_candidate_table(tmp_path):
+    """MON-3/MON-8: a v2 protocol admits by candidate id, retains the derived launch
+    fields, binds the table hash into the plan, and re-verifies to itself."""
+    from aisle.harness.candidates import candidates_sha256
+    from aisle.harness.matched_session import admit_pair, verify_plan
+
+    control, candidates, roots = prepared_pair(tmp_path)
+    protocol = {
+        "schema_version": "aisle.matched-development.v2",
+        "purpose": "expert_parity",
+        "candidate": "t1-oracle",
+        "candidates_sha256": candidates_sha256(control),
+        "seeds": [7],
+        "run_ceiling": 1,
+        "episode_ceiling": 1,
+        "timeout_s": 30,
+    }
+    plan = admit_pair(control, candidates, roots, development=protocol)
+    development = plan["development"]
+    assert development["candidate"] == "t1-oracle"
+    assert development["typed_graph"] == "graphs/expert_t1.yaml"
+    assert development["verifier"] == "oracle" and development["embodiment"] == "franka"
+    assert "docs/monolithic/candidates.json" in plan["surface"]["artifact_hashes"]
+    assert verify_plan(plan, control, roots) == plan
+
+
+def test_v2_development_protocol_refuses_a_candidate_whose_artifacts_are_absent(tmp_path):
+    """MON-8: the declared T1-L2 row cannot be admitted until its monolithic pair exists."""
+    from aisle.harness.candidates import candidates_sha256
+    from aisle.harness.matched_session import AdmissionError, admit_pair
+
+    control, candidates, roots = prepared_pair(tmp_path)
+    protocol = {
+        "schema_version": "aisle.matched-development.v2",
+        "purpose": "expert_parity",
+        "candidate": "t1-l2-realistic",
+        "candidates_sha256": candidates_sha256(control),
+        "seeds": [7],
+        "run_ceiling": 1,
+        "episode_ceiling": 1,
+        "timeout_s": 30,
+    }
+    with pytest.raises(AdmissionError, match="artifact missing"):
+        admit_pair(control, candidates, roots, development=protocol)
+
+
 @pytest.mark.parametrize(
     "field,value",
     [
