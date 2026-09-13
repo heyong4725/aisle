@@ -160,3 +160,12 @@ def test_request_surface_matches_public_primitive_api():
 
     assert READS["primitives"] | CALLS["primitives"] == set(PUBLIC_API)
     assert not READS["primitives"] & CALLS["primitives"]
+
+
+def test_l2_pose_session_dispatches_as_a_pose_handle():
+    """MON-3/MON-5: the worker request layer types the L2 session as a pose handle
+    so an L2 module can create it under the matched executor's worker mode."""
+    from aisle.monolith.requests import TYPES
+    from aisle.nodes.l2_pose import L2Session
+
+    assert TYPES[L2Session] == "pose"

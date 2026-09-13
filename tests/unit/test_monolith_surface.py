@@ -513,3 +513,29 @@ def test_run_refuses_a_template_that_binds_no_monolithic_module(tmp_path, monkey
     assert result["ok"] is False and result["error"] == "unsupported_monolithic_template"
     result = monolith.run(ROOT, EXPERT, seeds=[0], episodes=1, template="pyproject.toml")
     assert result["ok"] is False and result["error"] == "unsupported_monolithic_template"
+
+
+def test_l2_pose_session_is_the_pinned_detected_pose_object():
+    """MON-3/MON-5/BND-2: the L2 primitive is the same L2Session the typed
+    detected-pose node runs, driven by rgb + depth, never a segmentation mask;
+    it is part of the public API and pinned by import path."""
+    from aisle.monolith import primitive_api
+    from aisle.nodes import l2_pose
+
+    assert "l2_pose_session" in primitives.PUBLIC_API
+    assert primitives.PINNED_IMPLEMENTATIONS["pose_l2"] == "aisle.nodes.l2_pose.L2Session"
+    assert "l2_pose_session" in primitive_api.CALLS["primitives"]
+    assert primitive_api.CREATES["l2_pose_session"] == "pose"
+    assert {"on_rgb", "on_depth", "on_bridge_info"} <= primitive_api.CALLS["pose"]
+    assert callable(primitives.Primitives.l2_pose_session)
+    assert callable(l2_pose.lazy_pinned_detector())  # no model load until the first frame
+    assert l2_pose.L2Session.on_rgb is l2_pose.FramePairSession.on_obs
+    assert callable(l2_pose.pinned_detector) and callable(l2_pose.pinned_backprojector)
+
+
+def test_t1_l2_module_checks_against_the_broker():
+    """MON-3: the L2 expert compiles and constructs with no simulator."""
+    from aisle.harness import monolith
+
+    result = monolith.check_module(ROOT / "experts/monolithic/expert_t1_l2.py")
+    assert result["ok"] is True, result

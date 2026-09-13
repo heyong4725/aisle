@@ -10,8 +10,22 @@ READS = {
     "streamer": {"done"},
 }
 CALLS = {
-    "primitives": {"pose_session", "plan_grasp", "staged_plan", "streamer", "describe"},
-    "pose": {"on_bridge_info", "on_target_request", "on_seg", "on_depth", "on_reset_done"},
+    "primitives": {
+        "pose_session",
+        "l2_pose_session",
+        "plan_grasp",
+        "staged_plan",
+        "streamer",
+        "describe",
+    },
+    "pose": {
+        "on_bridge_info",
+        "on_target_request",
+        "on_seg",
+        "on_rgb",
+        "on_depth",
+        "on_reset_done",
+    },
     "grasp": set(),
     "staged": set(),
     "stage": set(),
@@ -19,6 +33,7 @@ CALLS = {
 }
 CREATES = {
     "pose_session": "pose",
+    "l2_pose_session": "pose",
     "plan_grasp": "grasp",
     "staged_plan": "staged",
     "streamer": "streamer",

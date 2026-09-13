@@ -306,13 +306,16 @@ def build_parser() -> argparse.ArgumentParser:
     mono_table = monolith_sub.add_parser("table", help="MON-1 treatment table render/check")
     mono_table.add_argument("--write", action="store_true")
     mono_table.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    mono_table.add_argument("--candidate", default=None, help="candidate id (default: T1 pair)")
     mono_iface = monolith_sub.add_parser("interface", help="MON-4 interface map exactness")
     mono_iface.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    mono_iface.add_argument("--candidate", default=None, help="candidate id (default: T1 pair)")
     mono_parity = monolith_sub.add_parser("parity", help="MON-10 parity gate over two runs")
     mono_parity.add_argument("--typed", type=Path, required=True, help="typed episodes.jsonl")
     mono_parity.add_argument("--monolithic", type=Path, required=True)
     mono_parity.add_argument("--output", type=Path, default=None)
     mono_parity.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    mono_parity.add_argument("--candidate", default=None, help="candidate id (default: T1 pair)")
     perception = subparsers.add_parser(
         "perception", help="independent perception audit with hidden truth (SPEC 490)"
     )
@@ -471,11 +474,22 @@ def main() -> int:
 
                 report = {"ok": True, **Primitives._load(args.embodiment).describe()}
             elif args.monolith_command == "table":
-                report = mono.table_report(args.root, write=args.write)
+                report = mono.table_report(
+                    args.root,
+                    write=args.write,
+                    documents=mono.candidate_documents(args.root, args.candidate),
+                )
             elif args.monolith_command == "interface":
-                report = mono.interface_report(args.root)
+                report = mono.interface_report(
+                    args.root, documents=mono.candidate_documents(args.root, args.candidate)
+                )
             else:
-                report = mono.parity_report(args.root, args.typed, args.monolithic)
+                report = mono.parity_report(
+                    args.root,
+                    args.typed,
+                    args.monolithic,
+                    documents=mono.candidate_documents(args.root, args.candidate),
+                )
                 if args.output is not None:
                     args.output.parent.mkdir(parents=True, exist_ok=True)
                     args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

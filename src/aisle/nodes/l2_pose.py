@@ -183,27 +183,55 @@ class L2Session(FramePairSession):
         }
 
 
+def pinned_detector() -> Callable[[np.ndarray], list[dict]]:
+    """The pinned OWLv2 identity detector over the frozen med vocabulary: the
+    same object the detected-pose node and the monolithic primitive share
+    (MON-5); model weights load once, on first construction."""
+    from aisle.scenes.pharmacy import MED_NAMES
+    from aisle.verifier.models import detect_meds, load_pinned
+
+    model_pair = load_pinned("identity")
+    return lambda rgb: detect_meds(rgb, MED_NAMES, model_pair=model_pair)
+
+
+def lazy_pinned_detector() -> Callable[[np.ndarray], list[dict]]:
+    """`pinned_detector` whose model loads on the first frame, not at
+    construction: a module check (no simulator, no frames) never loads it."""
+    loaded: list[Callable] = []
+
+    def detect(rgb: np.ndarray) -> list[dict]:
+        if not loaded:
+            loaded.append(pinned_detector())
+        return loaded[0](rgb)
+
+    return detect
+
+
+def pinned_backprojector() -> Callable[[dict], Callable]:
+    """Depth back-projection under the bridge calibration, shared with L1."""
+    from aisle.verifier.stages import backproject_overhead
+
+    return lambda calibration: (
+        lambda depth, pixels: backproject_overhead(depth, calibration, pixels)
+    )
+
+
 def main() -> None:  # pragma: no cover — dora runtime
     import json
     import sys
 
     import pyarrow as pa
 
-    from aisle.scenes.pharmacy import MED_NAMES, load_meds
+    from aisle.scenes.pharmacy import load_meds
     from aisle.topics import make_sender
     from aisle.turn_node import Node
-    from aisle.verifier.models import detect_meds, load_pinned
-    from aisle.verifier.stages import backproject_overhead
 
-    model_pair = load_pinned("identity")
     node = Node()
     send = make_sender(node)
     session = L2Session(
         meds=load_meds(),
-        detector=lambda rgb: detect_meds(rgb, MED_NAMES, model_pair=model_pair),
-        backprojector=lambda calibration: (
-            lambda depth, pixels: backproject_overhead(depth, calibration, pixels)
-        ),
+        detector=pinned_detector(),
+        backprojector=pinned_backprojector(),
     )
 
     for event in node:

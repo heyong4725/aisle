@@ -43,7 +43,7 @@ stayed outside it).
 
 | Surface | Count |
 |---|---:|
-| Graphs | 24 |
+| Graphs | 25 |
 | Capability manifests | 42 |
 | CLI command entries | 39 |
 | ADR files | 85 |
@@ -71,6 +71,7 @@ stayed outside it).
 | [graphs/expert_t4.yaml](../../graphs/expert_t4.yaml) | pharmacy (default) / — | franka (default) | L1 | 11 |
 | [graphs/expert_t4_inc2.yaml](../../graphs/expert_t4_inc2.yaml) | pharmacy (default) / — | franka (default) | L1 | 12 |
 | [graphs/monolithic_t1.yaml](../../graphs/monolithic_t1.yaml) | pharmacy (default) / — | franka (default) | L1 | 7 |
+| [graphs/monolithic_t1_l2.yaml](../../graphs/monolithic_t1_l2.yaml) | pharmacy (default) / — | franka (default) | L2 | 7 |
 | [graphs/shield_t0_none_adversary.yaml](../../graphs/shield_t0_none_adversary.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 12 |
 | [graphs/shield_t0_oracle.yaml](../../graphs/shield_t0_oracle.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 11 |
 | [graphs/shield_t0_oracle_adversary.yaml](../../graphs/shield_t0_oracle_adversary.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 12 |
@@ -98,6 +99,7 @@ stayed outside it).
 - **graphs/expert_t4.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `human-sim`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/expert_t4_inc2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `human-sim`, `task-state-machine`, `rollout-client`, `turn-barrier`, `return-planner`
 - **graphs/monolithic_t1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `monolith-broker`, `verifier-oracle`, `rollout-client`, `turn-barrier`
+- **graphs/monolithic_t1_l2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `monolith-broker`, `verifier-oracle`, `rollout-client`, `turn-barrier`
 - **graphs/shield_t0_none_adversary.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `semantic-gateway`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `goal-adversary`, `turn-barrier`
 - **graphs/shield_t0_oracle.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `semantic-gateway`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/shield_t0_oracle_adversary.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `semantic-gateway`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `goal-adversary`, `turn-barrier`
@@ -172,10 +174,10 @@ stayed outside it).
 | `harness hardware report` | `--station`, `--output` |
 | `harness monolith check` | `--module`, `--embodiment`, `--worker-config`, `--worker-config-sha256` |
 | `harness monolith describe` | `--embodiment` |
-| `harness monolith interface` | `--root` |
-| `harness monolith parity` | `--typed`, `--monolithic`, `--output`, `--root` |
+| `harness monolith interface` | `--root`, `--candidate` |
+| `harness monolith parity` | `--typed`, `--monolithic`, `--output`, `--root`, `--candidate` |
 | `harness monolith run` | `--module`, `--tier`, `--embodiment`, `--episodes`, `--seeds`, `--run-id`, `--timeout-s`, `--no-idea-gate`, `--root`, `--template`, `--verifier`, `--reset`, `--worker-config`, `--worker-config-sha256` |
-| `harness monolith table` | `--write`, `--root` |
+| `harness monolith table` | `--write`, `--root`, `--candidate` |
 | `harness perception audit` | `--run`, `--envelope`, `--output` |
 | `harness probe` | `--dataflow`, `--topic`, `--for`, `--root` |
 | `harness report close` | `--id`, `--observed`, `--verdict`, `--root` |

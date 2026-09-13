@@ -125,6 +125,8 @@ from aisle.harness.threat_model import (
 
 pytestmark = pytest.mark.unit
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 def test_frozen_thresholds_reject_mutable_envelope():
     with pytest.raises(SemanticAuthorizationError, match="frozen"):
@@ -889,3 +891,50 @@ def test_attack_execution_rejects_unattempted_bypass():
         validate_attack_execution(
             [{"attack": "env", "attempted": False, "disposition": "blocked", "evidence": "log"}]
         )
+
+
+def _policy_inputs(graph_path, policy_nodes):
+    """Privileged simulator channels reaching policy nodes, in BND-2 vocabulary."""
+    import yaml
+
+    privileged = {"seg_overhead": "segmentation_mask", "oracle_state": "simulator_pose"}
+    graph = yaml.safe_load((REPO_ROOT / graph_path).read_text())
+    inputs, verifier_only = set(), set()
+    for node in graph["nodes"]:
+        for spec in (node.get("inputs") or {}).values():
+            src = spec["source"] if isinstance(spec, dict) else spec
+            port = src.split("/")[-1]
+            if port in privileged:
+                (inputs if node["id"] in policy_nodes else verifier_only).add(privileged[port])
+    return sorted(inputs), sorted(verifier_only)
+
+
+@pytest.mark.parametrize(
+    "graph,policy_nodes",
+    [
+        (
+            "graphs/expert_t1_l2.yaml",
+            {"detected-pose", "grasp-planner-topdown", "ik-trajectory", "task-state-machine"},
+        ),
+        ("graphs/monolithic_t1_l2.yaml", {"monolith-broker"}),
+    ],
+)
+def test_t1_l2_pair_keeps_oracle_state_off_the_policy_path(graph, policy_nodes):
+    """BND-2/BND-3/MON-4: neither arm of the L2 pair receives a segmentation mask or
+    simulator pose; those channels reach only the frozen verifier."""
+    from aisle.harness.non_oracle import validate_oracle_boundary
+
+    inputs, verifier_only = _policy_inputs(graph, policy_nodes)
+    assert inputs == [] and verifier_only == ["simulator_pose"]
+    validate_oracle_boundary(inputs, verifier_only)
+
+
+def test_t1_pair_is_rejected_by_the_same_boundary_check():
+    """BND-2: the T1 pair puts the segmentation mask on the policy path (the reason
+    the pilot needed the L2 pair)."""
+    from aisle.harness.non_oracle import NonOracleError, validate_oracle_boundary
+
+    inputs, verifier_only = _policy_inputs("graphs/monolithic_t1.yaml", {"monolith-broker"})
+    assert "segmentation_mask" in inputs
+    with pytest.raises(NonOracleError):
+        validate_oracle_boundary(inputs, verifier_only)

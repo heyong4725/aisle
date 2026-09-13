@@ -45,6 +45,7 @@ PUBLIC_API = (
     "home",
     "layout",
     "pose_session",
+    "l2_pose_session",
     "plan_grasp",
     "staged_plan",
     "streamer",
@@ -112,13 +113,21 @@ class Primitives:
         `on_depth`, `on_reset_done`; a paired same-stamp frame yields the
         estimate dict (pos, target_med, neighbours, ...) or raises
         `segmented_pose.PoseRefused` (TC-9)."""
-        from aisle.verifier.stages import backproject_overhead
+        from aisle.nodes.l2_pose import pinned_backprojector
 
-        return segmented_pose.L1Session(
-            meds=self.meds,
-            backprojector=lambda calibration: (
-                lambda depth, pixels: backproject_overhead(depth, calibration, pixels)
-            ),
+        return segmented_pose.L1Session(meds=self.meds, backprojector=pinned_backprojector())
+
+    def l2_pose_session(self):
+        """The L2 pose estimator, byte-for-byte the object detected-pose
+        runs: feed `on_bridge_info`, `on_target_request`, `on_rgb`,
+        `on_depth`, `on_reset_done`; a paired same-stamp frame yields the
+        estimate dict or raises `PoseRefused` when the pinned open-vocabulary
+        detector has no confident target (TC-9). No segmentation mask is
+        involved (BND-2)."""
+        from aisle.nodes.l2_pose import L2Session, lazy_pinned_detector, pinned_backprojector
+
+        return L2Session(
+            meds=self.meds, detector=lazy_pinned_detector(), backprojector=pinned_backprojector()
         )
 
     def plan_grasp(self, pose, target_med: str, neighbours: list | None = None) -> GraspPlan:
@@ -202,6 +211,7 @@ class Primitives:
 #: typed nodes call
 PINNED_IMPLEMENTATIONS = {
     "pose": "aisle.nodes.segmented_pose.L1Session",
+    "pose_l2": "aisle.nodes.l2_pose.L2Session",
     "grasp": "aisle.nodes.grasp_topdown.plan_grasp",
     "trajectory": "aisle.nodes.ik_trajectory.StagedPlan",
     "executor": "aisle.nodes.ik_trajectory.StageStreamer",
