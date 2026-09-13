@@ -64,6 +64,13 @@ seed commitment or authorization to collect scores. Strict checks still
 require those sources. See
 [the inheritance decision](../../docs/decisions/ADR-seed-commitment-inheritance.md).
 
+bnd-task-band-calibration-v11 supersedes v10 after the BND-5 perception audit
+was regenerated with the hardened auditor on a 32-seed corpus
+(`analysis/perception-audit/records/bnd-perception-corpus-03/`); the gate is
+recorded as `failed` at that report (22 of 22 strata below the floor), the
+disposition stays "not perception-eligible", and the seed commitment is
+inherited unverified as before.
+
 To make such a pending successor, set `seed_commitment.inherited_from` and
 `artifacts.seed_commitment_predecessor` to the same predecessor manifest path,
 name its campaign in `superseded`, preserve its seed rules and source paths,
@@ -171,6 +178,7 @@ CSE v15 supersedes v14 for the owned Responses provider relay, per-item native
 reservations, and provider-to-frontend/controller source auditing (#536). It
 binds the complete controller source set and provider documentation while
 preserving the inherited seed commitment, collection rules and all seven pending
-gates. BND v10 remains current because its declared inputs did not change.
+gates. BND v10 remained current at that point (its declared inputs did not
+change); v11 later superseded it after the regenerated audit.
 Engineering route tests do not establish complete frontend conformance,
 independent confinement, or permission to collect study results.
