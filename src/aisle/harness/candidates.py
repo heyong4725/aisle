@@ -224,3 +224,10 @@ def launch_fields_for(development: dict | None) -> dict:
     if development is None:
         return copy.deepcopy(T1_ORACLE_FIELDS)
     return launch_fields(development)
+
+
+def documents_for(development: dict | None) -> dict:
+    """The MON-8 document set a retained development form selects (T1 when None)."""
+    if development is None:
+        return copy.deepcopy(T1_ORACLE_FIELDS["documents"])
+    return launch_fields(development)["documents"]
