@@ -57,6 +57,52 @@ uv run harness perception audit --run runs/bnd-perception-corpus-02 \
   --output analysis/perception-audit/records/bnd-perception-corpus-02/report.json
 ```
 
+## Second audit: `records/bnd-perception-corpus-03/` (2026-09-13)
+
+Regenerated with the hardened auditor under the unchanged envelope, as the
+v10 registration required. Corpus: `graphs/expert_t1_l2.yaml`, tier T1, rung
+L2, Franka, seeds 0..31 (development seeds), frames captured every 0.1 s on
+both cameras; episode outcomes 28/32 (seeds 1, 6, 11 and 31 never grasped).
+Split by seed parity: 5428 calibration and 4577 evaluation unique frames, of
+which 320 evaluation frames fall inside the 2 s operating window and are
+scored (14735 rows are retained in `raw-predictions.json.gz`, all of them,
+so `report_hash` can be recomputed). Result:
+**not eligible**, 22 of 22 strata fail. Ibuprofen refuses 68 of 80 evaluation
+frames (accuracy lower bound 0.010); the other four targets score 50 to 57 of
+60 with lower bounds 0.734 to 0.876 against the 0.90 floor; the overhead sensor
+stratum is 214/320 (0.669, lower bound 0.623). Failure taxonomy: 214 correct, 75 refused,
+31 localization errors, 0 wrong identity, 0 missing data. Latency median 0.77 s,
+max 0.96 s, within the 5 s ceiling. More seeds did not change the picture: the
+seed strata are still 20 correlated frames each (the operating window bounds
+them), and the target strata fail on accuracy, not sample size. No threshold
+was changed (BND-10). `eligibility.json` is the `tools/perception_eligibility.py`
+record over this report: it recomputes `report_hash` from the retained raw
+predictions, matches the envelope hash and the run's graph, and derives every
+stratum's eligibility from its lower bound and refusal rate against the
+envelope, never from the report's own pass flags.
+
+```bash
+AISLE_FRAME_CAPTURE_PERIOD_S=0.1 uv run harness rollout --graph graphs/expert_t1_l2.yaml \
+  --tier T1 --embodiment franka --perception L2 --episodes 32 --seeds 0..31 \
+  --no-idea-gate --env-baseline local --run-id bnd-perception-corpus-03
+uv run harness perception audit --run runs/bnd-perception-corpus-03 \
+  --envelope analysis/perception-audit/envelope.json \
+  --output /tmp/bnd-perception-corpus-03-report.json
+uv run python tools/perception_record.py \
+  --report /tmp/bnd-perception-corpus-03-report.json \
+  --run runs/bnd-perception-corpus-03 \
+  --output analysis/perception-audit/records/bnd-perception-corpus-03
+uv run python tools/perception_eligibility.py \
+  --report analysis/perception-audit/records/bnd-perception-corpus-03/report.json \
+  --envelope analysis/perception-audit/envelope.json \
+  --candidate t1-l2-expert-graph --role short_composition \
+  --graph graphs/expert_t1_l2.yaml \
+  --output analysis/perception-audit/records/bnd-perception-corpus-03/eligibility.json
+```
+
+Raw run evidence (1.1 GB of traces) is retained privately under
+`~/aisle-private/raw/bnd-perception-corpus-03`.
+
 ## Auditor integrity revision (#346)
 
 The hardened auditor passes only the assigned target to the localizer; oracle
@@ -66,9 +112,10 @@ and invalid limits, retains missing observations in accuracy denominators, and
 requires evaluation coverage of every declared target class. These API checks
 do not establish process isolation or independence of correlated frames.
 
-The report above remains historical evidence from the previous auditor. BND
-registration v7 requires a new audit and remains pending; no threshold, seed
-commitment, or candidate eligibility has changed. Replays must use a new output
+The corpus-02 report above remains historical evidence from the previous
+auditor; corpus-03 is the hardened-auditor regeneration that BND v7 through
+v10 required, registered as v11. No threshold, seed
+commitment, or eligibility rule has changed. Replays must use a new output
 path rather than overwrite the retained report.
 
 A further geometry revision rejects non-finite or non-xyz localization output

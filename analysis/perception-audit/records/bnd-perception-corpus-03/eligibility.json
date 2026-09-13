@@ -1,0 +1,283 @@
+{
+  "candidate": "t1-l2-expert-graph",
+  "eligibility": "not_eligible",
+  "envelope_hash": "sha256:3af3c699c80132cf9bc9032be0e43d81071ab9256f6111bbcc5da2cf09cbdbf4",
+  "errors": [
+    "target_class=ibuprofen: accuracy lower bound 0.010 or refusal 0.85 outside the envelope",
+    "target_class=omeprazole: accuracy lower bound 0.734 or refusal 0.12 outside the envelope",
+    "target_class=amoxicillin: accuracy lower bound 0.876 or refusal 0.00 outside the envelope",
+    "target_class=cetirizine: accuracy lower bound 0.772 or refusal 0.00 outside the envelope",
+    "target_class=metformin: accuracy lower bound 0.772 or refusal 0.00 outside the envelope",
+    "seed=1: accuracy lower bound 0.000 or refusal 1.00 outside the envelope",
+    "seed=3: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=5: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=7: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=9: accuracy lower bound 0.544 or refusal 0.00 outside the envelope",
+    "seed=11: accuracy lower bound 0.000 or refusal 1.00 outside the envelope",
+    "seed=13: accuracy lower bound 0.394 or refusal 0.35 outside the envelope",
+    "seed=15: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=17: accuracy lower bound 0.544 or refusal 0.00 outside the envelope",
+    "seed=19: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=21: accuracy lower bound 0.042 or refusal 0.40 outside the envelope",
+    "seed=23: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=25: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=27: accuracy lower bound 0.717 or refusal 0.00 outside the envelope",
+    "seed=29: accuracy lower bound 0.717 or refusal 0.00 outside the envelope",
+    "seed=31: accuracy lower bound 0.000 or refusal 1.00 outside the envelope",
+    "sensor=overhead: accuracy lower bound 0.623 or refusal 0.23 outside the envelope",
+    "perception eligibility failed in a stratum"
+  ],
+  "graph": "graphs/expert_t1_l2.yaml",
+  "graph_hash": "023eef3fb51f41e0fbe78f0b430989c4a326c617b39dd01ea5662b445aaa350c",
+  "ok": false,
+  "report_hash": "sha256:8ef395845536b79645a27bba472a3eebad5e5e7fada07ba0e54fc7689fad656e",
+  "report_run_id": "bnd-perception-corpus-03",
+  "role": "short_composition",
+  "schema_version": "aisle.perception-eligibility.v1",
+  "selector_input_complete": false,
+  "strata": [
+    {
+      "accuracy": 0.0,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=1",
+      "refusal_rate": 1.0
+    },
+    {
+      "accuracy": 0.0,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=11",
+      "refusal_rate": 1.0
+    },
+    {
+      "accuracy": 0.6,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=13",
+      "refusal_rate": 0.35
+    },
+    {
+      "accuracy": 0.95,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=15",
+      "refusal_rate": 0.0
+    },
+    {
+      "accuracy": 0.75,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=17",
+      "refusal_rate": 0.0
+    },
+    {
+      "accuracy": 0.95,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=19",
+      "refusal_rate": 0.0
+    },
+    {
+      "accuracy": 0.15,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=21",
+      "refusal_rate": 0.4
+    },
+    {
+      "accuracy": 0.95,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=23",
+      "refusal_rate": 0.0
+    },
+    {
+      "accuracy": 0.95,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=25",
+      "refusal_rate": 0.0
+    },
+    {
+      "accuracy": 0.9,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=27",
+      "refusal_rate": 0.0
+    },
+    {
+      "accuracy": 0.9,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=29",
+      "refusal_rate": 0.0
+    },
+    {
+      "accuracy": 0.95,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=3",
+      "refusal_rate": 0.0
+    },
+    {
+      "accuracy": 0.0,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=31",
+      "refusal_rate": 1.0
+    },
+    {
+      "accuracy": 0.95,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=5",
+      "refusal_rate": 0.0
+    },
+    {
+      "accuracy": 0.95,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=7",
+      "refusal_rate": 0.0
+    },
+    {
+      "accuracy": 0.75,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "seed=9",
+      "refusal_rate": 0.0
+    },
+    {
+      "accuracy": 0.66875,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "sensor=overhead",
+      "refusal_rate": 0.234375
+    },
+    {
+      "accuracy": 0.95,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "target_class=amoxicillin",
+      "refusal_rate": 0.0
+    },
+    {
+      "accuracy": 0.8666666666666667,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "target_class=cetirizine",
+      "refusal_rate": 0.0
+    },
+    {
+      "accuracy": 0.0375,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "target_class=ibuprofen",
+      "refusal_rate": 0.85
+    },
+    {
+      "accuracy": 0.8666666666666667,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "target_class=metformin",
+      "refusal_rate": 0.0
+    },
+    {
+      "accuracy": 0.8333333333333334,
+      "eligible": false,
+      "latency_ms": 957.0560419815592,
+      "max_error": {
+        "reason": "localization failures are counted in accuracy via the taxonomy",
+        "reported": false
+      },
+      "name": "target_class=omeprazole",
+      "refusal_rate": 0.11666666666666667
+    }
+  ],
+  "wording": "BND-7 perception eligibility only; the BND-10 selector also needs BND-8 parity and BND-9 pilot-band evidence, which this record does not carry"
+}
