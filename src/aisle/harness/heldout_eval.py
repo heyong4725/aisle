@@ -35,20 +35,21 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _read_json(path: Path) -> dict:
+def read_json(path: Path, error: type[Exception] = HeldoutError) -> dict:
+    """One JSON object from retained evidence; anything else raises `error`."""
     try:
         value = json.loads(Path(path).read_bytes())
     except (OSError, json.JSONDecodeError) as exc:
-        raise HeldoutError(f"unreadable evidence: {path}: {exc}") from exc
+        raise error(f"unreadable evidence: {path}: {exc}") from exc
     if not isinstance(value, dict):
-        raise HeldoutError(f"evidence is not an object: {path}")
+        raise error(f"evidence is not an object: {path}")
     return value
 
 
 def verify_ready(session_dir: Path) -> dict:
     """An intact, completed engineering session with its final snapshot retained."""
     session_dir = Path(session_dir).absolute()
-    record = _read_json(session_dir / "matched-session.json")
+    record = read_json(session_dir / "matched-session.json")
     process = record.get("process")
     if (
         record.get("ok") is not True
@@ -251,11 +252,11 @@ def _run_heldout(request: dict, output: Path, launcher, verdicts, exposure) -> d
         raise HeldoutError("held-out output exists; evaluation is never resumed")
     session_dir = Path(request["session_dir"]).absolute()
     record = verify_ready(session_dir)
-    development = _read_json(session_dir / "admission.json").get("development")
+    development = read_json(session_dir / "admission.json").get("development")
     if development is None:
         raise HeldoutError("session was admitted without a development protocol")
     fields = launch_fields_for(development)
-    manifest = _read_json(Path(request["manifest"]))
+    manifest = read_json(Path(request["manifest"]))
     seeds = load_private_seeds(request["seeds_source"], request["salt_source"], manifest)
     if set(seeds) & set(development["seeds"]):
         raise HeldoutError("private seeds overlap the session's development seeds")
