@@ -10,7 +10,10 @@ from test_matched_worker_journal import _worker_inputs
 pytestmark = pytest.mark.unit
 
 
-def test_monolithic_preparation_uses_current_source_and_real_worker(tmp_path):
+@pytest.mark.parametrize("preparation_elapsed_s", [0, 31])
+def test_monolithic_preparation_uses_current_source_and_real_worker(
+    tmp_path, preparation_elapsed_s
+):
     """MON-3/MON-12: preparation does not replace ordinary authored failure with validation."""
     from aisle.harness.matched_evidence import audit_tool_journal
 
@@ -23,6 +26,19 @@ def test_monolithic_preparation_uses_current_source_and_real_worker(tmp_path):
     bundle.mkdir()
     module = views["monolithic"] / "experts/monolithic/expert_t1.py"
     module.write_text("API_VERSION='1.0'\nraise ValueError('current edited source')\n")
+    # Model slow runtime verification without sleeping or bypassing real
+    # preparation, subprocess execution, or retained-evidence verification.
+    clock = controller.clock
+    first = True
+
+    def delayed_preparation():
+        nonlocal first
+        if first:
+            first = False
+            return clock()
+        return clock() + preparation_elapsed_s
+
+    controller.clock = delayed_preparation
     result = controller.run_with_workers(declaration)
     assert result["classification"] == "tool_result", result
     assert not result["ok"]

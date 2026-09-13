@@ -62,16 +62,17 @@ def test_frontend_run_request_uses_private_current_source_preparation(tmp_path, 
         )
     channel = Path(controller.plan["ambient_bindings"][arm]["environment"]["HOME"]) / "tool-channel"
     channel.mkdir()
+    request_timeout_s = controller.plan["arms"][arm]["budget"]["tool_wall_ceiling_s"] + 30
     code = (
         "from aisle.harness.matched_tool_service import request_run; import json,sys; "
-        "print(json.dumps(request_run(sys.argv[1],timeout_s=45)))"
+        "print(json.dumps(request_run(sys.argv[1],timeout_s=float(sys.argv[2]))))"
     )
     with ToolService(controller):
         child = subprocess.run(
-            [sys.executable, "-c", code, str(channel)],
+            [sys.executable, "-c", code, str(channel), str(request_timeout_s)],
             capture_output=True,
             text=True,
-            timeout=50,
+            timeout=request_timeout_s + 5,
         )
         assert child.returncode == 0, child.stderr
         response = json.loads(child.stdout)
