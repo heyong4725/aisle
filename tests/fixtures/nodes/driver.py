@@ -28,6 +28,12 @@ def main() -> None:
     tick = 0
     reset_seeds = [int(s) for s in os.environ.get("DRIVER_RESET_SEEDS", "1").split(",")]
     spacing = int(os.environ.get("DRIVER_RESET_SPACING", "20"))
+    min_sim_ns = int(os.environ.get("DRIVER_RESET_MIN_SIM_NS", "0"))
+    if min_sim_ns < 0 or (min_sim_ns and mode != "reset"):
+        raise ValueError("DRIVER_RESET_MIN_SIM_NS requires reset mode and a nonnegative window")
+    pending_reset = None
+    reset_sim_ns = None
+    latest_sim_ns = None
     sent_resets = 0
     # $DRIVER_WAIT_BRIDGE_INFO=1: ignore ticks until the bridge publishes
     # bridge_info, so send timings count from a LIVE loop rather than from
@@ -40,6 +46,20 @@ def main() -> None:
             waiting = False
             continue
         if waiting:
+            continue
+        if min_sim_ns and event["id"] == "reset_done":
+            metadata = event.get("metadata", {})
+            if metadata.get("request_id") == pending_reset:
+                stamp = metadata.get("sim_time_ns")
+                if type(stamp) is int and stamp >= 0:
+                    reset_sim_ns = stamp
+            continue
+        if min_sim_ns and event["id"] == "joint_state":
+            stamp = event.get("metadata", {}).get("sim_time_ns")
+            if type(stamp) is int and stamp >= 0:
+                latest_sim_ns = max(latest_sim_ns or 0, stamp)
+            continue
+        if event["id"] != "tick":
             continue
         tick += 1
         if mode == "conformance":
@@ -54,12 +74,24 @@ def main() -> None:
                 )
         elif mode == "reset":
             if tick % spacing == 0 and sent_resets < len(reset_seeds):
+                if (
+                    min_sim_ns
+                    and sent_resets
+                    and (
+                        reset_sim_ns is None
+                        or latest_sim_ns is None
+                        or latest_sim_ns - reset_sim_ns < min_sim_ns
+                    )
+                ):
+                    continue
                 seed = reset_seeds[sent_resets]
                 sent_resets += 1
+                pending_reset = f"req-{sent_resets}-{seed}"
+                reset_sim_ns = None
                 node.send_output(
                     "reset",
                     pa.array(np.array([seed, 0], dtype=np.uint32)),
-                    metadata={"request_id": f"req-{sent_resets}-{seed}"},
+                    metadata={"request_id": pending_reset},
                 )
         elif mode == "episode":
             # the CLIENT only issues the goal; feedback and the result come
