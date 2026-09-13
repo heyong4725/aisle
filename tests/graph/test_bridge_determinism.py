@@ -65,6 +65,9 @@ def _run_pair_member(tmp_path, dataflow, name: str, spacing_ticks: int) -> list[
             "DRIVER_RESET_SPACING": spacing_ticks,
         },
         driver_waits_for_bridge_info=True,
+        # Wall ticks alone can expire while initial physics is slow. Protect
+        # the first window as well as the recorder's final-reset tail below.
+        driver_reset_min_sim_ns=int(NORMATIVE_WINDOW_NS * 1.2),
         step_without_reset=False,  # the production startup path IS the test
         duration_s=TAIL_S + spacing_ticks * DRIVER_TICK_S * 2,
         # issue #94: under suite load the wall window guessed wrong and

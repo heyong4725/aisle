@@ -56,6 +56,7 @@ def test_session_runner_provisions_real_arm_precheck(
         monkeypatch.setattr(sys, "executable", str(launcher))
     (output / "tool-events.jsonl").unlink()
     fixture = tmp_path / "fixture-agent"
+    request_timeout_s = controller.plan["arms"][selected_arm]["budget"]["tool_wall_ceiling_s"] + 30
     code = (
         "from pathlib import Path; import json; "
         "from aisle.harness.matched_tool_service import request_run; "
@@ -65,7 +66,7 @@ def test_session_runner_provisions_real_arm_precheck(
             if selected_arm == "typed"
             else ""
         )
-        + "response = request_run(Path.home()/'tool-channel',timeout_s=45); "
+        + f"response = request_run(Path.home()/'tool-channel',timeout_s={request_timeout_s}); "
         + "print(json.dumps({'type':'item.completed','item':{'id':'fixture-response',"
         "'type':'agent_message','text':json.dumps(response)}}))"
     )
@@ -81,7 +82,7 @@ def test_session_runner_provisions_real_arm_precheck(
         candidate.pop("immutable_id")
         candidate["repository"].pop("visible_files")
         candidate["agent"]["cli_binary_sha256"] = hashlib.sha256(fixture.read_bytes()).hexdigest()
-        candidate["budget"]["wall_ceiling_s"] = 60
+        candidate["budget"]["wall_ceiling_s"] = request_timeout_s + 30
         launches[arm] = {
             "argv": [str(fixture), "system prompt", "research contract"],
             "system_prompt_arg": 1,

@@ -58,6 +58,7 @@ def write_bridge_dataflow(
     with_reset_service: bool = False,
     with_guard: bool = False,
     driver_waits_for_bridge_info: bool = False,
+    driver_reset_min_sim_ns: int | None = None,
     step_without_reset: bool = True,
 ) -> Path:
     """step_without_reset defaults True: most fixture drivers never send a
@@ -73,6 +74,14 @@ def write_bridge_dataflow(
     Misconfiguration is rejected HERE, in the pytest process, because a
     recorder waiting on a topic it can never see burns the settle helper's
     whole outer deadline (PR #159 review)."""
+    if "DRIVER_RESET_MIN_SIM_NS" in (driver_env or {}):
+        raise ValueError("use driver_reset_min_sim_ns so acknowledgment/progress inputs are wired")
+    if driver_reset_min_sim_ns is not None and (
+        type(driver_reset_min_sim_ns) is not int
+        or driver_reset_min_sim_ns <= 0
+        or (driver_env or {}).get("DRIVER_MODE") != "reset"
+    ):
+        raise ValueError("driver_reset_min_sim_ns requires a positive integer and reset mode")
     recorder_inputs = {t: f"bridge/{t}" for t in BRIDGE_OUTPUTS}
     if with_guard:
         recorder_inputs["violation"] = _q("budget-guard/violation")
@@ -149,11 +158,24 @@ def write_bridge_dataflow(
                     # moment the bridge loop is live instead of process start
                     # (requests sent during the genesis build just queue up)
                     "bridge_info": "bridge/bridge_info",
+                    **(
+                        {
+                            "reset_done": _q("bridge/reset_done"),
+                            "joint_state": "bridge/joint_state",
+                        }
+                        if driver_reset_min_sim_ns is not None
+                        else {}
+                    ),
                 },
                 "outputs": DRIVER_OUTPUTS,
                 "env": {
                     **{k: str(v) for k, v in (driver_env or {}).items()},
                     **({"DRIVER_WAIT_BRIDGE_INFO": "1"} if driver_waits_for_bridge_info else {}),
+                    **(
+                        {"DRIVER_RESET_MIN_SIM_NS": str(driver_reset_min_sim_ns)}
+                        if driver_reset_min_sim_ns is not None
+                        else {}
+                    ),
                 },
             },
             *(

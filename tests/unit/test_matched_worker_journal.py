@@ -32,6 +32,9 @@ def _worker_inputs(tmp_path, *, authored_failure=True):
     for candidate in candidates.values():
         candidate.pop("immutable_id")
         candidate["repository"].pop("visible_files")
+        # Match the typed preparation fixture: real runtime verification,
+        # worker startup and evidence collection exceed lightweight tool checks.
+        candidate["budget"]["tool_wall_ceiling_s"] = 120
     runtime = capture_runtime(
         (*controller.plan["tool_runtime"]["trees"], worker_root / "bound-runtime-assets")
     )
