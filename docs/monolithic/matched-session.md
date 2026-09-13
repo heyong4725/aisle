@@ -458,3 +458,33 @@ exercise the selected sandbox profiles, but the access log is deliberately
 incomplete. The test requires successful run evidence and an excluded outer
 session, with no eligibility for study estimates. It does not establish paired
 expert parity, full tool coverage, or external confinement.
+
+## Held-out evaluation of a finished session
+
+```sh
+uv run --extra sim --locked --no-sync python tools/matched_campaign.py heldout-eval \
+  --request /absolute/controller/heldout-request.json
+```
+
+The request names `session_dir` (an intact completed attempt with
+`matched-session.json`, `admission.json` and the retained `final/` snapshot),
+`controller_root`, the registration's `manifest` (its `seed_commitment` is the
+only commitment accepted), the private `seeds_source` and `salt_source`, the
+frozen `rule` (`{"kind": "oracle_successes_at_least", "threshold": N}`, with
+`1 <= N <= seeds`) and `timeout_s`. The evidence always lands at
+`<session_dir>/heldout/heldout-evidence.json`; an existing `heldout/` refuses.
+The controller refuses a session that is not an intact completed engineering
+session, a drifted final snapshot, seeds that do not match the registered
+commitment or overlap the session's development seeds, and an unresolved rule.
+It rebuilds the submitted system from the controller's committed tree (git HEAD,
+recorded as `controller_commit`) with the final deliverable overlaid, runs it
+through the arm's own launcher as a separate process rooted at that view on the
+private seeds with the realistic verifier driving the loop and the oracle as
+the held-out scorer (BND-3), reads the oracle verdicts by goal id across every
+trace directory of the run, derives STA-10 exposure counts from the run's
+SPEC 470 ledger, and writes the evidence (per-seed verdicts by index, success
+count, exposure, the rule and the decision). A launcher refusal or
+infrastructure failure leaves `ok: false` so the session is excluded rather
+than scored; a deliverable that fails to launch is a failed session. Seed
+values are never written (CSE-9). This is the CSE-2 session outcome for the
+ADR-66 pilot tier; it does not authorize scored collection.
