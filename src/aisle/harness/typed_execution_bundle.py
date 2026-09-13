@@ -7,6 +7,7 @@ import json
 import stat
 from pathlib import Path
 
+from aisle.harness.candidates import CandidateError, participant_python
 from aisle.harness.typed_snapshot import SnapshotError, _digest, _read
 
 PARTICIPANT_FILES = tuple(
@@ -50,8 +51,10 @@ class ExecutionBundleError(ValueError):
     """Execution inputs differ from their closed receipt."""
 
 
-def build_execution_bundle(controller_root, participant_root, output):
-    """Copy trusted dependencies and all four authored implementations as data."""
+def build_execution_bundle(
+    controller_root, participant_root, output, *, allowlist="docs/monolithic/allowlist.json"
+):
+    """Copy trusted dependencies and every authored implementation the allowlist names."""
     controller, participant, output = map(
         lambda p: Path(p).absolute(), (controller_root, participant_root, output)
     )
@@ -61,15 +64,17 @@ def build_execution_bundle(controller_root, participant_root, output):
     ):
         raise ExecutionBundleError("execution roots must be canonical and disjoint")
     try:
-        allowlist = _read(controller, "docs/monolithic/allowlist.json")
-        editable = json.loads(allowlist)["typed"]["editable"]
-        if {p for p in editable if p.endswith(".py")} != set(PARTICIPANT_FILES):
-            raise ExecutionBundleError("typed Python allowlist differs")
+        allowlist_name = allowlist
+        allowlist = _read(controller, allowlist_name)
+        try:
+            participant_files = participant_python(json.loads(allowlist))
+        except (CandidateError, json.JSONDecodeError, TypeError) as exc:
+            raise ExecutionBundleError(f"typed Python allowlist invalid: {exc}") from exc
         captured = {
             name: (origin, _read(root, name))
             for origin, root, names in (
                 ("controller", controller, CONTROLLER_FILES),
-                ("participant", participant, PARTICIPANT_FILES),
+                ("participant", participant, participant_files),
             )
             for name in names
         }
@@ -89,13 +94,15 @@ def build_execution_bundle(controller_root, participant_root, output):
         for name, (origin, data) in captured.items():
             if _read(participant if origin == "participant" else controller, name) != data:
                 raise ExecutionBundleError("execution input changed during capture")
-        if _read(controller, "docs/monolithic/allowlist.json") != allowlist:
+        if _read(controller, allowlist_name) != allowlist:
             raise ExecutionBundleError("execution allowlist changed during capture")
         record = {
-            "schema_version": "aisle.typed-execution-bundle.v1",
+            "schema_version": "aisle.typed-execution-bundle.v2",
             "bundle_root": str(output),
             "files": files,
+            "allowlist": allowlist_name,
             "allowlist_sha256": hashlib.sha256(allowlist).hexdigest(),
+            "participant_files": list(participant_files),
         }
         record["immutable_id"] = _digest(record)
         verify_execution_bundle(output, record)
@@ -120,13 +127,21 @@ def verify_execution_bundle(bundle, record):
         if (
             bundle.resolve() != bundle
             or record["bundle_root"] != str(bundle)
-            or record["schema_version"] != "aisle.typed-execution-bundle.v1"
+            or record["schema_version"] != "aisle.typed-execution-bundle.v2"
             or _digest(expected) != identity
         ):
             raise ExecutionBundleError("execution bundle identity differs")
         files = record["files"]
+        participant_files = record["participant_files"]
+        if (
+            type(participant_files) is not list
+            or not participant_files
+            or tuple(participant_files)
+            != participant_python({"typed": {"editable": participant_files}})
+        ):
+            raise ExecutionBundleError("execution bundle authored surface is invalid")
         origins = dict.fromkeys(CONTROLLER_FILES, "controller") | dict.fromkeys(
-            PARTICIPANT_FILES, "participant"
+            participant_files, "participant"
         )
         if {name: row["origin"] for name, row in files.items()} != origins:
             raise ExecutionBundleError("execution bundle dependency set differs")

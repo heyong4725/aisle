@@ -13,6 +13,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from aisle.harness.candidate_launch import arm_arguments
+from aisle.harness.candidates import launch_fields_for
 from aisle.harness.matched_session import AdmissionError, _digest, verify_active_plan, verify_plan
 from aisle.harness.treatment_ambient import spawn_isolated_process
 from aisle.harness.treatment_confinement import (
@@ -217,7 +219,10 @@ class ToolController:
         try:
             if type(declaration) is dict and set(declaration) == {"provider"}:
                 provider = self._provider_template(current, output, declaration["provider"])
-                module = self.views["monolithic"] / "experts/monolithic/expert_t1.py"
+                module = (
+                    self.views["monolithic"]
+                    / launch_fields_for(current.get("development"))["monolithic_module"]
+                )
                 source = _read(module.parent, module.name)
                 destination = output / "monolithic-input/module.py"
                 destination.parent.mkdir(parents=True, exist_ok=False)
@@ -234,7 +239,8 @@ class ToolController:
                 declaration=declaration,
                 runtime=current["tool_runtime"],
                 adapter=current["arms"][self.arm]["confinement"]["adapter_binary_sha256"],
-                embodiment=current["development"]["embodiment"],
+                embodiment=launch_fields_for(current.get("development"))["embodiment"],
+                module=launch_fields_for(current.get("development"))["monolithic_module"],
             )
         finally:
             for name in ("module.py", "worker-config.json"):
@@ -403,14 +409,22 @@ class ToolController:
                 }
             ).split(":")[1]
         )
-        receipt = build_typed_validation_snapshot(self.root, self.views["typed"], snapshot)
+        fields = launch_fields_for(current.get("development"))
+        receipt = build_typed_validation_snapshot(
+            self.root,
+            self.views["typed"],
+            snapshot,
+            allowlist=fields["documents"]["allowlist"],
+            typed_graph=fields["typed_graph"],
+            turn_plan=fields["turn_plan"],
+        )
         validation_output = output / "validation"
         try:
             result = run_validation(
                 **kwargs,
                 snapshot=snapshot,
                 snapshot_record=receipt,
-                embodiment="franka",
+                embodiment=fields["embodiment"],
                 output=validation_output,
                 timeout_s=wall - self.wall_spent - (self.clock() - started),
             )
@@ -625,60 +639,15 @@ class ToolController:
                 ):
                     raise AdmissionError("tool adapter differs from admitted adapter")
                 view = Path(self.views[self.arm])
-                if operation == "run":
-                    common = [
-                        "--root",
-                        str(self.root),
-                        "--tier",
-                        development["tier"],
-                        "--embodiment",
-                        development["embodiment"],
-                        "--episodes",
-                        str(len(development["seeds"])),
-                        "--seeds",
-                        ",".join(str(seed) for seed in development["seeds"]),
-                        "--run-id",
-                        record["run_id"],
-                        "--timeout-s",
-                        str(development["timeout_s"]),
-                    ]
-                    if self.arm == "typed":
-                        args = [
-                            "rollout",
-                            "--graph",
-                            str(view / "graphs/expert_t1.yaml"),
-                            "--reset",
-                            development["reset"],
-                            "--verifier",
-                            development["verifier"],
-                            *common,
-                        ]
-                    else:
-                        args = [
-                            "monolith",
-                            "run",
-                            "--module",
-                            str(view / "experts/monolithic/expert_t1.py"),
-                            *common,
-                        ]
-                elif self.arm == "typed":
-                    args = [
-                        "validate",
-                        str(view / "graphs/expert_t1.yaml"),
-                        "--root",
-                        str(view),
-                        "--embodiment",
-                        "franka",
-                    ]
-                else:
-                    args = [
-                        "monolith",
-                        "check",
-                        "--module",
-                        str(view / "experts/monolithic/expert_t1.py"),
-                        "--embodiment",
-                        "franka",
-                    ]
+                args = arm_arguments(
+                    self.arm,
+                    operation,
+                    launch_fields_for(current.get("development")),
+                    view,
+                    development,
+                    root=self.root,
+                    run_id=record["run_id"] if operation == "run" else None,
+                )
                 command = [str(self.python), "-B", "-m", "aisle.harness.cli", *args]
                 retained_profile = output / "profile.sb"
                 retained_profile.write_bytes(self.profile_path.read_bytes())

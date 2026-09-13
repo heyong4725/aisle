@@ -9,7 +9,9 @@ import math
 import re
 from pathlib import Path
 
+from aisle.harness.candidates import modules_for
 from aisle.harness.treatment_confinement import MacOSPolicy, wrap_verified_command
+from aisle.harness.typed_execution_bundle import PARTICIPANT_FILES
 from aisle.harness.typed_node_worker import MODULES, validate_configuration
 from aisle.harness.typed_worker_launch import launch_typed_worker, verify_typed_launch
 from aisle.turn_node import Node
@@ -43,6 +45,13 @@ def _object(pairs):
     return result
 
 
+def _modules(config) -> frozenset:
+    try:
+        return modules_for(config["launch"]["bundle_manifest"]["participant_files"])
+    except (KeyError, TypeError):
+        return MODULES
+
+
 def load_host_config(path, digest):
     """Read one canonical, size-limited, exact-hash engineering declaration."""
     try:
@@ -73,7 +82,7 @@ def load_host_config(path, digest):
             config["schema_version"] != "aisle.typed-node-host.v1"
             or config["purpose"] != "expert_parity"
             or type(config["module"]) is not str
-            or config["module"] not in MODULES
+            or config["module"] not in _modules(config)
             or type(config["node_id"]) is not str
             or re.fullmatch("[A-Za-z0-9_-]+", config["node_id"]) is None
         ):
@@ -220,6 +229,9 @@ def run_configured_node(path, digest, *, raw_node_factory=None):
             output=config["output"],
             node=node,
             module=config["module"],
+            participant_files=tuple(
+                launch["bundle_manifest"].get("participant_files", PARTICIPANT_FILES)
+            ),
             outputs=set(config["outputs"]),
             configuration=config["configuration"],
         )

@@ -160,7 +160,7 @@ def _validation_command_fields(
             else str(bundle)
         ),
         "validate",
-        str(snapshot / "graphs/expert_t1.yaml"),
+        str(snapshot / snapshot_record["typed_graph"]),
         "--root",
         str(snapshot),
         "--embodiment",

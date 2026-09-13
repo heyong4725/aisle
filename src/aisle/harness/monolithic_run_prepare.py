@@ -7,6 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from aisle.harness.candidates import T1_ORACLE_FIELDS
 from aisle.harness.treatment_confinement import MacOSPolicy, wrap_verified_command
 from aisle.harness.typed_snapshot import _read
 from aisle.monolith.worker_config import _LAUNCH_FIELDS, MAX_CONFIG_BYTES, _load
@@ -14,7 +15,15 @@ from aisle.monolith.worker_launch import build_worker_bundle, verify_worker_laun
 
 
 def prepare_monolithic_run(
-    *, controller_root, views, output, declaration, runtime, adapter, embodiment
+    *,
+    controller_root,
+    views,
+    output,
+    declaration,
+    runtime,
+    adapter,
+    embodiment,
+    module: str = T1_ORACLE_FIELDS["monolithic_module"],
 ):
     """Build controller-owned inputs while preserving supplied capability identities."""
     required = _LAUNCH_FIELDS - {"bundle_manifest", "source_roots"}
@@ -52,7 +61,8 @@ def prepare_monolithic_run(
         output.is_relative_to(p) for p in policy.hidden_roots
     ):
         raise ValueError("monolithic preparation output is not private from the worker")
-    module = Path(views["monolithic"]) / "experts/monolithic/expert_t1.py"
+    module_path = module
+    module = Path(views["monolithic"]) / module_path
     source = _read(module.parent, module.name)
     destination = output / "monolithic-input"
     destination.mkdir(parents=True, exist_ok=False)
