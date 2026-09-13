@@ -85,6 +85,13 @@ predecessor's commitment unverified and preserves every pending gate; the
 registration a pilot actually runs under is a fresh-seed successor with its own
 instrument set.
 
+cse-causal-study-pilot-v8 supersedes pilot-v7 as the registration the ADR-66
+pilot runs under: a FRESH private seed commitment (never inherited, BND-13),
+the instrument set fixed to candidate `t1-l2-realistic` on the qualified Codex
+0.153.4, session success as the controller-run held-out rule (28 of 32 oracle
+successes), a sealed balanced assignment plan, and the BND-12 gate recorded as
+`failed` at the v11 perception audit (a named limitation, not a blocker).
+
 To make such a pending successor, set `seed_commitment.inherited_from` and
 `artifacts.seed_commitment_predecessor` to the same predecessor manifest path,
 name its campaign in `superseded`, preserve its seed rules and source paths,
