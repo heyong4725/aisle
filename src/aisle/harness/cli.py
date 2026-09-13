@@ -288,6 +288,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="engineering shakeout without an open HAR-8 idea (never a measured run)",
     )
     mono_run.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    mono_run.add_argument(
+        "--template",
+        default=None,
+        help="admitted monolithic template graph (default: the T1 graph)",
+    )
+    mono_run.add_argument("--verifier", default="oracle", choices=["oracle", "realistic"])
+    mono_run.add_argument("--reset", default="teleport", choices=["teleport", "behavioral"])
     mono_check = monolith_sub.add_parser("check", help="compile/construct the module; no sim")
     mono_check.add_argument("--module", type=Path, required=True)
     mono_check.add_argument("--embodiment", default="franka", choices=["franka", "so101"])
@@ -448,6 +455,9 @@ def main() -> int:
                     no_idea_gate=args.no_idea_gate,
                     worker_config=args.worker_config,
                     worker_config_sha256=args.worker_config_sha256,
+                    template=mono.TEMPLATE_GRAPH if args.template is None else args.template,
+                    verifier=args.verifier,
+                    reset_mode=args.reset,
                 )
             elif args.monolith_command == "check":
                 from aisle.monolith.worker_config import configured_worker_factory

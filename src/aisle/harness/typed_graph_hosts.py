@@ -154,16 +154,22 @@ def node_configuration(node, *, expansion_environment=None):
     return validate_configuration({"environment": environment, "arguments": _arguments(arguments)})
 
 
-def _source(node):
+def _source(node, participant_files=PARTICIPANT_FILES):
     path = node.get("path")
     if type(path) is not str or path.startswith("/"):
         return None
     source = posixpath.normpath("graphs/" + path)
-    return source if source in PARTICIPANT_FILES else None
+    return source if source in participant_files else None
 
 
 def replace_authored_nodes(
-    authored, baseline, bindings, controller_root, *, expansion_environments=None
+    authored,
+    baseline,
+    bindings,
+    controller_root,
+    *,
+    expansion_environments=None,
+    participant_files=PARTICIPANT_FILES,
 ):
     """Replace only process entries, preserving authored graph inputs and outputs.
 
@@ -188,7 +194,7 @@ def replace_authored_nodes(
         expansions = {} if expansion_environments is None else expansion_environments
         if type(expansions) is not dict or not set(expansions) <= set(bindings):
             raise GraphHostError("expansion environment has an undeclared node")
-        trusted = {n["id"]: n for n in baseline["nodes"] if _source(n) is None}
+        trusted = {n["id"]: n for n in baseline["nodes"] if _source(n, participant_files) is None}
         result = copy.deepcopy(authored)
         seen, assigned = set(), set()
         for node in result["nodes"]:
@@ -206,7 +212,7 @@ def replace_authored_nodes(
                 ):
                     raise GraphHostError("trusted node definition has changed")
                 continue
-            source = _source(node)
+            source = _source(node, participant_files)
             if source is None or node_id not in bindings:
                 raise GraphHostError("authored node has no bound editable implementation")
             # Process execution, restart and logging directives must not become

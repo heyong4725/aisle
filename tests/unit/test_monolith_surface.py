@@ -485,3 +485,31 @@ def test_cli_reports_unsupported_tier_as_json(tmp_path):
     assert code == 1
     assert report["error"] == "unsupported_monolithic_tier"
     assert report["ok"] is False
+
+
+@pytest.mark.parametrize(
+    "kwargs,error",
+    [
+        ({"verifier": "both"}, "unsupported_monolithic_verifier"),
+        ({"reset_mode": "sideways"}, "unsupported_monolithic_reset"),
+        ({"template": "graphs/no_such_template.yaml"}, "unsupported_monolithic_template"),
+    ],
+)
+def test_run_refuses_unsupported_verifier_reset_or_template(kwargs, error):
+    """MON-3/MON-4: the launcher accepts only the admitted verifier, reset and template
+    and refuses before touching the module or the simulator."""
+    from aisle.harness import monolith
+
+    result = monolith.run(ROOT, EXPERT, seeds=[0], episodes=1, **kwargs)
+    assert result["ok"] is False and result["error"] == error
+
+
+def test_run_refuses_a_template_that_binds_no_monolithic_module(tmp_path, monkeypatch):
+    """MON-3: a template without AISLE_MONOLITH_MODULE cannot masquerade as the monolithic arm."""
+    from aisle.harness import monolith
+
+    monkeypatch.setattr(monolith, "check_module", lambda *args, **kwargs: {"ok": True})
+    result = monolith.run(ROOT, EXPERT, seeds=[0], episodes=1, template="graphs/expert_t1.yaml")
+    assert result["ok"] is False and result["error"] == "unsupported_monolithic_template"
+    result = monolith.run(ROOT, EXPERT, seeds=[0], episodes=1, template="pyproject.toml")
+    assert result["ok"] is False and result["error"] == "unsupported_monolithic_template"

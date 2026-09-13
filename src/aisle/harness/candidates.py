@@ -166,3 +166,61 @@ def verify_table_binding(development: dict | None, artifact_hashes: dict) -> Non
     if isinstance(development, dict) and "candidate" in development:
         if development["candidates_sha256"] != artifact_hashes.get(CANDIDATES_FILE):
             raise CandidateError("candidate table changed during admission")
+
+
+T1_ORACLE_FIELDS = {
+    "tier": "T1",
+    "embodiment": "franka",
+    "perception": "L1",
+    "verifier": "oracle",
+    "reset": "teleport",
+    "typed_graph": "graphs/expert_t1.yaml",
+    "turn_plan": "graphs/turn_plans/expert_t1.json",
+    "monolithic_template": "graphs/monolithic_t1.yaml",
+    "monolithic_module": "experts/monolithic/expert_t1.py",
+    "documents": {
+        "treatment_table": "docs/monolithic/treatment-table.json",
+        "interface_map": "docs/monolithic/interface-map.json",
+        "allowlist": "docs/monolithic/allowlist.json",
+        "experts": "docs/monolithic/experts.json",
+        "parity_protocol": "docs/monolithic/parity-protocol.json",
+    },
+}
+
+
+def launch_fields(development: dict) -> dict:
+    """The launch surface a retained development form selects: the fixed T1
+    oracle pair for v1, the retained derived fields for v2."""
+    if not isinstance(development, dict):
+        raise CandidateError("development protocol fields are unresolved")
+    if development.get("schema_version") == DEVELOPMENT_SCHEMA_V1:
+        return copy.deepcopy(T1_ORACLE_FIELDS)
+    if development.get("schema_version") != DEVELOPMENT_SCHEMA_V2 or any(
+        key not in development for key in DERIVED_KEYS
+    ):
+        raise CandidateError("development protocol carries no resolved candidate")
+    return {key: copy.deepcopy(development[key]) for key in DERIVED_KEYS}
+
+
+def participant_python(allowlist: dict) -> tuple[str, ...]:
+    """The authored Python surface of the typed arm: the allowlist's .py entries."""
+    try:
+        editable = allowlist["typed"]["editable"]
+    except (KeyError, TypeError) as exc:
+        raise CandidateError("typed editable allowlist is invalid") from exc
+    files = tuple(sorted(p for p in editable if type(p) is str and p.endswith(".py")))
+    if not files or any(not p.startswith("src/aisle/") or "/../" in p for p in files):
+        raise CandidateError("typed editable allowlist must name src/aisle Python implementations")
+    return files
+
+
+def modules_for(participant_files) -> frozenset[str]:
+    """Import names of the authored Python surface (src/aisle/x/y.py -> aisle.x.y)."""
+    return frozenset(p[4:-3].replace("/", ".") for p in participant_files)
+
+
+def launch_fields_for(development: dict | None) -> dict:
+    """`launch_fields`, with the T1 oracle pair when no development form is retained."""
+    if development is None:
+        return copy.deepcopy(T1_ORACLE_FIELDS)
+    return launch_fields(development)

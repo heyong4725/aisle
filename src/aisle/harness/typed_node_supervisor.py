@@ -32,8 +32,10 @@ def supervise_typed_worker(
     timeout_s,
     max_calls=100000,
     configuration=None,
+    modules=None,
 ):
     """Adopt the child, verify receipts against host state, and retain all observed frames."""
+    modules = MODULES if modules is None else frozenset(modules)
     created_output = False
     started = time.monotonic()
     record = {
@@ -111,7 +113,7 @@ def supervise_typed_worker(
         if type(timeout_s) not in (int, float) or not math.isfinite(timeout_s) or timeout_s <= 0:
             raise WorkerFailure("typed worker timeout must be finite and positive")
         deadline = started + timeout_s
-        if type(source) is not str or type(module_name) is not str or module_name not in MODULES:
+        if type(source) is not str or type(module_name) is not str or module_name not in modules:
             raise WorkerFailure("typed worker source binding is invalid")
         if process.stdin is None or process.stdout is None:
             raise WorkerFailure("typed worker requires dedicated binary pipes")
@@ -125,7 +127,10 @@ def supervise_typed_worker(
         if configuration is not None:
             settings["configuration"] = validate_configuration(configuration)
             record["configuration"] = settings["configuration"]
-        transfer("host", {"op": "init", "source": source, **identity, **settings})
+        transfer(
+            "host",
+            {"op": "init", "source": source, "modules": sorted(modules), **identity, **settings},
+        )
         ready = False
         while True:
             message = transfer("worker")

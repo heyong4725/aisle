@@ -209,7 +209,14 @@ embodiment, perception rung, verifier, reset mode, graph, turn plan and
 monolithic module from the table and retains them in the plan; a stale table
 hash, an unknown id, a free launch field, or a candidate whose artifacts are
 not all present in the controller tree refuses admission. The v1 form remains
-the fixed T1/franka/oracle/teleport protocol. Naming a candidate does not
+the fixed T1/franka/oracle/teleport protocol. Every arm launch reads its
+surface from the retained development form: the typed validation snapshot
+records the candidate's graph, turn plan and allowlist, and the execution
+bundle, graph stage, worker hosts and rollout transport bind those recorded
+paths (never a literal); the monolithic launcher receives the candidate's
+module, template graph, verifier and reset mode, and refuses any other value.
+Both arms receive the same verifier, reset mode, embodiment, seeds and
+budgets. Naming a candidate does not
 qualify it: the declared `t1-l2-realistic` row is refused until its monolithic
 pair exists, and admission never substitutes an easier task.
 Clients use `request_run(channel, timeout_s=...)`; they cannot alter these inputs.

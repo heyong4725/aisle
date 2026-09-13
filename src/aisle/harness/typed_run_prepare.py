@@ -83,7 +83,9 @@ def prepare_typed_stages(
         # capture. rmdir refuses anything nonempty; no existing files are removed.
         if bundle.exists():
             bundle.rmdir()
-        manifests[str(bundle)] = build_execution_bundle(controller_root, snapshot, bundle)
+        manifests[str(bundle)] = build_execution_bundle(
+            controller_root, snapshot, bundle, allowlist=snapshot_record["allowlist"]
+        )
     stages = []
     for index, launches in enumerate(declarations):
         for launch in launches.values():
