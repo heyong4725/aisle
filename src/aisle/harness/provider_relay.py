@@ -33,11 +33,17 @@ def verify_provider(binding):
     """Require an explicit upstream; local HTTP is for operator-owned fixtures only."""
     _require(
         type(binding) is dict
-        and set(binding) - {"hosted_tool_contract"}
-        in ({"base_url"}, {"base_url", "requires_openai_auth"}),
+        and {"base_url"} <= set(binding)
+        and set(binding)
+        <= {"base_url", "requires_openai_auth", "hosted_tool_contract", "relay_port"},
         "invalid provider binding",
     )
     _require(type(binding.get("requires_openai_auth", True)) is bool, "invalid provider auth mode")
+    relay_port = binding.get("relay_port", 0)
+    _require(
+        type(relay_port) is int and not isinstance(relay_port, bool) and 0 <= relay_port < 65536,
+        "invalid relay port",
+    )
     value = binding["base_url"]
     _require(type(value) is str and 0 < len(value) <= 2048, "invalid provider URL")
     url = urlsplit(value)
@@ -86,6 +92,7 @@ class ProviderRelay:
     def __init__(self, binding, *, dispatch, output, timeout_s, delegated_tools=()):
         self.url = verify_provider(binding)
         self.hosted_contract = binding.get("hosted_tool_contract")
+        self._binding_port = binding.get("relay_port", 0)
         _require(
             type(timeout_s) in (int, float) and 0 < timeout_s < 86400, "invalid provider deadline"
         )
@@ -380,7 +387,9 @@ class ProviderRelay:
                 relay._handle(self)
 
         try:
-            self._server = Server(("127.0.0.1", 0), Handler)
+            # A pinned relay_port is the one loopback port a `loopback`
+            # confinement policy admits; 0 keeps the ephemeral default.
+            self._server = Server(("127.0.0.1", self._binding_port), Handler)
             self.address = self._server.server_address
             self._retain(
                 "listener.json",

@@ -71,6 +71,34 @@ process record, including on a nonzero process exit. Final snapshots and
 postflight failures remain in `matched-session.json` alongside the original
 launcher failure.
 
+The `attestation` must have been produced under the arm's exact confinement
+policy, or the launch wrapper refuses it: `python -m
+aisle.harness.treatment_confinement audit-macos --policy <policy.json>
+--output <attestation.json>` runs the full deny/allow matrix under that policy
+(its sentinels are placed inside the policy's own visible, output and hidden
+roots and removed afterwards) and retains the profile hash and policy id the
+wrapper demands (TRT-5/TRT-7). The policy must admit the audit's probes
+(`/bin/bash`, `/bin/cat`, the Apple developer Git, and either `/usr/bin/nc`
+or a Python interpreter for the Unix-socket case) and must not admit its
+unlisted-executable control (`/usr/bin/printf`). By default each sentinel goes
+into the last directory of the matching root list; `--sentinel-visible`,
+`--sentinel-output` and `--sentinel-hidden` name controller-private
+directories instead so the audit never writes into another arm's readable
+view. The retained report replaces hidden-root paths with their digests
+(`policy_id` still binds the full policy). A sentinel left behind by an audit
+process that died uncleanly is reclaimed on the next run; any other occupant
+refuses. Two network policies compile: `deny-external` (no network) and
+`loopback`, which pins ONE local TCP port (`loopback_port`) so a confined
+frontend can reach exactly its provider relay; the launch binding's
+`provider.relay_port` must equal it (the relay binds that port) and admission
+refuses a mismatch. Under `loopback` the attestation carries a
+`loopback_tcp_read` allow case on the pinned port, a `foreign_loopback_tcp_read`
+case proving another local port is refused, and an `external_tcp_read` case
+proving an external connect is refused outright. SBPL's `localhost` names every
+address this host owns, so the pin, not the host, is what makes the grant
+exclusive. A session whose attestation was not produced this way is
+unattested, which the pilot registration names as a stop condition.
+
 Deterministic integration tests run real child processes for both arms through
 an explicitly synthetic pass-through adapter. Those tests cover the process
 boundary and failure retention. Their synthetic access logs and capability

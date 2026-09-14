@@ -2,7 +2,6 @@
 
 import copy
 import json
-from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -45,7 +44,7 @@ def _declarations(inputs):
             "timeout_s",
         )
     }
-    launch["policy"] = asdict(launch["policy"])
+    launch["policy"] = launch["policy"].as_dict()
     launch.update(bundle=bundle, bundle_manifest=manifest, source_roots=[ROOT, inputs["snapshot"]])
     launch = json.loads(json.dumps(launch, default=str))
     return {n["id"]: copy.deepcopy(launch) for n in graph["nodes"] if n["id"] in names}

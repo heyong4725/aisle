@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -24,7 +23,7 @@ def _config(tmp_path):
     for name in ("node", "module", "outputs"):
         inputs.pop(name)
     output = inputs.pop("output")
-    inputs["policy"] = asdict(inputs["policy"])
+    inputs["policy"] = inputs["policy"].as_dict()
     config = {
         "schema_version": "aisle.typed-node-host.v1",
         "purpose": "expert_parity",

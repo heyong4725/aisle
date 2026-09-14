@@ -315,13 +315,10 @@ def _permission_ids(
     for arm in sorted(ARMS):
         other = next(name for name in ARMS if name != arm)
         view, other_view = Path(views[arm]).resolve(), Path(views[other]).resolve()
-        declared = bindings[arm]["policy"]
-        policy = MacOSPolicy(
-            **{
-                key: value if key == "network_policy" else tuple(Path(p) for p in value)
-                for key, value in declared.items()
-            }
-        )
+        try:
+            policy = MacOSPolicy.from_canonical(bindings[arm]["policy"])
+        except ConfinementError as exc:
+            raise AdmissionError(f"invalid confinement policy: {exc}") from exc
         editable = {view / p for p in manifests[arm]["repository"]["editable_allowlist"]}
         if set(policy.output_roots) != editable | {scratch[arm]}:
             raise AdmissionError("confinement write authority differs from declared edit grants")
@@ -410,12 +407,18 @@ def _verify_launches(
                 )
             if "provider" in launch:
                 from aisle.harness.provider_relay import verify_provider
+                from aisle.harness.treatment_confinement import verify_relay_port
 
                 try:
                     verify_provider(launch["provider"])
                     ceiling = candidates[arm]["budget"].get("frontend_tool_ceiling")
                     if type(ceiling) is not int or ceiling <= 0:
                         raise ValueError("provider requires a shared frontend dispatch ceiling")
+                    bindings = (execution or {}).get("confinement_bindings") or {}
+                    verify_relay_port(
+                        bindings.get(arm, {}).get("policy") if isinstance(bindings, dict) else None,
+                        launch["provider"],
+                    )
                 except (ValueError, TypeError) as exc:
                     raise AdmissionError("invalid provider binding: " + str(exc)) from exc
             if "code_mode_host" in launch:

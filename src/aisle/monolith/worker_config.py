@@ -8,7 +8,7 @@ import re
 from contextlib import contextmanager
 from pathlib import Path
 
-from aisle.harness.treatment_confinement import MacOSPolicy
+from aisle.harness.treatment_confinement import ConfinementError, MacOSPolicy
 from aisle.monolith.supervisor import WorkerFailure
 from aisle.monolith.worker_launch import launch_worker
 
@@ -119,13 +119,8 @@ def configured_worker_factory(path, digest, *, phase):
             raise WorkerFailure("worker embodiment differs from configuration")
         launch = dict(config["launch"])
         try:
-            launch["policy"] = MacOSPolicy(
-                **{
-                    name: value if name == "network_policy" else tuple(Path(p) for p in value)
-                    for name, value in launch["policy"].items()
-                }
-            )
-        except (AttributeError, TypeError, ValueError) as exc:
+            launch["policy"] = MacOSPolicy.from_canonical(launch["policy"])
+        except (AttributeError, TypeError, ValueError, ConfinementError) as exc:
             raise WorkerFailure("invalid worker policy fields") from exc
         with launch_worker(
             **launch, output=Path(config["output_root"]) / phase, primitives=primitives

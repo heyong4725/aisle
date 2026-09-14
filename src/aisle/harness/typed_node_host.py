@@ -137,12 +137,7 @@ def preflight_host_config(path, digest):
     config = load_host_config(path, digest)
     try:
         launch = dict(config["launch"])
-        launch["policy"] = MacOSPolicy(
-            **{
-                key: value if key == "network_policy" else tuple(Path(p) for p in value)
-                for key, value in launch["policy"].items()
-            }
-        )
+        launch["policy"] = MacOSPolicy.from_canonical(launch["policy"])
         compiled = verify_typed_launch(
             **{
                 key: launch[key]
