@@ -10,6 +10,41 @@ also nods to the pharmacy aisle of the first task family. Earlier expansions —
 outgrown as the scope widened; the lineage is recorded in
 [`Project_AISLE_Experiment_Design.md`](Project_AISLE_Experiment_Design.md).
 
+### Pre-registration and pilot vocabulary (September 2026)
+
+**Freeze registry** — `analysis/freeze/<campaign>-v<N>/`: a content-addressed
+pre-registration (declaration + manifest of SHA-256s for every named artifact,
+analysis script, and gate record, plus a salted seed commitment). Built by
+`harness freeze build`; drift against an existing manifest is a refusal, so a
+changed artifact means a new version that names the old one in `superseded`.
+Families to date: `cse-causal-study` (SPEC 500), `bnd-task-band-calibration`
+(SPEC 490), `flt-bank-calibration` (SPEC 450), `sfe-held-command-ablation`
+(SPEC 470), `sem-held-plan-adversarial` (SPEC 480), `fel-fault-evidence-study`
+(SPEC 510), and `cse-causal-study-pilot`.
+
+**Pilot registration (ADR-66)** — a freeze registration with `purpose: pilot`,
+its own campaign id and seeds, whose sessions run through the ordinary
+engineering executor path (retained, unscored) and whose records may calibrate
+the CSE-8 power inputs but never enter a confirmatory estimate (STA-3). A pilot
+does not wait on the external-review gates; machine gates are recorded,
+including failures, as named limitations.
+
+**Execution order and spec moratorium (ADR-66, accepted 2026-09-11)** — run the
+#347 pilot, then H6, before any new spec, platform, or hypothesis; parked specs
+stay PROPOSED and untouched until those report; one measured result every two
+weeks or infrastructure PRs stop. CON-9 was amended the same week so
+documentation-only commits run format, lint, and unit only.
+
+**Requirement-ID prefixes for the 4xx/5xx specs** — STA (400 statistics),
+CLM (410 claim evidence), TRT (420 treatment integrity), AUD (430 instrument
+audit), MON (440 monolithic control), FLT (450 sealed fault bank), THR (460
+actuation threat model), SFE (470 safety exposure), SEM (480 semantic
+authorization), BND (490 non-oracle task band), CSE (500 causal study), FEL
+(510 fault-evidence localization), HWP (520 SO-101 hardware gate), RPR (530
+reproduction archive), BMK (540 public benchmark). All fifteen are PROPOSED and
+human-review gated; `tools/trace_check.py` still requires a citing test for
+every MUST.
+
 ### "Learning", defined (issue #269)
 
 The word misleads newcomers, so it is worth stating exactly. **There is no

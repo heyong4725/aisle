@@ -1,7 +1,7 @@
 # AISLE research program: agents, evidence, and model orchestration
 
-<!-- status-snapshot:2026-08-28 canonical:../README.md#status -->
-**Technical framing, August 2026.** Status snapshot: 2026-08-28, commit `93de5e0`; design-doc Phases 2 and 3 closed, the model-tier agenda in §here EXECUTED as Phase 5 (closed 2026-08-27 at measured end-states — VLA competence/latency separated by the lockstep-eval condition, five VLM-judge configurations refused, the env-ladder swap proven mechanically; ledger in [next-phases.md](next-phases.md)), and the hardware entry prepared (ADR-phase6-prep). Any verdict restated here is a dated summary for context; the [README status table](../README.md#status) is canonical and wins on conflict (issue #142). This report states the research object,
+<!-- status-snapshot:2026-09-14 canonical:../README.md#status -->
+**Technical framing, August 2026; snapshot refreshed 2026-09-14, commit `fa339ee`** (no new measured result since 2026-08-28; the pre-registration program and ADR-66's pilot-first order are the delta, summarized in the README). Status snapshot: 2026-08-28, commit `93de5e0`; design-doc Phases 2 and 3 closed, the model-tier agenda in §here EXECUTED as Phase 5 (closed 2026-08-27 at measured end-states — VLA competence/latency separated by the lockstep-eval condition, five VLM-judge configurations refused, the env-ladder swap proven mechanically; ledger in [next-phases.md](next-phases.md)), and the hardware entry prepared (ADR-phase6-prep). Any verdict restated here is a dated summary for context; the [README status table](../README.md#status) is canonical and wins on conflict (issue #142). This report states the research object,
 experimental logic, evidence standard, and model-integration agenda for AISLE.
 It is descriptive rather than normative: the numbered specifications define
 what the implementation must do, the [README](../README.md#status) owns current

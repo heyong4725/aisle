@@ -8,7 +8,11 @@ Measured results cite the [README status table](../README.md#status), which is
 canonical; the phase record is
 [`analysis/reports/phase2_phase3_report.md`](../analysis/reports/phase2_phase3_report.md).
 Forward-looking sections are labelled as such and describe committed design
-direction, not shipped capability.*
+direction, not shipped capability. The measured record in §9 is unchanged
+since this snapshot; what changed afterwards is the pre-registration program
+(SPEC 400–540), the pilot-first execution order (ADR-66), and the still-pending
+#347 pilot — summarized in the README's "Since 2026-08-28" block and in
+Appendix D below, which was refreshed on 2026-09-14.*
 
 <!-- claim:publication-purpose/technical-report -->
 **Publication purpose.** This broad technical report preserves the complete
@@ -2842,11 +2846,26 @@ understood.
 | [#268](https://github.com/heyong4725/aisle/issues/268) | **No determinism layer for inference** | The staleness floor couples sim time to wall time, so a loaded host can change the trajectory with every seed identical | §10.11 |
 | [#269](https://github.com/heyong4725/aisle/issues/269) | **"Safe Learning" is undefined** in the project's own naming gloss | Students reasonably expect a training loop and find none | §3.5 |
 
-Two further threads are open and owner-facing rather than contributor-facing:
-the eval's **seed set and episode count remain candidate-chosen** (the same
-self-grading shape ADR-37 closed, one field over), and **T2/T3 remain unsolved**
-at session budgets, which is the scientific prerequisite for a meaningful
-accumulation result.
+Refreshed 2026-09-14. All six gaps above have since closed (#264 and #265
+through ADR-41 and ADR-40; #267 and #268 on 2026-08-17). The current register:
+
+| # | Gap | Why it matters | Where |
+|---|---|---|---|
+| [#347](https://github.com/heyong4725/aisle/issues/347) | The **typed-vs-monolithic causal study is unrun**; pilot v8 is registered with collection pending on the session-bound confinement attestation (#589–#591) | It is the headline claim; every 4xx spec exists to make its result defensible | README status, ADR-66 |
+| [#346](https://github.com/heyong4725/aisle/issues/346) | **No perception-eligible task stratum**: the task-band calibration (v13) records BND-7 failed for the only candidate, 22 of 22 strata | Without an eligible non-oracle task, neither the pilot nor the confirmatory study has an instrument | SPEC 490 |
+| [#519](https://github.com/heyong4725/aisle/issues/519) | Matched-arm session admission and common evidence (MON-8/MON-12) not complete | Gate on every scored session in both arms | SPEC 420/440 |
+| [#483](https://github.com/heyong4725/aisle/issues/483)–[#486](https://github.com/heyong4725/aisle/issues/486) | **External reviews not arranged**: statistical (STA-12), terminology (CLM-12), independent reproduction (RPR-10/11), external benchmark user (BMK-21) | Confirmatory and release gates that no in-house work can satisfy | SPEC 400/410/530/540 |
+| [#562](https://github.com/heyong4725/aisle/issues/562) | No declared **halt contract** for motion nodes (bound, semantics, receipt); ADR-64 already makes a halt terminal | Required by SPEC 460/480/520 as an outcome, defined nowhere; parked until SPEC 460 ratifies or Phase 6 opens | SPEC 520 supplement |
+| [#566](https://github.com/heyong4725/aisle/issues/566) | Closed idea-tree entries persist but nothing **retrieves a refuted idea** at the moment of choosing | The failure-side half of "does prior work compound"; parked until an H3 rerun | ADR-41, HAR-7 |
+| [#356](https://github.com/heyong4725/aisle/issues/356) | **Hardware** entry gates (M1, judge fidelity) are GPU-gated; SO-101 driver is loopback-tested only | Every hardware claim stays `hardware_pending` | SPEC 520 |
+
+Two threads remain owner-facing rather than contributor-facing: the eval's
+**seed set and episode count remain candidate-chosen** (the same self-grading
+shape ADR-37 closed, one field over), and **T2/T3 remain unsolved** at session
+budgets, which is the scientific prerequisite for a meaningful accumulation
+result. Nine specs (430, 450, 460, 470, 480, 510, 520, 530, 540) are parked
+under ADR-66 until #347 and H6 report; reading them is welcome, extending them
+is not.
 
 ---
 
