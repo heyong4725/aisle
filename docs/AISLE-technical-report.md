@@ -8,11 +8,12 @@ Measured results cite the [README status table](../README.md#status), which is
 canonical; the phase record is
 [`analysis/reports/phase2_phase3_report.md`](../analysis/reports/phase2_phase3_report.md).
 Forward-looking sections are labelled as such and describe committed design
-direction, not shipped capability. The measured record in §9 is unchanged
-since this snapshot; what changed afterwards is the pre-registration program
-(SPEC 400–540), the pilot-first execution order (ADR-66), and the still-pending
-#347 pilot — summarized in the README's "Since 2026-08-28" block and in
-Appendix D below, which was refreshed on 2026-09-14.*
+direction, not shipped capability. Section 9 remains the historical 2026-08-16
+measured snapshot; later measurements, including H6, Phase 5, and M3 v2, live
+in the canonical README. The post-2026-08-28 pre-registration program (SPEC
+400–540), pilot-first execution order (ADR-66), and still-pending #347 pilot
+are summarized in the README's "Since 2026-08-28" block and in Appendix D
+below, which was refreshed on 2026-09-14.*
 
 <!-- claim:publication-purpose/technical-report -->
 **Publication purpose.** This broad technical report preserves the complete
