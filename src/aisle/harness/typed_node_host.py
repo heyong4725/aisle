@@ -159,6 +159,7 @@ def preflight_host_config(path, digest):
             compiled,
             Path(launch["profile_path"]),
             launch["attestation"],
+            policy=launch["policy"],
         )
         policy = launch["policy"]
         readable = (*policy.visible_roots, *policy.runtime_read_roots, *policy.output_roots)

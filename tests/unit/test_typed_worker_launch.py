@@ -1,7 +1,9 @@
 """MON-6/MON-12/MON-13: typed launch binds authority and retains process evidence."""
 
 import json
+import sys
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from test_turn_node import Raw
@@ -175,3 +177,52 @@ def test_typed_launcher_retains_and_delivers_graph_configuration(tmp_path, monke
     launch = json.loads((inputs["output"] / "launch.json").read_text())
     assert launch["configuration"] == configuration
     assert os.environ["AISLE_TASK_TIER"] == "host-sentinel"
+
+
+def _widened_attestation(policy, profile_path, adapter, tmp_path):
+    """TRT-5: a plain attestation plus the audit-side widening record for `policy`."""
+    from test_treatment_confinement import _attestation
+
+    from aisle.harness.treatment_confinement import (
+        _apple_git_runtime,
+        compile_macos_profile,
+        widen_for_probes,
+    )
+
+    compiled = compile_macos_profile(policy)
+    git, developer_root = _apple_git_runtime(cwd=tmp_path)
+    widened, widening = widen_for_probes(policy, git=git, developer_root=developer_root)
+    audited = compile_macos_profile(widened)
+    report = _attestation(compiled, profile_path, adapter)
+    report["adapter"].update(audit_profile_sha256=audited.sha256, audit_policy_id=audited.policy_id)
+    report["probe_widening"] = widening
+    return report
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="the verifier resolves this host's Apple Git")
+def test_typed_launch_hands_the_session_policy_to_a_widened_attestation(tmp_path, monkeypatch):
+    """TRT-5/TRT-7: the launcher passes the worker's policy to the launch wrapper,
+    so a probe-widened attestation verifies end to end and a wrapper refusal of a
+    mismatched widening is retained as an infrastructure exclusion."""
+    from aisle.harness import typed_worker_launch
+
+    inputs = _inputs(tmp_path)
+    inputs["attestation"] = _widened_attestation(
+        inputs["policy"], inputs["profile_path"], tmp_path / "synthetic-adapter", tmp_path
+    )
+    seen = {}
+    original = typed_worker_launch.wrap_verified_command
+
+    def observed(command, compiled, profile, attestation, **kwargs):
+        seen["policy"] = kwargs.get("policy")
+        return original(command, compiled, profile, attestation, **kwargs)
+
+    monkeypatch.setattr(typed_worker_launch, "wrap_verified_command", observed)
+    result = typed_worker_launch.launch_typed_worker(**inputs)
+    assert seen["policy"] == inputs["policy"], "the wrapper never saw the session policy"
+    assert "probe widening" not in str(result.get("error")), result
+    inputs["attestation"]["probe_widening"]["allowed_executables"].append("/usr/bin/printf")
+    inputs["output"] = Path(inputs["output"]).with_name("evidence-widening-refused")
+    refused = typed_worker_launch.launch_typed_worker(**inputs)
+    assert not refused["ok"] and refused["classification"] == "infrastructure_exclusion"
+    assert "widening" in str(refused["error"]), refused

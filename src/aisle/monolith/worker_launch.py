@@ -211,7 +211,9 @@ def launch_worker(
             str(bundle),
             *sorted(runtime_record["trees"]),
         ]
-        wrapped = wrap_verified_command(command, compiled, retained_profile, attestation)
+        wrapped = wrap_verified_command(
+            command, compiled, retained_profile, attestation, policy=policy
+        )
         _json(
             output / "launch.json",
             {
@@ -233,7 +235,9 @@ def launch_worker(
         _json(output / "capability.json", attestation)
         # Recheck after retaining inputs and immediately before process creation.
         verify_worker_launch(**inputs)
-        wrapped = wrap_verified_command(command, compiled, retained_profile, attestation)
+        wrapped = wrap_verified_command(
+            command, compiled, retained_profile, attestation, policy=policy
+        )
         stage = "launch"
         with (output / "stderr.log").open("xb") as stderr:
             process = spawn_isolated_process(

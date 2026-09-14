@@ -21,7 +21,7 @@ import subprocess
 import sys
 import tempfile
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -38,6 +38,11 @@ _HASH_LENGTH = 64
 NETWORK_POLICIES = ("deny-external", "loopback")
 #: the preferred Unix-socket probe; an admitted Python interpreter is the fallback
 _NETCAT = "/usr/bin/nc"
+#: the executables the audit's own probes need (plus the Apple developer Git);
+#: a probe-widened audit may add these, and only these, to a session policy
+PROBE_EXECUTABLES = ("/bin/bash", "/bin/cat", _NETCAT)
+#: the read roots those probes load from (plus the Apple developer tree for Git)
+PROBE_READ_ROOTS = ("/bin", "/usr/bin", "/usr/lib", "/usr/share", "/System", "/Library/Apple")
 _PYTHON_SOCKET_CLIENT = (
     "import socket,sys\n"
     "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)\n"
@@ -680,6 +685,72 @@ def _socket_client(policy: MacOSPolicy) -> list[str]:
     )
 
 
+def _has_python(policy: MacOSPolicy) -> bool:
+    return any(path.name.startswith("python") for path in policy.allowed_executables)
+
+
+def widen_for_probes(
+    policy: MacOSPolicy, *, git: Path, developer_root: Path
+) -> tuple[MacOSPolicy, dict[str, list[str]]]:
+    """The session policy plus exactly what the audit's probes need: the shell,
+    cat and the Apple Git as executables (netcat only when no Unix-socket probe
+    is admitted), and the read roots they load from. Nothing else changes: the
+    visible, output and hidden roots and the network policy are the session's.
+    Returns the widened policy and the additions, which the attestation records
+    so the launch wrapper can recompute the audited profile from the session
+    policy alone."""
+    admitted = set(policy.allowed_executables)
+    wanted = [Path(p).resolve() for p in PROBE_EXECUTABLES[:2]] + [git]
+    if not _has_python(policy) and Path(_NETCAT).resolve() not in admitted:
+        wanted.append(Path(_NETCAT).resolve())
+    executables = sorted({p for p in wanted if p not in admitted}, key=str)
+    readable = (*policy.visible_roots, *policy.output_roots, *policy.runtime_read_roots)
+    roots = []
+    for candidate in (*(Path(p).resolve() for p in PROBE_READ_ROOTS), developer_root):
+        if not candidate.is_dir():
+            continue
+        if any(_contains(root, candidate) for root in readable) or candidate in roots:
+            continue
+        if any(
+            _contains(candidate, hidden) or _contains(hidden, candidate)
+            for hidden in policy.hidden_roots
+        ):
+            raise ConfinementError(f"probe read root {candidate} would overlap a hidden root")
+        roots.append(candidate)
+    roots.sort(key=str)
+    widened = replace(
+        policy,
+        allowed_executables=(*policy.allowed_executables, *executables),
+        runtime_read_roots=(*policy.runtime_read_roots, *roots),
+    )
+    return widened, {
+        "allowed_executables": [str(p) for p in executables],
+        "runtime_read_roots": [str(p) for p in roots],
+    }
+
+
+def _apply_declared_widening(
+    policy: MacOSPolicy, widening: Any, *, git: Path, developer_root: Path
+) -> MacOSPolicy:
+    """Rebuild the audited policy the only way an honest audit could have: by
+    widening the session policy with THIS host's own developer Git and probe
+    roots, then requiring the attestation's declaration to equal that result.
+    A declaration that names any other executable or root cannot match."""
+    if (
+        type(widening) is not dict
+        or set(widening) != {"allowed_executables", "runtime_read_roots"}
+        or any(
+            not isinstance(widening[k], list) or any(type(p) is not str for p in widening[k])
+            for k in widening
+        )
+    ):
+        raise ConfinementError("probe widening declaration is mis-shaped")
+    widened, expected = widen_for_probes(policy, git=git, developer_root=developer_root)
+    if expected != widening:
+        raise ConfinementError("probe widening differs from what this host's audit would add")
+    return widened
+
+
 def _check_session_policy(policy: MacOSPolicy, git: Path) -> list[str]:
     """A session policy can only be attested if the audit's own probes are
     admitted executables and its unlisted-executable control is not; returns
@@ -743,8 +814,9 @@ def _place_sentinels(
     sentinels = []
     for home in homes:
         path = home / _SENTINEL_DIR
+        # Concurrent audits that share a home are serialized by their caller
+        # (attest_many); across processes the owner marker refuses a live one.
         if path.is_dir() and not path.is_symlink() and _reclaimable(path):
-            # residue of an audit that died uncleanly (SIGKILL): reclaim it
             _remove_sentinel(path)
         try:
             path.mkdir()
@@ -856,6 +928,7 @@ def run_macos_capability_audit(
     policy: MacOSPolicy | None = None,
     *,
     sentinel_homes: tuple[Path, Path, Path] | None = None,
+    widen_probes: bool = False,
 ) -> dict[str, Any]:
     """Run the synthetic deny/allow matrix through the external adapter.
 
@@ -864,7 +937,12 @@ def run_macos_capability_audit(
     exact policy, placing its sentinels inside the session's own roots (the
     caller's `sentinel_homes`, or the last directory of each root list) and
     removing them afterwards, so the retained attestation carries the profile
-    hash and policy id the launch wrapper will demand (TRT-5/TRT-7).
+    hash and policy id the launch wrapper will demand (TRT-5/TRT-7). A policy
+    that admits only an interpreter (a worker or validator) cannot run the
+    probes; with `widen_probes` the matrix runs under that policy plus exactly
+    the audit's own probes, the attestation still binds the SESSION profile,
+    and it records the widening so the wrapper can recompute the audited
+    profile from the session policy alone.
     """
     if sys.platform != "darwin":
         raise ConfinementError(
@@ -876,10 +954,11 @@ def run_macos_capability_audit(
         raise ConfinementError(f"required imported profile is unavailable: {SYSTEM_PROFILE}")
 
     # Cheap shape checks first: no subprocess is spawned for a malformed call.
-    if policy is None and sentinel_homes is not None:
-        raise ConfinementError("sentinel homes require a session policy")
+    if policy is None and (sentinel_homes is not None or widen_probes):
+        raise ConfinementError("sentinel homes and probe widening require a session policy")
     if policy is not None:
         _validate_policy(policy)
+    session = policy
 
     # Keep the Unix socket pathname below macOS sockaddr_un.sun_path limits.
     with (
@@ -890,9 +969,14 @@ def run_macos_capability_audit(
     ):
         root = Path(temporary).resolve()
         git, developer_root = _apple_git_runtime(cwd=root)
+        widening = None
+        if session is not None and widen_probes:
+            policy, widening = widen_for_probes(session, git=git, developer_root=developer_root)
         policy, source, client, visible, output, hidden = _fixture_roots(
             policy, sentinel_homes, root, git, developer_root, cleanup
         )
+        if session is None:
+            session = policy
         visible_sentinel = b"VISIBLE-SYNTHETIC-CAPABILITY\n"
         hidden_sentinel = b"HIDDEN-SYNTHETIC-CAPABILITY-7E4E\n"
         visible_file = visible / "allowed.txt"
@@ -940,9 +1024,12 @@ def run_macos_capability_audit(
             env=git_environment,
         )
 
-        compiled = compile_macos_profile(policy)
+        # The matrix runs under the audited (possibly widened) profile; the
+        # attestation binds the SESSION profile the launch wrapper will compile.
+        audited = compile_macos_profile(policy)
+        compiled = audited if widening is None else compile_macos_profile(session)
         profile_path = root / "controller-profile.sb"
-        profile_path.write_text(compiled.text, encoding="utf-8")
+        profile_path.write_text(audited.text, encoding="utf-8")
 
         cases: list[dict[str, Any]] = []
         baseline = _run(["/bin/cat", str(hidden_file)], cwd=visible)
@@ -1155,6 +1242,9 @@ def run_macos_capability_audit(
             )
         )
 
+        if not visible_file.is_file() or not hidden_file.is_file():
+            # a file-deny case would pass vacuously on a missing target
+            raise ConfinementError("sentinel files vanished during the audit")
         denial_cases = [row for row in cases if row["expected"] == "deny"]
         allow_cases = [row for row in cases if row["expected"] == "allow"]
         baseline_cases = [row for row in cases if row["expected"] == "baseline-exposure"]
@@ -1164,6 +1254,11 @@ def run_macos_capability_audit(
         recorded_at = datetime.now(UTC)
         return {
             "adapter": {
+                **(
+                    {"audit_policy_id": audited.policy_id, "audit_profile_sha256": audited.sha256}
+                    if widening is not None
+                    else {}
+                ),
                 "compiled_profile_sha256": compiled.sha256,
                 "imported_system_profile": str(SYSTEM_PROFILE),
                 "imported_system_profile_sha256": _sha256_file(SYSTEM_PROFILE),
@@ -1171,6 +1266,7 @@ def run_macos_capability_audit(
                 "policy_id": compiled.policy_id,
                 "sha256": _sha256_file(SANDBOX_EXEC),
             },
+            **({"probe_widening": widening} if widening is not None else {}),
             "capability_pass": capability_pass,
             "cases": cases,
             "confirmatory_ready": False,
@@ -1187,7 +1283,7 @@ def run_macos_capability_audit(
                 "Apple system.sb is a private interface and is hashed per audit",
             ],
             "platform": _platform_record(),
-            "policy": _redacted_policy(policy),
+            "policy": _redacted_policy(session),
             "policy_source": source,
             "ephemeral_profile_path": str(profile_path),
             "recorded_at": recorded_at.isoformat(),
@@ -1212,12 +1308,15 @@ def write_macos_capability_audit(
     policy: MacOSPolicy | None = None,
     *,
     sentinel_homes: tuple[Path, Path, Path] | None = None,
+    widen_probes: bool = False,
 ) -> dict[str, Any]:
     """Retain one unscored audit without overwriting earlier evidence."""
     output = Path(output)
     if output.exists():
         raise ConfinementError(f"capability audit already exists: {output}")
-    report = run_macos_capability_audit(policy, sentinel_homes=sentinel_homes)
+    report = run_macos_capability_audit(
+        policy, sentinel_homes=sentinel_homes, widen_probes=widen_probes
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
     try:
@@ -1228,6 +1327,19 @@ def write_macos_capability_audit(
     return report
 
 
+_HOST_DEVELOPER_GIT: tuple[Path, Path] | None = None
+
+
+def _host_developer_git() -> tuple[Path, Path]:
+    """This host's Apple developer Git and tree, resolved once per process: the
+    verifier recomputes a widening from it on every launch."""
+    global _HOST_DEVELOPER_GIT
+    if _HOST_DEVELOPER_GIT is None:
+        with tempfile.TemporaryDirectory(prefix="aisle-developer-git-") as temporary:
+            _HOST_DEVELOPER_GIT = _apple_git_runtime(cwd=Path(temporary))
+    return _HOST_DEVELOPER_GIT
+
+
 def wrap_verified_command(
     command: list[str],
     compiled: CompiledProfile,
@@ -1235,8 +1347,14 @@ def wrap_verified_command(
     attestation: dict[str, Any],
     *,
     purpose: str = "unscored_capability",
+    policy: MacOSPolicy | None = None,
 ) -> list[str]:
-    """Bind an unscored command to the exact externally verified adapter."""
+    """Bind an unscored command to the exact externally verified adapter.
+
+    An attestation that declares a `probe_widening` was audited under the
+    session policy plus the audit's own probes; it is accepted only when the
+    caller supplies that session `policy` and the wrapper recomputes the exact
+    audited profile from the policy and the declared additions (TRT-5)."""
     if purpose != "unscored_capability":
         raise ConfinementError(
             "this macOS capability attestation cannot authorize confirmatory work"
@@ -1258,6 +1376,23 @@ def wrap_verified_command(
         raise ConfinementError("adapter profile hash does not match compiled profile")
     if adapter.get("policy_id") != compiled.policy_id:
         raise ConfinementError("adapter policy id does not match compiled policy")
+    widening = attestation.get("probe_widening")
+    if widening is not None:
+        if policy is None:
+            raise ConfinementError("probe widening: the session policy is required to verify it")
+        if compile_macos_profile(policy).sha256 != compiled.sha256:
+            raise ConfinementError(
+                "probe widening: session policy does not compile to this profile"
+            )
+        git, developer_root = _host_developer_git()
+        audited = compile_macos_profile(
+            _apply_declared_widening(policy, widening, git=git, developer_root=developer_root)
+        )
+        if (
+            adapter.get("audit_profile_sha256") != audited.sha256
+            or adapter.get("audit_policy_id") != audited.policy_id
+        ):
+            raise ConfinementError("probe widening: audited profile differs from the declaration")
     attested_policy = attestation.get("policy")
     if (
         not isinstance(attested_policy, dict)
@@ -1305,7 +1440,125 @@ def _parser() -> argparse.ArgumentParser:
             default=None,
             help=f"directory inside the policy's {role} roots that receives that sentinel",
         )
+    audit.add_argument("--widen-probes", action="store_true", help=_WIDEN_HELP)
+    many = commands.add_parser("attest-many")
+    many.add_argument(
+        "--policies",
+        type=Path,
+        required=True,
+        help="directory of <name>.policy.json files; writes <name>.attestation.json beside each",
+    )
+    many.add_argument("--widen-probes", action="store_true", help=_WIDEN_HELP)
+    many.add_argument("--jobs", type=int, default=4, help="concurrent audits")
     return parser
+
+
+_WIDEN_HELP = (
+    "audit under the policy plus exactly the audit's own probes (for interpreter-only "
+    "worker and validator policies); the attestation still binds the session profile"
+)
+
+
+def _beside(policy_file: Path, suffix: str) -> Path:
+    """`<name>.policy.json` -> `<name><suffix>` in the same directory."""
+    return policy_file.with_name(policy_file.name.removesuffix(".policy.json") + suffix)
+
+
+def _sentinel_sidecar(path: Path) -> tuple[Path, Path, Path] | None:
+    """Optional `<name>.sentinels.json` beside a policy: the controller-private
+    directories (visible, output, hidden) that receive that policy's sentinels."""
+    sidecar = _beside(path, ".sentinels.json")
+    if not sidecar.is_file():
+        return None
+    try:
+        declared = json.loads(sidecar.read_bytes())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ConfinementError(f"sentinel sidecar unreadable: {sidecar}: {exc}") from exc
+    roles = ("visible", "output", "hidden")
+    if (
+        type(declared) is not dict
+        or set(declared) != set(roles)
+        or any(type(declared[role]) is not str for role in roles)
+    ):
+        raise ConfinementError(f"sentinel sidecar must name visible, output and hidden: {sidecar}")
+    return tuple(Path(declared[role]) for role in roles)
+
+
+def attest_many(policies: Path, *, widen_probes: bool, jobs: int) -> dict[str, Any]:
+    """Audit every `<name>.policy.json` in a directory, `jobs` at a time, writing
+    `<name>.attestation.json` beside each. A policy whose attestation already
+    exists is skipped, so a batch can be resumed; one that cannot be loaded or
+    attested is reported by name while the others still land. An optional
+    `<name>.sentinels.json` names controller-private sentinel homes."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    policies = Path(policies)
+    if type(jobs) is not int or jobs < 1:
+        raise ConfinementError("jobs must be a positive integer")
+    files = sorted(policies.glob("*.policy.json"))
+    if not files:
+        raise ConfinementError(f"no *.policy.json files under {policies}")
+
+    def attestation_path(path: Path) -> Path:
+        return _beside(path, ".attestation.json")
+
+    refused: dict[str, str] = {}
+    loaded: dict[Path, tuple[MacOSPolicy, tuple[Path, Path, Path] | None]] = {}
+    skipped = 0
+    for path in files:
+        if attestation_path(path).exists():
+            skipped += 1
+            continue
+        try:
+            loaded[path] = (load_policy(path), _sentinel_sidecar(path))
+        except ConfinementError as exc:
+            refused[path.name] = str(exc)
+
+    # Policies that would place a sentinel in the same directory (worker
+    # policies share their last hidden root) must not audit at the same time:
+    # each audit holds the locks of its three sentinel homes, in a fixed order.
+    home_locks: dict[Path, threading.Lock] = {}
+
+    def homes_of(policy: MacOSPolicy, homes) -> tuple[Path, ...]:
+        try:
+            return _sentinel_homes(policy, homes)
+        except ConfinementError:
+            return ()  # an invalid sentinel home fails again, and is reported, inside attest()
+
+    for policy, homes in loaded.values():
+        for home in homes_of(policy, homes):
+            home_locks.setdefault(home, threading.Lock())
+
+    def attest(path: Path) -> tuple[Path, dict[str, Any] | None, str | None]:
+        policy, homes = loaded[path]
+        with contextlib.ExitStack() as held:
+            for home in sorted(set(homes_of(policy, homes)), key=str):
+                held.enter_context(home_locks[home])
+            try:
+                report = run_macos_capability_audit(
+                    policy, sentinel_homes=homes, widen_probes=widen_probes
+                )
+            except (ConfinementError, OSError) as exc:
+                return path, None, str(exc)
+        if not report["capability_pass"]:
+            return path, report, "confinement capability cases failed"
+        return path, report, None
+
+    attested = 0
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        for path, report, error in pool.map(attest, loaded):
+            if error is not None:
+                refused[path.name] = error
+                continue
+            with attestation_path(path).open("x", encoding="utf-8") as stream:
+                stream.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
+            attested += 1
+    return {
+        "ok": not refused,
+        "attested": attested,
+        "skipped": skipped,
+        "refused": dict(sorted(refused.items())),
+    }
 
 
 def load_policy(path: Path) -> MacOSPolicy:
@@ -1328,10 +1581,28 @@ def _sentinel_homes_from_args(args) -> tuple[Path, Path, Path] | None:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "attest-many":
+        try:
+            result = attest_many(args.policies, widen_probes=args.widen_probes, jobs=args.jobs)
+        except (ConfinementError, OSError) as exc:
+            print(json.dumps({"error": str(exc), "ok": False}, sort_keys=True), file=sys.stderr)
+            return 2
+        if not result["ok"]:
+            names = ", ".join(f"{name}: {why}" for name, why in result["refused"].items())
+            print(
+                json.dumps({"error": "refused: " + names, "ok": False, **result}, sort_keys=True),
+                file=sys.stderr,
+            )
+            return 2
+        print(json.dumps(result, sort_keys=True))
+        return 0
     try:
         policy = load_policy(args.policy) if args.policy is not None else None
         report = write_macos_capability_audit(
-            args.output, policy, sentinel_homes=_sentinel_homes_from_args(args)
+            args.output,
+            policy,
+            sentinel_homes=_sentinel_homes_from_args(args),
+            widen_probes=args.widen_probes,
         )
     except (ConfinementError, OSError) as exc:
         print(json.dumps({"error": str(exc), "ok": False}, sort_keys=True), file=sys.stderr)

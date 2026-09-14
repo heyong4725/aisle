@@ -203,6 +203,7 @@ def _monolithic(config, path):
         compiled,
         launch["profile_path"],
         launch["attestation"],
+        policy=launch["policy"],
     )
     if Path(worker["output_root"]).exists():
         raise ValueError("monolithic worker output already exists; resume refused")
