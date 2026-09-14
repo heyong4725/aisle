@@ -83,7 +83,7 @@ def _load(path, digest, *, controller_root=None):
         raise ValueError("run configuration or controller overlaps participant authority")
     from aisle.harness.matched_session import _verify_development
 
-    _verify_development(config["development"])
+    config["development"] = _verify_development(config["development"], root)
     if (
         not isinstance(config["worker_adapter_sha256"], str)
         or re.fullmatch(r"[0-9a-f]{64}", config["worker_adapter_sha256"]) is None

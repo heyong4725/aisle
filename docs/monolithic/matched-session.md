@@ -199,6 +199,19 @@ a shorter remaining tool budget still wins. Setup and collection therefore need
 space within the declared tool budget. A forced outer timeout remains an
 infrastructure exclusion, and incomplete worker evidence does not pass auditing.
 This development label does not certify expert parity.
+
+A `development` object may instead use `schema_version:
+aisle.matched-development.v2`, which names one `candidate` id from the
+controller-owned `docs/monolithic/candidates.json` and binds that table's
+SHA-256 as `candidates_sha256`, alongside the same `seeds`, `run_ceiling`,
+`episode_ceiling` and `timeout_s`. Admission resolves the candidate's tier,
+embodiment, perception rung, verifier, reset mode, graph, turn plan and
+monolithic module from the table and retains them in the plan; a stale table
+hash, an unknown id, a free launch field, or a candidate whose artifacts are
+not all present in the controller tree refuses admission. The v1 form remains
+the fixed T1/franka/oracle/teleport protocol. Naming a candidate does not
+qualify it: the declared `t1-l2-realistic` row is refused until its monolithic
+pair exists, and admission never substitutes an easier task.
 Clients use `request_run(channel, timeout_s=...)`; they cannot alter these inputs.
 Run and episode reservations persist across requests in the controller instance.
 

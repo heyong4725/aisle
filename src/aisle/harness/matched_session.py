@@ -15,6 +15,7 @@ import re
 from datetime import UTC
 from pathlib import Path, PurePosixPath
 
+from aisle.harness import candidates as cand
 from aisle.harness import monolith
 from aisle.harness.matched_evidence import SCHEMA, audit_tool_journal, common_envelope
 from aisle.harness.monolithic import TypedSurfaceError, validate_matched_treatment
@@ -39,6 +40,7 @@ CONTROLLER_FILES = (
     "tools/matched_campaign.py",
     "tools/campaign.py",
     "src/aisle/harness/matched_session.py",
+    "src/aisle/harness/candidates.py",
     "src/aisle/harness/matched_evidence.py",
     "src/aisle/harness/matched_collection.py",
     "src/aisle/harness/monolithic_run_evidence.py",
@@ -540,40 +542,33 @@ def _verify_launches(
         raise AdmissionError("undeclared launch arguments differ between arms")
 
 
-def _verify_development(protocol: dict) -> None:
-    fixed = {
-        "schema_version": "aisle.matched-development.v1",
-        "purpose": "expert_parity",
-        "tier": "T1",
-        "embodiment": "franka",
-        "verifier": "oracle",
-        "reset": "teleport",
-    }
-    if not isinstance(protocol, dict) or set(protocol) != set(fixed) | {
-        "seeds",
-        "run_ceiling",
-        "episode_ceiling",
-        "timeout_s",
-    }:
-        raise AdmissionError("development protocol fields are unresolved")
-    if any(protocol[key] != value for key, value in fixed.items()):
-        raise AdmissionError("development protocol requests an unsupported run mode")
-    seeds = protocol["seeds"]
-    if (
-        not isinstance(seeds, list)
-        or not seeds
-        or any(type(seed) is not int or seed < 0 for seed in seeds)
-        or len(set(seeds)) != len(seeds)
-    ):
-        raise AdmissionError("development seeds must be distinct nonnegative integers")
-    for name in ("run_ceiling", "episode_ceiling"):
-        if type(protocol[name]) is not int or protocol[name] <= 0:
-            raise AdmissionError("development run and episode budgets must be positive integers")
-    if len(seeds) > protocol["episode_ceiling"]:
-        raise AdmissionError("development seed set exceeds its episode budget")
-    timeout = protocol["timeout_s"]
-    if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
-        raise AdmissionError("development timeout must be finite and positive")
+def _verify_development(protocol: dict, root: Path | None = None) -> dict:
+    """Return the retained development form: v1 unchanged after the fixed-field
+    check; v2 normalized against the hashed candidate table (MON-3/MON-8)."""
+    from aisle.harness import candidates as cand
+
+    try:
+        if (
+            isinstance(protocol, dict)
+            and protocol.get("schema_version") != cand.DEVELOPMENT_SCHEMA_V1
+        ):
+            return cand.normalize_development(protocol, root)
+        fixed = {
+            "schema_version": cand.DEVELOPMENT_SCHEMA_V1,
+            "purpose": cand.DEVELOPMENT_PURPOSE,
+            "tier": "T1",
+            "embodiment": "franka",
+            "verifier": "oracle",
+            "reset": "teleport",
+        }
+        if not isinstance(protocol, dict) or set(protocol) != set(fixed) | set(cand.BUDGET_KEYS):
+            raise AdmissionError("development protocol fields are unresolved")
+        if any(protocol[key] != value for key, value in fixed.items()):
+            raise AdmissionError("development protocol requests an unsupported run mode")
+        cand.check_budget(protocol)
+    except cand.CandidateError as exc:
+        raise AdmissionError(f"development protocol refused: {exc}") from exc
+    return protocol
 
 
 def _verify_fresh_private_home(record):
@@ -718,7 +713,7 @@ def admit_pair(
             except (ValueError, RuntimeError) as exc:
                 raise AdmissionError(f"typed validation binding invalid: {exc}") from exc
         if development is not None:
-            _verify_development(development)
+            development = _verify_development(development, root)
         for arm in sorted(ARMS):
             budget = candidates[arm]["budget"]
             if type(budget) is not dict:
@@ -826,8 +821,10 @@ def admit_pair(
                 "allowlist",
                 "parity-protocol",
                 "experts",
+                "candidates",
             )
         )
+        paths.update(cand.retained_artifacts(development))
         artifact_hashes = {}
         for name in sorted(paths):
             path = (root / name).resolve()
@@ -840,6 +837,10 @@ def admit_pair(
                     raise AdmissionError(
                         f"declared source differs from executing controller: {name}"
                     )
+        try:
+            cand.verify_table_binding(development, artifact_hashes)
+        except cand.CandidateError as exc:
+            raise AdmissionError(str(exc)) from exc
         record = {
             "schema_version": "aisle.matched-session-plan.v1",
             "confirmatory_ready": False,
