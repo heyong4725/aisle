@@ -3,6 +3,7 @@
 import copy
 import json
 from dataclasses import asdict
+from pathlib import Path
 
 import pytest
 import yaml
@@ -78,6 +79,16 @@ def test_stage_binds_validation_configs_and_transport_graph(tmp_path):
         inputs["snapshot"] / "graphs/turn_plans/expert_t1.json"
     ).read_bytes()
     assert record["execution_authorized"] is False
+    # MON-3: the stage retains the candidate surface it was built from, not a literal
+    snapshot_record = record["snapshot_record"]
+    assert snapshot_record["typed_graph"] == "graphs/expert_t1.yaml"
+    assert snapshot_record["turn_plan"] == "graphs/turn_plans/expert_t1.json"
+    assert snapshot_record["allowlist"] == "docs/monolithic/allowlist.json"
+    hosts = {n: json.loads(Path(b["config_path"]).read_text()) for n, b in record["hosts"].items()}
+    assert all(
+        "src/aisle/nodes/segmented_pose.py" in h["launch"]["bundle_manifest"]["participant_files"]
+        for h in hosts.values()
+    )
 
 
 @pytest.mark.parametrize(
@@ -153,3 +164,28 @@ def test_staged_artifact_verification_refuses_drift(tmp_path, mutation):
         (output / "stage.json").write_text("{}")
     with pytest.raises(StageError):
         verify_graph_stage(output, record)
+
+
+def test_transport_refuses_a_graph_other_than_the_snapshot_candidate(tmp_path):
+    """MON-3/MON-13: the staged transport binds the snapshot's own graph path."""
+    from aisle.harness.typed_graph_stage import stage_typed_graph, transport_for_instrumentation
+
+    inputs = _validated(tmp_path)
+    output = tmp_path / "private/staged"
+    record = stage_typed_graph(
+        ROOT,
+        inputs["snapshot"],
+        inputs["snapshot_record"],
+        inputs["output"],
+        _declarations(inputs),
+        output,
+    )
+    authored = (inputs["snapshot"] / "graphs/expert_t1.yaml").read_bytes()
+    with pytest.raises(RuntimeError, match="authored graph snapshot"):
+        transport_for_instrumentation(
+            output,
+            record,
+            authored_bytes=authored,
+            graph=inputs["snapshot"] / "graphs/expert_t1_l2.yaml",
+            controller_root=ROOT,
+        )

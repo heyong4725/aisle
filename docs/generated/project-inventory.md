@@ -174,7 +174,7 @@ stayed outside it).
 | `harness monolith describe` | `--embodiment` |
 | `harness monolith interface` | `--root` |
 | `harness monolith parity` | `--typed`, `--monolithic`, `--output`, `--root` |
-| `harness monolith run` | `--module`, `--tier`, `--embodiment`, `--episodes`, `--seeds`, `--run-id`, `--timeout-s`, `--no-idea-gate`, `--root`, `--worker-config`, `--worker-config-sha256` |
+| `harness monolith run` | `--module`, `--tier`, `--embodiment`, `--episodes`, `--seeds`, `--run-id`, `--timeout-s`, `--no-idea-gate`, `--root`, `--template`, `--verifier`, `--reset`, `--worker-config`, `--worker-config-sha256` |
 | `harness monolith table` | `--write`, `--root` |
 | `harness perception audit` | `--run`, `--envelope`, `--output` |
 | `harness probe` | `--dataflow`, `--topic`, `--for`, `--root` |

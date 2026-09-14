@@ -136,3 +136,50 @@ def test_malformed_table_refuses(tmp_path):
     (root / "docs/monolithic/candidates.json").write_text(json.dumps({"candidates": {}}))
     with pytest.raises(cand.CandidateError):
         cand.read_candidates(root)
+
+
+def test_launch_fields_for_v1_equal_the_committed_t1_oracle_row():
+    """MON-3 / MON-8: a v1 protocol launches exactly the table's t1-oracle candidate."""
+    v1 = {"schema_version": cand.DEVELOPMENT_SCHEMA_V1, "purpose": "expert_parity"}
+    fields = cand.launch_fields(v1)
+    row = cand.read_candidates(ROOT)[0]["candidates"]["t1-oracle"]
+    assert fields == {key: row[key] for key in cand.DERIVED_KEYS}
+    assert fields["typed_graph"] == "graphs/expert_t1.yaml"
+    assert fields["documents"]["allowlist"] == "docs/monolithic/allowlist.json"
+
+
+def test_launch_fields_for_v2_come_from_the_retained_form(tmp_path):
+    """MON-3: v2 launch fields are the retained derived fields, nothing recomputed."""
+    root = _synthetic_root(tmp_path)
+    normalized = cand.normalize_development(_v2(root), root)
+    normalized_l2 = {
+        **normalized,
+        "typed_graph": "graphs/expert_t1_l2.yaml",
+        "verifier": "realistic",
+    }
+    assert cand.launch_fields(normalized_l2)["typed_graph"] == "graphs/expert_t1_l2.yaml"
+    assert cand.launch_fields(normalized_l2)["verifier"] == "realistic"
+    with pytest.raises(cand.CandidateError):
+        cand.launch_fields({"schema_version": cand.DEVELOPMENT_SCHEMA_V2, "candidate": "x"})
+
+
+def test_participant_python_files_derive_from_the_allowlist():
+    """MON-2: the authored Python surface is the allowlist's .py entries, not a constant."""
+    allowlist = json.loads((ROOT / "docs/monolithic/allowlist.json").read_text())
+    files = cand.participant_python(allowlist)
+    assert files == (
+        "src/aisle/nodes/grasp_topdown.py",
+        "src/aisle/nodes/ik_trajectory.py",
+        "src/aisle/nodes/segmented_pose.py",
+        "src/aisle/nodes/task_state_machine.py",
+    )
+    with pytest.raises(cand.CandidateError):
+        cand.participant_python({"typed": {"editable": []}})
+
+
+def test_participant_python_refuses_paths_outside_the_authored_surface():
+    """MON-2: only src/aisle Python implementations form the authored surface."""
+    with pytest.raises(cand.CandidateError):
+        cand.participant_python({"typed": {"editable": ["tools/helper.py"]}})
+    assert cand.modules_for(("src/aisle/nodes/l2_pose.py",)) == frozenset({"aisle.nodes.l2_pose"})
+    assert cand.launch_fields_for(None) == cand.T1_ORACLE_FIELDS

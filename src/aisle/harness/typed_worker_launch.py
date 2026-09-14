@@ -10,6 +10,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from aisle.harness.candidates import modules_for
 from aisle.harness.matched_runtime import verify_runtime
 from aisle.harness.treatment_ambient import spawn_isolated_process, verify_declared_environment
 from aisle.harness.treatment_confinement import compile_macos_profile, wrap_verified_command
@@ -102,6 +103,7 @@ def launch_typed_worker(
     timeout_s,
     max_calls=100000,
     configuration=None,
+    participant_files=PARTICIPANT_FILES,
 ):
     """Launch one authored script and retain host-observed supervision evidence.
 
@@ -131,7 +133,7 @@ def launch_typed_worker(
             raise TypedLaunchError("worker timeout must be finite and positive")
         if type(max_calls) is not int or max_calls <= 0:
             raise TypedLaunchError("worker call budget must be a positive integer")
-        modules = {p[4:-3].replace("/", "."): p for p in PARTICIPANT_FILES}
+        modules = {p[4:-3].replace("/", "."): p for p in participant_files}
         if type(module) is not str or module not in modules:
             raise TypedLaunchError("worker module is outside the authored Python surface")
         if type(outputs) not in (set, frozenset) or any(
@@ -218,6 +220,7 @@ def launch_typed_worker(
                 timeout_s=remaining,
                 max_calls=max_calls,
                 configuration=configuration,
+                modules=modules_for(participant_files),
             )
         record["stage"] = "postflight"
         verify_typed_launch(**kwargs)

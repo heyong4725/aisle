@@ -19,6 +19,8 @@ from pathlib import Path
 
 import yaml
 
+from aisle.harness.candidates import ALLOWED
+
 TEMPLATE_GRAPH = "graphs/monolithic_t1.yaml"
 DOCS_DIR = "docs/monolithic"
 CAMPAIGN_PURPOSE = "expert_parity"  # MON-11: never pooled with agent sessions
@@ -55,6 +57,8 @@ def stamp_graph(
     template_path = root / template
     doc = yaml.safe_load(template_path.read_text(encoding="utf-8"))
     module = module.resolve()
+    if not any("AISLE_MONOLITH_MODULE" in (n.get("env") or {}) for n in doc["nodes"]):
+        raise ValueError("template graph binds no monolithic module")
     for node in doc["nodes"]:
         node["path"] = str((template_path.parent / node["path"]).resolve())
         env = node.get("env") or {}
@@ -114,8 +118,11 @@ def run(
     worker_config=None,
     worker_config_sha256=None,
     record_simulator_work: bool = False,
+    template: str = TEMPLATE_GRAPH,
+    verifier: str = "oracle",
+    reset_mode: str = "teleport",
 ) -> dict:
-    """Stamp the supported T1 graph and roll it out through the trusted runner."""
+    """Stamp the admitted monolithic template and roll it out through the trusted runner."""
     if tier != "T1":
         return {
             "ok": False,
@@ -123,6 +130,12 @@ def run(
             "tier": tier,
             "supported_tiers": ["T1"],
         }
+    if verifier not in ALLOWED["verifier"]:
+        return {"ok": False, "error": "unsupported_monolithic_verifier", "verifier": verifier}
+    if reset_mode not in ALLOWED["reset"]:
+        return {"ok": False, "error": "unsupported_monolithic_reset", "reset": reset_mode}
+    if type(template) is not str or template.startswith("/") or ".." in Path(template).parts:
+        return {"ok": False, "error": "unsupported_monolithic_template", "template": template}
 
     from aisle.harness.cli import _branch
     from aisle.harness.rollout import rollout
@@ -145,7 +158,15 @@ def run(
         pre = check_module(module, embodiment)
     if not pre["ok"]:
         return pre
-    graph = stamp_graph(root, module, root / "graphs" / "out", **worker_options)
+    try:
+        graph = stamp_graph(root, module, root / "graphs" / "out", template, **worker_options)
+    except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
+        return {
+            "ok": False,
+            "error": "unsupported_monolithic_template",
+            "template": template,
+            "detail": str(exc),
+        }
     import datetime
     import uuid
 
@@ -160,8 +181,8 @@ def run(
         tier=tier,
         episodes=episodes,
         seeds=seeds,
-        reset_mode="teleport",
-        verifier="oracle",
+        reset_mode=reset_mode,
+        verifier=verifier,
         run_id=run_id,
         branch=_branch(root),
         no_idea_gate=no_idea_gate,
