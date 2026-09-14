@@ -1,5 +1,3 @@
-# Proposed paired T1 L2 pilot surface (MON-4/BND-2/BND-3).
-# Maintainer-derived candidate; not independent expert-parity evidence.
 nodes:
 - id: dora-genesis
   path: ../src/aisle/nodes/dora_genesis.py
@@ -88,10 +86,13 @@ nodes:
     AISLE_LOCKSTEP: '1'
     AISLE_TURN_NODE: monolith-broker
     AISLE_TURN_OUTPUTS: joint_cmd,gripper_cmd,episode_feedback,turn_done
-    AISLE_MONOLITH_MODULE: experts/monolithic/pilot_t1_l2.py
+    AISLE_MONOLITH_MODULE: experts/monolithic/expert_t1_l2.py
   inputs:
     bridge_info:
       source: pilot-policy-surface/bridge_info
+      queue_size: 100
+    rgb_overhead:
+      source: dora-genesis/rgb_overhead
       queue_size: 100
     depth_overhead:
       source: dora-genesis/depth_overhead
@@ -101,6 +102,9 @@ nodes:
       queue_size: 1
     episode_goal:
       source: pilot-policy-surface/episode_goal
+      queue_size: 100
+    episode_result:
+      source: verifier-oracle/episode_result
       queue_size: 100
     violation:
       source: budget-guard/violation
@@ -112,9 +116,6 @@ nodes:
       source: turn-barrier/turn
       queue_size: 4
       queue_policy: backpressure
-    rgb_overhead:
-      source: dora-genesis/rgb_overhead
-      queue_size: 100
   outputs:
   - joint_cmd
   - gripper_cmd
@@ -149,7 +150,6 @@ nodes:
     AISLE_LOCKSTEP: '1'
     AISLE_TURN_NODE: rollout-client
     AISLE_TURN_OUTPUTS: reset,episode_goal,turn_done
-    AISLE_EPISODE_LIFECYCLE: fixed-horizon-t1-v1
   inputs:
     tick: dora/timer/millis/1000
     reset_done:

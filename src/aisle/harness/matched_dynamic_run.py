@@ -7,8 +7,8 @@ import hashlib
 import threading
 from pathlib import Path
 
+from aisle.harness.candidates import launch_fields
 from aisle.harness.matched_runtime import worker_interpreter
-from aisle.harness.matched_surface import development_surface, record_surface
 from aisle.harness.typed_node_host import load_host_config
 from aisle.harness.typed_snapshot import _read
 from aisle.harness.typed_stage_provider import TypedStageProvider
@@ -32,8 +32,6 @@ def configured_typed_provider(config, config_path):
     }:
         raise ValueError("invalid typed provider configuration fields")
     snapshot_record = declaration["snapshot_record"]
-    if record_surface(snapshot_record) != development_surface(config["development"]):
-        raise ValueError("typed provider task surface differs from run")
     if (
         snapshot_record["controller_root"] != config["controller_root"]
         or snapshot_record["participant_root"] != config["participant_root"]
@@ -90,7 +88,9 @@ def configured_typed_provider(config, config_path):
                 failed = True
                 raise
 
-    return Path(declaration["snapshot"]) / record_surface(snapshot_record).typed_graph, factory
+    if snapshot_record["typed_graph"] != launch_fields(config["development"])["typed_graph"]:
+        raise ValueError("typed snapshot graph differs from the admitted candidate")
+    return Path(declaration["snapshot"]) / snapshot_record["typed_graph"], factory
 
 
 def configured_monolithic_provider(config, config_path):
@@ -117,7 +117,8 @@ def configured_monolithic_provider(config, config_path):
     if config["arm"] != "monolithic":
         raise ValueError("monolithic provider requires the monolithic arm")
     view = Path(config["participant_root"])
-    module = view / development_surface(config["development"]).monolithic_module
+    fields = launch_fields(config["development"])
+    module = view / fields["monolithic_module"]
 
     def current():
         if _load(path, digest) != config:
@@ -163,7 +164,8 @@ def configured_monolithic_provider(config, config_path):
         declaration=launch,
         runtime=config["runtime_record"],
         adapter=config["worker_adapter_sha256"],
-        embodiment=config["development"]["embodiment"],
+        embodiment=fields["embodiment"],
+        module=fields["monolithic_module"],
     )
     worker = load_worker(binding["worker_config"], binding["worker_config_sha256"])
     if worker["module_sha256"] != declaration["module_sha256"]:
@@ -184,6 +186,7 @@ def configured_monolithic_provider(config, config_path):
 
 def verify_monolithic_provider_binding(config, config_digest, receipt, worker, worker_digest):
     """Check retained generated-worker evidence against the sealed controller request."""
+    embodiment = launch_fields(config["development"])["embodiment"]
     if type(receipt) is not dict or set(receipt) != {
         "schema_version",
         "run_config_sha256",
@@ -208,7 +211,7 @@ def verify_monolithic_provider_binding(config, config_digest, receipt, worker, w
         receipt["module_sha256"] != declaration["module_sha256"]
         or worker["module_sha256"] != declaration["module_sha256"]
         or worker["purpose"] != "expert_parity"
-        or worker["embodiment"] != config["development"]["embodiment"]
+        or worker["embodiment"] != embodiment
         or launch["runtime_record"] != config["runtime_record"]
         or launch["attestation"]["adapter"]["sha256"] != config["worker_adapter_sha256"]
         or launch["bundle"] != str(allocation / "bundle")

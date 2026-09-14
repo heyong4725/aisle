@@ -206,10 +206,11 @@ def main(argv: list[str] | None = None) -> int:
     """CON-8: read controller-owned JSON inputs and emit one JSON result."""
     parser = _Parser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("admit", "run", "collect-run", "check"):
+    for name in ("admit", "run", "collect-run", "check", "heldout-eval"):
         command = commands.add_parser(name)
         command.add_argument("--request", type=Path, required=True)
-        command.add_argument("--output", type=Path, required=True)
+        if name != "heldout-eval":
+            command.add_argument("--output", type=Path, required=True)
         if name in ("run", "check"):
             command.add_argument("--arm", choices=("typed", "monolithic"), required=True)
             command.add_argument("--session-id", required=True)
@@ -220,6 +221,12 @@ def main(argv: list[str] | None = None) -> int:
         request = json.loads(args.request.read_text())
         if not isinstance(request, dict):
             raise AdmissionError("controller request must be an object")
+        if args.command == "heldout-eval":
+            from aisle.harness.heldout_eval import run_heldout
+
+            result = {**run_heldout(request), "eligible_for_estimate": False}
+            print(json.dumps(result, allow_nan=False))
+            return 0 if result["ok"] else 2
         if args.command == "collect-run":
             result = retain_run(request["source"], args.output, run_id=request["run_id"])
             print(json.dumps(result, allow_nan=False))

@@ -1,0 +1,7 @@
+{
+  "schema_version": "aisle.stats.records.v1",
+  "protocol_id": "cse-causal-study-pilot-v1-protocol-r0",
+  "campaign_id": "cse-causal-study-pilot-v1",
+  "campaign_phase": "pilot",
+  "sessions": []
+}

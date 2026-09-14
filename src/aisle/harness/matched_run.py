@@ -12,8 +12,8 @@ import json
 import re
 from pathlib import Path
 
+from aisle.harness.candidates import launch_fields
 from aisle.harness.matched_runtime import verify_runtime, worker_interpreter
-from aisle.harness.matched_surface import development_surface, record_surface
 from aisle.harness.treatment_confinement import MacOSPolicy, wrap_verified_command
 from aisle.harness.typed_snapshot import _read
 
@@ -84,7 +84,7 @@ def _load(path, digest, *, controller_root=None):
         raise ValueError("run configuration or controller overlaps participant authority")
     from aisle.harness.matched_session import _verify_development
 
-    _verify_development(config["development"])
+    config["development"] = _verify_development(config["development"], root)
     if (
         not isinstance(config["worker_adapter_sha256"], str)
         or re.fullmatch(r"[0-9a-f]{64}", config["worker_adapter_sha256"]) is None
@@ -138,8 +138,6 @@ def _typed(config, path):
         if receipt["immutable_id"] != selected["stage_id"]:
             raise ValueError("typed stage identity differs")
         snapshot = receipt["snapshot_record"]
-        if record_surface(snapshot) != development_surface(config["development"]):
-            raise ValueError("typed stage task surface differs from run")
         if snapshot["participant_root"] != config["participant_root"]:
             raise ValueError("typed stage belongs to another participant")
         for name, digest in snapshot["inputs"]["participant"].items():
@@ -149,10 +147,11 @@ def _typed(config, path):
             host = load_host_config(binding["config_path"], binding["config_sha256"])
             _worker_binding(host["launch"], config, path)
         stages.append((stage, receipt))
-    graph = (
-        Path(stages[0][1]["snapshot_record"]["snapshot_root"])
-        / development_surface(config["development"]).typed_graph
-    )
+    fields = launch_fields(config["development"])
+    snapshot_record = stages[0][1]["snapshot_record"]
+    if snapshot_record["typed_graph"] != fields["typed_graph"]:
+        raise ValueError("typed snapshot graph differs from the admitted candidate")
+    graph = Path(snapshot_record["snapshot_root"]) / snapshot_record["typed_graph"]
     history = []
     for index in range(len(stages)):
         select_rollout_stage(
@@ -162,7 +161,7 @@ def _typed(config, path):
             authored_bytes=graph.read_bytes(),
             graph=graph,
             controller_root=ROOT,
-            embodiment=config["development"]["embodiment"],
+            embodiment=fields["embodiment"],
         )
     return graph, lambda index: stages[index]
 
@@ -180,12 +179,11 @@ def _monolithic(config, path):
         raise ValueError("monolithic run requires its worker configuration")
     worker = load_worker(binding["worker_config"], binding["worker_config_sha256"])
     module = (
-        Path(config["participant_root"])
-        / development_surface(config["development"]).monolithic_module
+        Path(config["participant_root"]) / launch_fields(config["development"])["monolithic_module"]
     )
     if hashlib.sha256(_read(module.parent, module.name)).hexdigest() != worker["module_sha256"]:
         raise ValueError("monolithic source differs from worker binding")
-    if worker["embodiment"] != config["development"]["embodiment"]:
+    if worker["embodiment"] != launch_fields(config["development"])["embodiment"]:
         raise ValueError("worker embodiment differs from run")
     launch = worker["launch"]
     policy = _worker_binding(launch, config, path)
@@ -222,12 +220,13 @@ def run_configured(path, digest):
         path = Path(path).absolute()
         config = _load(path, digest)
         development = config["development"]
+        fields = launch_fields(development)
         common = dict(
             root=ROOT,
             seeds=development["seeds"],
             episodes=len(development["seeds"]),
-            tier=development["tier"],
-            embodiment=development["embodiment"],
+            tier=fields["tier"],
+            embodiment=fields["embodiment"],
             run_id=config["run_id"],
             timeout_s=development["timeout_s"],
             no_idea_gate=False,
@@ -248,8 +247,8 @@ def run_configured(path, digest):
                 **common,
                 graph=graph,
                 typed_stage_factory=factory,
-                reset_mode=development["reset"],
-                verifier=development["verifier"],
+                reset_mode=fields["reset"],
+                verifier=fields["verifier"],
                 branch=_branch(ROOT),
             )
         else:
@@ -267,8 +266,10 @@ def run_configured(path, digest):
                     result = run(
                         **common,
                         module=module,
+                        template=fields["monolithic_template"],
+                        verifier=fields["verifier"],
+                        reset_mode=fields["reset"],
                         **binding,
-                        task_surface=development_surface(development).identity,
                     )
                 except Exception as exc:
                     result = {"ok": False, "infrastructure_invalid": True, "error": str(exc)}

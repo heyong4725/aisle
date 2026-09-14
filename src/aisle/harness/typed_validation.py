@@ -17,7 +17,6 @@ import time
 from pathlib import Path
 
 from aisle.harness.matched_runtime import verify_runtime
-from aisle.harness.matched_surface import record_surface
 from aisle.harness.treatment_ambient import spawn_isolated_process, verify_declared_environment
 from aisle.harness.treatment_confinement import (
     MacOSPolicy,
@@ -32,7 +31,6 @@ BUNDLE_FILES = (
     "aisle/harness/registry.py",
     "aisle/harness/validate.py",
     "aisle/harness/cli.py",
-    "aisle/harness/matched_surface.py",
 )
 _SOURCE_ROOT = Path(__file__).resolve().parents[2]
 _BOOTSTRAP = (
@@ -162,7 +160,7 @@ def _validation_command_fields(
             else str(bundle)
         ),
         "validate",
-        str(snapshot / record_surface(snapshot_record).typed_graph),
+        str(snapshot / snapshot_record["typed_graph"]),
         "--root",
         str(snapshot),
         "--embodiment",

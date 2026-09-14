@@ -64,6 +64,34 @@ seed commitment or authorization to collect scores. Strict checks still
 require those sources. See
 [the inheritance decision](../../docs/decisions/ADR-seed-commitment-inheritance.md).
 
+bnd-task-band-calibration-v11 supersedes v10 after the BND-5 perception audit
+was regenerated with the hardened auditor on a 32-seed corpus
+(`analysis/perception-audit/records/bnd-perception-corpus-03/`); the gate is
+recorded as `failed` at that report (22 of 22 strata below the floor), the
+disposition stays "not perception-eligible", and the seed commitment is
+inherited unverified as before.
+
+cse-causal-study-v17 and cse-causal-study-pilot-v2 supersede v16 and pilot-v1
+after the matched executor gained the development protocol v2 bound to
+`docs/monolithic/candidates.json` (hashed controller sources changed; seed
+commitments inherited, pending gates preserved, pilot design unchanged).
+
+cse-causal-study-v18 to v22 and cse-causal-study-pilot-v3 to pilot-v7 are the
+same kind of pending successors, one pair per hashed-source change of the
+ADR-66 pilot series (#582 to #586: candidate-routed launches, the T1-L2
+monolithic pair, the controller-run held-out evaluation, the assignment ledger
+and records producer, the relay's ChatGPT account header). Each inherits its
+predecessor's commitment unverified and preserves every pending gate; the
+registration a pilot actually runs under is a fresh-seed successor with its own
+instrument set.
+
+cse-causal-study-pilot-v8 supersedes pilot-v7 as the registration the ADR-66
+pilot runs under: a FRESH private seed commitment (never inherited, BND-13),
+the instrument set fixed to candidate `t1-l2-realistic` on the qualified Codex
+0.153.4, session success as the controller-run held-out rule (28 of 32 oracle
+successes), a sealed balanced assignment plan, and the BND-12 gate recorded as
+`failed` at the v11 perception audit (a named limitation, not a blocker).
+
 To make such a pending successor, set `seed_commitment.inherited_from` and
 `artifacts.seed_commitment_predecessor` to the same predecessor manifest path,
 name its campaign in `superseded`, preserve its seed rules and source paths,
@@ -171,13 +199,16 @@ CSE v15 supersedes v14 for the owned Responses provider relay, per-item native
 reservations, and provider-to-frontend/controller source auditing (#536). It
 binds the complete controller source set and provider documentation while
 preserving the inherited seed commitment, collection rules and all seven pending
-gates. BND v10 remains current because its declared inputs did not change.
+gates. BND v10 remained current at that point (its declared inputs did not
+change); v11 later superseded it after the regenerated audit.
 Engineering route tests do not establish complete frontend conformance,
 independent confinement, or permission to collect study results.
 
-CSE v17 supersedes v16 for the named paired T1 L2 pilot surface, public policy
-projection, fixed episode lifecycle and pinned model-cache preparation (#347).
-BND v11 supersedes v10 for the shared CLI and registry changes. Both preserve
-their seed commitments, collection rules, thresholds and pending gates. These
-successors record implementation drift; they are not the separate pilot
-registration and do not authorize pilot or confirmatory collection.
+CSE v23, pilot v9 and BND v14 supersede v22, pilot v8 and BND v13 after
+#578 adds public goal/reset/calibration projection to the existing T1-L2
+candidate and a pinned public model-cache preparer. These are pending byte
+bindings: study design, seed source rules and gate outcomes are preserved,
+including the failed BND audit. Pilot v8 remains the historical fresh-seed
+registration; pilot v9 inherits its commitment unverified and does not
+authorize collection. A pilot run needs a fresh-seed run registration and
+execution-context admission for the revised graphs and cache.

@@ -15,9 +15,9 @@ import re
 from datetime import UTC
 from pathlib import Path, PurePosixPath
 
+from aisle.harness import candidates as cand
 from aisle.harness import monolith
 from aisle.harness.matched_evidence import SCHEMA, audit_tool_journal, common_envelope
-from aisle.harness.matched_surface import LEGACY_SURFACE, development_surface
 from aisle.harness.monolithic import TypedSurfaceError, validate_matched_treatment
 from aisle.harness.treatment_integrity import ManifestError, create_treatment_manifest
 from aisle.harness.typed_execution_bundle import CONTROLLER_FILES as TYPED_EXECUTION_FILES
@@ -40,7 +40,7 @@ CONTROLLER_FILES = (
     "tools/matched_campaign.py",
     "tools/campaign.py",
     "src/aisle/harness/matched_session.py",
-    "src/aisle/harness/matched_surface.py",
+    "src/aisle/harness/candidates.py",
     "src/aisle/harness/matched_evidence.py",
     "src/aisle/harness/matched_collection.py",
     "src/aisle/harness/monolithic_run_evidence.py",
@@ -104,7 +104,6 @@ CONTROLLER_FILES = (
     "src/aisle/harness/rollout.py",
     "src/aisle/harness/simulator_work.py",
     "src/aisle/harness/rollout_client.py",
-    "src/aisle/harness/pilot_policy_surface.py",
     "src/aisle/harness/guard_divergence.py",
     "src/aisle/harness/traces.py",
     "src/aisle/harness/monolithic.py",
@@ -366,7 +365,13 @@ def _permission_ids(
 
 
 def _verify_launches(
-    candidates: dict, launches: dict, root: Path, prompt_row: str | None, *, execution=None
+    candidates: dict,
+    launches: dict,
+    root: Path,
+    prompt_row: str | None,
+    *,
+    execution=None,
+    documents=None,
 ) -> None:
     if not isinstance(launches, dict) or set(launches) != ARMS:
         raise AdmissionError("both launch bindings are required")
@@ -468,13 +473,10 @@ def _verify_launches(
             ):
                 raise AdmissionError("research contract argument differs from admitted bytes")
         else:
+            documents = monolith.DEFAULT_DOCUMENTS if documents is None else documents
             rows = [
                 row
-                for row in monolith.load_json(
-                    root,
-                    "treatment-table.json",
-                    task_surface=development_surface((execution or {}).get("development")).identity,
-                )["rows"]
+                for row in monolith.load_document(root, documents["treatment_table"])["rows"]
                 if row["id"] == prompt_row
             ]
             if len(rows) != 1 or rows[0]["surface"] != "documentation given to the agent":
@@ -547,44 +549,33 @@ def _verify_launches(
         raise AdmissionError("undeclared launch arguments differ between arms")
 
 
-def _verify_development(protocol: dict) -> None:
-    fixed = {
-        "schema_version": "aisle.matched-development.v1",
-        "purpose": "expert_parity",
-        "tier": "T1",
-        "embodiment": "franka",
-        "verifier": "oracle",
-        "reset": "teleport",
-    }
-    if not isinstance(protocol, dict) or set(protocol) - {"task_surface"} != set(fixed) | {
-        "seeds",
-        "run_ceiling",
-        "episode_ceiling",
-        "timeout_s",
-    }:
-        raise AdmissionError("development protocol fields are unresolved")
+def _verify_development(protocol: dict, root: Path | None = None) -> dict:
+    """Return the retained development form: v1 unchanged after the fixed-field
+    check; v2 normalized against the hashed candidate table (MON-3/MON-8)."""
+    from aisle.harness import candidates as cand
+
     try:
-        development_surface(protocol)
-    except ValueError as exc:
-        raise AdmissionError(str(exc)) from exc
-    if any(protocol[key] != value for key, value in fixed.items()):
-        raise AdmissionError("development protocol requests an unsupported run mode")
-    seeds = protocol["seeds"]
-    if (
-        not isinstance(seeds, list)
-        or not seeds
-        or any(type(seed) is not int or seed < 0 for seed in seeds)
-        or len(set(seeds)) != len(seeds)
-    ):
-        raise AdmissionError("development seeds must be distinct nonnegative integers")
-    for name in ("run_ceiling", "episode_ceiling"):
-        if type(protocol[name]) is not int or protocol[name] <= 0:
-            raise AdmissionError("development run and episode budgets must be positive integers")
-    if len(seeds) > protocol["episode_ceiling"]:
-        raise AdmissionError("development seed set exceeds its episode budget")
-    timeout = protocol["timeout_s"]
-    if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
-        raise AdmissionError("development timeout must be finite and positive")
+        if (
+            isinstance(protocol, dict)
+            and protocol.get("schema_version") != cand.DEVELOPMENT_SCHEMA_V1
+        ):
+            return cand.normalize_development(protocol, root)
+        fixed = {
+            "schema_version": cand.DEVELOPMENT_SCHEMA_V1,
+            "purpose": cand.DEVELOPMENT_PURPOSE,
+            "tier": "T1",
+            "embodiment": "franka",
+            "verifier": "oracle",
+            "reset": "teleport",
+        }
+        if not isinstance(protocol, dict) or set(protocol) != set(fixed) | set(cand.BUDGET_KEYS):
+            raise AdmissionError("development protocol fields are unresolved")
+        if any(protocol[key] != value for key, value in fixed.items()):
+            raise AdmissionError("development protocol requests an unsupported run mode")
+        cand.check_budget(protocol)
+    except cand.CandidateError as exc:
+        raise AdmissionError(f"development protocol refused: {exc}") from exc
+    return protocol
 
 
 def _verify_fresh_private_home(record):
@@ -729,7 +720,8 @@ def admit_pair(
             except (ValueError, RuntimeError) as exc:
                 raise AdmissionError(f"typed validation binding invalid: {exc}") from exc
         if development is not None:
-            _verify_development(development)
+            development = _verify_development(development, root)
+        documents = cand.documents_for(development)
         for arm in sorted(ARMS):
             budget = candidates[arm]["budget"]
             if type(budget) is not dict:
@@ -751,6 +743,7 @@ def admit_pair(
                 launches,
                 root,
                 prompt_row,
+                documents=documents,
                 execution={
                     "development": development,
                     "tool_runtime": tool_runtime,
@@ -762,15 +755,12 @@ def admit_pair(
                     "prompt_row": prompt_row,
                 },
             )
-        surface = development_surface(development)
-        table = monolith.table_report(root, write=False, task_surface=surface.identity)
-        interface = monolith.interface_report(root, task_surface=surface.identity)
+        table = monolith.table_report(root, write=False, documents=documents)
+        interface = monolith.interface_report(root, documents=documents)
         if not table["ok"] or not interface["ok"]:
             raise AdmissionError("controller surface checks failed")
-        allowlist = monolith.load_json(root, "allowlist.json", task_surface=surface.identity)
-        source_table = monolith.load_json(
-            root, "treatment-table.json", task_surface=surface.identity
-        )
+        allowlist = monolith.load_document(root, documents["allowlist"])
+        source_table = monolith.load_document(root, documents["treatment_table"])
         validation_rows = [
             row
             for row in source_table["rows"]
@@ -833,15 +823,17 @@ def admit_pair(
         paths = {path for row in source_table["rows"] for arm in ARMS for path in row[arm]["paths"]}
         paths.update(CONTROLLER_FILES)
         paths.update(
-            f"{surface.docs_directory}/{name}.json"
+            f"docs/monolithic/{name}.json"
             for name in (
                 "treatment-table",
                 "interface-map",
                 "allowlist",
                 "parity-protocol",
                 "experts",
+                "candidates",
             )
         )
+        paths.update(cand.retained_artifacts(development))
         artifact_hashes = {}
         for name in sorted(paths):
             path = (root / name).resolve()
@@ -854,15 +846,17 @@ def admit_pair(
                     raise AdmissionError(
                         f"declared source differs from executing controller: {name}"
                     )
+        try:
+            cand.verify_table_binding(development, artifact_hashes)
+        except cand.CandidateError as exc:
+            raise AdmissionError(str(exc)) from exc
         record = {
             "schema_version": "aisle.matched-session-plan.v1",
             "confirmatory_ready": False,
             "arms": manifests,
             "surface": {
                 "treatment_table_id": table["immutable_id"],
-                "interface_map_id": monolith.load_json(
-                    root, "interface-map.json", task_surface=surface.identity
-                )["id"],
+                "interface_map_id": monolith.load_document(root, documents["interface_map"])["id"],
                 "artifact_hashes": artifact_hashes,
                 "common_evidence_schema": {**SCHEMA, "immutable_id": _digest(SCHEMA)},
                 "validation_declaration": {
@@ -870,8 +864,6 @@ def admit_pair(
                 },
             },
         }
-        if surface.identity != LEGACY_SURFACE:
-            record["task_surface"] = surface.identity
         if confinement is not None:
             record["confinement_bindings"] = copy.deepcopy(confinement)
         if private_roots is not None:

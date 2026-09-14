@@ -9,17 +9,16 @@ from pathlib import Path
 
 import yaml
 
-from aisle.harness.matched_surface import LEGACY_SURFACE, record_surface
-from aisle.harness.matched_surface import task_surface as resolve_task_surface
+from aisle.harness.candidates import participant_python
+from aisle.harness.typed_execution_bundle import PARTICIPANT_FILES
 from aisle.harness.typed_graph_hosts import _source
 from aisle.harness.typed_graph_stage import _validation
 from aisle.harness.typed_snapshot import _read, verify_typed_validation_snapshot
 from aisle.harness.worker_declaration import provision_worker_declaration
 
 
-def authored_worker_nodes(graph, *, task_surface=LEGACY_SURFACE):
+def authored_worker_nodes(graph, participant_files=PARTICIPANT_FILES):
     """Select every authored source instance, preserving graph-defined node identities."""
-    resolve_task_surface(task_surface)
     if type(graph) is not dict or type(graph.get("nodes")) is not list:
         raise ValueError("typed worker graph must contain a node list")
     selected, seen = {}, set()
@@ -32,7 +31,7 @@ def authored_worker_nodes(graph, *, task_surface=LEGACY_SURFACE):
         ):
             raise ValueError("typed worker graph has invalid or duplicate node identities")
         seen.add(node["id"])
-        source = _source(node, task_surface=task_surface)
+        source = _source(node, participant_files)
         if source is not None:
             selected[node["id"]] = source
     return selected
@@ -63,9 +62,11 @@ def provision_typed_workers(
     )
     verify_typed_validation_snapshot(snapshot, snapshot_record)
     _validation(validation_output, snapshot_record)
-    surface = record_surface(snapshot_record)
+    participant_files = participant_python(
+        json.loads(_read(snapshot, snapshot_record["allowlist"]))
+    )
     selected = authored_worker_nodes(
-        yaml.safe_load(_read(snapshot, surface.typed_graph)), task_surface=surface.identity
+        yaml.safe_load(_read(snapshot, snapshot_record["typed_graph"])), participant_files
     )
     if not selected:
         raise ValueError("typed graph has no authored worker sources to provision")

@@ -21,12 +21,23 @@ from aisle.monolith.wire import WireError, receive, send
 MODULES = frozenset(
     {
         "aisle.nodes.segmented_pose",
-        "aisle.nodes.l2_pose",
         "aisle.nodes.grasp_topdown",
         "aisle.nodes.ik_trajectory",
         "aisle.nodes.task_state_machine",
     }
 )
+
+
+def _module_admitted(declaration) -> bool:
+    """The host names the authored module set for this launch (candidate surface);
+    without one, the T1 default set applies."""
+    modules = declaration.get("modules", sorted(MODULES))
+    return (
+        type(modules) is list
+        and bool(modules)
+        and all(type(m) is str and m.startswith("aisle.") and ".." not in m for m in modules)
+        and declaration["module"] in modules
+    )
 
 
 def validate_configuration(configuration):
@@ -78,14 +89,11 @@ def serve(incoming, outgoing, log):
         declaration = receive(incoming)
         if (
             type(declaration) is not dict
-            or set(declaration)
-            not in (
-                {"op", "module", "source", "source_sha256"},
-                {"op", "module", "source", "source_sha256", "configuration"},
-            )
+            or set(declaration) - {"configuration", "modules"}
+            != {"op", "module", "source", "source_sha256"}
             or declaration["op"] != "init"
             or type(declaration["module"]) is not str
-            or declaration["module"] not in MODULES
+            or not _module_admitted(declaration)
             or type(declaration["source"]) is not str
         ):
             raise NodeRequestError("typed worker source declaration is invalid")

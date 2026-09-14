@@ -199,6 +199,26 @@ a shorter remaining tool budget still wins. Setup and collection therefore need
 space within the declared tool budget. A forced outer timeout remains an
 infrastructure exclusion, and incomplete worker evidence does not pass auditing.
 This development label does not certify expert parity.
+
+A `development` object may instead use `schema_version:
+aisle.matched-development.v2`, which names one `candidate` id from the
+controller-owned `docs/monolithic/candidates.json` and binds that table's
+SHA-256 as `candidates_sha256`, alongside the same `seeds`, `run_ceiling`,
+`episode_ceiling` and `timeout_s`. Admission resolves the candidate's tier,
+embodiment, perception rung, verifier, reset mode, graph, turn plan and
+monolithic module from the table and retains them in the plan; a stale table
+hash, an unknown id, a free launch field, or a candidate whose artifacts are
+not all present in the controller tree refuses admission. The v1 form remains
+the fixed T1/franka/oracle/teleport protocol. Every arm launch reads its
+surface from the retained development form: the typed validation snapshot
+records the candidate's graph, turn plan and allowlist, and the execution
+bundle, graph stage, worker hosts and rollout transport bind those recorded
+paths (never a literal); the monolithic launcher receives the candidate's
+module, template graph, verifier and reset mode, and refuses any other value.
+Both arms receive the same verifier, reset mode, embodiment, seeds and
+budgets. Naming a candidate does not
+qualify it: the declared `t1-l2-realistic` row is refused until its monolithic
+pair exists, and admission never substitutes an easier task.
 Clients use `request_run(channel, timeout_s=...)`; they cannot alter these inputs.
 Run and episode reservations persist across requests in the controller instance.
 
@@ -438,3 +458,78 @@ exercise the selected sandbox profiles, but the access log is deliberately
 incomplete. The test requires successful run evidence and an excluded outer
 session, with no eligibility for study estimates. It does not establish paired
 expert parity, full tool coverage, or external confinement.
+
+## Held-out evaluation of a finished session
+
+```sh
+uv run --extra sim --locked --no-sync python tools/matched_campaign.py heldout-eval \
+  --request /absolute/controller/heldout-request.json
+```
+
+The request names `session_dir` (an intact completed attempt with
+`matched-session.json`, `admission.json` and the retained `final/` snapshot),
+`controller_root`, the registration's `manifest` (its `seed_commitment` is the
+only commitment accepted), the private `seeds_source` and `salt_source`, the
+frozen `rule` (`{"kind": "oracle_successes_at_least", "threshold": N}`, with
+`1 <= N <= seeds`) and `timeout_s`. The evidence always lands at
+`<session_dir>/heldout/heldout-evidence.json`; an existing `heldout/` refuses.
+The controller refuses a session that is not an intact completed engineering
+session, a drifted final snapshot, seeds that do not match the registered
+commitment or overlap the session's development seeds, and an unresolved rule.
+It rebuilds the submitted system from the controller's committed tree (git HEAD,
+recorded as `controller_commit`) with the final deliverable overlaid, runs it
+through the arm's own launcher as a separate process rooted at that view on the
+private seeds with the realistic verifier driving the loop and the oracle as
+the held-out scorer (BND-3), reads the oracle verdicts by goal id across every
+trace directory of the run, derives STA-10 exposure counts from the run's
+SPEC 470 ledger, and writes the evidence (per-seed verdicts by index, success
+count, exposure, the rule and the decision). A launcher refusal or
+infrastructure failure leaves `ok: false` so the session is excluded rather
+than scored; a deliverable that fails to launch is a failed session. Seed
+values are never written (CSE-9). This is the CSE-2 session outcome for the
+ADR-66 pilot tier; it does not authorize scored collection.
+
+The request names `session_dir` (a finished attempt with `matched-session.json`,
+`admission.json` and the retained `final/` snapshot), `controller_root`, the
+private `seeds_source` and `salt_source`, the registration's `seed_commitment`,
+the frozen `rule` (`{"kind": "oracle_successes_at_least", "threshold": N}`) and
+`timeout_s`. The controller refuses an unfinished session, a drifted final
+snapshot, seeds that do not match the commitment or overlap the session's
+development seeds, and an existing output. It rebuilds the submitted system as
+the controller's tracked tree with the final deliverable overlaid, runs it
+through the arm's own launcher on the private seeds with the realistic verifier
+driving the loop and the oracle as the held-out scorer (BND-3), and writes
+`heldout-evidence.json` (per-seed oracle verdicts by index, success count, the
+rule and the decision). Seed values are never written (CSE-9). This is the CSE-2
+session outcome for the ADR-66 pilot tier; it does not authorize scored
+collection.
+
+## Pilot assignments and records
+
+`tools/pilot_assignments.py create --campaign <id> --protocol <SPEC 400
+protocol> --seed <private 256-bit hex file> --ledger <ledger.json>` seals a
+balanced plan whose arms and size come from the protocol (one typed and one
+monolithic assignment per temporal block, TRT-8/CSE-7) and writes only its
+public commitment; `reveal` appends exactly the next assignment after
+re-verifying the history. `tools/pilot_records.py --protocol <SPEC 400 protocol>
+--ledger <ledger.json> --sessions <root with one directory per session id>
+--agent-system <id> --task <candidate> --output records.json` re-verifies every
+ledger assignment against the sealed commitment and derives one
+`aisle.stats.records.v1` row per assignment, started or not: outcomes come only
+from the session's retained `heldout/heldout-evidence.json`, which must name the
+session, arm, plan and final snapshot hashes; costs are the executor's observed
+budgets (`null` when unobserved, never zero); validate-fix cycles are the
+executed `check` tool attempts; exposure is the held-out run's SPEC 470 counts
+(STA-10). The lifecycle follows the executor's own classification: an
+`engineering_execution` session is a completed, included session, and any other
+retained session is `infrastructure_excluded` with the executor's retained
+reason (CSE-14). Named limitation: the executor retains no structured budget
+stop (a session at its ceiling is an exclusion under MON-8/MON-12), so no row is
+censored under CSE-13 until the runner retains one. A session directory outside
+the ledger, a completed session without held-out evidence, or evidence that
+belongs to another session refuses (STA-3/STA-11/CSE-8).
+
+The `t1-l2-realistic` candidate uses the paired
+[public observation graphs and pinned cache preparer](public-observations.md).
+Bind the selected candidate table and worker environment before admission;
+old receipts do not qualify a changed graph or model-cache context.

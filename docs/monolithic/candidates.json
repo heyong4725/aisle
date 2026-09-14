@@ -1,0 +1,45 @@
+{
+  "schema_version": "aisle.matched-candidates.v1",
+  "id": "mon-candidates-v1",
+  "note": "Controller-owned table of paired task candidates the matched executor may admit (MON-3, MON-8, BND-4). A development protocol v2 names one candidate id and binds this file's SHA-256; admission refuses a candidate whose artifacts are not all present. This file is hashed into every admitted plan (MON-8); rows that name frozen-set graphs follow CON-7 review.",
+  "candidates": {
+    "t1-oracle": {
+      "role": "development",
+      "tier": "T1",
+      "embodiment": "franka",
+      "perception": "L1",
+      "verifier": "oracle",
+      "reset": "teleport",
+      "typed_graph": "graphs/expert_t1.yaml",
+      "turn_plan": "graphs/turn_plans/expert_t1.json",
+      "monolithic_template": "graphs/monolithic_t1.yaml",
+      "monolithic_module": "experts/monolithic/expert_t1.py",
+      "documents": {
+        "treatment_table": "docs/monolithic/treatment-table.json",
+        "interface_map": "docs/monolithic/interface-map.json",
+        "allowlist": "docs/monolithic/allowlist.json",
+        "experts": "docs/monolithic/experts.json",
+        "parity_protocol": "docs/monolithic/parity-protocol.json"
+      }
+    },
+    "t1-l2-realistic": {
+      "role": "short_composition",
+      "tier": "T1",
+      "embodiment": "franka",
+      "perception": "L2",
+      "verifier": "realistic",
+      "reset": "teleport",
+      "typed_graph": "graphs/pilot_t1_l2_typed.yaml",
+      "turn_plan": "graphs/turn_plans/pilot_t1_l2_typed.json",
+      "monolithic_template": "graphs/pilot_t1_l2_monolithic.yaml",
+      "monolithic_module": "experts/monolithic/expert_t1_l2.py",
+      "documents": {
+        "treatment_table": "docs/monolithic/treatment-table-t1-l2.json",
+        "interface_map": "docs/monolithic/interface-map-t1-l2.json",
+        "allowlist": "docs/monolithic/allowlist-t1-l2.json",
+        "experts": "docs/monolithic/experts-t1-l2.json",
+        "parity_protocol": "docs/monolithic/parity-protocol-t1-l2.json"
+      }
+    }
+  }
+}

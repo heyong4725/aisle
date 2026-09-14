@@ -4,7 +4,6 @@
 READS = {
     "primitives": {"api_version", "embodiment", "med_names", "meds", "physics", "home", "layout"},
     "pose": {"target"},
-    "pose_l2": {"target"},
     "grasp": {"grasp", "approach_m", "place_tcp_z", "front"},
     "staged": {"ok", "error", "stages"},
     "stage": {"name", "path", "gripper", "settle_s", "vel", "track_tol", "q"},
@@ -19,8 +18,14 @@ CALLS = {
         "streamer",
         "describe",
     },
-    "pose": {"on_bridge_info", "on_target_request", "on_seg", "on_depth", "on_reset_done"},
-    "pose_l2": {"on_bridge_info", "on_target_request", "on_rgb", "on_depth", "on_reset_done"},
+    "pose": {
+        "on_bridge_info",
+        "on_target_request",
+        "on_seg",
+        "on_rgb",
+        "on_depth",
+        "on_reset_done",
+    },
     "grasp": set(),
     "staged": set(),
     "stage": set(),
@@ -28,7 +33,7 @@ CALLS = {
 }
 CREATES = {
     "pose_session": "pose",
-    "l2_pose_session": "pose_l2",
+    "l2_pose_session": "pose",
     "plan_grasp": "grasp",
     "staged_plan": "staged",
     "streamer": "streamer",

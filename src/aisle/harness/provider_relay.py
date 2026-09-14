@@ -17,6 +17,16 @@ from aisle.harness.frontend_dispatch import MAX_FRAME_BYTES
 from aisle.harness.provider_response_authority import ProviderResponseAuthority, _require
 
 MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
+#: request headers the relay forwards verbatim and never retains by value; the
+#: ChatGPT-login backend requires the account header beside the bearer token
+FORWARDED_HEADERS = (
+    "Authorization",
+    "Content-Encoding",
+    "OpenAI-Beta",
+    "OpenAI-Organization",
+    "OpenAI-Project",
+    "chatgpt-account-id",
+)
 
 
 def verify_provider(binding):
@@ -187,13 +197,7 @@ class ProviderRelay:
                 "Accept": "text/event-stream",
                 "Accept-Encoding": "identity",
             }
-            for key in (
-                "Authorization",
-                "Content-Encoding",
-                "OpenAI-Beta",
-                "OpenAI-Organization",
-                "OpenAI-Project",
-            ):
+            for key in FORWARDED_HEADERS:
                 values = handler.headers.get_all(key, [])
                 _require(len(values) <= 1, "duplicate provider header")
                 if values:
@@ -203,6 +207,7 @@ class ProviderRelay:
                 {
                     "content_encoding": headers.get("Content-Encoding", "identity"),
                     "authorization_present": "Authorization" in headers,
+                    "account_header_present": "chatgpt-account-id" in headers,
                 },
             )
             connection = (

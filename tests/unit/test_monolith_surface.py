@@ -446,12 +446,7 @@ def test_launcher_preserves_t1_rollout_arguments(tmp_path, monkeypatch):
     module = tmp_path / "participant.py"
     graph = tmp_path / "stamped.yaml"
     monkeypatch.setattr(mono, "check_module", lambda *args: {"ok": True})
-
-    def stamp(*args, template):
-        assert template == "graphs/monolithic_t1.yaml"
-        return graph
-
-    monkeypatch.setattr(mono, "stamp_graph", stamp)
+    monkeypatch.setattr(mono, "stamp_graph", lambda *args: graph)
 
     def launch(**kwargs):
         observed.update(kwargs)
@@ -490,3 +485,57 @@ def test_cli_reports_unsupported_tier_as_json(tmp_path):
     assert code == 1
     assert report["error"] == "unsupported_monolithic_tier"
     assert report["ok"] is False
+
+
+@pytest.mark.parametrize(
+    "kwargs,error",
+    [
+        ({"verifier": "both"}, "unsupported_monolithic_verifier"),
+        ({"reset_mode": "sideways"}, "unsupported_monolithic_reset"),
+        ({"template": "graphs/no_such_template.yaml"}, "unsupported_monolithic_template"),
+    ],
+)
+def test_run_refuses_unsupported_verifier_reset_or_template(kwargs, error):
+    """MON-3/MON-4: the launcher accepts only the admitted verifier, reset and template
+    and refuses before touching the module or the simulator."""
+    from aisle.harness import monolith
+
+    result = monolith.run(ROOT, EXPERT, seeds=[0], episodes=1, **kwargs)
+    assert result["ok"] is False and result["error"] == error
+
+
+def test_run_refuses_a_template_that_binds_no_monolithic_module(tmp_path, monkeypatch):
+    """MON-3: a template without AISLE_MONOLITH_MODULE cannot masquerade as the monolithic arm."""
+    from aisle.harness import monolith
+
+    monkeypatch.setattr(monolith, "check_module", lambda *args, **kwargs: {"ok": True})
+    result = monolith.run(ROOT, EXPERT, seeds=[0], episodes=1, template="graphs/expert_t1.yaml")
+    assert result["ok"] is False and result["error"] == "unsupported_monolithic_template"
+    result = monolith.run(ROOT, EXPERT, seeds=[0], episodes=1, template="pyproject.toml")
+    assert result["ok"] is False and result["error"] == "unsupported_monolithic_template"
+
+
+def test_l2_pose_session_is_the_pinned_detected_pose_object():
+    """MON-3/MON-5/BND-2: the L2 primitive is the same L2Session the typed
+    detected-pose node runs, driven by rgb + depth, never a segmentation mask;
+    it is part of the public API and pinned by import path."""
+    from aisle.monolith import primitive_api
+    from aisle.nodes import l2_pose
+
+    assert "l2_pose_session" in primitives.PUBLIC_API
+    assert primitives.PINNED_IMPLEMENTATIONS["pose_l2"] == "aisle.nodes.l2_pose.L2Session"
+    assert "l2_pose_session" in primitive_api.CALLS["primitives"]
+    assert primitive_api.CREATES["l2_pose_session"] == "pose"
+    assert {"on_rgb", "on_depth", "on_bridge_info"} <= primitive_api.CALLS["pose"]
+    assert callable(primitives.Primitives.l2_pose_session)
+    assert callable(l2_pose.lazy_pinned_detector())  # no model load until the first frame
+    assert l2_pose.L2Session.on_rgb is l2_pose.FramePairSession.on_obs
+    assert callable(l2_pose.pinned_detector) and callable(l2_pose.pinned_backprojector)
+
+
+def test_t1_l2_module_checks_against_the_broker():
+    """MON-3: the L2 expert compiles and constructs with no simulator."""
+    from aisle.harness import monolith
+
+    result = monolith.check_module(ROOT / "experts/monolithic/expert_t1_l2.py")
+    assert result["ok"] is True, result

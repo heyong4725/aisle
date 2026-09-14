@@ -217,7 +217,7 @@ class TrustedIntegrity:
 
 def default_integrity() -> TrustedIntegrity:
     """The broker's trusted-callable set: turn stamping (the guard's trust
-    boundary) and the four pinned primitives."""
+    boundary) and the pinned primitives of both perception rungs."""
     from aisle import topics, turn_node
     from aisle.monolith import primitives
     from aisle.nodes import grasp_topdown, ik_trajectory, l2_pose, segmented_pose
@@ -226,7 +226,6 @@ def default_integrity() -> TrustedIntegrity:
     return TrustedIntegrity(
         {
             "primitives.Primitives.pose_session": lambda: primitives.Primitives.pose_session,
-            "primitives.Primitives.l2_pose_session": lambda: primitives.Primitives.l2_pose_session,
             "primitives.Primitives.plan_grasp": lambda: primitives.Primitives.plan_grasp,
             "primitives.Primitives.staged_plan": lambda: primitives.Primitives.staged_plan,
             "primitives.Primitives.streamer": lambda: primitives.Primitives.streamer,
@@ -234,9 +233,9 @@ def default_integrity() -> TrustedIntegrity:
             "turn_node.Node.send_output": lambda: turn_node.Node.send_output,
             "segmented_pose.estimate_pose": lambda: segmented_pose.estimate_pose,
             "segmented_pose.L1Session._estimate": lambda: segmented_pose.L1Session._estimate,
+            "primitives.Primitives.l2_pose_session": lambda: primitives.Primitives.l2_pose_session,
             "l2_pose.L2Session._estimate": lambda: l2_pose.L2Session._estimate,
             "l2_pose.pick_target_detection": lambda: l2_pose.pick_target_detection,
-            "l2_pose._bbox_mask": lambda: l2_pose._bbox_mask,
             "grasp_topdown.plan_grasp": lambda: grasp_topdown.plan_grasp,
             "ik_trajectory.StagedPlan.__init__": lambda: ik_trajectory.StagedPlan.__init__,
             "ik_trajectory.StageStreamer.step": lambda: ik_trajectory.StageStreamer.step,

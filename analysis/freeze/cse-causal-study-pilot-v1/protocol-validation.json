@@ -1,0 +1,19 @@
+{
+  "errors": [],
+  "execution_environment": {
+    "analysis_implementation_sha256": "22cde3e9d7c5cc80874c7eec30aa2898e30476d6c939c94ab3009e8b12af641e",
+    "machine": "arm64",
+    "python": "3.13.5",
+    "python_implementation": "CPython",
+    "release": "25.6.0",
+    "system": "Darwin"
+  },
+  "input_hashes": {
+    "protocol_sha256": "bd86f0e892d8146b8990311ce7f45d2bf3c12fa8ad165487097869897ec8b7f4"
+  },
+  "ok": true,
+  "protocol_core_sha256": "9f6e92ff8957b9ed46053f45f3ff399a3161f81bae3ed8915d4f1a4cb8094a77",
+  "protocol_id": "cse-causal-study-pilot-v1-protocol-r0",
+  "purpose": "power",
+  "schema_version": "aisle.stats.validation.v1"
+}

@@ -1,0 +1,401 @@
+{
+  "corpus_hash": "sha256:a7820101d989f8f1767a6d73f50e0fa39944e9a23122f8a2dac287c95cb7234f",
+  "eligibility": "not_eligible",
+  "envelope_hash": "sha256:3af3c699c80132cf9bc9032be0e43d81071ab9256f6111bbcc5da2cf09cbdbf4",
+  "evaluation_records": 320,
+  "failures": [
+    "target_class=ibuprofen: accuracy lower bound 0.010 or refusal 0.85 outside the envelope",
+    "target_class=omeprazole: accuracy lower bound 0.734 or refusal 0.12 outside the envelope",
+    "target_class=amoxicillin: accuracy lower bound 0.876 or refusal 0.00 outside the envelope",
+    "target_class=cetirizine: accuracy lower bound 0.772 or refusal 0.00 outside the envelope",
+    "target_class=metformin: accuracy lower bound 0.772 or refusal 0.00 outside the envelope",
+    "seed=1: accuracy lower bound 0.000 or refusal 1.00 outside the envelope",
+    "seed=3: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=5: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=7: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=9: accuracy lower bound 0.544 or refusal 0.00 outside the envelope",
+    "seed=11: accuracy lower bound 0.000 or refusal 1.00 outside the envelope",
+    "seed=13: accuracy lower bound 0.394 or refusal 0.35 outside the envelope",
+    "seed=15: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=17: accuracy lower bound 0.544 or refusal 0.00 outside the envelope",
+    "seed=19: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=21: accuracy lower bound 0.042 or refusal 0.40 outside the envelope",
+    "seed=23: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=25: accuracy lower bound 0.784 or refusal 0.00 outside the envelope",
+    "seed=27: accuracy lower bound 0.717 or refusal 0.00 outside the envelope",
+    "seed=29: accuracy lower bound 0.717 or refusal 0.00 outside the envelope",
+    "seed=31: accuracy lower bound 0.000 or refusal 1.00 outside the envelope",
+    "sensor=overhead: accuracy lower bound 0.623 or refusal 0.23 outside the envelope"
+  ],
+  "latency_s": {
+    "ceiling": 5.0,
+    "descriptive": true,
+    "max": 0.9570560419815592,
+    "median": 0.7711023750016466,
+    "within_ceiling": true
+  },
+  "model_hashes": {
+    "identity": "sha256:147f77dd7a435717c2ffba226328b54c77c2a108712a595ab363377760169020"
+  },
+  "ok": false,
+  "out_of_envelope_records": 14095,
+  "raw_predictions_file": "raw-predictions.json.gz",
+  "raw_predictions_note": "every scored row, including out_of_envelope rows that carry no prediction; merging this file back as raw_predictions recomputes report_hash",
+  "report_hash": "sha256:8ef395845536b79645a27bba472a3eebad5e5e7fada07ba0e54fc7689fad656e",
+  "run_id": "bnd-perception-corpus-03",
+  "schema_version": "aisle.perception-audit.report.v1",
+  "split_sizes": {
+    "calibration": 5428,
+    "evaluation": 4577
+  },
+  "strata": {
+    "seed": {
+      "1": {
+        "accuracy": 0.0,
+        "accuracy_lower_bound": 0.0,
+        "correct": 0,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 1.0,
+        "refusal_within_limit": false,
+        "refused": 20,
+        "taxonomy": {
+          "refused": 20
+        }
+      },
+      "11": {
+        "accuracy": 0.0,
+        "accuracy_lower_bound": 0.0,
+        "correct": 0,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 1.0,
+        "refusal_within_limit": false,
+        "refused": 20,
+        "taxonomy": {
+          "refused": 20
+        }
+      },
+      "13": {
+        "accuracy": 0.6,
+        "accuracy_lower_bound": 0.3935848867569697,
+        "correct": 12,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.35,
+        "refusal_within_limit": true,
+        "refused": 7,
+        "taxonomy": {
+          "correct": 12,
+          "localization_error": 1,
+          "refused": 7
+        }
+      },
+      "15": {
+        "accuracy": 0.95,
+        "accuracy_lower_bound": 0.7838938357931526,
+        "correct": 19,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 19,
+          "localization_error": 1
+        }
+      },
+      "17": {
+        "accuracy": 0.75,
+        "accuracy_lower_bound": 0.5444175959982511,
+        "correct": 15,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 15,
+          "localization_error": 5
+        }
+      },
+      "19": {
+        "accuracy": 0.95,
+        "accuracy_lower_bound": 0.7838938357931526,
+        "correct": 19,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 19,
+          "localization_error": 1
+        }
+      },
+      "21": {
+        "accuracy": 0.15,
+        "accuracy_lower_bound": 0.042169407885778554,
+        "correct": 3,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.4,
+        "refusal_within_limit": true,
+        "refused": 8,
+        "taxonomy": {
+          "correct": 3,
+          "localization_error": 9,
+          "refused": 8
+        }
+      },
+      "23": {
+        "accuracy": 0.95,
+        "accuracy_lower_bound": 0.7838938357931526,
+        "correct": 19,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 19,
+          "localization_error": 1
+        }
+      },
+      "25": {
+        "accuracy": 0.95,
+        "accuracy_lower_bound": 0.7838938357931526,
+        "correct": 19,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 19,
+          "localization_error": 1
+        }
+      },
+      "27": {
+        "accuracy": 0.9,
+        "accuracy_lower_bound": 0.7173814751141392,
+        "correct": 18,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 18,
+          "localization_error": 2
+        }
+      },
+      "29": {
+        "accuracy": 0.9,
+        "accuracy_lower_bound": 0.7173814751141392,
+        "correct": 18,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 18,
+          "localization_error": 2
+        }
+      },
+      "3": {
+        "accuracy": 0.95,
+        "accuracy_lower_bound": 0.7838938357931526,
+        "correct": 19,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 19,
+          "localization_error": 1
+        }
+      },
+      "31": {
+        "accuracy": 0.0,
+        "accuracy_lower_bound": 0.0,
+        "correct": 0,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 1.0,
+        "refusal_within_limit": false,
+        "refused": 20,
+        "taxonomy": {
+          "refused": 20
+        }
+      },
+      "5": {
+        "accuracy": 0.95,
+        "accuracy_lower_bound": 0.7838938357931526,
+        "correct": 19,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 19,
+          "localization_error": 1
+        }
+      },
+      "7": {
+        "accuracy": 0.95,
+        "accuracy_lower_bound": 0.7838938357931526,
+        "correct": 19,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 19,
+          "localization_error": 1
+        }
+      },
+      "9": {
+        "accuracy": 0.75,
+        "accuracy_lower_bound": 0.5444175959982511,
+        "correct": 15,
+        "missing": 0,
+        "n": 20,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 15,
+          "localization_error": 5
+        }
+      }
+    },
+    "sensor": {
+      "overhead": {
+        "accuracy": 0.66875,
+        "accuracy_lower_bound": 0.6228628105920904,
+        "correct": 214,
+        "missing": 0,
+        "n": 320,
+        "passes_floor": false,
+        "refusal_rate": 0.234375,
+        "refusal_within_limit": true,
+        "refused": 75,
+        "taxonomy": {
+          "correct": 214,
+          "localization_error": 31,
+          "refused": 75
+        }
+      }
+    },
+    "target_class": {
+      "amoxicillin": {
+        "accuracy": 0.95,
+        "accuracy_lower_bound": 0.8758127895225638,
+        "correct": 57,
+        "missing": 0,
+        "n": 60,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 57,
+          "localization_error": 3
+        }
+      },
+      "cetirizine": {
+        "accuracy": 0.8666666666666667,
+        "accuracy_lower_bound": 0.772260054335675,
+        "correct": 52,
+        "missing": 0,
+        "n": 60,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 52,
+          "localization_error": 8
+        }
+      },
+      "ibuprofen": {
+        "accuracy": 0.0375,
+        "accuracy_lower_bound": 0.010297801360077685,
+        "correct": 3,
+        "missing": 0,
+        "n": 80,
+        "passes_floor": false,
+        "refusal_rate": 0.85,
+        "refusal_within_limit": false,
+        "refused": 68,
+        "taxonomy": {
+          "correct": 3,
+          "localization_error": 9,
+          "refused": 68
+        }
+      },
+      "metformin": {
+        "accuracy": 0.8666666666666667,
+        "accuracy_lower_bound": 0.772260054335675,
+        "correct": 52,
+        "missing": 0,
+        "n": 60,
+        "passes_floor": false,
+        "refusal_rate": 0.0,
+        "refusal_within_limit": true,
+        "refused": 0,
+        "taxonomy": {
+          "correct": 52,
+          "localization_error": 8
+        }
+      },
+      "omeprazole": {
+        "accuracy": 0.8333333333333334,
+        "accuracy_lower_bound": 0.7337092016272058,
+        "correct": 50,
+        "missing": 0,
+        "n": 60,
+        "passes_floor": false,
+        "refusal_rate": 0.11666666666666667,
+        "refusal_within_limit": true,
+        "refused": 7,
+        "taxonomy": {
+          "correct": 50,
+          "localization_error": 3,
+          "refused": 7
+        }
+      }
+    }
+  },
+  "taxonomy": {
+    "correct": 214,
+    "localization_error": 31,
+    "missing_data": 0,
+    "no_detection": 0,
+    "out_of_envelope": 0,
+    "refused": 75,
+    "wrong_identity": 0
+  },
+  "wording": "an oracle-scored audit of the perception path; it does not validate perception portability beyond this rendering and envelope (BND-3)"
+}

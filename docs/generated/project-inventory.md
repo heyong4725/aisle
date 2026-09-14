@@ -43,7 +43,7 @@ stayed outside it).
 
 | Surface | Count |
 |---|---:|
-| Graphs | 26 |
+| Graphs | 27 |
 | Capability manifests | 43 |
 | CLI command entries | 39 |
 | ADR files | 86 |
@@ -71,6 +71,7 @@ stayed outside it).
 | [graphs/expert_t4.yaml](../../graphs/expert_t4.yaml) | pharmacy (default) / — | franka (default) | L1 | 11 |
 | [graphs/expert_t4_inc2.yaml](../../graphs/expert_t4_inc2.yaml) | pharmacy (default) / — | franka (default) | L1 | 12 |
 | [graphs/monolithic_t1.yaml](../../graphs/monolithic_t1.yaml) | pharmacy (default) / — | franka (default) | L1 | 7 |
+| [graphs/monolithic_t1_l2.yaml](../../graphs/monolithic_t1_l2.yaml) | pharmacy (default) / — | franka (default) | L2 | 7 |
 | [graphs/pilot_t1_l2_monolithic.yaml](../../graphs/pilot_t1_l2_monolithic.yaml) | pharmacy (default) / — | franka (default) | L2 | 8 |
 | [graphs/pilot_t1_l2_typed.yaml](../../graphs/pilot_t1_l2_typed.yaml) | pharmacy (default) / — | franka (default) | L2 | 11 |
 | [graphs/shield_t0_none_adversary.yaml](../../graphs/shield_t0_none_adversary.yaml) | pharmacy (default) / — | franka (default) | L0 (default) | 12 |
@@ -100,6 +101,7 @@ stayed outside it).
 - **graphs/expert_t4.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `human-sim`, `task-state-machine`, `rollout-client`, `turn-barrier`
 - **graphs/expert_t4_inc2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `segmented-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `human-sim`, `task-state-machine`, `rollout-client`, `turn-barrier`, `return-planner`
 - **graphs/monolithic_t1.yaml:** `dora-genesis`, `reset`, `budget-guard`, `monolith-broker`, `verifier-oracle`, `rollout-client`, `turn-barrier`
+- **graphs/monolithic_t1_l2.yaml:** `dora-genesis`, `reset`, `budget-guard`, `monolith-broker`, `verifier-oracle`, `rollout-client`, `turn-barrier`
 - **graphs/pilot_t1_l2_monolithic.yaml:** `dora-genesis`, `reset`, `budget-guard`, `monolith-broker`, `verifier-oracle`, `rollout-client`, `turn-barrier`, `pilot-policy-surface`
 - **graphs/pilot_t1_l2_typed.yaml:** `dora-genesis`, `reset`, `budget-guard`, `detected-pose`, `grasp-planner-topdown`, `ik-trajectory`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `turn-barrier`, `pilot-policy-surface`
 - **graphs/shield_t0_none_adversary.yaml:** `dora-genesis`, `reset`, `budget-guard`, `oracle-pose`, `grasp-planner-topdown`, `ik-trajectory`, `semantic-gateway`, `verifier-oracle`, `task-state-machine`, `rollout-client`, `goal-adversary`, `turn-barrier`
@@ -177,10 +179,10 @@ stayed outside it).
 | `harness hardware report` | `--station`, `--output` |
 | `harness monolith check` | `--module`, `--embodiment`, `--worker-config`, `--worker-config-sha256` |
 | `harness monolith describe` | `--embodiment` |
-| `harness monolith interface` | `--root`, `--task-surface` |
-| `harness monolith parity` | `--task-surface`, `--typed`, `--monolithic`, `--output`, `--root` |
-| `harness monolith run` | `--module`, `--task-surface`, `--tier`, `--embodiment`, `--episodes`, `--seeds`, `--run-id`, `--timeout-s`, `--no-idea-gate`, `--root`, `--worker-config`, `--worker-config-sha256` |
-| `harness monolith table` | `--write`, `--root`, `--task-surface` |
+| `harness monolith interface` | `--root`, `--candidate` |
+| `harness monolith parity` | `--typed`, `--monolithic`, `--output`, `--root`, `--candidate` |
+| `harness monolith run` | `--module`, `--tier`, `--embodiment`, `--episodes`, `--seeds`, `--run-id`, `--timeout-s`, `--no-idea-gate`, `--root`, `--template`, `--verifier`, `--reset`, `--worker-config`, `--worker-config-sha256` |
+| `harness monolith table` | `--write`, `--root`, `--candidate` |
 | `harness perception audit` | `--run`, `--envelope`, `--output` |
 | `harness probe` | `--dataflow`, `--topic`, `--for`, `--root` |
 | `harness report close` | `--id`, `--observed`, `--verdict`, `--root` |
@@ -289,7 +291,7 @@ inference.
 | [docs/decisions/ADR-h6-operation-protocol.md](../decisions/ADR-h6-operation-protocol.md) | ADR-h6-operation-protocol — H6 (Operation) campaign protocol | ACCEPTED (CON-15 — interpretation recorded, proceeding). |
 | [docs/decisions/ADR-m3-protocol.md](../decisions/ADR-m3-protocol.md) | ADR-m3-protocol — M3: neural-env ranking agreement, v0 surrogate | ACCEPTED (CON-15 — protocol pre-registered before any scored |
 | [docs/decisions/ADR-phase6-prep.md](../decisions/ADR-phase6-prep.md) | ADR-phase6-prep — the hardware entry, prepared while gated | ACCEPTED (CON-15). Date: 2026-08-27. Scope: next-phases |
-| [docs/decisions/ADR-pilot-non-oracle-surface.md](../decisions/ADR-pilot-non-oracle-surface.md) | ADR-pilot-non-oracle-surface — Bind the paired non-oracle surface for the #347 pilot | PROPOSED — implementation in progress for #347; Class C review required |
+| [docs/decisions/ADR-pilot-public-observations.md](../decisions/ADR-pilot-public-observations.md) | ADR-pilot-public-observations — Public observations for the admitted L2 candidate | PROPOSED; Class C review required before merge (CON-10). |
 | [docs/decisions/ADR-powder-spike.md](../decisions/ADR-powder-spike.md) | ADR-powder-spike — T20 solver spike for the powder family (SPEC 300 PW-0) | **ACCEPTED** — ratified by the owner 2026-08-27 ("ratify PW-0 |
 | [docs/decisions/ADR-realistic-verifier.md](../decisions/ADR-realistic-verifier.md) | ADR-realistic-verifier — accepted design (D1–D6 ratified 2026-08-05) | ACCEPTED — D1–D6 ratified by the owner 2026-08-05 |
 | [docs/decisions/ADR-seed-commitment-inheritance.md](../decisions/ADR-seed-commitment-inheritance.md) | ADR-seed-commitment-inheritance — Seed commitments in successor registrations | PROPOSED — implementation interpretation under CON-15; review in PR #496. |

@@ -409,7 +409,7 @@ def test_committed_registrations_check_clean_with_withheld_seeds():
     registration names it in `superseded`; drift with no successor is the
     refusal the registry promises (analysis/freeze/README.md)."""
     manifests = _committed_manifests()
-    assert len(manifests) == 41
+    assert len(manifests) == 59
     superseded_ids: set[str] = set()
     for path in manifests:
         declaration = json.loads(path.with_name("declaration.json").read_text())
@@ -470,8 +470,8 @@ def test_hardened_perception_registration_requires_a_new_audit(previous_version,
 def test_shared_cli_successor_preserves_bnd_protocol_and_review_gates():
     """BND-12/BND-13: shared CLI changes need a successor without changing calibration rules."""
     root = REPO_ROOT / "analysis/freeze"
-    previous = json.loads((root / "bnd-task-band-calibration-v10/freeze-manifest.json").read_text())
-    current = json.loads((root / "bnd-task-band-calibration-v11/freeze-manifest.json").read_text())
+    previous = json.loads((root / "bnd-task-band-calibration-v12/freeze-manifest.json").read_text())
+    current = json.loads((root / "bnd-task-band-calibration-v13/freeze-manifest.json").read_text())
     assert current["seed_commitment"] == previous["seed_commitment"]
     for key in (
         "analysis",
@@ -507,3 +507,44 @@ def test_pilot_purpose_registers_as_its_own_campaign(tmp_path):
     assert manifest["purpose"] == "pilot"
     assert manifest["campaign_id"] == "demo-campaign-pilot-v1"
     assert check_manifest(root, manifest)["ok"] is True
+
+
+@pytest.mark.parametrize(
+    "previous_id,current_id",
+    [
+        ("cse-causal-study-v22", "cse-causal-study-v23"),
+        ("cse-causal-study-pilot-v8", "cse-causal-study-pilot-v9"),
+        ("bnd-task-band-calibration-v13", "bnd-task-band-calibration-v14"),
+    ],
+)
+def test_public_observation_successors_preserve_study_and_gate_state(previous_id, current_id):
+    """CSE-15/BND-12: new boundary bytes cannot reset study rules or approve gates."""
+    root = REPO_ROOT / "analysis/freeze"
+    previous = json.loads((root / previous_id / "freeze-manifest.json").read_text())
+    current = json.loads((root / current_id / "freeze-manifest.json").read_text())
+    old, new = previous["declaration"], current["declaration"]
+    for field in (
+        "instrument_set",
+        "hypotheses",
+        "endpoints",
+        "decision_rules",
+        "exclusions",
+        "budgets",
+        "analysis",
+        "purpose",
+    ):
+        assert new[field] == old[field]
+    assert current["seed_commitment"] == previous["seed_commitment"]
+    predecessor = f"analysis/freeze/{previous_id}/freeze-manifest.json"
+    assert new["seed_commitment"]["inherited_from"] == predecessor
+    assert new["artifacts"]["seed_commitment_predecessor"] == predecessor
+    assert new["superseded"].startswith(previous_id + " (")
+    assert [(g["gate"], g["status"], g["record"]) for g in new["integrity_checks"]] == [
+        (g["gate"], g["status"], g["record"]) for g in old["integrity_checks"]
+    ]
+    assert not current["frozen"]
+    assert current["status"] == "registered_pending_review"
+    assert "src/aisle/harness/pilot_policy_surface.py" in new["artifacts"].values()
+    if current_id.startswith("cse-"):
+        assert "graphs/pilot_t1_l2_typed.yaml" in new["artifacts"].values()
+        assert "graphs/pilot_t1_l2_monolithic.yaml" in new["artifacts"].values()

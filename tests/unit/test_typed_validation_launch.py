@@ -15,9 +15,7 @@ from test_typed_validation_snapshot import ROOT, _view
 pytestmark = pytest.mark.unit
 
 
-def _inputs(
-    tmp_path, *, invalid=False, direct_python=True, worker_packages=False, task_surface="t1-l1-v1"
-):
+def _inputs(tmp_path, *, invalid=False, direct_python=True, worker_packages=False):
     from aisle.harness.matched_runtime import capture_runtime
     from aisle.harness.treatment_confinement import compile_macos_profile
     from aisle.harness.typed_snapshot import build_typed_validation_snapshot
@@ -29,13 +27,11 @@ def _inputs(
     inputs["timeout_s"] = 30
     inputs.pop("primitives")
     inputs.pop("source_roots")
-    view = _view(tmp_path, task_surface=task_surface)
+    view = _view(tmp_path)
     if invalid:
         (view / "registry/manifests/segmented-pose.yaml").write_text("broken: declaration")
     snapshot = tmp_path / "snapshot"
-    inputs["snapshot_record"] = build_typed_validation_snapshot(
-        ROOT, view, snapshot, task_surface=task_surface
-    )
+    inputs["snapshot_record"] = build_typed_validation_snapshot(ROOT, view, snapshot)
     inputs["snapshot"] = snapshot
     inputs["bundle"] = tmp_path / "validator"
     inputs["bundle_manifest"] = build_validation_bundle(inputs["bundle"])

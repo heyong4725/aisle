@@ -1,5 +1,5 @@
 {
-  "immutable_id": "sha256:dc3b31ec7adfa802f169eeed67beed41d36de4629af3d9574f50177db5d057ec",
+  "immutable_id": "sha256:fb41dbe66feb26993a0aada82c3ffc41692b80cb6b8806392f3ce7f20a85bc4a",
   "rows": [
     {
       "analysis": "the manipulated factor (SPEC 500 primary contrast)",
@@ -15,7 +15,7 @@
       "classification": "intentionally-different",
       "id": "mon1-02",
       "justification": "part of the bundled treatment; absence is a declared property, not missing data (MON-12)",
-      "monolithic": "src/aisle/harness/monolith.py#sha256:cd952f765801e1ccdaee36a56edb6ab4474094cf34a250e81b09a31c17590fd9",
+      "monolithic": "src/aisle/harness/monolith.py#sha256:98c59d5f0887cf808888deadeb0712de37621a875a3e1d87dae0469478ddbc55",
       "surface": "static validation and diagnostics",
       "typed": "src/aisle/harness/validate.py#sha256:55ab8640ce1dc85fac48ba5b21556cfaf1f1827c60cc2056abe12b51ae8d03e2"
     },
@@ -24,7 +24,7 @@
       "classification": "intentionally-different",
       "id": "mon1-03",
       "justification": "part of the bundled treatment",
-      "monolithic": "docs/monolithic/primitive-api.md#sha256:9b6ecbcbe4b90ebdb0f9dd75a547ab7a6ac0075d30d785d5903cf619f20409a2",
+      "monolithic": "docs/monolithic/primitive-api.md#sha256:271e4993569d4c12018b9528aa5d7861c9b652c5797e26e10b40ae5d14a53eb7",
       "surface": "registry search and resolution",
       "typed": "src/aisle/harness/registry.py#sha256:d0308d20480f4627c2831ba5f07891b846107c60489a9260de4fa332ed982494"
     },
@@ -33,7 +33,7 @@
       "classification": "intentionally-different",
       "id": "mon1-04",
       "justification": "each arm documents its own representation; task, goals, budgets and evaluator text are shared",
-      "monolithic": "docs/monolithic/primitive-api.md#sha256:cd7fea8600f55a64bbf90a0cb6a7cc09517e55454a17ee2958e9a5d1aa6ea892",
+      "monolithic": "docs/monolithic/primitive-api.md#sha256:acbb2e5f2618555d17301be643124e0eded242b195fc0661a7acfd3a811fab6b",
       "surface": "documentation given to the agent",
       "typed": "harness/CLAUDE.research.md#sha256:4294608b814889307577e6ade7ed4f0dde5dba098f91a69ca441d070590a3daf"
     },
@@ -42,7 +42,7 @@
       "classification": "identical",
       "id": "mon1-05",
       "justification": "none needed: same artifact",
-      "monolithic": "src/aisle/monolith/primitives.py#sha256:ea59646ac80337bc53903ec420cb7c28247c49038445e39d01013862074d256d",
+      "monolithic": "src/aisle/monolith/primitives.py#sha256:b408cf09cb4a2dc76a43bee63f0b61a46e247361cad307ec71f182e3d797a06d",
       "surface": "robot primitives (pose, grasp, trajectory, executor)",
       "typed": "src/aisle/nodes/segmented_pose.py#sha256:fdaea68f2a5ba45f745e1f5ba185669daa6f874bd19a13d1a6f523e8eab392f4"
     },
@@ -80,7 +80,7 @@
       "justification": "none needed: same artifact",
       "monolithic": "src/aisle/nodes/monolith_broker.py#sha256:872741da1be8cfa0c89a4ee77ee4fb8a457f130a48228d39ebb8e09a84ee3d46",
       "surface": "trusted controller (bridge, reset, verifier, rollout client, turn barrier)",
-      "typed": "src/aisle/nodes/dora_genesis.py#sha256:0aa54a0fc48ad1fb8cff3d752a7435c4ab2e3c380f9fce03fbff817e67c0641e"
+      "typed": "src/aisle/nodes/dora_genesis.py#sha256:b4f454c471e01bfee648a0a87806af50ea8d777fcf6052fdba9e0ccc3cff86a6"
     },
     {
       "analysis": "excluded from task authority (MON-4); no analysis treatment",
@@ -114,16 +114,16 @@
       "classification": "identical",
       "id": "mon1-13",
       "justification": "none needed: same artifact",
-      "monolithic": "src/aisle/harness/monolith.py#sha256:cd952f765801e1ccdaee36a56edb6ab4474094cf34a250e81b09a31c17590fd9",
+      "monolithic": "src/aisle/harness/monolith.py#sha256:98c59d5f0887cf808888deadeb0712de37621a875a3e1d87dae0469478ddbc55",
       "surface": "episode budget, seeds, reset semantics, evaluator",
-      "typed": "src/aisle/harness/rollout.py#sha256:9dd7eaf97e8c7f0cc99f18ecfdfa997c78244f34d0c9d0ceab6f82e21dc912df"
+      "typed": "src/aisle/harness/rollout.py#sha256:a201e4b2f66a90f600a0385de9706be4ce97149196b2f5fb63d98faac861be59"
     },
     {
       "analysis": "infrastructure-invalid records excluded in both arms; confinement status in the MON-8 tuple",
       "classification": "intentionally-different",
       "id": "mon1-14",
       "justification": "the module runs in the broker's process, so an in-process denial layer is needed in addition to #353",
-      "monolithic": "src/aisle/monolith/confinement.py#sha256:d66f7c6c7af8813a91ba0b04610519a9f7f5de4a099789bf2270e097a57ad435",
+      "monolithic": "src/aisle/monolith/confinement.py#sha256:cede488ddcbb5fabc59de80f17f486afe57da27b462fd5f03d60c6649c11b688",
       "surface": "confinement",
       "typed": "specs/460-actuation-threat-model.md#sha256:3127ee11b74545a2fb4fbef11c3966527ce87fdbab18140975d41d9f40819ec0"
     }

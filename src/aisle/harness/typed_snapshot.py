@@ -14,8 +14,7 @@ from pathlib import Path
 
 import yaml
 
-from aisle.harness.matched_surface import LEGACY_SURFACE, record_surface
-from aisle.harness.matched_surface import task_surface as resolve_task_surface
+from aisle.harness.candidates import T1_ORACLE_FIELDS
 
 
 class SnapshotError(ValueError):
@@ -53,14 +52,19 @@ def _read(root, name):
 
 
 def build_typed_validation_snapshot(
-    controller_root, participant_root, output, *, task_surface=LEGACY_SURFACE
+    controller_root,
+    participant_root,
+    output,
+    *,
+    allowlist=T1_ORACLE_FIELDS["documents"]["allowlist"],
+    typed_graph=T1_ORACLE_FIELDS["typed_graph"],
+    turn_plan=T1_ORACLE_FIELDS["turn_plan"],
 ):
     """Overlay the exact typed allowlist on pinned registry validation inputs.
 
     Dependencies come only from controller manifests. Authored manifests cannot
     cause the snapshot builder to read or copy an arbitrary additional path.
     """
-    surface = resolve_task_surface(task_surface)
     controller, participant, output = (
         Path(p).absolute() for p in (controller_root, participant_root, output)
     )
@@ -83,7 +87,10 @@ def build_typed_validation_snapshot(
         inputs[(origin, name)] = data
         captured[name] = (origin, data)
 
-    allowlist_name = f"{surface.docs_directory}/allowlist.json"
+    allowlist_name = allowlist
+    for rel in (allowlist_name, typed_graph, turn_plan):
+        if type(rel) is not str or rel.startswith("/") or ".." in Path(rel).parts:
+            raise SnapshotError("typed surface paths must be canonical and relative")
     capture("controller", allowlist_name)
     try:
         editable = json.loads(captured[allowlist_name][1])["typed"]["editable"]
@@ -113,6 +120,8 @@ def build_typed_validation_snapshot(
                     capture("controller", source)
         for name in editable:
             capture("participant", name)
+        if typed_graph not in captured or turn_plan not in captured:
+            raise SnapshotError("typed graph and turn plan must be captured editable files")
     except (KeyError, TypeError, json.JSONDecodeError, yaml.YAMLError) as exc:
         raise SnapshotError("invalid controller validation inputs") from exc
 
@@ -132,7 +141,7 @@ def build_typed_validation_snapshot(
         if _read(root, name) != data:
             raise SnapshotError("validation input changed during capture")
     record = {
-        "schema_version": "aisle.typed-validation-snapshot.v1",
+        "schema_version": "aisle.typed-validation-snapshot.v2",
         "files": files,
         "inputs": {
             origin: {
@@ -145,10 +154,11 @@ def build_typed_validation_snapshot(
         "controller_root": str(controller),
         "participant_root": str(participant),
         "snapshot_root": str(output),
+        "allowlist": allowlist_name,
+        "typed_graph": typed_graph,
+        "turn_plan": turn_plan,
         "executable": False,
     }
-    if surface.identity != LEGACY_SURFACE:
-        record["task_surface"] = surface.identity
     record["immutable_id"] = _digest(record)
     with (output / "snapshot.json").open("x") as stream:
         stream.write(json.dumps(record, indent=2, allow_nan=False) + "\n")
@@ -158,7 +168,6 @@ def build_typed_validation_snapshot(
 
 def verify_typed_validation_snapshot(output, record):
     """Verify the retained inventory and immutable data identity before validation."""
-    record_surface(record)
     output = Path(output).absolute()
     expected = dict(record)
     identity = expected.pop("immutable_id")

@@ -3,7 +3,8 @@
     "scripts": [
       "src/aisle/harness/benchmark_statistics.py",
       "src/aisle/harness/non_oracle.py",
-      "src/aisle/harness/perception_audit.py"
+      "src/aisle/harness/perception_audit.py",
+      "src/aisle/harness/perception_eligibility.py"
     ],
     "seed": 490001
   },
@@ -11,12 +12,18 @@
     "candidate_engineering": "graphs/expert_t2.yaml",
     "candidate_short_composition": "graphs/expert_t1_l2.yaml",
     "lock": "uv.lock",
-    "perception_audit_report": "analysis/perception-audit/records/bnd-perception-corpus-02/report.json",
+    "perception_audit_report": "analysis/perception-audit/records/bnd-perception-corpus-03/report.json",
     "perception_auditor": "src/aisle/harness/perception_audit.py",
     "perception_cli": "src/aisle/harness/cli.py",
+    "perception_eligibility": "analysis/perception-audit/records/bnd-perception-corpus-03/eligibility.json",
+    "perception_eligibility_cli": "tools/perception_eligibility.py",
+    "perception_eligibility_module": "src/aisle/harness/perception_eligibility.py",
     "perception_envelope": "analysis/perception-audit/envelope.json",
     "perception_model_lock": "src/aisle/verifier/models.lock",
     "perception_models": "src/aisle/verifier/models.py",
+    "perception_raw_predictions": "analysis/perception-audit/records/bnd-perception-corpus-03/raw-predictions.json.gz",
+    "perception_record_cli": "tools/perception_record.py",
+    "perception_run_manifest": "analysis/perception-audit/records/bnd-perception-corpus-03/manifest.json",
     "registry": "registry/manifests",
     "research_prompt": "harness/CLAUDE.research.md",
     "seed_commitment_predecessor": "analysis/freeze/bnd-task-band-calibration-v10/freeze-manifest.json",
@@ -32,7 +39,10 @@
   },
   "campaign_id": "bnd-task-band-calibration-v11",
   "commands": [
-    "uv run harness perception audit --run runs/bnd-perception-corpus-02 --envelope analysis/perception-audit/envelope.json --output /tmp/bnd-perception-corpus-02-hardened-report.json",
+    "AISLE_FRAME_CAPTURE_PERIOD_S=0.1 uv run harness rollout --graph graphs/expert_t1_l2.yaml --tier T1 --embodiment franka --perception L2 --episodes 32 --seeds 0..31 --no-idea-gate --env-baseline local --run-id bnd-perception-corpus-03",
+    "uv run harness perception audit --run runs/bnd-perception-corpus-03 --envelope analysis/perception-audit/envelope.json --output /tmp/bnd-perception-corpus-03-report.json",
+    "uv run python tools/perception_record.py --report /tmp/bnd-perception-corpus-03-report.json --run runs/bnd-perception-corpus-03 --output analysis/perception-audit/records/bnd-perception-corpus-03",
+    "uv run python tools/perception_eligibility.py --report analysis/perception-audit/records/bnd-perception-corpus-03/report.json --envelope analysis/perception-audit/envelope.json --candidate t1-l2-expert-graph --role short_composition --graph graphs/expert_t1_l2.yaml --output analysis/perception-audit/records/bnd-perception-corpus-03/eligibility.json",
     "uv run harness freeze check --manifest analysis/freeze/bnd-task-band-calibration-v11/freeze-manifest.json --allow-withheld-seeds"
   ],
   "decision_rules": {
@@ -52,7 +62,7 @@
     },
     "stopping_rule": "16 randomized sessions per interface per candidate (BND-9); no threshold relaxed after results (BND-10)"
   },
-  "disposition": "short_composition candidate expert_t1_l2 is not perception-eligible on the frozen envelope (BND-7); role open pending a new candidate round (BND-10)",
+  "disposition": "short_composition candidate expert_t1_l2 is not perception-eligible on the frozen envelope (BND-7): 22 of 22 strata fail, led by target_class=ibuprofen (68 of 80 evaluation frames refused) with every other target's lower bound below the 0.90 floor; no threshold was changed (BND-10); role open pending a new human-reviewed candidate round; the ADR-66 pilot may still run on this candidate with BND-7 recorded as a machine-gate limitation",
   "endpoints": {
     "primary": [
       {
@@ -128,9 +138,9 @@
     {
       "gate": "BND-5 perception audit",
       "kind": "machine_check",
-      "owner_role": "perception auditor; retained v6 report is historical and must be regenerated with the hardened auditor before eligibility is reconsidered",
-      "record": null,
-      "status": "pending"
+      "owner_role": "perception auditor (hardened, corpus-03, 32 development seeds, envelope unchanged); 22 strata failed their floor",
+      "record": "analysis/perception-audit/records/bnd-perception-corpus-03/report.json",
+      "status": "failed"
     },
     {
       "gate": "BND-8 monolithic expert parity",
@@ -164,5 +174,5 @@
     "seeds_source": "~/aisle-private/freeze/bnd-task-band-calibration-v2/seeds.json"
   },
   "spec": "490",
-  "superseded": "bnd-task-band-calibration-v10 (paired T1 L2 pilot surface and shared controller/registry changes for issue #347; original seed commitment, collection rules, thresholds and pending gates preserved)"
+  "superseded": "bnd-task-band-calibration-v10 (BND-5 perception audit regenerated with the hardened auditor on a 32-seed T1-L2 corpus under the unchanged envelope; calibration rules, seed commitment and all other pending gates preserved)"
 }

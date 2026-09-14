@@ -24,7 +24,7 @@ from typing import Any
 
 import numpy as np
 
-from aisle.nodes import grasp_topdown, ik_trajectory, l2_pose, segmented_pose
+from aisle.nodes import grasp_topdown, ik_trajectory, segmented_pose
 from aisle.scenes.pharmacy import (
     MED_NAMES,
     load_meds,
@@ -78,7 +78,6 @@ class Primitives:
     physics: dict = field(repr=False)
     meds: dict = field(repr=False)
     api_version: str = API_VERSION
-    _l2_model_pair: Any = field(default=None, init=False, repr=False)
 
     @classmethod
     def _load(cls, embodiment: str = "franka") -> Primitives:
@@ -114,36 +113,21 @@ class Primitives:
         `on_depth`, `on_reset_done`; a paired same-stamp frame yields the
         estimate dict (pos, target_med, neighbours, ...) or raises
         `segmented_pose.PoseRefused` (TC-9)."""
-        from aisle.verifier.stages import backproject_overhead
+        from aisle.nodes.l2_pose import pinned_backprojector
 
-        return segmented_pose.L1Session(
-            meds=self.meds,
-            backprojector=lambda calibration: (
-                lambda depth, pixels: backproject_overhead(depth, calibration, pixels)
-            ),
-        )
+        return segmented_pose.L1Session(meds=self.meds, backprojector=pinned_backprojector())
 
-    def l2_pose_session(self) -> l2_pose.L2Session:
-        """The typed L2 RGB/depth estimator with the same pinned identity model.
+    def l2_pose_session(self):
+        """The L2 pose estimator, byte-for-byte the object detected-pose
+        runs: feed `on_bridge_info`, `on_target_request`, `on_rgb`,
+        `on_depth`, `on_reset_done`; a paired same-stamp frame yields the
+        estimate dict or raises `PoseRefused` when the pinned open-vocabulary
+        detector has no confident target (TC-9). No segmentation mask is
+        involved (BND-2)."""
+        from aisle.nodes.l2_pose import L2Session, lazy_pinned_detector, pinned_backprojector
 
-        Feed on_bridge_info, on_target_request, on_rgb, on_depth and
-        on_reset_done. Each session owns its frame and request state; the
-        broker loads its private read-only model once. Simulator segmentation
-        is not an input to this primitive. Identity/refusal thresholds remain
-        those of the existing L2Session.
-        """
-        from aisle.verifier.models import detect_meds, load_pinned
-        from aisle.verifier.stages import backproject_overhead
-
-        if self._l2_model_pair is None:
-            self._l2_model_pair = load_pinned("identity")
-        model_pair = self._l2_model_pair
-        return l2_pose.L2Session(
-            meds=self.meds,
-            detector=lambda rgb: detect_meds(rgb, MED_NAMES, model_pair=model_pair),
-            backprojector=lambda calibration: (
-                lambda depth, pixels: backproject_overhead(depth, calibration, pixels)
-            ),
+        return L2Session(
+            meds=self.meds, detector=lazy_pinned_detector(), backprojector=pinned_backprojector()
         )
 
     def plan_grasp(self, pose, target_med: str, neighbours: list | None = None) -> GraspPlan:

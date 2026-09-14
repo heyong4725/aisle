@@ -7,8 +7,7 @@ import json
 import stat
 from pathlib import Path
 
-from aisle.harness.matched_surface import LEGACY_SURFACE, record_surface
-from aisle.harness.matched_surface import task_surface as resolve_task_surface
+from aisle.harness.candidates import CandidateError, participant_python
 from aisle.harness.typed_snapshot import SnapshotError, _digest, _read
 
 PARTICIPANT_FILES = tuple(
@@ -53,10 +52,9 @@ class ExecutionBundleError(ValueError):
 
 
 def build_execution_bundle(
-    controller_root, participant_root, output, *, task_surface=LEGACY_SURFACE
+    controller_root, participant_root, output, *, allowlist="docs/monolithic/allowlist.json"
 ):
-    """Copy trusted dependencies and all four authored implementations as data."""
-    surface = resolve_task_surface(task_surface)
+    """Copy trusted dependencies and every authored implementation the allowlist names."""
     controller, participant, output = map(
         lambda p: Path(p).absolute(), (controller_root, participant_root, output)
     )
@@ -66,16 +64,17 @@ def build_execution_bundle(
     ):
         raise ExecutionBundleError("execution roots must be canonical and disjoint")
     try:
-        allowlist_path = f"{surface.docs_directory}/allowlist.json"
-        allowlist = _read(controller, allowlist_path)
-        editable = json.loads(allowlist)["typed"]["editable"]
-        if {p for p in editable if p.endswith(".py")} != set(surface.participant_files):
-            raise ExecutionBundleError("typed Python allowlist differs")
+        allowlist_name = allowlist
+        allowlist = _read(controller, allowlist_name)
+        try:
+            participant_files = participant_python(json.loads(allowlist))
+        except (CandidateError, json.JSONDecodeError, TypeError) as exc:
+            raise ExecutionBundleError(f"typed Python allowlist invalid: {exc}") from exc
         captured = {
             name: (origin, _read(root, name))
             for origin, root, names in (
-                ("controller", controller, (*CONTROLLER_FILES, *surface.extra_controller_files)),
-                ("participant", participant, surface.participant_files),
+                ("controller", controller, CONTROLLER_FILES),
+                ("participant", participant, participant_files),
             )
             for name in names
         }
@@ -95,16 +94,16 @@ def build_execution_bundle(
         for name, (origin, data) in captured.items():
             if _read(participant if origin == "participant" else controller, name) != data:
                 raise ExecutionBundleError("execution input changed during capture")
-        if _read(controller, allowlist_path) != allowlist:
+        if _read(controller, allowlist_name) != allowlist:
             raise ExecutionBundleError("execution allowlist changed during capture")
         record = {
-            "schema_version": "aisle.typed-execution-bundle.v1",
+            "schema_version": "aisle.typed-execution-bundle.v2",
             "bundle_root": str(output),
             "files": files,
+            "allowlist": allowlist_name,
             "allowlist_sha256": hashlib.sha256(allowlist).hexdigest(),
+            "participant_files": list(participant_files),
         }
-        if surface.identity != LEGACY_SURFACE:
-            record["task_surface"] = surface.identity
         record["immutable_id"] = _digest(record)
         verify_execution_bundle(output, record)
         return record
@@ -128,15 +127,22 @@ def verify_execution_bundle(bundle, record):
         if (
             bundle.resolve() != bundle
             or record["bundle_root"] != str(bundle)
-            or record["schema_version"] != "aisle.typed-execution-bundle.v1"
+            or record["schema_version"] != "aisle.typed-execution-bundle.v2"
             or _digest(expected) != identity
         ):
             raise ExecutionBundleError("execution bundle identity differs")
         files = record["files"]
-        surface = record_surface(record)
-        origins = dict.fromkeys(
-            (*CONTROLLER_FILES, *surface.extra_controller_files), "controller"
-        ) | dict.fromkeys(surface.participant_files, "participant")
+        participant_files = record["participant_files"]
+        if (
+            type(participant_files) is not list
+            or not participant_files
+            or tuple(participant_files)
+            != participant_python({"typed": {"editable": participant_files}})
+        ):
+            raise ExecutionBundleError("execution bundle authored surface is invalid")
+        origins = dict.fromkeys(CONTROLLER_FILES, "controller") | dict.fromkeys(
+            participant_files, "participant"
+        )
         if {name: row["origin"] for name, row in files.items()} != origins:
             raise ExecutionBundleError("execution bundle dependency set differs")
         directories = {

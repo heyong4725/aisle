@@ -1,0 +1,20 @@
+{
+  "artifacts": [
+    {
+      "arm": "typed",
+      "author": "AISLE maintainers; projected graph derived from the existing typed L2 graph with full repository access",
+      "blind": false,
+      "path": "graphs/pilot_t1_l2_typed.yaml",
+      "sha256": "33e1c6369d75bc6e738b532e5c01398e9269ea383f587afd5c244b26086ed5ef"
+    },
+    {
+      "arm": "monolithic",
+      "author": "AISLE maintainers, written against docs/monolithic/primitive-api.md by the same author as the typed expert; derived from expert_t1.py with the L2 primitive",
+      "blind": false,
+      "path": "experts/monolithic/expert_t1_l2.py",
+      "sha256": "77d9cf711c045101189fa368fd12a0982167dfb30732f34cea694d2ab712b2ef"
+    }
+  ],
+  "frozen": false,
+  "id": "mon-experts-t1-l2-v1"
+}

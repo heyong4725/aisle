@@ -2,20 +2,27 @@
   "analysis_script_hashes": {
     "src/aisle/harness/benchmark_statistics.py": "sha256:22cde3e9d7c5cc80874c7eec30aa2898e30476d6c939c94ab3009e8b12af641e",
     "src/aisle/harness/non_oracle.py": "sha256:723318241bb9ce7065e97bcf66557c2180341bd0c0264ce94aa7bdd50cd52f7d",
-    "src/aisle/harness/perception_audit.py": "sha256:9f8515abe6a8a51737ed42f8720dbc202156e2a26f13b7100c2f30713b999613"
+    "src/aisle/harness/perception_audit.py": "sha256:9f8515abe6a8a51737ed42f8720dbc202156e2a26f13b7100c2f30713b999613",
+    "src/aisle/harness/perception_eligibility.py": "sha256:954d8af7b487fd653f80e51c58406d6bd8be086e47b100a88295afbe1db9cde4"
   },
   "analysis_seed": 490001,
   "artifact_hashes": {
     "candidate_engineering": "sha256:ba50a70c43b43f6e5ea04745f00094851119c52bdf9f483b91dd27ecfe1f437b",
     "candidate_short_composition": "sha256:023eef3fb51f41e0fbe78f0b430989c4a326c617b39dd01ea5662b445aaa350c",
     "lock": "sha256:9b8a82a17ba68c192f045405feed3ae7046af9568bddcb398292c20f0ed6f5a8",
-    "perception_audit_report": "sha256:2d834eb3494d083af144567c5129c11a36fdc72d0f1d3dd0961344ca8fdf4664",
+    "perception_audit_report": "sha256:27134904b4b739423085a9b3c9b23678658d39f7a48e00cd2fbeaedea8c7a4d8",
     "perception_auditor": "sha256:9f8515abe6a8a51737ed42f8720dbc202156e2a26f13b7100c2f30713b999613",
-    "perception_cli": "sha256:7089a0ffb8631ef431799954dc1961376f98bb1feeec1a24e033d926bebd7eef",
+    "perception_cli": "sha256:9283be16ed3dbdec07f680f141759b15464a8c7d396523bcc1f474cca81b22e0",
+    "perception_eligibility": "sha256:d18422c4bad1b2c7ebe1cd894cf213d6a7d5447856739456fdd6b8e7e25de7e2",
+    "perception_eligibility_cli": "sha256:62c5b8facb273cf7ce50aa21f83aeff04efd7e338d0866adde4973e2f0970ccc",
+    "perception_eligibility_module": "sha256:954d8af7b487fd653f80e51c58406d6bd8be086e47b100a88295afbe1db9cde4",
     "perception_envelope": "sha256:263a1c1fd2311ff5f4611e7164431ccf7a22048a6e5f49aa7485676818fdb30a",
     "perception_model_lock": "sha256:3fa7271740f3ecd361213f45de140452f41216b80600e343e2daa9f2a413eab5",
     "perception_models": "sha256:1b2905181bc757f8390666c2a4c7303f674a6d8a31232e8feae582b5cc24909f",
-    "registry": "sha256:03a86c9ff60f12b2345e72ac9060ef53e86fb7fd2492eb060c991cdd9e8dae08",
+    "perception_raw_predictions": "sha256:7f0ec77b6e562ed2885bfce94af3fcf698b6b0f19a99f1ef78bee3deadce49f8",
+    "perception_record_cli": "sha256:9cb60f16d8a3f4c8dc9cd0872721dc1574ab67b506142e43ce6f8f852eb0a5d7",
+    "perception_run_manifest": "sha256:bbcabd8fe7bae609b0d78be6849bdfab69ae77efd67d6de044b363caf70da834",
+    "registry": "sha256:170bf21226649709431690d9ced7d5264c03603d4d054d807e778cd6ea8da5c5",
     "research_prompt": "sha256:e736bbd6caa7236dbfafe92ae42c0c7f13088764af1b753f6685d398c111b7c0",
     "seed_commitment_predecessor": "sha256:7fd0e5153af3897d732afdee69b3f394b08153d8ea9023da69995b1166459824",
     "spec": "sha256:e89398651eb537654d9e326f3fb53ba9ba98d77377522100d751debb55e86a82",
@@ -23,7 +30,10 @@
   },
   "campaign_id": "bnd-task-band-calibration-v11",
   "commands": [
-    "uv run harness perception audit --run runs/bnd-perception-corpus-02 --envelope analysis/perception-audit/envelope.json --output /tmp/bnd-perception-corpus-02-hardened-report.json",
+    "AISLE_FRAME_CAPTURE_PERIOD_S=0.1 uv run harness rollout --graph graphs/expert_t1_l2.yaml --tier T1 --embodiment franka --perception L2 --episodes 32 --seeds 0..31 --no-idea-gate --env-baseline local --run-id bnd-perception-corpus-03",
+    "uv run harness perception audit --run runs/bnd-perception-corpus-03 --envelope analysis/perception-audit/envelope.json --output /tmp/bnd-perception-corpus-03-report.json",
+    "uv run python tools/perception_record.py --report /tmp/bnd-perception-corpus-03-report.json --run runs/bnd-perception-corpus-03 --output analysis/perception-audit/records/bnd-perception-corpus-03",
+    "uv run python tools/perception_eligibility.py --report analysis/perception-audit/records/bnd-perception-corpus-03/report.json --envelope analysis/perception-audit/envelope.json --candidate t1-l2-expert-graph --role short_composition --graph graphs/expert_t1_l2.yaml --output analysis/perception-audit/records/bnd-perception-corpus-03/eligibility.json",
     "uv run harness freeze check --manifest analysis/freeze/bnd-task-band-calibration-v11/freeze-manifest.json --allow-withheld-seeds"
   ],
   "declaration": {
@@ -31,7 +41,8 @@
       "scripts": [
         "src/aisle/harness/benchmark_statistics.py",
         "src/aisle/harness/non_oracle.py",
-        "src/aisle/harness/perception_audit.py"
+        "src/aisle/harness/perception_audit.py",
+        "src/aisle/harness/perception_eligibility.py"
       ],
       "seed": 490001
     },
@@ -39,12 +50,18 @@
       "candidate_engineering": "graphs/expert_t2.yaml",
       "candidate_short_composition": "graphs/expert_t1_l2.yaml",
       "lock": "uv.lock",
-      "perception_audit_report": "analysis/perception-audit/records/bnd-perception-corpus-02/report.json",
+      "perception_audit_report": "analysis/perception-audit/records/bnd-perception-corpus-03/report.json",
       "perception_auditor": "src/aisle/harness/perception_audit.py",
       "perception_cli": "src/aisle/harness/cli.py",
+      "perception_eligibility": "analysis/perception-audit/records/bnd-perception-corpus-03/eligibility.json",
+      "perception_eligibility_cli": "tools/perception_eligibility.py",
+      "perception_eligibility_module": "src/aisle/harness/perception_eligibility.py",
       "perception_envelope": "analysis/perception-audit/envelope.json",
       "perception_model_lock": "src/aisle/verifier/models.lock",
       "perception_models": "src/aisle/verifier/models.py",
+      "perception_raw_predictions": "analysis/perception-audit/records/bnd-perception-corpus-03/raw-predictions.json.gz",
+      "perception_record_cli": "tools/perception_record.py",
+      "perception_run_manifest": "analysis/perception-audit/records/bnd-perception-corpus-03/manifest.json",
       "registry": "registry/manifests",
       "research_prompt": "harness/CLAUDE.research.md",
       "seed_commitment_predecessor": "analysis/freeze/bnd-task-band-calibration-v10/freeze-manifest.json",
@@ -60,7 +77,10 @@
     },
     "campaign_id": "bnd-task-band-calibration-v11",
     "commands": [
-      "uv run harness perception audit --run runs/bnd-perception-corpus-02 --envelope analysis/perception-audit/envelope.json --output /tmp/bnd-perception-corpus-02-hardened-report.json",
+      "AISLE_FRAME_CAPTURE_PERIOD_S=0.1 uv run harness rollout --graph graphs/expert_t1_l2.yaml --tier T1 --embodiment franka --perception L2 --episodes 32 --seeds 0..31 --no-idea-gate --env-baseline local --run-id bnd-perception-corpus-03",
+      "uv run harness perception audit --run runs/bnd-perception-corpus-03 --envelope analysis/perception-audit/envelope.json --output /tmp/bnd-perception-corpus-03-report.json",
+      "uv run python tools/perception_record.py --report /tmp/bnd-perception-corpus-03-report.json --run runs/bnd-perception-corpus-03 --output analysis/perception-audit/records/bnd-perception-corpus-03",
+      "uv run python tools/perception_eligibility.py --report analysis/perception-audit/records/bnd-perception-corpus-03/report.json --envelope analysis/perception-audit/envelope.json --candidate t1-l2-expert-graph --role short_composition --graph graphs/expert_t1_l2.yaml --output analysis/perception-audit/records/bnd-perception-corpus-03/eligibility.json",
       "uv run harness freeze check --manifest analysis/freeze/bnd-task-band-calibration-v11/freeze-manifest.json --allow-withheld-seeds"
     ],
     "decision_rules": {
@@ -80,7 +100,7 @@
       },
       "stopping_rule": "16 randomized sessions per interface per candidate (BND-9); no threshold relaxed after results (BND-10)"
     },
-    "disposition": "short_composition candidate expert_t1_l2 is not perception-eligible on the frozen envelope (BND-7); role open pending a new candidate round (BND-10)",
+    "disposition": "short_composition candidate expert_t1_l2 is not perception-eligible on the frozen envelope (BND-7): 22 of 22 strata fail, led by target_class=ibuprofen (68 of 80 evaluation frames refused) with every other target's lower bound below the 0.90 floor; no threshold was changed (BND-10); role open pending a new human-reviewed candidate round; the ADR-66 pilot may still run on this candidate with BND-7 recorded as a machine-gate limitation",
     "endpoints": {
       "primary": [
         {
@@ -156,9 +176,9 @@
       {
         "gate": "BND-5 perception audit",
         "kind": "machine_check",
-        "owner_role": "perception auditor; retained v6 report is historical and must be regenerated with the hardened auditor before eligibility is reconsidered",
-        "record": null,
-        "status": "pending"
+        "owner_role": "perception auditor (hardened, corpus-03, 32 development seeds, envelope unchanged); 22 strata failed their floor",
+        "record": "analysis/perception-audit/records/bnd-perception-corpus-03/report.json",
+        "status": "failed"
       },
       {
         "gate": "BND-8 monolithic expert parity",
@@ -192,14 +212,14 @@
       "seeds_source": "~/aisle-private/freeze/bnd-task-band-calibration-v2/seeds.json"
     },
     "spec": "490",
-    "superseded": "bnd-task-band-calibration-v10 (paired T1 L2 pilot surface and shared controller/registry changes for issue #347; original seed commitment, collection rules, thresholds and pending gates preserved)"
+    "superseded": "bnd-task-band-calibration-v10 (BND-5 perception audit regenerated with the hardened auditor on a 32-seed T1-L2 corpus under the unchanged envelope; calibration rules, seed commitment and all other pending gates preserved)"
   },
-  "declaration_sha256": "sha256:e7fa6e227c2740b04938088a37b6ec71a4d5d2efee6a26ef8ff7c63e59ab319d",
+  "declaration_sha256": "sha256:153142f3efd952c383ed74c17ad927c5cf1e8d61eb720371e2952550d59986b8",
   "frozen": false,
   "gate_record_hashes": {
     "CON-7 frozen set": "sha256:4e84ebe40d37cb26ef774e4fc6b46b54df7813ee051042308d1f409a9d9103ac"
   },
-  "git_head": "40b44563cd549158f318774b9601628796525743",
+  "git_head": "8ee5ac59b467a6484b9db405efe00f80f773967b",
   "issue": 346,
   "pending_gates": [
     "BND-1 human-reviewed candidate amendment",

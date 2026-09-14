@@ -123,3 +123,24 @@ def test_bundle_dependencies_are_bound_by_session_identity():
 
     assert set(DEPENDENCIES) <= set(CONTROLLER_FILES)
     assert "src/aisle/harness/typed_execution_bundle.py" in CONTROLLER_FILES
+
+
+def test_bundle_refuses_an_invalid_allowlist_before_any_side_effect(tmp_path):
+    """MON-2/MON-13: an allowlist naming a non-src implementation is refused before the
+    bundle directory is created, and a record whose authored surface disagrees with its
+    files is refused on verification."""
+    import json
+
+    from aisle.harness.typed_execution_bundle import ExecutionBundleError, build_execution_bundle
+
+    controller = tmp_path / "controller"
+    (controller / "docs/monolithic").mkdir(parents=True)
+    (controller / "docs/monolithic/allowlist.json").write_text(
+        json.dumps({"typed": {"editable": ["tools/helper.py"]}, "monolithic": {"editable": []}})
+    )
+    participant = tmp_path / "participant"
+    participant.mkdir()
+    output = tmp_path / "bundle"
+    with pytest.raises(ExecutionBundleError, match="allowlist invalid"):
+        build_execution_bundle(controller, participant, output)
+    assert not output.exists()

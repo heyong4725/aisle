@@ -16,31 +16,44 @@ pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def prepared_pair(tmp_path, *, task_surface="t1-l1-v1"):
-    """Use the launcher's real table format in an isolated engineering fixture."""
+def prepared_pair(tmp_path, candidate="t1-oracle"):
+    """Use the launcher's real table format in an isolated engineering fixture;
+    the arm views and editable grants follow the named candidate's allowlist."""
+    from aisle.harness.candidates import read_candidates
     from aisle.harness.matched_session import CONTROLLER_FILES
-    from aisle.harness.matched_surface import task_surface as resolve_surface
 
-    surface = resolve_surface(task_surface)
     control = tmp_path / "controller"
-    table = json.loads((ROOT / surface.docs_directory / "treatment-table.json").read_text())
+    table = json.loads((ROOT / "docs/monolithic/treatment-table.json").read_text())
     paths = {
         path
         for row in table["rows"]
         for arm in ("typed", "monolithic")
         for path in row[arm]["paths"]
     }
-    paths.update(str(p.relative_to(ROOT)) for p in (ROOT / surface.docs_directory).glob("*.json"))
-    paths.update({surface.typed_graph, surface.monolithic_graph})
+    paths.update(str(p.relative_to(ROOT)) for p in (ROOT / "docs/monolithic").glob("*.json"))
+    paths.update({"graphs/expert_t1.yaml", "graphs/monolithic_t1.yaml"})
     paths.update(CONTROLLER_FILES)
-    allowlist = json.loads((ROOT / surface.docs_directory / "allowlist.json").read_text())
+    rows = read_candidates(ROOT)[0]["candidates"]
+    allowlist = json.loads((ROOT / rows[candidate]["documents"]["allowlist"]).read_text())
     for arm in ("typed", "monolithic"):
         paths.update(allowlist[arm]["editable"])
+    # every declared candidate's artifacts and editable files (MON-8 document sets)
+    from aisle.harness.candidates import candidate_artifacts
+
+    for row in rows.values():
+        paths.update(candidate_artifacts(row))
+        candidate_allowlist = json.loads((ROOT / row["documents"]["allowlist"]).read_text())
+        candidate_table = json.loads((ROOT / row["documents"]["treatment_table"]).read_text())
+        for arm in ("typed", "monolithic"):
+            paths.update(candidate_allowlist[arm]["editable"])
+            paths.update(p for r in candidate_table["rows"] for p in r[arm]["paths"])
     for name in paths:
         target = control / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / name, target)
-    assert monolith.table_report(control, write=True, task_surface=task_surface)["ok"]
+    assert monolith.table_report(control, write=True)["ok"]
+    for row in rows.values():
+        assert monolith.table_report(control, write=True, documents=row["documents"])["ok"]
     roots, candidates = {}, {}
     for arm in ("typed", "monolithic"):
         view = tmp_path / arm
@@ -1169,6 +1182,65 @@ def test_development_protocol_is_bound_and_reverified(tmp_path):
     assert plan["development"] == protocol
     assert verify_plan(plan, control, roots) == plan
     assert plan["confirmatory_ready"] is False
+
+
+def test_v2_development_protocol_binds_the_candidate_table(tmp_path):
+    """MON-3/MON-8: a v2 protocol admits by candidate id, retains the derived launch
+    fields, binds the table hash into the plan, and re-verifies to itself."""
+    from aisle.harness.candidates import candidates_sha256
+    from aisle.harness.matched_session import admit_pair, verify_plan
+
+    control, candidates, roots = prepared_pair(tmp_path)
+    protocol = {
+        "schema_version": "aisle.matched-development.v2",
+        "purpose": "expert_parity",
+        "candidate": "t1-oracle",
+        "candidates_sha256": candidates_sha256(control),
+        "seeds": [7],
+        "run_ceiling": 1,
+        "episode_ceiling": 1,
+        "timeout_s": 30,
+    }
+    plan = admit_pair(control, candidates, roots, development=protocol)
+    development = plan["development"]
+    assert development["candidate"] == "t1-oracle"
+    assert development["typed_graph"] == "graphs/expert_t1.yaml"
+    assert development["verifier"] == "oracle" and development["embodiment"] == "franka"
+    assert "docs/monolithic/candidates.json" in plan["surface"]["artifact_hashes"]
+    assert verify_plan(plan, control, roots) == plan
+
+
+def test_v2_development_protocol_admits_the_t1_l2_pair_with_its_own_documents(tmp_path):
+    """MON-3/MON-8/BND-2: the T1-L2 candidate admits, its own treatment table and
+    interface map identify the plan surface, and removing one artifact refuses."""
+    from aisle.harness.candidates import candidates_sha256
+    from aisle.harness.matched_session import AdmissionError, admit_pair, verify_plan
+
+    control, candidates, roots = prepared_pair(tmp_path, candidate="t1-l2-realistic")
+    protocol = {
+        "schema_version": "aisle.matched-development.v2",
+        "purpose": "expert_parity",
+        "candidate": "t1-l2-realistic",
+        "candidates_sha256": candidates_sha256(control),
+        "seeds": [7],
+        "run_ceiling": 1,
+        "episode_ceiling": 1,
+        "timeout_s": 30,
+    }
+    plan = admit_pair(control, candidates, roots, development=protocol)
+    assert plan["development"]["typed_graph"] == "graphs/pilot_t1_l2_typed.yaml"
+    assert plan["development"]["verifier"] == "realistic"
+    documents = plan["development"]["documents"]
+    expected = monolith.table_report(control, write=False, documents=documents)["immutable_id"]
+    assert plan["surface"]["treatment_table_id"] == expected
+    assert expected != monolith.table_report(control, write=False)["immutable_id"]
+    assert plan["surface"]["interface_map_id"] == "mon-interface-map-t1-l2-v1"
+    assert "graphs/pilot_t1_l2_monolithic.yaml" in plan["surface"]["artifact_hashes"]
+    assert "src/aisle/harness/pilot_policy_surface.py" in plan["surface"]["artifact_hashes"]
+    assert verify_plan(plan, control, roots) == plan
+    (control / "experts/monolithic/expert_t1_l2.py").unlink()
+    with pytest.raises(AdmissionError, match="artifact missing"):
+        admit_pair(control, candidates, roots, development=protocol)
 
 
 @pytest.mark.parametrize(

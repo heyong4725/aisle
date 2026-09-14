@@ -1,0 +1,150 @@
+{
+  "campaign_id": "cse-causal-study-pilot-v1",
+  "git_head": "06b13011c3560b57938329f2e81a95525b6fcedf",
+  "note": "Refusal probes only; no simulation launched, no agent session started, no private seed read.",
+  "probes": {
+    "bnd_calibration_v10": {
+      "disposition": "short_composition candidate expert_t1_l2 is not perception-eligible on the frozen envelope (BND-7); role open pending a new candidate round (BND-10)",
+      "instrument_set": {
+        "items": [
+          "short_composition:t1-l2-expert-graph",
+          "engineering:t2-label-read-stack"
+        ],
+        "kind": "task_candidate"
+      }
+    },
+    "local_frontends": {
+      "claude": {
+        "frozen_declaration_version_observed": "2.1.261",
+        "observed": "2.1.269 (Claude Code)",
+        "probe_version": "2.1.263"
+      },
+      "codex": {
+        "conformance_profile_accepts": "0.153.4 (docs/monolithic/frontend-dispatch-probes.md)",
+        "observed": "codex-cli 0.154.0"
+      },
+      "live_provider_session_path": "none: the only admitted-session launcher with an actual frontend is tests/accept/test_matched_conformance_session.py, whose reference provider must be the local scripted fixture listener"
+    },
+    "matched_campaign_run_purpose_engineering": {
+      "argv": [
+        "tools/matched_campaign.py",
+        "run",
+        "--request",
+        "<controller-shaped request with an empty plan>",
+        "--arm",
+        "typed",
+        "--session-id",
+        "pilot-typed-1",
+        "--purpose",
+        "engineering"
+      ],
+      "classification": "infrastructure_exclusion",
+      "eligible_for_estimate": false,
+      "error": "retained plan drift or unresolved input: 'immutable_id'",
+      "exit_status": 2,
+      "ok": false
+    },
+    "matched_campaign_run_purpose_pilot": {
+      "argv": [
+        "tools/matched_campaign.py",
+        "run",
+        "--request",
+        "<controller-shaped request with an empty plan>",
+        "--arm",
+        "typed",
+        "--session-id",
+        "pilot-typed-1",
+        "--purpose",
+        "pilot"
+      ],
+      "classification": "infrastructure_exclusion",
+      "eligible_for_estimate": false,
+      "error": "scored collection requires independent CSE-10 gate records",
+      "exit_status": 2,
+      "ok": false
+    },
+    "paired_t1_graph_oracle_consumers": {
+      "graphs/expert_t1.yaml": {
+        "dora-genesis/seg_overhead": [
+          "segmented-pose"
+        ],
+        "verifier-oracle/episode_result": [
+          "task-state-machine",
+          "rollout-client"
+        ]
+      },
+      "graphs/monolithic_t1.yaml": {
+        "dora-genesis/seg_overhead": [
+          "monolith-broker"
+        ],
+        "verifier-oracle/episode_result": [
+          "monolith-broker",
+          "rollout-client"
+        ]
+      }
+    },
+    "validate_oracle_boundary_segmentation_on_policy_path": {
+      "accepted": false,
+      "error": "oracle state crosses the policy boundary",
+      "interpretation": "dora-genesis/seg_overhead is a simulator segmentation mask; segmented-pose and monolith-broker are policy-region nodes"
+    },
+    "verify_development_T1_oracle_teleport": {
+      "accepted": true,
+      "protocol": {
+        "embodiment": "franka",
+        "episode_ceiling": 2,
+        "purpose": "expert_parity",
+        "reset": "teleport",
+        "run_ceiling": 1,
+        "schema_version": "aisle.matched-development.v1",
+        "seeds": [
+          0,
+          1
+        ],
+        "tier": "T1",
+        "timeout_s": 60.0,
+        "verifier": "oracle"
+      }
+    },
+    "verify_development_T1_realistic_verifier": {
+      "accepted": false,
+      "error": "development protocol requests an unsupported run mode",
+      "protocol": {
+        "embodiment": "franka",
+        "episode_ceiling": 2,
+        "purpose": "expert_parity",
+        "reset": "teleport",
+        "run_ceiling": 1,
+        "schema_version": "aisle.matched-development.v1",
+        "seeds": [
+          0,
+          1
+        ],
+        "tier": "T1",
+        "timeout_s": 60.0,
+        "verifier": "realistic"
+      }
+    },
+    "verify_development_T2": {
+      "accepted": false,
+      "error": "development protocol requests an unsupported run mode",
+      "protocol": {
+        "embodiment": "franka",
+        "episode_ceiling": 2,
+        "purpose": "expert_parity",
+        "reset": "teleport",
+        "run_ceiling": 1,
+        "schema_version": "aisle.matched-development.v1",
+        "seeds": [
+          0,
+          1
+        ],
+        "tier": "T2",
+        "timeout_s": 60.0,
+        "verifier": "oracle"
+      }
+    }
+  },
+  "recorded_at": "2026-09-12T15:44:54+00:00",
+  "schema_version": "aisle.pilot-executor-preflight.v1"
+}

@@ -11,13 +11,12 @@ pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _view(tmp_path, *, task_surface="t1-l1-v1"):
-    from aisle.harness.matched_surface import task_surface as resolve_surface
-
+def _view(tmp_path):
     view = tmp_path / "typed"
     view.mkdir()
-    documents = resolve_surface(task_surface).docs_directory
-    editable = json.loads((ROOT / documents / "allowlist.json").read_text())["typed"]["editable"]
+    editable = json.loads((ROOT / "docs/monolithic/allowlist.json").read_text())["typed"][
+        "editable"
+    ]
     for name in editable:
         target = view / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -204,3 +203,26 @@ def test_snapshot_archive_preserves_receipt_and_rejects_source_drift(tmp_path):
     with pytest.raises(SnapshotError):
         archive_typed_snapshot(snapshot, record, tmp_path / "refused")
     assert not (tmp_path / "refused").exists()
+
+
+@pytest.mark.parametrize(
+    "field,value", [("typed_graph", "/abs/graph.yaml"), ("turn_plan", "graphs/../x.json")]
+)
+def test_snapshot_refuses_noncanonical_candidate_surface_paths(tmp_path, field, value):
+    """MON-3/MON-13: the candidate graph and turn plan must be canonical relative paths."""
+    from aisle.harness.typed_snapshot import SnapshotError, build_typed_validation_snapshot
+
+    view = _view(tmp_path)
+    with pytest.raises(SnapshotError, match="canonical"):
+        build_typed_validation_snapshot(ROOT, view, tmp_path / "snapshot", **{field: value})
+
+
+def test_snapshot_refuses_a_graph_the_allowlist_does_not_capture(tmp_path):
+    """MON-13: the snapshot must contain the candidate's graph and turn plan bytes."""
+    from aisle.harness.typed_snapshot import SnapshotError, build_typed_validation_snapshot
+
+    view = _view(tmp_path)
+    with pytest.raises(SnapshotError, match="captured"):
+        build_typed_validation_snapshot(
+            ROOT, view, tmp_path / "snapshot", typed_graph="graphs/expert_t1_l2.yaml"
+        )

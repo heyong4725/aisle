@@ -12,12 +12,12 @@ from test_typed_validation_snapshot import ROOT
 pytestmark = pytest.mark.unit
 
 
-def _stage(tmp_path, *, share_home=False, direct_python=True, task_surface="t1-l1-v1"):
+def _stage(tmp_path, *, share_home=False, direct_python=True):
     from aisle.harness.treatment_ambient import build_declared_environment
     from aisle.harness.treatment_confinement import MacOSPolicy, compile_macos_profile
     from aisle.harness.typed_graph_stage import stage_typed_graph
 
-    inputs = _validated(tmp_path, direct_python=direct_python, task_surface=task_surface)
+    inputs = _validated(tmp_path, direct_python=direct_python)
     declarations = _declarations(inputs)
     shared = None
     for node_id, launch in declarations.items():

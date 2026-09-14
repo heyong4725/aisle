@@ -33,3 +33,15 @@ visible root. See [the session-edit decision](../decisions/ADR-declared-session-
 This supplies the edit-accounting prerequisite; the complete MON-8 arm tuple,
 MON-12 event/snapshot envelope, role-specific grants, and external enforcement
 are still required before a monolithic agent session can be admitted.
+
+## T1-L2 pair (ADR-66 pilot candidate)
+
+`graphs/monolithic_t1_l2.yaml` and `experts/monolithic/expert_t1_l2.py` form
+the monolithic side of the `t1-l2-realistic` candidate in
+`docs/monolithic/candidates.json`: the broker receives rgb + depth (never the
+segmentation mask, BND-2), the module uses `l2_pose_session()`, and the
+realistic verifier's verdict is the only episode result the policy sees
+(BND-3). Its MON-8 documents are the `*-t1-l2.json` files beside the T1 ones;
+check them with `harness monolith table --candidate t1-l2-realistic` and
+`harness monolith interface --candidate t1-l2-realistic`. BND-8 parity for
+this pair has not run.

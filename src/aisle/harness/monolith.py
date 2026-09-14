@@ -19,8 +19,7 @@ from pathlib import Path
 
 import yaml
 
-from aisle.harness.matched_surface import LEGACY_SURFACE
-from aisle.harness.matched_surface import task_surface as resolve_task_surface
+from aisle.harness.candidates import ALLOWED, T1_ORACLE_FIELDS
 
 TEMPLATE_GRAPH = "graphs/monolithic_t1.yaml"
 DOCS_DIR = "docs/monolithic"
@@ -31,9 +30,28 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def load_json(root: Path, name: str, *, task_surface=LEGACY_SURFACE) -> dict:
-    directory = resolve_task_surface(task_surface).docs_directory
-    return json.loads((root / directory / name).read_text(encoding="utf-8"))
+def load_json(root: Path, name: str) -> dict:
+    return json.loads((root / DOCS_DIR / name).read_text(encoding="utf-8"))
+
+
+DEFAULT_DOCUMENTS = T1_ORACLE_FIELDS["documents"]
+
+
+def load_document(root: Path, rel: str) -> dict:
+    """A controller document by repo-relative path (a candidate's MON-8 document)."""
+    path = (root / rel).resolve()
+    if not path.is_relative_to(Path(root).resolve()):
+        raise ValueError("controller document escapes the root")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def candidate_documents(root: Path, candidate: str | None) -> dict:
+    """The MON-8 document set of a candidate id (None: the T1 defaults)."""
+    if candidate is None:
+        return dict(DEFAULT_DOCUMENTS)
+    from aisle.harness.candidates import resolve_candidate
+
+    return dict(resolve_candidate(root, candidate)["documents"])
 
 
 # -- MON-3 launcher ------------------------------------------------------
@@ -59,6 +77,8 @@ def stamp_graph(
     template_path = root / template
     doc = yaml.safe_load(template_path.read_text(encoding="utf-8"))
     module = module.resolve()
+    if not any("AISLE_MONOLITH_MODULE" in (n.get("env") or {}) for n in doc["nodes"]):
+        raise ValueError("template graph binds no monolithic module")
     for node in doc["nodes"]:
         node["path"] = str((template_path.parent / node["path"]).resolve())
         env = node.get("env") or {}
@@ -118,10 +138,11 @@ def run(
     worker_config=None,
     worker_config_sha256=None,
     record_simulator_work: bool = False,
-    task_surface: str = LEGACY_SURFACE,
+    template: str = TEMPLATE_GRAPH,
+    verifier: str = "oracle",
+    reset_mode: str = "teleport",
 ) -> dict:
-    """Stamp the supported T1 graph and roll it out through the trusted runner."""
-    surface = resolve_task_surface(task_surface)
+    """Stamp the admitted monolithic template and roll it out through the trusted runner."""
     if tier != "T1":
         return {
             "ok": False,
@@ -129,6 +150,12 @@ def run(
             "tier": tier,
             "supported_tiers": ["T1"],
         }
+    if verifier not in ALLOWED["verifier"]:
+        return {"ok": False, "error": "unsupported_monolithic_verifier", "verifier": verifier}
+    if reset_mode not in ALLOWED["reset"]:
+        return {"ok": False, "error": "unsupported_monolithic_reset", "reset": reset_mode}
+    if type(template) is not str or template.startswith("/") or ".." in Path(template).parts:
+        return {"ok": False, "error": "unsupported_monolithic_template", "template": template}
 
     from aisle.harness.cli import _branch
     from aisle.harness.rollout import rollout
@@ -151,12 +178,15 @@ def run(
         pre = check_module(module, embodiment)
     if not pre["ok"]:
         return pre
-    graph_output = root / "graphs" / "out"
-    if surface.identity != LEGACY_SURFACE:
-        graph_output /= surface.identity
-    graph = stamp_graph(
-        root, module, graph_output, template=surface.monolithic_graph, **worker_options
-    )
+    try:
+        graph = stamp_graph(root, module, root / "graphs" / "out", template, **worker_options)
+    except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError) as exc:
+        return {
+            "ok": False,
+            "error": "unsupported_monolithic_template",
+            "template": template,
+            "detail": str(exc),
+        }
     import datetime
     import uuid
 
@@ -171,8 +201,8 @@ def run(
         tier=tier,
         episodes=episodes,
         seeds=seeds,
-        reset_mode="teleport",
-        verifier="oracle",
+        reset_mode=reset_mode,
+        verifier=verifier,
         run_id=run_id,
         branch=_branch(root),
         no_idea_gate=no_idea_gate,
@@ -288,7 +318,7 @@ def _dump(obj: dict) -> str:
     return json.dumps(obj, indent=2, sort_keys=True) + "\n"
 
 
-def table_report(root: Path, write: bool, *, task_surface=LEGACY_SURFACE) -> dict:
+def table_report(root: Path, write: bool, *, documents: dict | None = None) -> dict:
     """Render/check the MON-1 table and the generated records: the Markdown
     rendering, the v1 treatment record and the MON-9 experts record. The
     records carry current hashes, so an edit to any listed surface needs
@@ -300,8 +330,10 @@ def table_report(root: Path, write: bool, *, task_surface=LEGACY_SURFACE) -> dic
         validate_treatment_table,
     )
 
-    surface = resolve_task_surface(task_surface)
-    table = load_json(root, "treatment-table.json", task_surface=surface.identity)
+    documents = DEFAULT_DOCUMENTS if documents is None else documents
+    table = load_document(root, documents["treatment_table"])
+    table_stem = Path(documents["treatment_table"]).stem
+    experts_stem = Path(documents["experts"]).stem
     errors = table_errors(root, table)
     if errors:
         return {"ok": False, "table": table["id"], "rows": len(table["rows"]), "errors": errors}
@@ -312,16 +344,16 @@ def table_report(root: Path, write: bool, *, task_surface=LEGACY_SURFACE) -> dic
         return {"ok": False, "table": table["id"], "rows": len(table["rows"]), "errors": [str(exc)]}
     record["immutable_id"] = identity["immutable_id"]
     record["status"] = "shakeout"
-    record["source"] = f"{surface.docs_directory}/treatment-table.json"
-    experts = experts_record(root, load_json(root, "experts.json", task_surface=surface.identity))
+    record["source"] = documents["treatment_table"]
+    experts = experts_record(root, load_document(root, documents["experts"]))
     try:
         validate_expert_artifacts(experts["artifacts"])
     except TypedSurfaceError as exc:
         errors.append(str(exc))
     generated = {
-        root / surface.docs_directory / "treatment-table.md": render_table(root, table),
-        root / surface.analysis_directory / "treatment-table-v1.json": _dump(record),
-        root / surface.analysis_directory / "experts-v1.json": _dump(experts),
+        root / DOCS_DIR / f"{table_stem}.md": render_table(root, table),
+        root / ANALYSIS_DIR / f"{table_stem}-v1.json": _dump(record),
+        root / ANALYSIS_DIR / f"{experts_stem}-v1.json": _dump(experts),
     }
     for path, content in generated.items():
         current = path.read_text(encoding="utf-8") if path.is_file() else ""
@@ -427,8 +459,9 @@ def _motion_route(graph: dict) -> list[str]:
     return route
 
 
-def interface_report(root: Path, *, task_surface=LEGACY_SURFACE) -> dict:
-    imap = load_json(root, "interface-map.json", task_surface=task_surface)
+def interface_report(root: Path, *, documents: dict | None = None) -> dict:
+    documents = DEFAULT_DOCUMENTS if documents is None else documents
+    imap = load_document(root, documents["interface_map"])
     errors = interface_errors(root, imap)
     return {
         "ok": not errors,
@@ -525,11 +558,12 @@ def parity_decision(protocol: dict, typed: dict[int, dict], mono: dict[int, dict
 
 
 def parity_report(
-    root: Path, typed_path: Path, mono_path: Path, *, task_surface=LEGACY_SURFACE
+    root: Path, typed_path: Path, mono_path: Path, *, documents: dict | None = None
 ) -> dict:
     from aisle.harness.monolithic import validate_campaign_purpose
 
-    protocol = load_json(root, "parity-protocol.json", task_surface=task_surface)
+    documents = DEFAULT_DOCUMENTS if documents is None else documents
+    protocol = load_document(root, documents["parity_protocol"])
     decision = parity_decision(protocol, _episodes(typed_path), _episodes(mono_path))
     validate_campaign_purpose(decision)
     return {

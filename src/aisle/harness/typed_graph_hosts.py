@@ -11,8 +11,7 @@ import shlex
 from decimal import Decimal
 from pathlib import Path
 
-from aisle.harness.matched_surface import LEGACY_SURFACE, PILOT_L2_SURFACE
-from aisle.harness.matched_surface import task_surface as resolve_task_surface
+from aisle.harness.typed_execution_bundle import PARTICIPANT_FILES
 from aisle.harness.typed_node_worker import validate_configuration
 
 
@@ -155,16 +154,15 @@ def node_configuration(node, *, expansion_environment=None):
     return validate_configuration({"environment": environment, "arguments": _arguments(arguments)})
 
 
-def _source(node, *, task_surface=LEGACY_SURFACE):
-    surface = resolve_task_surface(task_surface)
+def _source(node, participant_files=PARTICIPANT_FILES):
     path = node.get("path")
     if type(path) is not str or path.startswith("/"):
         return None
     source = posixpath.normpath("graphs/" + path)
-    return source if source in surface.participant_files else None
+    return source if source in participant_files else None
 
 
-def _pilot_routes(authored, baseline, trusted):
+def _public_observation_routes(authored, baseline, trusted):
     """BND-2/BND-3: preserve private instruments while allowing public policy wiring."""
     baseline_policy = {n["id"] for n in baseline["nodes"]} - set(trusted)
     policy = {n["id"] for n in authored["nodes"]} - set(trusted)
@@ -208,9 +206,14 @@ def _pilot_routes(authored, baseline, trusted):
             ):
                 raise GraphHostError("pilot trusted instrument inputs have changed")
         else:
-            for spec in node.get("inputs", {}).values():
+            for port, spec in node.get("inputs", {}).items():
                 route = source(spec)
-                if route.split("/")[0] not in policy and route not in public:
+                # Realistic rollout rewrites only the episode_result port.
+                # An alias or scalar form of the template edge would evade it.
+                oracle_alias = route == "verifier-oracle/episode_result" and (
+                    port != "episode_result" or not isinstance(spec, dict)
+                )
+                if oracle_alias or (route.split("/")[0] not in policy and route not in public):
                     raise GraphHostError(
                         "pilot policy input is outside the public observation surface"
                     )
@@ -223,7 +226,7 @@ def replace_authored_nodes(
     controller_root,
     *,
     expansion_environments=None,
-    task_surface=LEGACY_SURFACE,
+    participant_files=PARTICIPANT_FILES,
 ):
     """Replace only process entries, preserving authored graph inputs and outputs.
 
@@ -233,7 +236,6 @@ def replace_authored_nodes(
     No files are read, created, or repaired by this transformation.
     """
     try:
-        resolve_task_surface(task_surface)
         if type(authored) is not dict or type(baseline) is not dict:
             raise GraphHostError("graph descriptors must be mappings")
         if not _json_equal(
@@ -249,11 +251,9 @@ def replace_authored_nodes(
         expansions = {} if expansion_environments is None else expansion_environments
         if type(expansions) is not dict or not set(expansions) <= set(bindings):
             raise GraphHostError("expansion environment has an undeclared node")
-        trusted = {
-            n["id"]: n for n in baseline["nodes"] if _source(n, task_surface=task_surface) is None
-        }
-        if task_surface == PILOT_L2_SURFACE:
-            _pilot_routes(authored, baseline, trusted)
+        trusted = {n["id"]: n for n in baseline["nodes"] if _source(n, participant_files) is None}
+        if "pilot-policy-surface" in trusted:
+            _public_observation_routes(authored, baseline, trusted)
         result = copy.deepcopy(authored)
         seen, assigned = set(), set()
         for node in result["nodes"]:
@@ -271,7 +271,7 @@ def replace_authored_nodes(
                 ):
                     raise GraphHostError("trusted node definition has changed")
                 continue
-            source = _source(node, task_surface=task_surface)
+            source = _source(node, participant_files)
             if source is None or node_id not in bindings:
                 raise GraphHostError("authored node has no bound editable implementation")
             # Process execution, restart and logging directives must not become

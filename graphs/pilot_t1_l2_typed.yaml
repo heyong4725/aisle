@@ -1,5 +1,3 @@
-# Proposed paired T1 L2 pilot surface (MON-4/BND-2/BND-3).
-# Maintainer-derived candidate; not independent expert-parity evidence.
 nodes:
 - id: dora-genesis
   path: ../src/aisle/nodes/dora_genesis.py
@@ -183,6 +181,9 @@ nodes:
     episode_goal:
       source: pilot-policy-surface/episode_goal
       queue_size: 100
+    episode_result:
+      source: verifier-oracle/episode_result
+      queue_size: 100
     violation:
       source: budget-guard/violation
       queue_size: 100
@@ -208,7 +209,6 @@ nodes:
     AISLE_LOCKSTEP: '1'
     AISLE_TURN_NODE: rollout-client
     AISLE_TURN_OUTPUTS: reset,episode_goal,turn_done
-    AISLE_EPISODE_LIFECYCLE: fixed-horizon-t1-v1
   inputs:
     tick: dora/timer/millis/1000
     reset_done:

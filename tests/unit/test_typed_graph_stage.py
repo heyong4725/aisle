@@ -3,6 +3,7 @@
 import copy
 import json
 from dataclasses import asdict
+from pathlib import Path
 
 import pytest
 import yaml
@@ -12,12 +13,10 @@ from test_typed_validation_snapshot import ROOT
 pytestmark = pytest.mark.unit
 
 
-def _validated(tmp_path, *, direct_python=True, task_surface="t1-l1-v1"):
+def _validated(tmp_path, *, direct_python=True):
     from aisle.harness.typed_validation import run_validation
 
-    inputs = _inputs(
-        tmp_path, direct_python=direct_python, worker_packages=True, task_surface=task_surface
-    )
+    inputs = _inputs(tmp_path, direct_python=direct_python, worker_packages=True)
     result = run_validation(**inputs)
     assert result["ok"]
     return inputs
@@ -26,20 +25,12 @@ def _validated(tmp_path, *, direct_python=True, task_surface="t1-l1-v1"):
 def _declarations(inputs):
     # Stage construction accepts serialized launch declarations. Host preflight
     # remains independently mandatory before any Dora transport is attached.
-    from aisle.harness.matched_surface import record_surface
     from aisle.harness.typed_execution_bundle import build_execution_bundle
 
     bundle = inputs["snapshot"].parent / "execution-bundle"
-    surface = record_surface(inputs["snapshot_record"])
-    manifest = build_execution_bundle(
-        ROOT, inputs["snapshot"], bundle, task_surface=surface.identity
-    )
-    graph = yaml.safe_load((inputs["snapshot"] / surface.typed_graph).read_text())
-    names = {
-        n["id"]
-        for n in graph["nodes"]
-        if n.get("path", "").removeprefix("../") in surface.participant_files
-    }
+    manifest = build_execution_bundle(ROOT, inputs["snapshot"], bundle)
+    graph = yaml.safe_load((inputs["snapshot"] / "graphs/expert_t1.yaml").read_text())
+    names = {"segmented-pose", "grasp-planner-topdown", "ik-trajectory", "task-state-machine"}
     launch = {
         key: copy.deepcopy(inputs[key])
         for key in (
@@ -88,6 +79,16 @@ def test_stage_binds_validation_configs_and_transport_graph(tmp_path):
         inputs["snapshot"] / "graphs/turn_plans/expert_t1.json"
     ).read_bytes()
     assert record["execution_authorized"] is False
+    # MON-3: the stage retains the candidate surface it was built from, not a literal
+    snapshot_record = record["snapshot_record"]
+    assert snapshot_record["typed_graph"] == "graphs/expert_t1.yaml"
+    assert snapshot_record["turn_plan"] == "graphs/turn_plans/expert_t1.json"
+    assert snapshot_record["allowlist"] == "docs/monolithic/allowlist.json"
+    hosts = {n: json.loads(Path(b["config_path"]).read_text()) for n, b in record["hosts"].items()}
+    assert all(
+        "src/aisle/nodes/segmented_pose.py" in h["launch"]["bundle_manifest"]["participant_files"]
+        for h in hosts.values()
+    )
 
 
 @pytest.mark.parametrize(
@@ -163,3 +164,28 @@ def test_staged_artifact_verification_refuses_drift(tmp_path, mutation):
         (output / "stage.json").write_text("{}")
     with pytest.raises(StageError):
         verify_graph_stage(output, record)
+
+
+def test_transport_refuses_a_graph_other_than_the_snapshot_candidate(tmp_path):
+    """MON-3/MON-13: the staged transport binds the snapshot's own graph path."""
+    from aisle.harness.typed_graph_stage import stage_typed_graph, transport_for_instrumentation
+
+    inputs = _validated(tmp_path)
+    output = tmp_path / "private/staged"
+    record = stage_typed_graph(
+        ROOT,
+        inputs["snapshot"],
+        inputs["snapshot_record"],
+        inputs["output"],
+        _declarations(inputs),
+        output,
+    )
+    authored = (inputs["snapshot"] / "graphs/expert_t1.yaml").read_bytes()
+    with pytest.raises(RuntimeError, match="authored graph snapshot"):
+        transport_for_instrumentation(
+            output,
+            record,
+            authored_bytes=authored,
+            graph=inputs["snapshot"] / "graphs/expert_t1_l2.yaml",
+            controller_root=ROOT,
+        )

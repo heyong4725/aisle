@@ -23,7 +23,7 @@ class PrimitiveRequestError(ValueError):
 TYPES = {
     Primitives: "primitives",
     L1Session: "pose",
-    L2Session: "pose_l2",
+    L2Session: "pose",
     GraspPlan: "grasp",
     StagedPlan: "staged",
     Stage: "stage",

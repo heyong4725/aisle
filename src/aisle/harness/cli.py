@@ -43,8 +43,6 @@ def build_parser() -> argparse.ArgumentParser:
     """The full CLI surface (CON-8). Exposed so the research contract's
     copy-paste examples are TESTED against the real argparse tree (T17):
     a doc example that drifts from the CLI fails a unit test."""
-    from aisle.harness.matched_surface import LEGACY_SURFACE, PILOT_L2_SURFACE
-
     parser = _JsonArgumentParser(prog="harness", description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -278,9 +276,6 @@ def build_parser() -> argparse.ArgumentParser:
     monolith_sub = monolith.add_subparsers(dest="monolith_command", required=True)
     mono_run = monolith_sub.add_parser("run", help="roll a monolithic module out (MON-3 launcher)")
     mono_run.add_argument("--module", type=Path, required=True)
-    mono_run.add_argument(
-        "--task-surface", choices=[LEGACY_SURFACE, PILOT_L2_SURFACE], default=LEGACY_SURFACE
-    )
     mono_run.add_argument("--tier", default="T1")
     mono_run.add_argument("--embodiment", default="franka", choices=["franka", "so101"])
     mono_run.add_argument("--episodes", type=int, required=True)
@@ -293,6 +288,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="engineering shakeout without an open HAR-8 idea (never a measured run)",
     )
     mono_run.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    mono_run.add_argument(
+        "--template",
+        default=None,
+        help="admitted monolithic template graph (default: the T1 graph)",
+    )
+    mono_run.add_argument("--verifier", default="oracle", choices=["oracle", "realistic"])
+    mono_run.add_argument("--reset", default="teleport", choices=["teleport", "behavioral"])
     mono_check = monolith_sub.add_parser("check", help="compile/construct the module; no sim")
     mono_check.add_argument("--module", type=Path, required=True)
     mono_check.add_argument("--embodiment", default="franka", choices=["franka", "so101"])
@@ -304,20 +306,16 @@ def build_parser() -> argparse.ArgumentParser:
     mono_table = monolith_sub.add_parser("table", help="MON-1 treatment table render/check")
     mono_table.add_argument("--write", action="store_true")
     mono_table.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    mono_table.add_argument("--candidate", default=None, help="candidate id (default: T1 pair)")
     mono_iface = monolith_sub.add_parser("interface", help="MON-4 interface map exactness")
     mono_iface.add_argument("--root", type=Path, default=DEFAULT_ROOT)
-    for document_command in (mono_table, mono_iface):
-        document_command.add_argument(
-            "--task-surface", choices=[LEGACY_SURFACE, PILOT_L2_SURFACE], default=LEGACY_SURFACE
-        )
+    mono_iface.add_argument("--candidate", default=None, help="candidate id (default: T1 pair)")
     mono_parity = monolith_sub.add_parser("parity", help="MON-10 parity gate over two runs")
-    mono_parity.add_argument(
-        "--task-surface", choices=[LEGACY_SURFACE, PILOT_L2_SURFACE], default=LEGACY_SURFACE
-    )
     mono_parity.add_argument("--typed", type=Path, required=True, help="typed episodes.jsonl")
     mono_parity.add_argument("--monolithic", type=Path, required=True)
     mono_parity.add_argument("--output", type=Path, default=None)
     mono_parity.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    mono_parity.add_argument("--candidate", default=None, help="candidate id (default: T1 pair)")
     perception = subparsers.add_parser(
         "perception", help="independent perception audit with hidden truth (SPEC 490)"
     )
@@ -460,7 +458,9 @@ def main() -> int:
                     no_idea_gate=args.no_idea_gate,
                     worker_config=args.worker_config,
                     worker_config_sha256=args.worker_config_sha256,
-                    task_surface=args.task_surface,
+                    template=mono.TEMPLATE_GRAPH if args.template is None else args.template,
+                    verifier=args.verifier,
+                    reset_mode=args.reset,
                 )
             elif args.monolith_command == "check":
                 from aisle.monolith.worker_config import configured_worker_factory
@@ -475,13 +475,20 @@ def main() -> int:
                 report = {"ok": True, **Primitives._load(args.embodiment).describe()}
             elif args.monolith_command == "table":
                 report = mono.table_report(
-                    args.root, write=args.write, task_surface=args.task_surface
+                    args.root,
+                    write=args.write,
+                    documents=mono.candidate_documents(args.root, args.candidate),
                 )
             elif args.monolith_command == "interface":
-                report = mono.interface_report(args.root, task_surface=args.task_surface)
+                report = mono.interface_report(
+                    args.root, documents=mono.candidate_documents(args.root, args.candidate)
+                )
             else:
                 report = mono.parity_report(
-                    args.root, args.typed, args.monolithic, task_surface=args.task_surface
+                    args.root,
+                    args.typed,
+                    args.monolithic,
+                    documents=mono.candidate_documents(args.root, args.candidate),
                 )
                 if args.output is not None:
                     args.output.parent.mkdir(parents=True, exist_ok=True)
