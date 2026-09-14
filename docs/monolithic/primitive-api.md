@@ -72,6 +72,7 @@ else. `run` prints one JSON report and writes `runs/<id>/episodes.jsonl`.
 | `home` | `float32[n_dof]` home posture |
 | `layout` | public scene geometry: `shelf`, `tray` (`pos`, `size`, `level_size`, `level_heights`...) |
 | `pose_session()` | a pose estimator session: `on_bridge_info(d)`, `on_target_request({"target_med": m}) -> bool`, `on_seg(t, seg)`, `on_depth(t, depth)` (each returns an estimate dict `{pos, target_med, neighbours, ...}` once a same-stamp pair is available, else `None`; raises when the mask cannot support a pose), `on_reset_done()` |
+| `l2_pose_session()` | the L2 pose estimator session (rung L2, `graphs/monolithic_t1_l2.yaml`): `on_bridge_info(d)`, `on_target_request({"target_med": m}) -> bool`, `on_rgb(t, rgb)`, `on_depth(t, depth)` (estimate dict once a same-stamp rgb + depth pair is available, else `None`; raises when the pinned detector has no confident target), `on_reset_done()`; no segmentation mask |
 | `plan_grasp(pose7, target_med, neighbours=None) -> GraspPlan` | grasp pose (`grasp`), `approach_m`, `place_tcp_z`, `front` for an estimated box |
 | `staged_plan(grasp_plan)` | solves the pick-place waypoints; `.ok`, `.error`, `.stages` |
 | `streamer(staged, max_vel=1.0)` | executor: `.step(qpos) -> (joint_cmd or None, gripper_cmd or None, log lines)` at the joint_state cadence; `.done` |
@@ -81,3 +82,15 @@ Budgets: an episode times out at the harness-declared limit (60 s at T1);
 seeds and reset behaviour are chosen by the harness; the evaluator is
 hidden from you. There is no validator for this file: what Python accepts
 runs.
+
+### `l2_pose_session()` (T1 at perception rung L2)
+
+The L2 pose estimator, the same `L2Session` object the typed `detected-pose`
+node runs. Feed `on_bridge_info`, `on_target_request`, `on_rgb`, `on_depth`
+and `on_reset_done`; a paired same-stamp rgb + depth frame yields the estimate
+dict or raises `PoseRefused` when the pinned open-vocabulary detector has no
+confident target. There is no segmentation mask on this rung: the module
+receives `rgb_overhead` instead of `seg_overhead`. The detector's model
+weights load on the first frame, so a `harness monolith check` never loads
+them. Use it from `experts/monolithic/expert_t1_l2.py` against
+`graphs/monolithic_t1_l2.yaml`.

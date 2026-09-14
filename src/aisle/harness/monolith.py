@@ -19,7 +19,7 @@ from pathlib import Path
 
 import yaml
 
-from aisle.harness.candidates import ALLOWED
+from aisle.harness.candidates import ALLOWED, T1_ORACLE_FIELDS
 
 TEMPLATE_GRAPH = "graphs/monolithic_t1.yaml"
 DOCS_DIR = "docs/monolithic"
@@ -32,6 +32,26 @@ def _sha256(path: Path) -> str:
 
 def load_json(root: Path, name: str) -> dict:
     return json.loads((root / DOCS_DIR / name).read_text(encoding="utf-8"))
+
+
+DEFAULT_DOCUMENTS = T1_ORACLE_FIELDS["documents"]
+
+
+def load_document(root: Path, rel: str) -> dict:
+    """A controller document by repo-relative path (a candidate's MON-8 document)."""
+    path = (root / rel).resolve()
+    if not path.is_relative_to(Path(root).resolve()):
+        raise ValueError("controller document escapes the root")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def candidate_documents(root: Path, candidate: str | None) -> dict:
+    """The MON-8 document set of a candidate id (None: the T1 defaults)."""
+    if candidate is None:
+        return dict(DEFAULT_DOCUMENTS)
+    from aisle.harness.candidates import resolve_candidate
+
+    return dict(resolve_candidate(root, candidate)["documents"])
 
 
 # -- MON-3 launcher ------------------------------------------------------
@@ -298,7 +318,7 @@ def _dump(obj: dict) -> str:
     return json.dumps(obj, indent=2, sort_keys=True) + "\n"
 
 
-def table_report(root: Path, write: bool) -> dict:
+def table_report(root: Path, write: bool, *, documents: dict | None = None) -> dict:
     """Render/check the MON-1 table and the generated records: the Markdown
     rendering, the v1 treatment record and the MON-9 experts record. The
     records carry current hashes, so an edit to any listed surface needs
@@ -310,7 +330,10 @@ def table_report(root: Path, write: bool) -> dict:
         validate_treatment_table,
     )
 
-    table = load_json(root, "treatment-table.json")
+    documents = DEFAULT_DOCUMENTS if documents is None else documents
+    table = load_document(root, documents["treatment_table"])
+    table_stem = Path(documents["treatment_table"]).stem
+    experts_stem = Path(documents["experts"]).stem
     errors = table_errors(root, table)
     if errors:
         return {"ok": False, "table": table["id"], "rows": len(table["rows"]), "errors": errors}
@@ -321,16 +344,16 @@ def table_report(root: Path, write: bool) -> dict:
         return {"ok": False, "table": table["id"], "rows": len(table["rows"]), "errors": [str(exc)]}
     record["immutable_id"] = identity["immutable_id"]
     record["status"] = "shakeout"
-    record["source"] = f"{DOCS_DIR}/treatment-table.json"
-    experts = experts_record(root, load_json(root, "experts.json"))
+    record["source"] = documents["treatment_table"]
+    experts = experts_record(root, load_document(root, documents["experts"]))
     try:
         validate_expert_artifacts(experts["artifacts"])
     except TypedSurfaceError as exc:
         errors.append(str(exc))
     generated = {
-        root / DOCS_DIR / "treatment-table.md": render_table(root, table),
-        root / ANALYSIS_DIR / "treatment-table-v1.json": _dump(record),
-        root / ANALYSIS_DIR / "experts-v1.json": _dump(experts),
+        root / DOCS_DIR / f"{table_stem}.md": render_table(root, table),
+        root / ANALYSIS_DIR / f"{table_stem}-v1.json": _dump(record),
+        root / ANALYSIS_DIR / f"{experts_stem}-v1.json": _dump(experts),
     }
     for path, content in generated.items():
         current = path.read_text(encoding="utf-8") if path.is_file() else ""
@@ -436,8 +459,9 @@ def _motion_route(graph: dict) -> list[str]:
     return route
 
 
-def interface_report(root: Path) -> dict:
-    imap = load_json(root, "interface-map.json")
+def interface_report(root: Path, *, documents: dict | None = None) -> dict:
+    documents = DEFAULT_DOCUMENTS if documents is None else documents
+    imap = load_document(root, documents["interface_map"])
     errors = interface_errors(root, imap)
     return {
         "ok": not errors,
@@ -533,10 +557,13 @@ def parity_decision(protocol: dict, typed: dict[int, dict], mono: dict[int, dict
     }
 
 
-def parity_report(root: Path, typed_path: Path, mono_path: Path) -> dict:
+def parity_report(
+    root: Path, typed_path: Path, mono_path: Path, *, documents: dict | None = None
+) -> dict:
     from aisle.harness.monolithic import validate_campaign_purpose
 
-    protocol = load_json(root, "parity-protocol.json")
+    documents = DEFAULT_DOCUMENTS if documents is None else documents
+    protocol = load_document(root, documents["parity_protocol"])
     decision = parity_decision(protocol, _episodes(typed_path), _episodes(mono_path))
     validate_campaign_purpose(decision)
     return {

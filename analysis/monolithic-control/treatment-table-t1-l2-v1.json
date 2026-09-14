@@ -1,14 +1,14 @@
 {
-  "immutable_id": "sha256:fb41dbe66feb26993a0aada82c3ffc41692b80cb6b8806392f3ce7f20a85bc4a",
+  "immutable_id": "sha256:da4be7d74f57448c90080f23380b04fd640bac6f1a1883fdb3094823c625c738",
   "rows": [
     {
       "analysis": "the manipulated factor (SPEC 500 primary contrast)",
       "classification": "intentionally-different",
       "id": "mon1-01",
       "justification": "this is the treatment: bundled typed-dataflow engineering surface versus one ordinary module",
-      "monolithic": "experts/monolithic/expert_t1.py#sha256:e917cc9b8dd1a323d633e5d96a9af5f485dff2b594e5b2c75ebb8c853a81f25e",
+      "monolithic": "experts/monolithic/expert_t1_l2.py#sha256:728151ca73ab76d20031c22f413bf49cf61f7881e17197a4cb8fc63c38adb58b",
       "surface": "agent deliverable",
-      "typed": "graphs/expert_t1.yaml#sha256:1720e793851ff408b8b6d60d5f4723358db395d7c69844b5d9d64501a1dcc2ef"
+      "typed": "graphs/expert_t1_l2.yaml#sha256:25a311cb324b7fac57f729ead9e675c06fd06ddad85e2a2619c5ef1ce7877ea3"
     },
     {
       "analysis": "recorded as treatment property; check/run attempt and error events compared descriptively",
@@ -44,16 +44,16 @@
       "justification": "none needed: same artifact",
       "monolithic": "src/aisle/monolith/primitives.py#sha256:b408cf09cb4a2dc76a43bee63f0b61a46e247361cad307ec71f182e3d797a06d",
       "surface": "robot primitives (pose, grasp, trajectory, executor)",
-      "typed": "src/aisle/nodes/segmented_pose.py#sha256:fdaea68f2a5ba45f745e1f5ba185669daa6f874bd19a13d1a6f523e8eab392f4"
+      "typed": "src/aisle/nodes/l2_pose.py#sha256:8dffddeb0d3ae61e21a8371da2e80f9b021e0eacd990e449b1feed29416ee941"
     },
     {
       "analysis": "held fixed; exactness checked by harness monolith interface",
       "classification": "representation-equivalent",
       "id": "mon1-06",
       "justification": "none needed: same semantic fields, different envelope",
-      "monolithic": "graphs/monolithic_t1.yaml#sha256:d19da409eee316b5c589ee0ee9cc5bb98770cf560ce19b2e83f05f21444e4277",
+      "monolithic": "graphs/monolithic_t1_l2.yaml#sha256:d0bafbc55cfc859996af71dcf7b49c4d0c67d9267389b08ec3d8c8e7620a1288",
       "surface": "semantic observations",
-      "typed": "graphs/expert_t1.yaml#sha256:df048626224c172f65b3d4ce7ccb31fa92fec5d660b7b6efd6677c1dffb412e9"
+      "typed": "graphs/expert_t1_l2.yaml#sha256:baa09ee1cbdaa818be29dbe15f34a093891057383d8696c2b695afbbe77b65e1"
     },
     {
       "analysis": "held fixed; same names, arity and privilege (interface map)",
@@ -62,14 +62,14 @@
       "justification": "none needed: same semantic fields, different envelope",
       "monolithic": "src/aisle/nodes/monolith_broker.py#sha256:872741da1be8cfa0c89a4ee77ee4fb8a457f130a48228d39ebb8e09a84ee3d46",
       "surface": "actions and authority",
-      "typed": "graphs/expert_t1.yaml#sha256:df048626224c172f65b3d4ce7ccb31fa92fec5d660b7b6efd6677c1dffb412e9"
+      "typed": "graphs/expert_t1_l2.yaml#sha256:baa09ee1cbdaa818be29dbe15f34a093891057383d8696c2b695afbbe77b65e1"
     },
     {
       "analysis": "held fixed (MON-5)",
       "classification": "identical",
       "id": "mon1-08",
       "justification": "none needed: same artifact",
-      "monolithic": "graphs/monolithic_t1.yaml#sha256:eaa2a37d76a1795f23702f87eb51bbb42a0432c2d10150a5e9ba544d6a1a53a7",
+      "monolithic": "graphs/monolithic_t1_l2.yaml#sha256:73abfa7d2fb2cea162540bdef279fb0fc899b4d069d079452c8cb09fe01258a2",
       "surface": "guard route and limits",
       "typed": "src/aisle/nodes/budget_guard.py#sha256:0131a0f321f7e8f60c86b18870eeb2d1267a62508029c3c6c04e99b5c61f8e97"
     },
@@ -96,18 +96,18 @@
       "classification": "intentionally-different",
       "id": "mon1-11",
       "justification": "runtime representation of the same synchronous step; ordering of the four typed nodes is fixed by the plan, so the merged participant observes the same data per turn",
-      "monolithic": "graphs/turn_plans/monolithic_t1.json#sha256:519a94d7f9af90962a36ee2cfb373457d2109637b7903757f682c2253c265231",
+      "monolithic": "graphs/turn_plans/monolithic_t1_l2.json#sha256:364d2020e34b5af71dcc95bb942089ffcfc76e37350019a2730bedb7200e3e65",
       "surface": "turn accounting",
-      "typed": "graphs/turn_plans/expert_t1.json#sha256:c211b1cee9d19a964e81447848608007fdb77630e4ae884e85f3ed71db1aa6aa"
+      "typed": "graphs/turn_plans/expert_t1_l2.json#sha256:f8a23727b5df63b0f2418d220a03ceef827432fa396147f2251bcd749ae25f2c"
     },
     {
       "analysis": "retries reported per episode in both arms (episode_feedback.retries)",
       "classification": "intentionally-different",
       "id": "mon1-12",
       "justification": "the typed arm attests retries in YAML because that is where its decisions live; the episode budget (timeout, seeds) is held by the rollout runner in both arms",
-      "monolithic": "experts/monolithic/expert_t1.py#sha256:4981f50146344791f5f15e158cb73d50fa2df56aaf3b9a9ba6f12fbc5998be44",
+      "monolithic": "experts/monolithic/expert_t1_l2.py#sha256:77d9cf711c045101189fa368fd12a0982167dfb30732f34cea694d2ab712b2ef",
       "surface": "in-episode retry budget",
-      "typed": "graphs/expert_t1.yaml#sha256:df048626224c172f65b3d4ce7ccb31fa92fec5d660b7b6efd6677c1dffb412e9"
+      "typed": "graphs/expert_t1_l2.yaml#sha256:baa09ee1cbdaa818be29dbe15f34a093891057383d8696c2b695afbbe77b65e1"
     },
     {
       "analysis": "held fixed",
@@ -129,6 +129,6 @@
     }
   ],
   "schema_version": "aisle.monolithic-treatment.v1",
-  "source": "docs/monolithic/treatment-table.json",
+  "source": "docs/monolithic/treatment-table-t1-l2.json",
   "status": "shakeout"
 }

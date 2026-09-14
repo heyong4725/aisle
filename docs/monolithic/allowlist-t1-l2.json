@@ -1,0 +1,26 @@
+{
+  "id": "mon-allowlist-t1-l2-v1",
+  "monolithic": {
+    "editable": [
+      "experts/monolithic/expert_t1_l2.py"
+    ],
+    "rule": "exactly one .py file; no package, no sidecar files, no imports of AISLE beyond the primitives object handed to Controller",
+    "denied_imports_source": "src/aisle/monolith/confinement.py#DENIED_IMPORTS"
+  },
+  "typed": {
+    "editable": [
+      "graphs/expert_t1_l2.yaml",
+      "graphs/turn_plans/expert_t1_l2.json",
+      "registry/manifests/detected-pose.yaml",
+      "registry/manifests/detector-openvocab.yaml",
+      "registry/manifests/grasp-planner-topdown.yaml",
+      "registry/manifests/ik-trajectory.yaml",
+      "registry/manifests/task-state-machine.yaml",
+      "src/aisle/nodes/l2_pose.py",
+      "src/aisle/nodes/grasp_topdown.py",
+      "src/aisle/nodes/ik_trajectory.py",
+      "src/aisle/nodes/task_state_machine.py"
+    ],
+    "rule": "the agent region of the graph and its manifests/nodes; trusted nodes are frozen (tools/env_hash.py)"
+  }
+}

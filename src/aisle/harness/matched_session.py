@@ -365,7 +365,13 @@ def _permission_ids(
 
 
 def _verify_launches(
-    candidates: dict, launches: dict, root: Path, prompt_row: str | None, *, execution=None
+    candidates: dict,
+    launches: dict,
+    root: Path,
+    prompt_row: str | None,
+    *,
+    execution=None,
+    documents=None,
 ) -> None:
     if not isinstance(launches, dict) or set(launches) != ARMS:
         raise AdmissionError("both launch bindings are required")
@@ -467,9 +473,10 @@ def _verify_launches(
             ):
                 raise AdmissionError("research contract argument differs from admitted bytes")
         else:
+            documents = monolith.DEFAULT_DOCUMENTS if documents is None else documents
             rows = [
                 row
-                for row in monolith.load_json(root, "treatment-table.json")["rows"]
+                for row in monolith.load_document(root, documents["treatment_table"])["rows"]
                 if row["id"] == prompt_row
             ]
             if len(rows) != 1 or rows[0]["surface"] != "documentation given to the agent":
@@ -714,6 +721,7 @@ def admit_pair(
                 raise AdmissionError(f"typed validation binding invalid: {exc}") from exc
         if development is not None:
             development = _verify_development(development, root)
+        documents = cand.documents_for(development)
         for arm in sorted(ARMS):
             budget = candidates[arm]["budget"]
             if type(budget) is not dict:
@@ -735,6 +743,7 @@ def admit_pair(
                 launches,
                 root,
                 prompt_row,
+                documents=documents,
                 execution={
                     "development": development,
                     "tool_runtime": tool_runtime,
@@ -746,12 +755,12 @@ def admit_pair(
                     "prompt_row": prompt_row,
                 },
             )
-        table = monolith.table_report(root, write=False)
-        interface = monolith.interface_report(root)
+        table = monolith.table_report(root, write=False, documents=documents)
+        interface = monolith.interface_report(root, documents=documents)
         if not table["ok"] or not interface["ok"]:
             raise AdmissionError("controller surface checks failed")
-        allowlist = monolith.load_json(root, "allowlist.json")
-        source_table = monolith.load_json(root, "treatment-table.json")
+        allowlist = monolith.load_document(root, documents["allowlist"])
+        source_table = monolith.load_document(root, documents["treatment_table"])
         validation_rows = [
             row
             for row in source_table["rows"]
@@ -847,7 +856,7 @@ def admit_pair(
             "arms": manifests,
             "surface": {
                 "treatment_table_id": table["immutable_id"],
-                "interface_map_id": monolith.load_json(root, "interface-map.json")["id"],
+                "interface_map_id": monolith.load_document(root, documents["interface_map"])["id"],
                 "artifact_hashes": artifact_hashes,
                 "common_evidence_schema": {**SCHEMA, "immutable_id": _digest(SCHEMA)},
                 "validation_declaration": {
