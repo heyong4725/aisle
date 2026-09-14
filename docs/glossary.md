@@ -42,8 +42,8 @@ actuation threat model), SFE (470 safety exposure), SEM (480 semantic
 authorization), BND (490 non-oracle task band), CSE (500 causal study), FEL
 (510 fault-evidence localization), HWP (520 SO-101 hardware gate), RPR (530
 reproduction archive), BMK (540 public benchmark). All fifteen are PROPOSED and
-human-review gated; `tools/trace_check.py` still requires a citing test for
-every MUST.
+human-review gated; `tools/trace_check.py` requires every MUST to have a citing
+test or an explicit, reviewable waiver, while strict gates ignore waivers.
 
 ### "Learning", defined (issue #269)
 

@@ -50,12 +50,14 @@ attestation label, and none is a confirmatory treatment effect.
 | VLM judge | five configurations refused | zero false promotions by the fidelity gate |
 | M3 environment ladder, v2 | Spearman 0.746 over 16 graphs × 8 seeds | unattested, self-authored population |
 
-Three observations a lab will care about. Zero wrong-medicine deliveries have
-been observed across every campaign, and the repository refuses to call that
-a prevention claim. The verifier that would port to hardware is measured to
-be conservative rather than accurate, and the project publishes that number
-instead of tuning it away. And the project's own review of agent-authored
-robot code found three defects in the harness and none in the agents' work.
+Three observations a lab will care about. Retained development summaries
+report zero wrong-medicine deliveries, but no independently audited table spans
+the project-wide session denominator, and the repository refuses to call the
+observation a prevention claim. The verifier that would port to hardware is
+measured to be conservative rather than accurate, and the project publishes
+that number instead of tuning it away. And the project's own review of
+agent-authored robot code found three defects in the harness and none in the
+agents' work.
 
 ## 3. What has not been measured, and why
 
@@ -85,8 +87,10 @@ This is the part to hear before the demo.
 
 ## 4. How the project is run, and why it matters for reproducibility
 
-- Specs carry numbered MUSTs; every MUST needs a test that cites its ID, and
-  CI fails otherwise (`tools/trace_check.py`).
+- Specs carry numbered MUSTs; every implemented MUST needs a test that cites
+  its ID. Unimplemented requirements in PROPOSED specs may carry an explicit,
+  reviewable waiver; CI fails on any MUST with neither coverage nor a waiver
+  (`tools/trace_check.py`).
 - The scene, verifier, reset, and expert graphs are a hash-frozen set; a
   rollout refuses to start on drift; agents can read the judge and never edit it.
 - Every run is identified by `(git_sha, env_hash, env_fingerprint, platform,
