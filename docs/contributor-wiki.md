@@ -1,6 +1,6 @@
 # AISLE contributor wiki
 
-> DeepWiki-style repository guide for contributors. Snapshot: 2026-08-10.
+> DeepWiki-style repository guide for contributors. Snapshot: 2026-08-10; maturity map refreshed 2026-09-14.
 > This page describes the implementation in this tree; dated research results
 > remain tied to the commits recorded in their evidence.
 
@@ -161,6 +161,9 @@ This table is more useful than a single “done/not done” label.
 | Linux CUDA simulation | Explicit optional path | Selected with mutually exclusive `--extra cuda` and attested by rollout. |
 | Powder bench family | Specified/gated | Only the spike tooling and draft decision record exist today. |
 | Real hardware | Future/stretch | Topic contract is designed to make drivers swappable, but hardware proof is pending. |
+| Pre-registration program (SPEC 400–540) | Implemented as tooling; specs PROPOSED | `harness freeze/stats/exposure/semantic/threat/fault/monolith/perception` exist with fixtures; every spec is human-review gated; nine are parked under ADR-66. |
+| Typed-vs-monolithic causal study (#347) | Registered, unrun | Twenty-two confirmatory registrations, all gates pending; pilot v8 registered with collection pending; the only task-band candidate fails BND-7 eligibility. |
+| Pilot evidence tier (ADR-66) | Accepted 2026-09-11 | Pilots run unscored under their own registration; never enter a confirmatory estimate; one measured result every two weeks or infrastructure stops. |
 
 ## 4. Architecture
 

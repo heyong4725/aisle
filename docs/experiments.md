@@ -1,7 +1,10 @@
 # Experiments: hypotheses, status, and where results live
 
-<!-- status-snapshot:2026-08-28 canonical:../README.md#status -->
-Status as of 2026-08-28 (commit `93de5e0`). **Phase 2 and Phase 3 are both
+<!-- status-snapshot:2026-09-14 canonical:../README.md#status -->
+Status as of 2026-09-14 (commit `fa339ee`). The measured record below is the
+2026-08-28 record: no hypothesis or ablation has been measured since. What
+changed is the pre-registration program and the pilot-first order — see the
+README's "Since 2026-08-28" block and [`next-phases.md`](next-phases.md). **Phase 2 and Phase 3 are both
 closed** — see [`../analysis/reports/phase2_phase3_report.md`](../analysis/reports/phase2_phase3_report.md)
 for the DoD-by-DoD record. Design:
 `Project_AISLE_Experiment_Design.md` §6 (hypotheses/metrics/ablations)

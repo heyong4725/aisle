@@ -18,11 +18,15 @@ overview_documents:
     canonical_link: ../README.md#status
   - path: docs/research-program.md
     role: snapshot
-    snapshot_date: "2026-08-28"
+    snapshot_date: "2026-09-14"
     canonical_link: ../README.md#status
   - path: docs/experiments.md
     role: snapshot
-    snapshot_date: "2026-08-28"
+    snapshot_date: "2026-09-14"
+    canonical_link: ../README.md#status
+  - path: docs/lab-briefing-2026-09.md
+    role: snapshot
+    snapshot_date: "2026-09-14"
     canonical_link: ../README.md#status
   - path: docs/paper/aisle-paper.md
     role: snapshot
