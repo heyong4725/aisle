@@ -101,12 +101,7 @@ def _worker_binding(launch, config, config_path):
         raise ValueError("worker runtime differs from bound run runtime")
     if launch["python_sha256"] != hashlib.sha256(worker_interpreter().read_bytes()).hexdigest():
         raise ValueError("worker and controller interpreter identities differ")
-    policy = MacOSPolicy(
-        **{
-            key: value if key == "network_policy" else tuple(Path(p) for p in value)
-            for key, value in launch["policy"].items()
-        }
-    )
+    policy = MacOSPolicy.from_canonical(launch["policy"])
     readable = (*policy.visible_roots, *policy.runtime_read_roots, *policy.output_roots)
     if any(config_path.is_relative_to(p) for p in readable) or not any(
         config_path.is_relative_to(p) for p in policy.hidden_roots

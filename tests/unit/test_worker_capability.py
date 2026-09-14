@@ -13,10 +13,12 @@ pytestmark = pytest.mark.unit
 def test_actual_worker_capability_report_and_cleanup(tmp_path):
     """TRT-6: all required observations bind to the actual policy and preserve worker assets."""
     from aisle.harness.treatment_confinement import (
-        _REQUIRED_CASE_IDS,
         compile_macos_profile,
+        required_case_ids,
         wrap_verified_command,
     )
+
+    _REQUIRED_CASE_IDS = required_case_ids("deny-external")
     from aisle.harness.worker_capability import audit_worker_capability
 
     inputs = _launch_inputs(tmp_path, direct_python=True)

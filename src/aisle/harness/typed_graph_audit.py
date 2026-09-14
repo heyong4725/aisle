@@ -36,12 +36,7 @@ def _worker(output, config, digest):
     if terminal.get("classification") != "module_result" or terminal.get("stage") != "done":
         raise StageError("worker has no completed module result")
     launch = dict(config["launch"])
-    launch["policy"] = MacOSPolicy(
-        **{
-            key: value if key == "network_policy" else tuple(Path(p) for p in value)
-            for key, value in launch["policy"].items()
-        }
-    )
+    launch["policy"] = MacOSPolicy.from_canonical(launch["policy"])
     compiled = verify_typed_launch(
         **{
             key: launch[key]

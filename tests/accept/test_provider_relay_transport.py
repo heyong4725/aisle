@@ -471,3 +471,30 @@ def test_relay_forwards_the_account_header_verbatim_and_retains_only_presence(tm
     request = json.loads((root / "00000001-request.json").read_bytes())
     assert request["authorization_present"] is True
     assert request["account_header_present"] is True
+
+
+def test_relay_binds_the_pinned_port_and_refuses_a_bad_one(tmp_path):
+    """MON-8/TRT-7: `relay_port` is the one loopback port a confined frontend may
+    reach, so the relay must bind exactly it; a malformed value refuses."""
+    import socket
+
+    from aisle.harness.provider_relay import verify_provider
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        pinned = probe.getsockname()[1]
+    with DispatchBudget(tmp_path / "budget", session_id="session", ceiling=1) as budget:
+        with ProviderRelay(
+            {"base_url": "http://127.0.0.1:1/v1", "relay_port": pinned},
+            dispatch=budget,
+            output=tmp_path / "provider",
+            timeout_s=5,
+        ) as relay:
+            assert relay.address == ("127.0.0.1", pinned)
+            listener = json.loads((tmp_path / "provider" / "listener.json").read_text())
+            assert listener["port"] == pinned
+    for bad in (-1, 65536, True, "4321"):
+        with pytest.raises(ValueError, match="relay port"):
+            verify_provider({"base_url": "http://127.0.0.1:1/v1", "relay_port": bad})
+    with pytest.raises(ValueError, match="invalid provider binding"):
+        verify_provider({"base_url": "http://127.0.0.1:1/v1", "port": 1})
