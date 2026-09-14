@@ -46,13 +46,14 @@ def graphs_with_perception_rung():
 
 
 def test_the_corpus_is_not_empty():
-    """Guards the parametrised test from passing on zero graphs: the three
+    """Guards the parametrised test from passing on zero graphs: the four
     graphs carrying the rung today are enumerated, so a renamed node path
     fails here rather than silently dropping out."""
     assert [p.name for p in graphs_with_perception_rung()] == [
         "eval_t2_stack.yaml",
         "expert_t1_l2.yaml",
         "expert_t2.yaml",
+        "pilot_t1_l2_typed.yaml",
     ]
 
 

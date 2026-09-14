@@ -8,7 +8,7 @@
       "typed": {
         "description": "capability manifests + dora dataflow YAML + node modules of the agent region",
         "paths": [
-          "graphs/expert_t1_l2.yaml",
+          "graphs/pilot_t1_l2_typed.yaml",
           "registry/manifests/detected-pose.yaml",
           "registry/manifests/grasp-planner-topdown.yaml",
           "registry/manifests/ik-trajectory.yaml",
@@ -115,17 +115,19 @@
       "typed": {
         "description": "dora edges into the agent region (bridge_info, rgb_overhead, depth_overhead, joint_state, episode_goal, episode_result, violation, reset_done, 1 Hz tick)",
         "paths": [
-          "graphs/expert_t1_l2.yaml"
+          "graphs/pilot_t1_l2_typed.yaml",
+          "src/aisle/harness/pilot_policy_surface.py"
         ]
       },
       "monolithic": {
         "description": "the same fields as on_event(event) dicts from the broker",
         "paths": [
-          "graphs/monolithic_t1_l2.yaml",
-          "docs/monolithic/interface-map-t1-l2.json"
+          "graphs/pilot_t1_l2_monolithic.yaml",
+          "docs/monolithic/interface-map-t1-l2.json",
+          "src/aisle/harness/pilot_policy_surface.py"
         ]
       },
-      "justification": "none needed: same semantic fields, different envelope",
+      "justification": "Same semantic fields with different envelopes. Goal, calibration and reset inputs pass through the same controller-owned public field projection; raw reset/seed fields are not policy observations.",
       "analysis": "held fixed; exactness checked by harness monolith interface",
       "id": "mon1-06"
     },
@@ -135,7 +137,7 @@
       "typed": {
         "description": "joint_cmd / gripper_cmd edges into budget-guard, episode_feedback to rollout-client",
         "paths": [
-          "graphs/expert_t1_l2.yaml"
+          "graphs/pilot_t1_l2_typed.yaml"
         ]
       },
       "monolithic": {
@@ -161,7 +163,7 @@
       "monolithic": {
         "description": "the same node consuming monolith-broker/joint_cmd and gripper_cmd",
         "paths": [
-          "graphs/monolithic_t1_l2.yaml"
+          "graphs/pilot_t1_l2_monolithic.yaml"
         ]
       },
       "justification": "none needed: same artifact",
@@ -216,7 +218,7 @@
       "typed": {
         "description": "four lockstep participants in the agent region",
         "paths": [
-          "graphs/turn_plans/expert_t1_l2.json"
+          "graphs/turn_plans/pilot_t1_l2_typed.json"
         ]
       },
       "monolithic": {
@@ -235,7 +237,7 @@
       "typed": {
         "description": "AISLE_MAX_RETRIES=8 attested in the graph",
         "paths": [
-          "graphs/expert_t1_l2.yaml"
+          "graphs/pilot_t1_l2_typed.yaml"
         ]
       },
       "monolithic": {
@@ -252,7 +254,7 @@
       "surface": "episode budget, seeds, reset semantics, evaluator",
       "class": "identical",
       "typed": {
-        "description": "harness rollout --graph graphs/expert_t1_l2.yaml",
+        "description": "harness rollout --graph graphs/pilot_t1_l2_typed.yaml",
         "paths": [
           "src/aisle/harness/rollout.py"
         ]
@@ -271,13 +273,13 @@
       "surface": "confinement",
       "class": "intentionally-different",
       "typed": {
-        "description": "issue #353 OS-level policy (pending)",
+        "description": "issue #353 OS-level policy (pending); candidate launch selects --verifier realistic",
         "paths": [
           "specs/460-actuation-threat-model.md"
         ]
       },
       "monolithic": {
-        "description": "broker import/builtins hook + integrity check now; #353 policy pending",
+        "description": "broker import/builtins hook + integrity check now; #353 policy pending; candidate launch selects --verifier realistic",
         "paths": [
           "src/aisle/monolith/confinement.py"
         ]

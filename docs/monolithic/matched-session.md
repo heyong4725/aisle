@@ -528,3 +528,8 @@ stop (a session at its ceiling is an exclusion under MON-8/MON-12), so no row is
 censored under CSE-13 until the runner retains one. A session directory outside
 the ledger, a completed session without held-out evidence, or evidence that
 belongs to another session refuses (STA-3/STA-11/CSE-8).
+
+The `t1-l2-realistic` candidate uses the paired
+[public observation graphs and pinned cache preparer](public-observations.md).
+Bind the selected candidate table and worker environment before admission;
+old receipts do not qualify a changed graph or model-cache context.

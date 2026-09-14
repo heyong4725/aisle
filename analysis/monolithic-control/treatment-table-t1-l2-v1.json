@@ -1,14 +1,14 @@
 {
-  "immutable_id": "sha256:da4be7d74f57448c90080f23380b04fd640bac6f1a1883fdb3094823c625c738",
+  "immutable_id": "sha256:7b677f7c92f8dbfea02705b960c265c48ff1c3b62ae5cc3433e7bac672edaa68",
   "rows": [
     {
       "analysis": "the manipulated factor (SPEC 500 primary contrast)",
       "classification": "intentionally-different",
       "id": "mon1-01",
       "justification": "this is the treatment: bundled typed-dataflow engineering surface versus one ordinary module",
-      "monolithic": "experts/monolithic/expert_t1_l2.py#sha256:728151ca73ab76d20031c22f413bf49cf61f7881e17197a4cb8fc63c38adb58b",
+      "monolithic": "experts/monolithic/expert_t1_l2.py#sha256:01821c12b1a49e60f41711ef9d00450052f5a5a85d6e5fea020d3fe449bdbeb4",
       "surface": "agent deliverable",
-      "typed": "graphs/expert_t1_l2.yaml#sha256:25a311cb324b7fac57f729ead9e675c06fd06ddad85e2a2619c5ef1ce7877ea3"
+      "typed": "graphs/pilot_t1_l2_typed.yaml#sha256:3f0158853aa3a520e284062116b4892ac21273add9320ad6841a6018b00c53f6"
     },
     {
       "analysis": "recorded as treatment property; check/run attempt and error events compared descriptively",
@@ -50,10 +50,10 @@
       "analysis": "held fixed; exactness checked by harness monolith interface",
       "classification": "representation-equivalent",
       "id": "mon1-06",
-      "justification": "none needed: same semantic fields, different envelope",
-      "monolithic": "graphs/monolithic_t1_l2.yaml#sha256:d0bafbc55cfc859996af71dcf7b49c4d0c67d9267389b08ec3d8c8e7620a1288",
+      "justification": "Same semantic fields with different envelopes. Goal, calibration and reset inputs pass through the same controller-owned public field projection; raw reset/seed fields are not policy observations.",
+      "monolithic": "graphs/pilot_t1_l2_monolithic.yaml#sha256:deca815ad9a9b36d97ee6231903327e6870cf1273dd6c5e5b968120e1c23843d",
       "surface": "semantic observations",
-      "typed": "graphs/expert_t1_l2.yaml#sha256:baa09ee1cbdaa818be29dbe15f34a093891057383d8696c2b695afbbe77b65e1"
+      "typed": "graphs/pilot_t1_l2_typed.yaml#sha256:ff9de047c4571ca15c77b40eb1690a8573df502c964e5f74f40e5a6a611b4e35"
     },
     {
       "analysis": "held fixed; same names, arity and privilege (interface map)",
@@ -62,14 +62,14 @@
       "justification": "none needed: same semantic fields, different envelope",
       "monolithic": "src/aisle/nodes/monolith_broker.py#sha256:872741da1be8cfa0c89a4ee77ee4fb8a457f130a48228d39ebb8e09a84ee3d46",
       "surface": "actions and authority",
-      "typed": "graphs/expert_t1_l2.yaml#sha256:baa09ee1cbdaa818be29dbe15f34a093891057383d8696c2b695afbbe77b65e1"
+      "typed": "graphs/pilot_t1_l2_typed.yaml#sha256:39d0cb846e339a4516096664e71248e305406f2a4b76612b5e14debbe517514c"
     },
     {
       "analysis": "held fixed (MON-5)",
       "classification": "identical",
       "id": "mon1-08",
       "justification": "none needed: same artifact",
-      "monolithic": "graphs/monolithic_t1_l2.yaml#sha256:73abfa7d2fb2cea162540bdef279fb0fc899b4d069d079452c8cb09fe01258a2",
+      "monolithic": "graphs/pilot_t1_l2_monolithic.yaml#sha256:f79288ca5fa5e933d77c572b352dd16b7ed03b5a0c026744e8b1e5bd84e4310b",
       "surface": "guard route and limits",
       "typed": "src/aisle/nodes/budget_guard.py#sha256:0131a0f321f7e8f60c86b18870eeb2d1267a62508029c3c6c04e99b5c61f8e97"
     },
@@ -98,7 +98,7 @@
       "justification": "runtime representation of the same synchronous step; ordering of the four typed nodes is fixed by the plan, so the merged participant observes the same data per turn",
       "monolithic": "graphs/turn_plans/monolithic_t1_l2.json#sha256:364d2020e34b5af71dcc95bb942089ffcfc76e37350019a2730bedb7200e3e65",
       "surface": "turn accounting",
-      "typed": "graphs/turn_plans/expert_t1_l2.json#sha256:f8a23727b5df63b0f2418d220a03ceef827432fa396147f2251bcd749ae25f2c"
+      "typed": "graphs/turn_plans/pilot_t1_l2_typed.json#sha256:76153a64dd22ca57186321e7cef1a896afa324f074bad971db4b49e3231a7fe3"
     },
     {
       "analysis": "retries reported per episode in both arms (episode_feedback.retries)",
@@ -107,7 +107,7 @@
       "justification": "the typed arm attests retries in YAML because that is where its decisions live; the episode budget (timeout, seeds) is held by the rollout runner in both arms",
       "monolithic": "experts/monolithic/expert_t1_l2.py#sha256:77d9cf711c045101189fa368fd12a0982167dfb30732f34cea694d2ab712b2ef",
       "surface": "in-episode retry budget",
-      "typed": "graphs/expert_t1_l2.yaml#sha256:baa09ee1cbdaa818be29dbe15f34a093891057383d8696c2b695afbbe77b65e1"
+      "typed": "graphs/pilot_t1_l2_typed.yaml#sha256:39d0cb846e339a4516096664e71248e305406f2a4b76612b5e14debbe517514c"
     },
     {
       "analysis": "held fixed",

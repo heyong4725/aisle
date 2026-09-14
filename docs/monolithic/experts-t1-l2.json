@@ -3,11 +3,11 @@
   "artifacts": [
     {
       "arm": "typed",
-      "author": "AISLE maintainers (typed L2 graph developed with full repository access; predates SPEC 440)",
-      "path": "graphs/expert_t1_l2.yaml",
+      "author": "AISLE maintainers; projected graph derived from the existing typed L2 graph with full repository access",
+      "path": "graphs/pilot_t1_l2_typed.yaml",
       "components": [
-        "graphs/expert_t1_l2.yaml",
-        "graphs/turn_plans/expert_t1_l2.json",
+        "graphs/pilot_t1_l2_typed.yaml",
+        "graphs/turn_plans/pilot_t1_l2_typed.json",
         "src/aisle/nodes/l2_pose.py",
         "src/aisle/nodes/grasp_topdown.py",
         "src/aisle/nodes/ik_trajectory.py",
@@ -26,5 +26,5 @@
     }
   ],
   "frozen": false,
-  "note": "MON-9 requires one human-authored deliverable per arm with independent authorship and a separate operator for the parity seeds. Neither holds yet; hashes are computed by `harness monolith table --write` and the freeze registry when the experts are frozen. The T1-L2 pair is the ADR-66 pilot candidate; BND-8 parity for it has not run."
+  "note": "MON-9 requires one human-authored deliverable per arm with independent authorship and a separate operator for the parity seeds. Neither holds yet; hashes are computed by `harness monolith table --write` and the freeze registry when the experts are frozen. The T1-L2 pair is the ADR-66 pilot candidate; BND-8 parity for it has not run. The public observation projection changes the paired graph boundary; earlier graph evidence does not qualify this revision."
 }
