@@ -186,12 +186,22 @@ claims:
           Refusal receipts for why the pilot could not collect with the current
           infrastructure (T1-only development mode, oracle state on the policy
           path, no eligible BND stratum).
+      - kind: protocol
+        path: analysis/freeze/cse-causal-study-pilot-v8/declaration.json
+        scope: simulation
+        rationale: >-
+          CSE-8 power-input source, second registration (ADR-66 pilot tier,
+          2026-09-13): fresh seed commitment, instrument set fixed to the
+          T1-L2 realistic pair on Codex 0.153.4, sealed balanced assignments,
+          session success = 28 of 32 controller-run held-out oracle successes,
+          6 sessions per arm. Collection pending; no session has run.
     counterevidence:
       - Historical single-session ablations do not isolate typed dataflow structure.
       - The monolithic equal-capability control exists (SPEC 440 surface, docs/monolithic/) and passed an 8/8 seeds 0..7 engineering shakeout, but expert parity is blocked on independent authorship (MON-9) and no agent session has used it.
     limitations:
       - No superiority, equivalence, or non-inferiority conclusion is currently allowed.
       - The 2026-09-12 pilot registration (cse-causal-study-pilot-v1) collected zero sessions; every CSE-8 power input is still an assumption and the pilot's gates are all pending.
+      - The 2026-09-13 registration (cse-causal-study-pilot-v8) is pending collection; its BND-12 gate is recorded failed (BND-7, not perception-eligible) and every other gate is pending, so any result it yields is a named-limitation pilot input, never a claim.
     allowed_wording:
       readme: "UNRUN: typed-versus-monolithic superiority is the confirmatory claim under test."
       technical_report: "UNRUN: historical development results do not establish the causal effect."
