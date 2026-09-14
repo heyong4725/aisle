@@ -408,3 +408,66 @@ def test_http_identity_replay_rejects_before_delivery_and_replays_closed_evidenc
         upstream.shutdown()
         upstream.server_close()
         worker.join(timeout=5)
+
+
+def test_relay_forwards_the_account_header_verbatim_and_retains_only_presence(tmp_path):
+    """MON-13 / CON-3: a ChatGPT-login frontend sends a bearer token and an account id;
+    the relay forwards both unchanged, drops any header outside its allowlist, and
+    retains only presence flags, never values."""
+    frame = response_frame(1)
+    seen = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            seen.append({k.lower(): v for k, v in self.headers.items()})
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(frame)))
+            self.end_headers()
+            self.wfile.write(frame)
+
+    upstream = HTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=lambda: upstream.serve_forever(poll_interval=0.05))
+    worker.start()
+    root = tmp_path / "provider"
+    try:
+        with DispatchBudget(tmp_path / "budget", session_id="session", ceiling=2) as budget:
+            with ProviderRelay(
+                {"base_url": f"http://127.0.0.1:{upstream.server_port}/v1"},
+                dispatch=budget,
+                output=root,
+                timeout_s=5,
+            ) as relay:
+                client = http.client.HTTPConnection(*relay.address, timeout=5)
+                body = b'{"model":"fixture","stream":true,"input":[],"tools":[]}'
+                client.request(
+                    "POST",
+                    "/v1/responses",
+                    body,
+                    {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer secret-token-9c1f",
+                        "chatgpt-account-id": "acct-7b2e",
+                        "X-Unlisted": "dropped",
+                    },
+                )
+                reply = client.getresponse()
+                reply.read()
+                client.close()
+    finally:
+        upstream.shutdown()
+        upstream.server_close()
+        worker.join(timeout=5)
+    assert reply.status == 200 and len(seen) == 1
+    assert seen[0]["authorization"] == "Bearer secret-token-9c1f"
+    assert seen[0]["chatgpt-account-id"] == "acct-7b2e"
+    assert "x-unlisted" not in seen[0]
+    retained = b"".join(path.read_bytes() for path in root.iterdir())
+    assert b"secret-token-9c1f" not in retained and b"acct-7b2e" not in retained
+    request = json.loads((root / "00000001-request.json").read_bytes())
+    assert request["authorization_present"] is True
+    assert request["account_header_present"] is True

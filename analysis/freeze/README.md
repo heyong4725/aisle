@@ -76,6 +76,15 @@ after the matched executor gained the development protocol v2 bound to
 `docs/monolithic/candidates.json` (hashed controller sources changed; seed
 commitments inherited, pending gates preserved, pilot design unchanged).
 
+cse-causal-study-v18 to v22 and cse-causal-study-pilot-v3 to pilot-v7 are the
+same kind of pending successors, one pair per hashed-source change of the
+ADR-66 pilot series (#582 to #586: candidate-routed launches, the T1-L2
+monolithic pair, the controller-run held-out evaluation, the assignment ledger
+and records producer, the relay's ChatGPT account header). Each inherits its
+predecessor's commitment unverified and preserves every pending gate; the
+registration a pilot actually runs under is a fresh-seed successor with its own
+instrument set.
+
 To make such a pending successor, set `seed_commitment.inherited_from` and
 `artifacts.seed_commitment_predecessor` to the same predecessor manifest path,
 name its campaign in `superseded`, preserve its seed rules and source paths,
