@@ -62,7 +62,37 @@ An admitted inspection plan is not necessarily executable.
 
 The run request contains `root`, `visible_roots`, the complete retained `plan`,
 `profile_path`, the complete capability `attestation` object, and
-`hidden_access_log`. The supplied capability must match the bound adapter,
+`hidden_access_log`: either the path of a controller-supplied log or
+`{"collect": "macos-sandbox-reports"}`. With the latter the controller streams
+the macOS sandbox's own denial reports (`log stream`, sender `Sandbox`) for the
+whole launch window, keeps the reports whose process name is an executable
+admitted by the arm, validator or any prepared worker policy, classifies each
+target against the arm's readable and hidden roots, and retains the result as
+`hidden-access-log.json` beside a `hidden-access-collection.json` record (the
+window, the selection, counts and pids, never targets) under
+`access-collection/` in the attempt directory (TRT-6). `adapter_active` is
+true only when the verified wrapped command runs under the real
+`sandbox-exec`, so a collected run under any other adapter is retained and
+excluded by postflight (`confinement_inactive`), not refused at admission.
+The kernel does not report every denial it enforces: on the development host
+it stopped reporting denials by third-party binaries (the admitted uv
+interpreter, node) after a burst of sessions while still reporting those of
+Apple-signed ones and still enforcing all of them. `complete` therefore rests
+on positive controls, not on stream liveness alone: at the start and at the
+end of the window the controller runs the arm's own admitted executable
+(interpreter, else shell, else cat) under the arm's profile against a fresh
+controller-owned canary under `/private/tmp/aisle-canary-*` whose read the
+profile denies, and requires the sandbox to report exactly that denial. A
+missing marker, a stream that started late, died, or had to be killed, or a
+reader failure all leave `complete` false and the attempt excluded
+(`hidden_access_log_incomplete`); a policy that admits no interpreter, shell
+or cat cannot run its markers and refuses collection, as does a run whose
+workers are provisioned dynamically (no worker policy to select). Allows are
+never reported, so `visible_allows` stays zero, and selection is by process
+name because the kernel's report carries no ancestry: the controller runs one
+session at a time and no capability audit during a session, and the retained
+pids let a reviewer cross-check the selection. Both are stated limitations,
+not hidden ones. The supplied capability must match the bound adapter,
 compiled profile and current adapter bytes. This capability is limited to
 unscored engineering work; it does not establish the independent study gates.
 The runner uses the plan's environment, zero prior spend and the declared token
