@@ -8,14 +8,15 @@
   "artifact_hashes": {
     "agent_adapters": "sha256:848f8f7da5ad978e53712991a688eb74f56c7a77deabee8afae717ad712666ca",
     "analyzer": "sha256:22cde3e9d7c5cc80874c7eec30aa2898e30476d6c939c94ab3009e8b12af641e",
+    "bnd_calibration_manifest": "sha256:8615de2078337065bf6045c3e4bb0f92924987606768fdb699a8ce58ce8f8b57",
+    "bnd_perception_audit_report": "sha256:27134904b4b739423085a9b3c9b23678658d39f7a48e00cd2fbeaedea8c7a4d8",
     "budget_ceiling": "sha256:bcbb79aa146afed1d877da18093175ae144b4607db50119022ef4f8173122cda",
     "dependency_declaration": "sha256:add4e718001da7678b404bdf37ea8d9889f563324ffba9b03fe65c46b172ee4c",
     "dependency_lock": "sha256:9b8a82a17ba68c192f045405feed3ae7046af9568bddcb398292c20f0ed6f5a8",
     "dora_runtime_selection": "sha256:f9eb7ffe285a0f0ed26d50303e31cf1e94d2f93ed62b599071dff5a183c15f53",
-    "frontend_conformance_decision": "sha256:5059582dc735ddb85f329c647070b42bcc689b2836e198d305f381e74f89edc2",
     "frontend_request_authorization_documentation": "sha256:a1d4e65c0e467af4bd77922b95b12f26ee6478932eb5dd460de34b81249ca86b",
     "matched_session_decision": "sha256:d88e0ef18c92cedff7b74dd3ffafed14d92affaec65beb9ddfec2801b365dc61",
-    "matched_session_documentation": "sha256:86d674daaa805575c10d3f55a3eff52e8940c87e662ea6560bc62552732456b5",
+    "matched_session_documentation": "sha256:735e3e5d2032e7d2c3901d9b631181de4a345027a9afe29ef4dd9f9ae17aa1f4",
     "matched_source:assets/so101/so101.urdf": "sha256:3a65d2d35e68a8d2f0c2cc176d19b884506543c93ba72980145b80abe276022c",
     "matched_source:docs/monolithic/allowlist-t1-l2.json": "sha256:6aac85db63a7061ab09950741eba8ac0e77410755d85c427731c45864adc1dc5",
     "matched_source:docs/monolithic/candidates.json": "sha256:2fc51e6ff0e4b73a9b203d6ed1debf1cfa40ece9b21a35245d50b9a403f80abb",
@@ -41,11 +42,8 @@
     "matched_source:src/aisle/harness/common.py": "sha256:ef62bf518a99c8c4154908bc9cf99e68402e6ae6c8e3fb5ec30c3f5fce9b5fac",
     "matched_source:src/aisle/harness/frontend_app_server.py": "sha256:d21b9bf218efc3066399b8b22bbe3892e772433da315a9ecd40e2773369e9283",
     "matched_source:src/aisle/harness/frontend_app_server_audit.py": "sha256:fb3cf5b8a115eb93e3f292dae694a4318cbe43e9552347fbc25ea8e43102ddbb",
-    "matched_source:src/aisle/harness/frontend_conformance.py": "sha256:54f13041eaa2eb8679b33a7c9e441e300d93818901cc8819503425cd025aa02f",
     "matched_source:src/aisle/harness/frontend_dispatch.py": "sha256:6bff2abbacca6c332abdb5c5cb4cb3d688d8b00535e3f428633619bf91cd30c8",
     "matched_source:src/aisle/harness/frontend_dispatch_audit.py": "sha256:dc75024bd52c21c89a6112da847875a1d0ebf44f53a3704705e0bb8c81b9bc4a",
-    "matched_source:src/aisle/harness/frontend_effects.py": "sha256:bc539cecad349d27f68b1b2d6e435142c1119310b2129fb5a7c5854aa899d80e",
-    "matched_source:src/aisle/harness/frontend_qualification.py": "sha256:6c416f992cbc1418fb6fad52c9d0ab6bc3ff2e6fefd218f1bcf62b8500131d45",
     "matched_source:src/aisle/harness/frontend_request_audit.py": "sha256:a4bc60b2ce1968ada1776324b72ad87025b93d366046029445fdf9b2e92f8830",
     "matched_source:src/aisle/harness/frontend_request_authority.py": "sha256:0a061f1528b8bb2071dd1ba7e1d0bbee178b2c982bd6b688b916fb612522e163",
     "matched_source:src/aisle/harness/guard_divergence.py": "sha256:af2c4755cabe46fabba913aee4819e05c10caaae79105615d50f8cf4567dad14",
@@ -55,22 +53,18 @@
     "matched_source:src/aisle/harness/matched_dynamic_run.py": "sha256:b7f2b81397bcd232710408b9c6c9f463b3928e37f117d7310d519728f9b4b2c9",
     "matched_source:src/aisle/harness/matched_evidence.py": "sha256:6d65476a9a923fd445ea9dad0334e521378353454b873ef59e2b0ff848c650f7",
     "matched_source:src/aisle/harness/matched_frontend.py": "sha256:a4b9827af7dbf36f4af5228ca8c87ea36d2d32f8cffc7fcb8fea1923bcc09401",
-    "matched_source:src/aisle/harness/matched_run.py": "sha256:358cbad5af1fc984d8509e5bbf7409f0fd8cae964e1df41ba08a18610009aa97",
+    "matched_source:src/aisle/harness/matched_run.py": "sha256:825fec659b8bdbb104d6fa07fa2adf29f4b23be74c1f3ec894a8ffcab6b68b64",
     "matched_source:src/aisle/harness/matched_run_launch.py": "sha256:8701f034d0bd9873aa7981e3db47849d50bd4465f085e617e6e3193aac070539",
     "matched_source:src/aisle/harness/matched_runtime.py": "sha256:c4d81e8309fcf5212315013dbf8e83347a65080e1221f37a0491757834ac2797",
-    "matched_source:src/aisle/harness/matched_session.py": "sha256:00e53655f979675eccdf3692de801cc47f19f8fb41c08f8499aaf768c176665e",
+    "matched_source:src/aisle/harness/matched_session.py": "sha256:344ea0bc92705ef23f550045f1d4b26d55c7e2cf894133354c22068804887b21",
     "matched_source:src/aisle/harness/matched_tool_service.py": "sha256:1bf6685addbeee541961e1053b2eea68cba66ce110667d8e7720398d49191a17",
-    "matched_source:src/aisle/harness/matched_tools.py": "sha256:73366f100ded5febeaf84ca4ab3edc934c18638212ec2583d088d91aa36daf35",
-    "matched_source:src/aisle/harness/mcp_harness_authority.py": "sha256:f5760ef7a4e05a1444ee6ae5da3d9c37d0859cf767e2d96862b4d21803d646eb",
-    "matched_source:src/aisle/harness/mcp_harness_source.py": "sha256:f5a57dd19fc1c2966a8988ff925bf744384a4bf1368760427465340c9167990e",
-    "matched_source:src/aisle/harness/mcp_harness_transport.py": "sha256:a0c713cd82628109cd7324ff3deeaa33a66d37819a7c517b273a32e5e82cdaf3",
+    "matched_source:src/aisle/harness/matched_tools.py": "sha256:eff206d64477d6a91f88c4889e2934a17bba254612c7dc72d542e799e11ef948",
     "matched_source:src/aisle/harness/monolith.py": "sha256:a12428eab867b869d902733e43626669b58f87218f0c40d1713712c094ef7414",
     "matched_source:src/aisle/harness/monolithic.py": "sha256:1983ed8c26b2371c993c571f33f5c7e4ee81ea2597f9468b43d53c9970465ccf",
     "matched_source:src/aisle/harness/monolithic_run_evidence.py": "sha256:4c0cb658f0148eb5d06ad69dceafd39148a2d4787e085cb624047c365c87bb24",
-    "matched_source:src/aisle/harness/monolithic_run_prepare.py": "sha256:03b93418a294bf1d2fc4b57ba51ab6ccde4413473de674dcbe2a09255481deed",
+    "matched_source:src/aisle/harness/monolithic_run_prepare.py": "sha256:23f2646571d1ed67c5b8e09e7b0b10bcc6cfa996b05b3161fe39f859d88c15ba",
     "matched_source:src/aisle/harness/pilot_records.py": "sha256:68ac7ef9afd449d8527e2ffe99a9ef926e06253c466f3421bc1848e9aa094b70",
-    "matched_source:src/aisle/harness/provider_hosted.py": "sha256:82a3c8dd10449a07970e39322f649d6680e55fb935ee0dbdc67381b136e81068",
-    "matched_source:src/aisle/harness/provider_relay.py": "sha256:e196ac972121e8aa2605ed25cf9ddab280ad64d6eb49b7d49a083cb668405f75",
+    "matched_source:src/aisle/harness/provider_relay.py": "sha256:0b1698ac82da51458da5d4cdee6ca9f79334703d8c4a9dbc297af173ec0ff9a2",
     "matched_source:src/aisle/harness/provider_response_authority.py": "sha256:9562a8de28967e2eb83910ea5062dc491c8588a6bb4a2a04407f44d59f2251fe",
     "matched_source:src/aisle/harness/provider_runner.py": "sha256:2c39d11d67cc4da2f9a2c732e86ba4e9a4b8da88570bdb1ecd1364d4668831cb",
     "matched_source:src/aisle/harness/provider_source_audit.py": "sha256:e3be1f9d70288b4f596427a39ab4274399e9fdc74e87043e3c1249596fe1872b",
@@ -80,26 +74,26 @@
     "matched_source:src/aisle/harness/simulator_work.py": "sha256:2ade87416ab8c5d8902e9734af850b7613ee9ee42f9ca672c9482625e15d3d91",
     "matched_source:src/aisle/harness/traces.py": "sha256:c2e6a717a56ce47e296bdc0115b15de9361b72084638b4f3bc66f7e7d032546b",
     "matched_source:src/aisle/harness/treatment_ambient.py": "sha256:13dce400a649bc0d01749661517138f8ad1f8cde106caceaedb9f33af6f6d856",
-    "matched_source:src/aisle/harness/treatment_confinement.py": "sha256:bf5ca6a1e127333344977e2b6ef18a680f67cc3c3fc2d8196b271dceea050eef",
+    "matched_source:src/aisle/harness/treatment_confinement.py": "sha256:c46e448a63041119f1d0dbdb136ae982459d64a305867dae114e480410ed4f6c",
     "matched_source:src/aisle/harness/treatment_integrity.py": "sha256:b37162c6f295c5686da9b3089eb3bd96b69f68f01f41da0a784c4017658b10a6",
     "matched_source:src/aisle/harness/treatment_postflight.py": "sha256:0bf01138ef0c277c6fcd728fcf25f4f13795de679fb41ab58b868b81f6c2f0ca",
     "matched_source:src/aisle/harness/typed_execution_bundle.py": "sha256:607945d5a51e3a139ecd35a8dceaf77a2027b0f842a577587616e0490b35c663",
-    "matched_source:src/aisle/harness/typed_graph_audit.py": "sha256:50fb5c5198ee5155034e713fd816a6a423941fa6bc2e7b110805a53726105546",
+    "matched_source:src/aisle/harness/typed_graph_audit.py": "sha256:ca315a2717668f6e1029c0940471df6320eb23af859a0bf41220180bbcae656c",
     "matched_source:src/aisle/harness/typed_graph_hosts.py": "sha256:a5cfd9b3b603f901370579f65320f995d4bc0c71852cf2ed64784d429a942abd",
     "matched_source:src/aisle/harness/typed_graph_stage.py": "sha256:0ea37ad396fb3321978c5f8f63d869a8ba0a652f7377cad60f13060b5a5ccbfb",
-    "matched_source:src/aisle/harness/typed_node_host.py": "sha256:bbd114f9193f5bcb786efeb58b012786ebf81c006aca220ebd843a3b915a12ec",
+    "matched_source:src/aisle/harness/typed_node_host.py": "sha256:56a5f0ab8159071897aad22d49aae2ab1785e6de9a186412b7b5566db334d056",
     "matched_source:src/aisle/harness/typed_node_requests.py": "sha256:c3712381bc7383beef1e3304ce05f6a4fe27fb16d9b7e97e7f51f8d7cb6de78b",
     "matched_source:src/aisle/harness/typed_node_supervisor.py": "sha256:d964517b767bdd087771bf9233c05de61604cf5f705124d6b83be05feb0cb577",
     "matched_source:src/aisle/harness/typed_node_worker.py": "sha256:890cb125e12b05afa3609186ceae6d1d45d1d765f653e2c0b7345b00b2c24a89",
     "matched_source:src/aisle/harness/typed_run_prepare.py": "sha256:787ba2edc04efa6df752fdba2112ff50e34d2061acb74471c52c78e813382063",
     "matched_source:src/aisle/harness/typed_snapshot.py": "sha256:96003b648f09d1348375ca72709537dd80aa4ddecd60e87465011d221d3200ec",
     "matched_source:src/aisle/harness/typed_stage_provider.py": "sha256:afe7e37ef08020f5bf19630ef9117af2bdf9d8fe68ceba7f4a352f7c61c8c9ff",
-    "matched_source:src/aisle/harness/typed_validation.py": "sha256:a870195ed8a2fc0046c1b71d6c84de224de35d01bc61bf4d8cc99e49115ce86d",
+    "matched_source:src/aisle/harness/typed_validation.py": "sha256:bf51adce9f8fe107a2586bb4ffe2aec0cff684a235b6fde5837a95223f37ffa2",
     "matched_source:src/aisle/harness/typed_worker_launch.py": "sha256:0759d03e0d26bfa2b38e11771a2ba79a2d7b0f8ca816cd10f084fdfbaa7c93d0",
     "matched_source:src/aisle/harness/typed_worker_provisioning.py": "sha256:0e594beec5a07829044900d4a93fcde8e2e0e9d50e1e0f7e19809f9d2845b3ba",
     "matched_source:src/aisle/harness/validate.py": "sha256:ed82967e800af6ec4d1f5336374343df38a5ba437771dd94e24b06c7dc64f481",
     "matched_source:src/aisle/harness/worker_authority_probe.py": "sha256:9ee0638062e062c500c7103664eecd541e5d68056bb83368223c09f145dad6ee",
-    "matched_source:src/aisle/harness/worker_capability.py": "sha256:fdadd053a0c1b918cc790f3088b4710aa2d5b99a53cebad6da6afa9faa5bfb1a",
+    "matched_source:src/aisle/harness/worker_capability.py": "sha256:272c82452cd6f81912593b4584729cb7bb0e8f528d662cb3021e8dfc6ce70e83",
     "matched_source:src/aisle/harness/worker_declaration.py": "sha256:15f42f83cae62a8e917f010b3e1571dda81a3cc7e7e3d630ed2b697fb0e8c0c2",
     "matched_source:src/aisle/harness/worker_network_probe.py": "sha256:eb0d75fcbd4e8242eb61701f07e02e83ee6e7d9053247df5572f699969bcceb2",
     "matched_source:src/aisle/kinematics.py": "sha256:0656cb4c9c4769365c42fc175deefb69d7a7a3dda77991329b1cedf33f7d5aaa",
@@ -112,7 +106,7 @@
     "matched_source:src/aisle/monolith/supervisor.py": "sha256:7dbe215dc5bddd12d414d1b88e896000fc64a9c71746230518eb2f47f1ef1051",
     "matched_source:src/aisle/monolith/wire.py": "sha256:3418587b67e3ce2481e68c2809aaafc8e17f244246d33b055ee05f06ac6177a6",
     "matched_source:src/aisle/monolith/worker.py": "sha256:931e42442b9f69157eab17cb73f1fa235eb053da7d843915ef889df5f84fb2d7",
-    "matched_source:src/aisle/monolith/worker_config.py": "sha256:968185baa1fb4bb7e558c2cfc259e9d4a7f2492069e62ad498f03c856a309495",
+    "matched_source:src/aisle/monolith/worker_config.py": "sha256:55a26fdfa8b701470e50d54ffa9384d0ed89a0dc157867ac7e0005671e623312",
     "matched_source:src/aisle/monolith/worker_launch.py": "sha256:0e0d053037e1dc9aef27c0248b8adce21c29546ca38ca7ebff6fd0c41c14475b",
     "matched_source:src/aisle/nodes/budget_guard.py": "sha256:e15bc5f70b295e7dfd32f72e4a5cf72dffca9da50e9e8f6bb18360fb38069abf",
     "matched_source:src/aisle/nodes/h6_fault.py": "sha256:c93b8e1607b7627adef9d971753727b9c602be44ae539def9188344332a63485",
@@ -137,12 +131,13 @@
     "matched_source:src/aisle/verifier/stages.py": "sha256:63848f9e4c0e59020461e3350bf8ca2a8d0ae93cc45cd43c5786c7b6f95a443c",
     "matched_source:src/aisle/verifier/thresholds.toml": "sha256:567ac0544a4c382d3ce6547d8df868e6ca37c056b146cf0d1ee11934b1be16d3",
     "matched_source:tools/campaign.py": "sha256:cb33ab83f9125ea9708a73f639ca38ad539fbc77e6c5b03e0b49dc2e66abd8f0",
-    "matched_source:tools/matched_campaign.py": "sha256:6faab948b10575bb664f2243ad56d4e9c37bcd6f1fd2be745224e2ccf0e4a0d8",
+    "matched_source:tools/matched_campaign.py": "sha256:71e648035529877ee68b26eb2a4ccf5c0126e7872e3e9f6134785a1b63554609",
     "monolithic_validators": "sha256:1983ed8c26b2371c993c571f33f5c7e4ee81ea2597f9468b43d53c9970465ccf",
     "nested_host_documentation": "sha256:1c4777e4d8a29882ae5332f96df6b175423e7e5d1f279357fdb1286bace12959",
     "pilot_assignments_cli": "sha256:bafcfdf4f79d5d0abd7442355454ea7ca476928afd57ed7c83f38da0c3726cc8",
+    "pilot_decision": "sha256:8a2f932b7ff6e87c833baa0fd85f2e5d892bed4bd7287e05488eaa8652a85966",
     "pilot_records_cli": "sha256:51438c6e14fca6368e1b91ebce77fd13c6bcc821edb61666553750a91d3ab75f",
-    "protocol": "sha256:459ce9961e3f5c7975ca38463e1807ca447f4463b0c9ad3e8eab1831b06b1d58",
+    "protocol": "sha256:e51ad66dea4b96db7a9af17744db5971c6ac1e4bcb165a03c939d0d299619150",
     "protocol_template": "sha256:9d636f3dc462a2e051ee0b3ded565aff1c5be86331e5b1b6692988509ccf088e",
     "provider_admission_documentation": "sha256:856851935d15d8cb0c5653548ae9312441263cce9a3300e36d0863f5bdb96cf4",
     "public_observation_source:analysis/monolithic-control/experts-t1-l2-v1.json": "sha256:eca1034c63620f5a901a0b2da4c157391643bc4e5aaf48457ac172ff8a656288",
@@ -157,7 +152,7 @@
     "public_observation_source:src/aisle/harness/pilot_model_cache.py": "sha256:17a90497a33015388f5426dad4d5c3e29700a8b48ccb47a6e02380c3274339f5",
     "public_observation_source:src/aisle/harness/pilot_policy_surface.py": "sha256:bb08dc54cf6a86907d68bab554baab1d562ec754b2736812e68798b96395cf80",
     "research_prompt": "sha256:e736bbd6caa7236dbfafe92ae42c0c7f13088764af1b753f6685d398c111b7c0",
-    "seed_commitment_predecessor": "sha256:0963d4cb2edf8d389aee19cfba1e1406ce7c9f73802352ecdf2a0642360794e0",
+    "seed_commitment_predecessor": "sha256:4d6c2c6bee3032c427f63600a761095faa2cd0ba58ad145be7720bf52fd6eb6d",
     "session_runner": "sha256:cb33ab83f9125ea9708a73f639ca38ad539fbc77e6c5b03e0b49dc2e66abd8f0",
     "session_validators": "sha256:1b1c53d6389881c146726d865a741a681f3d5039c9bf99558a53ee368250971e",
     "simulator_bridge": "sha256:196837073251bedefd0365d220aa94407612f7670ed0b1b39c7319d63a1c18f8",
@@ -166,11 +161,11 @@
     "treatment_postflight": "sha256:0bf01138ef0c277c6fcd728fcf25f4f13795de679fb41ab58b868b81f6c2f0ca",
     "treatment_table": "sha256:0f860aefee6272ae5ca92f0a6d704d9f2dd924d931eed97d0b666f09361217d8"
   },
-  "campaign_id": "cse-causal-study-v23",
+  "campaign_id": "cse-causal-study-pilot-v10",
   "commands": [
-    "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-v1/protocol.json --purpose power",
-    "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-v1/protocol.json --purpose freeze --output /tmp/cse-causal-study-v22-freeze-refusal.json",
-    "uv run harness freeze check --manifest analysis/freeze/cse-causal-study-v23/freeze-manifest.json --allow-withheld-seeds"
+    "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-pilot-v8/protocol.json --purpose power",
+    "uv run harness stats power --protocol analysis/freeze/cse-causal-study-pilot-v8/protocol.json --output analysis/freeze/cse-causal-study-pilot-v8/power.json",
+    "uv run harness freeze check --manifest analysis/freeze/cse-causal-study-pilot-v10/freeze-manifest.json --allow-withheld-seeds"
   ],
   "declaration": {
     "analysis": {
@@ -184,11 +179,12 @@
     "artifacts": {
       "agent_adapters": "tools/agent_adapters.py",
       "analyzer": "src/aisle/harness/benchmark_statistics.py",
+      "bnd_calibration_manifest": "analysis/freeze/bnd-task-band-calibration-v11/freeze-manifest.json",
+      "bnd_perception_audit_report": "analysis/perception-audit/records/bnd-perception-corpus-03/report.json",
       "budget_ceiling": "harness/budget.toml",
       "dependency_declaration": "pyproject.toml",
       "dependency_lock": "uv.lock",
       "dora_runtime_selection": "dora-runtime.json",
-      "frontend_conformance_decision": "docs/decisions/ADR-65.md",
       "frontend_request_authorization_documentation": "docs/benchmark/v1/frontend-request-authorization.md",
       "matched_session_decision": "docs/decisions/ADR-62.md",
       "matched_session_documentation": "docs/monolithic/matched-session.md",
@@ -217,11 +213,8 @@
       "matched_source:src/aisle/harness/common.py": "src/aisle/harness/common.py",
       "matched_source:src/aisle/harness/frontend_app_server.py": "src/aisle/harness/frontend_app_server.py",
       "matched_source:src/aisle/harness/frontend_app_server_audit.py": "src/aisle/harness/frontend_app_server_audit.py",
-      "matched_source:src/aisle/harness/frontend_conformance.py": "src/aisle/harness/frontend_conformance.py",
       "matched_source:src/aisle/harness/frontend_dispatch.py": "src/aisle/harness/frontend_dispatch.py",
       "matched_source:src/aisle/harness/frontend_dispatch_audit.py": "src/aisle/harness/frontend_dispatch_audit.py",
-      "matched_source:src/aisle/harness/frontend_effects.py": "src/aisle/harness/frontend_effects.py",
-      "matched_source:src/aisle/harness/frontend_qualification.py": "src/aisle/harness/frontend_qualification.py",
       "matched_source:src/aisle/harness/frontend_request_audit.py": "src/aisle/harness/frontend_request_audit.py",
       "matched_source:src/aisle/harness/frontend_request_authority.py": "src/aisle/harness/frontend_request_authority.py",
       "matched_source:src/aisle/harness/guard_divergence.py": "src/aisle/harness/guard_divergence.py",
@@ -237,15 +230,11 @@
       "matched_source:src/aisle/harness/matched_session.py": "src/aisle/harness/matched_session.py",
       "matched_source:src/aisle/harness/matched_tool_service.py": "src/aisle/harness/matched_tool_service.py",
       "matched_source:src/aisle/harness/matched_tools.py": "src/aisle/harness/matched_tools.py",
-      "matched_source:src/aisle/harness/mcp_harness_authority.py": "src/aisle/harness/mcp_harness_authority.py",
-      "matched_source:src/aisle/harness/mcp_harness_source.py": "src/aisle/harness/mcp_harness_source.py",
-      "matched_source:src/aisle/harness/mcp_harness_transport.py": "src/aisle/harness/mcp_harness_transport.py",
       "matched_source:src/aisle/harness/monolith.py": "src/aisle/harness/monolith.py",
       "matched_source:src/aisle/harness/monolithic.py": "src/aisle/harness/monolithic.py",
       "matched_source:src/aisle/harness/monolithic_run_evidence.py": "src/aisle/harness/monolithic_run_evidence.py",
       "matched_source:src/aisle/harness/monolithic_run_prepare.py": "src/aisle/harness/monolithic_run_prepare.py",
       "matched_source:src/aisle/harness/pilot_records.py": "src/aisle/harness/pilot_records.py",
-      "matched_source:src/aisle/harness/provider_hosted.py": "src/aisle/harness/provider_hosted.py",
       "matched_source:src/aisle/harness/provider_relay.py": "src/aisle/harness/provider_relay.py",
       "matched_source:src/aisle/harness/provider_response_authority.py": "src/aisle/harness/provider_response_authority.py",
       "matched_source:src/aisle/harness/provider_runner.py": "src/aisle/harness/provider_runner.py",
@@ -317,8 +306,9 @@
       "monolithic_validators": "src/aisle/harness/monolithic.py",
       "nested_host_documentation": "docs/monolithic/code-mode-admission.md",
       "pilot_assignments_cli": "tools/pilot_assignments.py",
+      "pilot_decision": "docs/decisions/ADR-66.md",
       "pilot_records_cli": "tools/pilot_records.py",
-      "protocol": "analysis/freeze/cse-causal-study-v1/protocol.json",
+      "protocol": "analysis/freeze/cse-causal-study-pilot-v8/protocol.json",
       "protocol_template": "analysis/statistics/protocol-template.json",
       "provider_admission_documentation": "docs/monolithic/provider-admission.md",
       "public_observation_source:analysis/monolithic-control/experts-t1-l2-v1.json": "analysis/monolithic-control/experts-t1-l2-v1.json",
@@ -333,7 +323,7 @@
       "public_observation_source:src/aisle/harness/pilot_model_cache.py": "src/aisle/harness/pilot_model_cache.py",
       "public_observation_source:src/aisle/harness/pilot_policy_surface.py": "src/aisle/harness/pilot_policy_surface.py",
       "research_prompt": "harness/CLAUDE.research.md",
-      "seed_commitment_predecessor": "analysis/freeze/cse-causal-study-v22/freeze-manifest.json",
+      "seed_commitment_predecessor": "analysis/freeze/cse-causal-study-pilot-v9/freeze-manifest.json",
       "session_runner": "tools/campaign.py",
       "session_validators": "src/aisle/harness/causal_study.py",
       "simulator_bridge": "src/aisle/nodes/dora_genesis.py",
@@ -349,11 +339,11 @@
       "session_wall_s": 3600,
       "sim_episodes_per_session": 160
     },
-    "campaign_id": "cse-causal-study-v23",
+    "campaign_id": "cse-causal-study-pilot-v10",
     "commands": [
-      "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-v1/protocol.json --purpose power",
-      "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-v1/protocol.json --purpose freeze --output /tmp/cse-causal-study-v22-freeze-refusal.json",
-      "uv run harness freeze check --manifest analysis/freeze/cse-causal-study-v23/freeze-manifest.json --allow-withheld-seeds"
+      "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-pilot-v8/protocol.json --purpose power",
+      "uv run harness stats power --protocol analysis/freeze/cse-causal-study-pilot-v8/protocol.json --output analysis/freeze/cse-causal-study-pilot-v8/power.json",
+      "uv run harness freeze check --manifest analysis/freeze/cse-causal-study-pilot-v10/freeze-manifest.json --allow-withheld-seeds"
     ],
     "decision_rules": {
       "alpha": 0.05,
@@ -374,6 +364,7 @@
       },
       "stopping_rule": "fixed n from the frozen power analysis using pilot-only control success; absolute floor 10 randomized assignments per arm per agent-system x task stratum (CSE-8); no optional stopping or extension"
     },
+    "disposition": "registered 2026-09-13; collection pending. Supersedes the zero-session pilot-v1 lineage with the instrument set the pilot can actually run on (T1-L2 realistic pair, #581 to #586). Named limitations: BND-7 not eligible (recorded failed), external-review and parity gates pending, and the session-bound capability audit not merged (an unattested environment stops every session).",
     "endpoints": {
       "primary": [
         {
@@ -450,21 +441,26 @@
     "instrument_set": {
       "agent_systems": [
         {
-          "binary": "claude",
-          "frozen": false,
-          "id": "claude-code",
-          "version_observed": "2.1.261"
-        },
-        {
           "binary": "codex",
-          "frozen": false,
+          "binary_sha256": "b973d440acac501fd2594a43e7ca9ce41e0a65b9dfb28d0d7a7837c99e1261e3",
+          "frozen": true,
           "id": "codex-cli",
-          "version_observed": "0.151.0"
+          "install": "private prefix ~/aisle-private/codex-0.153.4 (the qualified darwin-arm64 binary, not the JS shim); ChatGPT-login credentials copied byte-identically into both arms' private CODEX_HOME, hash recorded only",
+          "version_observed": "0.153.4"
         }
       ],
+      "candidate": {
+        "id": "t1-l2-realistic",
+        "monolithic_module": "experts/monolithic/expert_t1_l2.py",
+        "monolithic_template": "graphs/monolithic_t1_l2.yaml",
+        "perception": "L2",
+        "reset": "teleport",
+        "typed_graph": "graphs/expert_t1_l2.yaml",
+        "verifier": "realistic (oracle demoted to the held-out scoring tap, BND-3)"
+      },
+      "candidate_table_sha256": "08a1dc56502abc4673cb0b54f01664382214bb473c3ef293b1df7b6c74f64778",
       "items": [
-        "short_composition:TBD-by-bnd-task-band-calibration-v1",
-        "engineering:TBD-by-bnd-task-band-calibration-v1"
+        "short_composition:t1-l2-realistic"
       ],
       "kind": "selected_task"
     },
@@ -473,6 +469,7 @@
         "gate": "CON-14 spec approval",
         "kind": "external_review",
         "owner_role": "project owner",
+        "pilot_record_2026_09_13": "pending; external review, not a pilot prerequisite (ADR-66 section 2); named limitation",
         "record": null,
         "status": "pending"
       },
@@ -480,6 +477,7 @@
         "gate": "STA-12 independent statistical review",
         "kind": "external_review",
         "owner_role": "independent statistician",
+        "pilot_record_2026_09_13": "pending; external review, not a pilot prerequisite (ADR-66 section 2); named limitation",
         "record": null,
         "status": "pending"
       },
@@ -487,6 +485,7 @@
         "gate": "MON-1 treatment table and expert parity (#344)",
         "kind": "machine_check",
         "owner_role": "parity harness; control surface exists, independent authorship and operator evidence remain pending",
+        "pilot_record_2026_09_13": "pending; the T1-L2 pair (#583) passes the interface, table and module checks but has no operator parity record at an immutable hash; named limitation",
         "record": null,
         "status": "pending"
       },
@@ -494,13 +493,15 @@
         "gate": "BND-12 task-band freeze (#346)",
         "kind": "machine_check",
         "owner_role": "task-band auditor",
-        "record": null,
-        "status": "pending"
+        "pilot_record_2026_09_13": "recorded failed: bnd-task-band-calibration-v11 regenerated the BND-5 perception audit on a 32-seed T1-L2 corpus; 22 of 22 strata below the 0.90 floor (BND-7), led by target_class=ibuprofen refusals; role open (BND-10). ADR-66 section 2: a failing machine gate is a named limitation of this pilot, not a blocker",
+        "record": "analysis/perception-audit/records/bnd-perception-corpus-03/report.json",
+        "status": "failed"
       },
       {
         "gate": "TRT confinement/mutation/agent-path (#353)",
         "kind": "machine_check",
         "owner_role": "integrity controller",
+        "pilot_record_2026_09_13": "pending; the session-bound capability audit (loopback relay policy) is not merged; an unattested environment is a stop condition for every session",
         "record": null,
         "status": "pending"
       },
@@ -508,6 +509,8 @@
         "gate": "seed commitment verification",
         "kind": "machine_check",
         "owner_role": "holder of the original private seed and salt sources",
+        "pilot_record_2026_09_13": "not applicable to this registration: it commits a fresh private seed source directly (no inheritance); kept for shape parity and left pending",
+        "public_observation_successor_note": "Inherited from pilot-v8 without access to private seed sources; verification remains pending. This byte-binding successor does not authorize a pilot run.",
         "record": null,
         "status": "pending"
       },
@@ -515,26 +518,52 @@
         "gate": "MON-8/MON-12 matched-session acceptance (#519)",
         "kind": "machine_check",
         "owner_role": "matched-session controller; complete acceptance evidence still required",
+        "pilot_record_2026_09_13": "pending; frontend conformance qualified on the T1 oracle development surface only (#568); the T1-L2 realistic surface runs under the same executor with the same admission checks; named limitation",
         "record": null,
         "status": "pending"
       }
     ],
     "issue": 347,
-    "purpose": "confirmatory",
+    "pilot_design": {
+      "agent_system": "codex-cli 0.153.4 only (the owned provider relay, the ChatGPT-login account header and the pinned conformance profile are Codex-bound)",
+      "arm_order": "sealed balanced plan (revealed one assignment at a time); no longer a fixed alternation",
+      "arms": [
+        "typed",
+        "monolithic"
+      ],
+      "assignment": "tools/pilot_assignments.py create --protocol analysis/freeze/cse-causal-study-pilot-v8/protocol.json (sealed balanced plan, one typed and one monolithic assignment per temporal block, TRT-8/CSE-7); reveal exactly one assignment before each session; the ledger retains every assignment, started or not",
+      "below_cse8_floor": "6 per arm is below the CSE-8 floor of 10 by design; this registration can never become a confirmatory estimate (STA-3)",
+      "decision": "docs/decisions/ADR-66.md (pilot first; agent-drafted under the ADR-65 label, renumbered by #568)",
+      "executor": "tools/matched_campaign.py admit / run --purpose engineering / collect-run, then the held-out evaluation; retained and unscored, output root ~/aisle-private/raw/cse-causal-study-pilot-v8/<session>",
+      "records": "tools/pilot_records.py derives one aisle.stats.records.v1 row per ledger assignment; harness stats validate --purpose analysis; harness stats analyze; harness stats power from observed control success (CSE-8)",
+      "reporting": "analysis/reports/cse_pilot_v8.md; results enter docs/claim-evidence.yaml only as CSE-8 power inputs under the unrun confirmatory claim",
+      "rerun_policy": "no reruns; a failed attempt is retained under a new session id, never overwritten",
+      "session_success": "controller-run held-out evaluation of the retained final snapshot on the 32 private seeds after the agent process ends, oracle as the held-out scorer (BND-3); success iff at least 28 of 32 oracle successes; a launch failure counts as a failed seed (CSE-2, CSE-9)",
+      "sessions_per_arm": 6,
+      "stop_conditions": [
+        "wrong_object outcome",
+        "guard bypass",
+        "unattested environment",
+        "relay bypass (provider traffic outside the owned relay)",
+        "any oracle field on a policy input"
+      ],
+      "task_stratum": "short_composition on candidate t1-l2-realistic (T1 franka, L2 perception, realistic verifier); bnd-task-band-calibration-v11 records it as not perception-eligible (BND-7), carried as a machine-gate limitation per ADR-66"
+    },
+    "purpose": "pilot",
     "schema_version": "aisle.freeze.declaration.v1",
     "seed_commitment": {
-      "inherited_from": "analysis/freeze/cse-causal-study-v22/freeze-manifest.json",
-      "rule": "32 distinct integers in [1000,9999) drawn once from the OS CSPRNG, retained only under ~/aisle-private/freeze/cse-causal-study-v1/, disjoint by value from every committed dev/pilot seed list; revealed after the campaign closes",
-      "salt_source": "~/aisle-private/freeze/cse-causal-study-v1/salt.bin",
-      "seeds_source": "~/aisle-private/freeze/cse-causal-study-v1/seeds.json"
+      "inherited_from": "analysis/freeze/cse-causal-study-pilot-v9/freeze-manifest.json",
+      "rule": "32 distinct integers in [1000,9999) drawn once from the OS CSPRNG on 2026-09-13, retained only under ~/aisle-private/freeze/cse-causal-study-pilot-v8/, disjoint by value from every private seed list committed so far (including cse-causal-study-pilot-v1 and the cse-causal-study-v1 confirmatory commitment) and from the committed development seed lists; never inherited by a confirmatory declaration (ADR-66); revealed after the pilot closes. The same directory holds the controller-private 256-bit randomization seed for the sealed assignment plan (TRT-8); its commitment is recorded in the assignment ledger, never here.",
+      "salt_source": "~/aisle-private/freeze/cse-causal-study-pilot-v8/salt.bin",
+      "seeds_source": "~/aisle-private/freeze/cse-causal-study-pilot-v8/seeds.json"
     },
     "spec": "500",
-    "superseded": "cse-causal-study-v22 (public goal/reset/calibration projection for the existing T1-L2 candidate and pinned public model-cache preparation; study rules, inherited seed commitment and all gate outcomes preserved; no collection authorization)"
+    "superseded": "cse-causal-study-pilot-v9 (session-bound capability audits and fail-closed rejection of unsupported loopback endpoint authority; public-observation and cache source coverage, study rules, inherited seed commitment and pending gates preserved; no collection authorization)"
   },
-  "declaration_sha256": "sha256:fdbd9882d28457f497d49153682db798dce1d477e569eca943bc59942729d8af",
+  "declaration_sha256": "sha256:b70d4f89fe0a3d935f4e45c58211ab630199368ea075450c8045eba2d9501c8f",
   "frozen": false,
   "gate_record_hashes": {},
-  "git_head": "fa339eee70878d2e976af9761dcdfd94a5fcdd54",
+  "git_head": "8e0dd9e068178808c5b4e5e3a77c9f8bafea5ede",
   "issue": 347,
   "pending_gates": [
     "BND-12 task-band freeze (#346)",
@@ -545,9 +574,9 @@
     "TRT confinement/mutation/agent-path (#353)",
     "seed commitment verification"
   ],
-  "purpose": "confirmatory",
+  "purpose": "pilot",
   "schema_version": "aisle.freeze.manifest.v1",
-  "seed_commitment": "sha256:f3f4e5efe4d573e1159d93e7b53a35a50620606e3dc72d0b5d5057611a2b7522",
+  "seed_commitment": "sha256:bc4a2c141eded05f77bee114330c2f9d1c5112e26618f2feb9694cf60dd56143",
   "spec": "500",
   "status": "registered_pending_review",
   "timestamp": null,

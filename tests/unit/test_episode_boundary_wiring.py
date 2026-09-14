@@ -15,6 +15,7 @@ the failure has no symptom at validation time: a bridge-wired graph
 validates, runs, and quietly leaks episode state.
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -77,17 +78,71 @@ def test_only_the_relay_consumes_the_bridges_reset_done(path):
     )
 
 
+def _boundary_authorities(nodes, plan):
+    consumers = {
+        node_id: source
+        for node_id, node in nodes.items()
+        if node_id != RELAY and (source := _reset_done_source(node)) is not None
+    }
+    projected = [nid for nid, src in consumers.items() if src == "pilot-policy-surface/reset_done"]
+    if projected:
+        projection = nodes["pilot-policy-surface"]
+        assert (ROOT / "graphs" / projection["path"]).resolve() == (
+            ROOT / "src/aisle/harness/pilot_policy_surface.py"
+        ), "projected reset must use the trusted projection"
+        assert _reset_done_source(projection) == f"{RELAY}/reset_done", (
+            "projected reset must originate at the reset service"
+        )
+        participants = plan["participants"]
+        assert participants["pilot-policy-surface"]["inputs"]["reset_done"] == {
+            "source": RELAY,
+            "output": "reset_done",
+            "edge": "forward",
+        }, "projected reset must remain in the service's simulation turn"
+        for node_id in projected:
+            assert participants[node_id]["inputs"]["reset_done"] == {
+                "source": "pilot-policy-surface",
+                "output": "reset_done",
+                "edge": "forward",
+            }, "projected reset must reach its consumer in the same simulation turn"
+            consumers[node_id] = f"{RELAY}/reset_done"
+    return consumers
+
+
 @pytest.mark.parametrize("path", GRAPHS, ids=lambda p: p.name)
 def test_all_episode_state_consumers_agree_on_the_boundary(path):
-    """CON-5: consumers that cut the episode at different instants leave the
-    run in mixed state — one node already in episode N+1 while another is
-    still finishing N. Whatever the source is, they must share it."""
-    consumers = {nid: src for nid, src in _consumers(path).items() if nid != RELAY}
+    """CON-5/RST-2: one service boundary, including a same-turn public projection.
+
+    The projection strips private fields but both forward edges retain the
+    service's simulation turn. A delayed or differently sourced relay refuses.
+    """
+    nodes = {node["id"]: node for node in yaml.safe_load(path.read_text())["nodes"]}
+    plan = None
+    if "pilot-policy-surface" in nodes:
+        plan_path = path.parent / nodes["turn-barrier"]["env"]["AISLE_TURN_PLAN"]
+        plan = json.loads(plan_path.read_text())
+    consumers = _boundary_authorities(nodes, plan)
     if not consumers:
         pytest.skip(f"{path.name} has no episode-state consumers")
     assert len(set(consumers.values())) == 1, (
         f"{path.name}: episode-state consumers disagree on the boundary — {consumers}"
     )
+
+
+@pytest.mark.parametrize("fault", ["upstream_source", "projection_delay", "consumer_delay"])
+def test_projected_reset_cannot_bypass_or_delay_the_shared_boundary(fault):
+    """CON-5/RST-2: projection support must not admit a different reset authority/time."""
+    path = ROOT / "graphs/pilot_t1_l2_typed.yaml"
+    nodes = {node["id"]: node for node in yaml.safe_load(path.read_text())["nodes"]}
+    plan = json.loads((path.parent / nodes["turn-barrier"]["env"]["AISLE_TURN_PLAN"]).read_text())
+    assert len(set(_boundary_authorities(nodes, plan).values())) == 1
+    if fault == "upstream_source":
+        nodes["pilot-policy-surface"]["inputs"]["reset_done"]["source"] = "dora-genesis/reset_done"
+    else:
+        node_id = "pilot-policy-surface" if fault == "projection_delay" else "detected-pose"
+        plan["participants"][node_id]["inputs"]["reset_done"]["edge"] = "episodic"
+    with pytest.raises(AssertionError, match="projected reset"):
+        _boundary_authorities(nodes, plan)
 
 
 @pytest.mark.parametrize("path", GRAPHS, ids=lambda p: p.name)

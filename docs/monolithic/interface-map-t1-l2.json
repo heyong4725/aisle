@@ -1,7 +1,7 @@
 {
   "id": "mon-interface-map-t1-l2-v1",
   "typed": {
-    "graph": "graphs/expert_t1_l2.yaml",
+    "graph": "graphs/pilot_t1_l2_typed.yaml",
     "agent_nodes": [
       "detected-pose",
       "grasp-planner-topdown",
@@ -10,7 +10,7 @@
     ]
   },
   "monolithic": {
-    "graph": "graphs/monolithic_t1_l2.yaml",
+    "graph": "graphs/pilot_t1_l2_monolithic.yaml",
     "broker": "monolith-broker"
   },
   "fields": [
@@ -20,12 +20,12 @@
       "typed": {
         "role": "observe",
         "privileged": false,
-        "semantics": "scene calibration and segmentation ids (JSON object)"
+        "semantics": "L2 camera calibration only; no simulator identity or segmentation fields"
       },
       "monolithic": {
         "role": "observe",
         "privileged": false,
-        "semantics": "scene calibration and segmentation ids (JSON object)"
+        "semantics": "L2 camera calibration only; no simulator identity or segmentation fields"
       }
     },
     {
@@ -76,12 +76,12 @@
       "typed": {
         "role": "observe",
         "privileged": false,
-        "semantics": "episode goal object with goal id (target_med, tier)"
+        "semantics": "target_med, tier and timeout_s only; goal_id metadata; no seed or reset state"
       },
       "monolithic": {
         "role": "observe",
         "privileged": false,
-        "semantics": "episode goal object with goal id (target_med, tier)"
+        "semantics": "target_med, tier and timeout_s only; goal_id metadata; no seed or reset state"
       }
     },
     {
@@ -90,12 +90,12 @@
       "typed": {
         "role": "observe",
         "privileged": false,
-        "semantics": "evaluator verdict closing the episode"
+        "semantics": "realistic-verifier verdict closing the episode; rollout staging rewrites the template oracle edge"
       },
       "monolithic": {
         "role": "observe",
         "privileged": false,
-        "semantics": "evaluator verdict closing the episode"
+        "semantics": "realistic-verifier verdict closing the episode; rollout staging rewrites the template oracle edge"
       }
     },
     {
@@ -118,12 +118,12 @@
       "typed": {
         "role": "observe",
         "privileged": false,
-        "semantics": "episode boundary: scene reset completed"
+        "semantics": "constant reset-complete notification; no seed-bearing request_id or reset payload"
       },
       "monolithic": {
         "role": "observe",
         "privileged": false,
-        "semantics": "episode boundary: scene reset completed"
+        "semantics": "constant reset-complete notification; no seed-bearing request_id or reset payload"
       }
     },
     {
@@ -186,12 +186,12 @@
   "envelopes": {
     "bridge_info": {
       "typed": {
-        "edge": "dora-genesis/bridge_info",
+        "edge": "pilot-policy-surface/bridge_info",
         "schema": "json_utf8"
       },
       "monolithic": {
         "event": "bridge_info",
-        "payload": "dict (calibration, segmentation_ids, ...)"
+        "payload": "dict (perception=L2, enumerated calibration fields only)"
       }
     },
     "depth_overhead": {
@@ -216,12 +216,12 @@
     },
     "episode_goal": {
       "typed": {
-        "edge": "rollout-client/episode_goal",
+        "edge": "pilot-policy-surface/episode_goal",
         "schema": "json_utf8"
       },
       "monolithic": {
         "event": "episode_goal",
-        "payload": "dict (target_med, tier, ...) with goal_id"
+        "payload": "dict (target_med, tier, timeout_s) with goal_id"
       }
     },
     "episode_result": {
@@ -246,7 +246,7 @@
     },
     "reset_done": {
       "typed": {
-        "edge": "reset/reset_done",
+        "edge": "pilot-policy-surface/reset_done",
         "schema": "reset_done_u32"
       },
       "monolithic": {

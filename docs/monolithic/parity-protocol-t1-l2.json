@@ -53,8 +53,8 @@
       "MON-9 parity seeds revealed by a separate operator": false
     },
     "commands": {
-      "typed": "uv run harness rollout --graph graphs/expert_t1_l2.yaml --tier T1 --perception L2 --verifier realistic --episodes 8 --seeds 0..7",
-      "monolithic": "uv run harness monolith run --module experts/monolithic/expert_t1_l2.py --template graphs/monolithic_t1_l2.yaml --verifier realistic --tier T1 --episodes 8 --seeds 0..7",
+      "typed": "uv run harness rollout --graph graphs/pilot_t1_l2_typed.yaml --tier T1 --perception L2 --verifier realistic --episodes 8 --seeds 0..7",
+      "monolithic": "uv run harness monolith run --module experts/monolithic/expert_t1_l2.py --template graphs/pilot_t1_l2_monolithic.yaml --verifier realistic --tier T1 --episodes 8 --seeds 0..7",
       "gate": "uv run harness monolith parity --typed <typed>/episodes.jsonl --monolithic <mono>/episodes.jsonl"
     },
     "note": "The two preconditions marked false are honest: both experts were authored by the same maintainer with full repository access, and the seed set was chosen by that author. Runs against this protocol are engineering shakeouts (MON-11 expert_parity purpose) and cannot pass the gate until an independent author and operator exist."

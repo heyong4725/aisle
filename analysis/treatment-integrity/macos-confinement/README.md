@@ -29,8 +29,9 @@ Since the session-bound attestation (2026-09-14), `audit-macos --policy
 (`MacOSPolicy.canonical_dict` JSON) so the retained record's profile hash and
 policy id are the ones `wrap_verified_command` demands; `policy_source` in the
 report says whether the synthetic or a session policy was audited, and the
-report's hidden roots are digests, not paths. A `loopback` policy pins one
-relay port and replaces the `tcp_read` denial with a `loopback_tcp_read` allow
-control on that port, a `foreign_loopback_tcp_read` denial on another local
-port, and an `external_tcp_read` denial. See
-`docs/monolithic/matched-session.md`.
+report's hidden roots are digests, not paths. Only `deny-external` is supported.
+The proposed `loopback` grant is refused because a port pin cannot isolate
+one service across the host's IPv4 and IPv6 addresses. Previously passing
+loopback attestations cannot authorize a launch. This change preserves
+session-bound audit support but does not enable relay-backed confined sessions.
+See `docs/monolithic/matched-session.md`.

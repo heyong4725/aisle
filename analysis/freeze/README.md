@@ -203,3 +203,19 @@ gates. BND v10 remained current at that point (its declared inputs did not
 change); v11 later superseded it after the regenerated audit.
 Engineering route tests do not establish complete frontend conformance,
 independent confinement, or permission to collect study results.
+
+CSE v23, pilot v9 and BND v14 supersede v22, pilot v8 and BND v13 after
+#578 adds public goal/reset/calibration projection to the existing T1-L2
+candidate and a pinned public model-cache preparer. These are pending byte
+bindings: study design, seed source rules and gate outcomes are preserved,
+including the failed BND audit. Pilot v8 remains the historical fresh-seed
+registration; pilot v9 inherits its commitment unverified and does not
+authorize collection. A pilot run needs a fresh-seed run registration and
+execution-context admission for the revised graphs and cache.
+
+CSE v24 and pilot v10 supersede v23 and pilot v9 after #589 adds
+session-bound capability audits and refuses the unsupported loopback endpoint
+grant. They inherit #578's public-observation and cache source coverage,
+commitments and pending gates. Historical registrations remain unchanged.
+The inherited seed commitments remain unverified without private sources;
+these registrations do not authorize collection or relay-backed confinement.

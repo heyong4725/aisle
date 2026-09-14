@@ -387,8 +387,8 @@ class ProviderRelay:
                 relay._handle(self)
 
         try:
-            # A pinned relay_port is the one loopback port a `loopback`
-            # confinement policy admits; 0 keeps the ephemeral default.
+            # An explicit relay_port fixes the listener's address; it grants
+            # no confinement authority. Zero keeps the ephemeral default.
             self._server = Server(("127.0.0.1", self._binding_port), Handler)
             self.address = self._server.server_address
             self._retain(
