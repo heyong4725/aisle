@@ -96,8 +96,25 @@ refuses a mismatch. Under `loopback` the attestation carries a
 case proving another local port is refused, and an `external_tcp_read` case
 proving an external connect is refused outright. SBPL's `localhost` names every
 address this host owns, so the pin, not the host, is what makes the grant
-exclusive. A session whose attestation was not produced this way is
-unattested, which the pilot registration names as a stop condition.
+exclusive. A worker or validator policy admits only an interpreter and cannot
+run the audit's probes: `--widen-probes` audits it under the policy plus
+exactly those probes (the shell, cat, the Apple Git, and netcat only when no
+Unix-socket probe is admitted) and the read roots they load from, while the
+attestation still binds the SESSION profile and records the widening under
+`probe_widening`; the launch wrapper accepts it only when the widening it
+recomputes from the session policy and THIS host's own developer Git equals
+that declaration, so nothing but the audit's probes can ride along and an
+attestation from another host cannot verify. `attest-many --policies <dir>
+[--widen-probes] [--jobs N]` audits every `<name>.policy.json` in a directory
+concurrently (policies that would share a sentinel home are serialized) and
+writes `<name>.attestation.json` beside each; an existing attestation is
+skipped so a batch resumes, every policy it could not attest is named (CON-8),
+and an optional `<name>.sentinels.json` names that policy's controller-private
+sentinel homes. The attestation is an unsigned controller-owned document: the
+recomputation guards against tool misuse, not against an author who can edit
+the retained file. A session whose
+attestation was not produced this way is unattested, which the pilot
+registration names as a stop condition.
 
 Deterministic integration tests run real child processes for both arms through
 an explicitly synthetic pass-through adapter. Those tests cover the process

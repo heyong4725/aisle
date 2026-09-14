@@ -32,5 +32,9 @@ report says whether the synthetic or a session policy was audited, and the
 report's hidden roots are digests, not paths. A `loopback` policy pins one
 relay port and replaces the `tcp_read` denial with a `loopback_tcp_read` allow
 control on that port, a `foreign_loopback_tcp_read` denial on another local
-port, and an `external_tcp_read` denial. See
+port, and an `external_tcp_read` denial. `--widen-probes` attests an
+interpreter-only policy under itself plus the audit's own probes; the record
+then carries `audit_profile_sha256`/`audit_policy_id` beside the session's
+`compiled_profile_sha256`/`policy_id` and a `probe_widening` declaration.
+`attest-many` audits a directory of policies concurrently. See
 `docs/monolithic/matched-session.md`.

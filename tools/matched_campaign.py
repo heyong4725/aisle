@@ -73,7 +73,9 @@ def run_engineering_session(
         with (destination / "capability.json").open("x") as stream:
             json.dump(attestation, stream, indent=2, allow_nan=False)
             stream.write("\n")
-        command = wrap_verified_command(argv, compiled, retained_profile, attestation)
+        command = wrap_verified_command(
+            argv, compiled, retained_profile, attestation, policy=policy
+        )
         app_server = "app_server" in current["launch_bindings"][arm]
         with (destination / "launch.json").open("x") as stream:
             json.dump(

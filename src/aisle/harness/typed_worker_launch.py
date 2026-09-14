@@ -168,7 +168,7 @@ def launch_typed_worker(
             str(bundle / "src"),
             *sorted(runtime_record["trees"]),
         ]
-        wrapped = wrap_verified_command(command, compiled, profile, attestation)
+        wrapped = wrap_verified_command(command, compiled, profile, attestation, policy=policy)
         for name, value in (
             ("bundle", bundle_manifest),
             ("runtime", runtime_record),
@@ -194,7 +194,7 @@ def launch_typed_worker(
         ):
             _json(output / f"{name}.json", value)
         verify_typed_launch(**kwargs)
-        wrapped = wrap_verified_command(command, compiled, profile, attestation)
+        wrapped = wrap_verified_command(command, compiled, profile, attestation, policy=policy)
         remaining = timeout_s - (time.monotonic() - started)
         if remaining <= 0:
             raise TypedLaunchError("worker wall budget exhausted before spawn")

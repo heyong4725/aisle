@@ -67,6 +67,7 @@ def _worker(output, config, digest):
         compiled,
         output / "profile.sb",
         launch["attestation"],
+        policy=launch["policy"],
     )
     for name, expected in (
         ("bundle.json", launch["bundle_manifest"]),

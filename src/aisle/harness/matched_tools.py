@@ -648,7 +648,7 @@ class ToolController:
                 retained_profile = output / "profile.sb"
                 retained_profile.write_bytes(self.profile_path.read_bytes())
                 wrapped = wrap_verified_command(
-                    command, compiled, retained_profile, self.attestation
+                    command, compiled, retained_profile, self.attestation, policy=policy
                 )
                 (output / "invocation.json").write_text(
                     json.dumps(
