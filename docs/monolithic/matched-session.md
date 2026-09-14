@@ -488,3 +488,43 @@ infrastructure failure leaves `ok: false` so the session is excluded rather
 than scored; a deliverable that fails to launch is a failed session. Seed
 values are never written (CSE-9). This is the CSE-2 session outcome for the
 ADR-66 pilot tier; it does not authorize scored collection.
+
+The request names `session_dir` (a finished attempt with `matched-session.json`,
+`admission.json` and the retained `final/` snapshot), `controller_root`, the
+private `seeds_source` and `salt_source`, the registration's `seed_commitment`,
+the frozen `rule` (`{"kind": "oracle_successes_at_least", "threshold": N}`) and
+`timeout_s`. The controller refuses an unfinished session, a drifted final
+snapshot, seeds that do not match the commitment or overlap the session's
+development seeds, and an existing output. It rebuilds the submitted system as
+the controller's tracked tree with the final deliverable overlaid, runs it
+through the arm's own launcher on the private seeds with the realistic verifier
+driving the loop and the oracle as the held-out scorer (BND-3), and writes
+`heldout-evidence.json` (per-seed oracle verdicts by index, success count, the
+rule and the decision). Seed values are never written (CSE-9). This is the CSE-2
+session outcome for the ADR-66 pilot tier; it does not authorize scored
+collection.
+
+## Pilot assignments and records
+
+`tools/pilot_assignments.py create --campaign <id> --protocol <SPEC 400
+protocol> --seed <private 256-bit hex file> --ledger <ledger.json>` seals a
+balanced plan whose arms and size come from the protocol (one typed and one
+monolithic assignment per temporal block, TRT-8/CSE-7) and writes only its
+public commitment; `reveal` appends exactly the next assignment after
+re-verifying the history. `tools/pilot_records.py --protocol <SPEC 400 protocol>
+--ledger <ledger.json> --sessions <root with one directory per session id>
+--agent-system <id> --task <candidate> --output records.json` re-verifies every
+ledger assignment against the sealed commitment and derives one
+`aisle.stats.records.v1` row per assignment, started or not: outcomes come only
+from the session's retained `heldout/heldout-evidence.json`, which must name the
+session, arm, plan and final snapshot hashes; costs are the executor's observed
+budgets (`null` when unobserved, never zero); validate-fix cycles are the
+executed `check` tool attempts; exposure is the held-out run's SPEC 470 counts
+(STA-10). The lifecycle follows the executor's own classification: an
+`engineering_execution` session is a completed, included session, and any other
+retained session is `infrastructure_excluded` with the executor's retained
+reason (CSE-14). Named limitation: the executor retains no structured budget
+stop (a session at its ceiling is an exclusion under MON-8/MON-12), so no row is
+censored under CSE-13 until the runner retains one. A session directory outside
+the ledger, a completed session without held-out evidence, or evidence that
+belongs to another session refuses (STA-3/STA-11/CSE-8).
