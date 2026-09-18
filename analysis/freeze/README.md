@@ -219,3 +219,9 @@ grant. They inherit #578's public-observation and cache source coverage,
 commitments and pending gates. Historical registrations remain unchanged.
 The inherited seed commitments remain unverified without private sources;
 these registrations do not authorize collection or relay-backed confinement.
+
+CSE v25 and pilot v11 supersede v24 and pilot v10 after #590 adds probe-widened
+attestation for interpreter-only session policies and validates existing
+attestations when a batch resumes. The Unix socket probe uses the audited
+netcat executable on macOS. The inherited seed commitments and all pending
+gates remain unchanged; these registrations do not authorize collection.

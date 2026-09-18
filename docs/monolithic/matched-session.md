@@ -95,12 +95,26 @@ the host: a relay on `127.0.0.1:<port>` can coexist with a separate service on
 `[::1]:<port>`. A port number therefore cannot establish exclusive relay
 access. Literal IP endpoint selectors are rejected by the sandbox compiler.
 
-Session-bound audits remain available for `deny-external`. A pinned
-`provider.relay_port` configures a listener but grants no network authority.
-Relay-backed confined sessions remain unavailable until an exclusive transport
-is implemented and validated. This stop condition must not be bypassed with a
-broader policy or a cached attestation. The pilot still requires exact-context
-admission and independent confinement evidence before collection.
+A worker or validator policy admits only an interpreter and cannot run the
+audit's probes. `--widen-probes` audits it under the policy plus exactly those
+probes and the read roots they load from. The attestation binds the session
+profile and records the additions under `probe_widening`; the launch wrapper
+recomputes the audited profile from the session policy and the host's Apple Git.
+`attest-many --policies <dir> [--widen-probes] [--jobs N]` audits each
+`<name>.policy.json` concurrently, serializing policies that share a sentinel
+home. It writes `<name>.attestation.json` beside each policy, validates
+existing attestations before skipping them, and names each policy it cannot
+attest (CON-8). An optional `<name>.sentinels.json` names controller-private
+sentinel homes. The attestation is an unsigned controller-owned document:
+recomputation guards against tool misuse, not against an author who can edit
+that document.
+
+A pinned `provider.relay_port` configures a listener but grants no network
+authority. Relay-backed confined sessions remain unavailable until an
+exclusive transport is implemented and validated. This stop condition must
+not be bypassed with a broader policy or a cached attestation. The pilot
+still requires exact-context admission and independent confinement evidence
+before collection.
 
 Deterministic integration tests run real child processes for both arms through
 an explicitly synthetic pass-through adapter. Those tests cover the process

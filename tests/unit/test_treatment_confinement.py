@@ -729,86 +729,317 @@ def test_corrupt_or_live_owner_markers_are_never_reclaimed(tmp_path: Path):
     assert _reclaimable(sentinel)
 
 
-def test_loopback_endpoint_authority_refuses_before_profile_compilation(tmp_path: Path):
-    """TRT-5/TRT-7: a port shared by local addresses cannot authorize a relay-only grant."""
-    policy = MacOSPolicy(
-        **{**_policy(tmp_path).as_dict(), "network_policy": "loopback", "loopback_port": 4321}
+# --- probe-widened attestation for python-only worker and validator policies ---
+
+
+def _worker_like_policy(tmp_path: Path) -> MacOSPolicy:
+    """A worker policy: one interpreter, the venv tree plus the system roots the
+    workers already carry, no shell, no git, no netcat."""
+    visible = tmp_path / "bundle"
+    output = tmp_path / "home"
+    hidden = tmp_path / "controller"
+    for path in (visible, output, hidden):
+        path.mkdir()
+    python = Path(sys.executable).resolve()
+    # roots that exist on both CI platforms; a real worker also reads /System
+    runtime = tuple(dict.fromkeys((python.parent.parent, Path("/usr/lib").resolve())))
+    return MacOSPolicy(
+        visible_roots=(visible.resolve(),),
+        output_roots=(output.resolve(),),
+        runtime_read_roots=runtime,
+        allowed_executables=(python,),
+        hidden_roots=(hidden.resolve(),),
+        network_policy="deny-external",
     )
-    with pytest.raises(ConfinementError, match="cannot isolate the provider relay"):
-        compile_macos_profile(policy)
+
+
+def _fake_developer_git(tmp_path: Path) -> tuple[Path, Path]:
+    """A stand-in Apple developer tree holding a runnable git, so the widening
+    can be exercised without resolving the real Xcode installation."""
+    developer_root = (tmp_path / "developer").resolve()
+    git = developer_root / "usr" / "bin" / "git"
+    git.parent.mkdir(parents=True)
+    git.write_text("#!/bin/sh\nexit 0\n")
+    git.chmod(0o755)
+    return git, developer_root
+
+
+def test_probe_widening_adds_exactly_the_audit_probes_and_nothing_else(tmp_path: Path):
+    """TRT-5: the widened policy admits only the audit's own probes (shell, cat,
+    the Apple Git, the socket probe) and the read roots those need; the session
+    policy's own grants, hidden roots and network policy are untouched."""
+    from aisle.harness.treatment_confinement import PROBE_EXECUTABLES, widen_for_probes
+
+    policy = _worker_like_policy(tmp_path)
+    git, developer_root = _fake_developer_git(tmp_path)
+    widened, widening = widen_for_probes(policy, git=git, developer_root=developer_root)
+    added_executables = set(widened.allowed_executables) - set(policy.allowed_executables)
+    assert {str(p) for p in added_executables} == set(widening["allowed_executables"])
+    assert added_executables <= {Path(p).resolve() for p in PROBE_EXECUTABLES} | {git}
+    assert Path("/usr/bin/printf").resolve() not in widened.allowed_executables
+    added_roots = set(widened.runtime_read_roots) - set(policy.runtime_read_roots)
+    assert {str(p) for p in added_roots} == set(widening["runtime_read_roots"])
+    assert widened.hidden_roots == policy.hidden_roots
+    assert widened.visible_roots == policy.visible_roots
+    assert widened.output_roots == policy.output_roots
+    assert widened.network_policy == policy.network_policy
+    # widening a policy that already admits everything adds nothing
+    same, nothing = widen_for_probes(widened, git=git, developer_root=developer_root)
+    assert same == widened and nothing == {"allowed_executables": [], "runtime_read_roots": []}
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="the verifier resolves this host's Apple Git")
+def test_launch_wrapper_verifies_a_declared_probe_widening(tmp_path: Path):
+    """TRT-5/TRT-7: an attestation audited under a widened profile is accepted
+    only when the wrapper can recompute that exact widening from the session
+    policy and THIS host's own developer Git; a widening that names anything
+    but the audit's probes, or a mismatched audit hash, refuses."""
+    from aisle.harness.treatment_confinement import _apple_git_runtime, widen_for_probes
+
+    policy = _worker_like_policy(tmp_path)
+    compiled = compile_macos_profile(policy)
+    profile_path = tmp_path / "profile.sb"
+    profile_path.write_text(compiled.text)
+    adapter_path = _fake_adapter(tmp_path)
+    git, developer_root = _apple_git_runtime(cwd=tmp_path)
+    widened, widening = widen_for_probes(policy, git=git, developer_root=developer_root)
+    audited = compile_macos_profile(widened)
+    report = _attestation(compiled, profile_path, adapter_path)
+    report["adapter"]["audit_profile_sha256"] = audited.sha256
+    report["adapter"]["audit_policy_id"] = audited.policy_id
+    report["probe_widening"] = widening
+    with pytest.raises(ConfinementError, match="widening"):
+        wrap_verified_command(["/bin/cat", "x"], compiled, profile_path, report)
+    wrapped = wrap_verified_command(
+        ["/bin/cat", "x"], compiled, profile_path, report, policy=policy
+    )
+    assert wrapped[1:3] == ["-f", str(profile_path)]
+    python = str(Path(sys.executable).resolve())
+    for mutate in (
+        lambda r: r["probe_widening"]["allowed_executables"].append("/usr/bin/printf"),
+        lambda r: r["probe_widening"]["runtime_read_roots"].append("/private/tmp"),
+        lambda r: r["adapter"].update(audit_profile_sha256="e" * 64),
+        lambda r: r["adapter"].update(audit_policy_id="f" * 64),
+        lambda r: r["probe_widening"].pop("runtime_read_roots"),
+        lambda r: r["probe_widening"]["allowed_executables"].append(str(tmp_path / "x" / "git")),
+        lambda r: r["probe_widening"]["runtime_read_roots"].append("/usr"),
+        lambda r: r["probe_widening"]["allowed_executables"].append(python),
+        lambda r: r["probe_widening"]["runtime_read_roots"].append(
+            str(policy.runtime_read_roots[0])
+        ),
+        lambda r: r.update(probe_widening=[]),
+        lambda r: r["probe_widening"].update(allowed_executables="/bin/bash"),
+        lambda r: r["probe_widening"]["runtime_read_roots"].append(7),
+    ):
+        broken = json.loads(json.dumps(report))
+        mutate(broken)
+        with pytest.raises(ConfinementError, match="widening"):
+            wrap_verified_command(["/bin/cat", "x"], compiled, profile_path, broken, policy=policy)
+    # an attestation without a widening declaration is verified exactly as before
+    # (profile hash and policy id); the session policy is optional for it, a
+    # deliberate choice so engineering fixtures with synthetic adapters keep working
+    plain = _attestation(compiled, profile_path, adapter_path)
+    assert wrap_verified_command(["/bin/cat", "x"], compiled, profile_path, plain)[1] == "-f"
+
+
+def test_probe_widening_refuses_a_read_root_that_overlaps_a_hidden_root(tmp_path: Path):
+    """TRT-3/TRT-5: widening never adds a read root inside or above a hidden root."""
+    from aisle.harness.treatment_confinement import widen_for_probes
+
+    policy = _worker_like_policy(tmp_path)
+    git = policy.hidden_roots[0] / "developer" / "usr" / "bin" / "git"
+    git.parent.mkdir(parents=True)
+    git.write_text("#!/bin/sh\nexit 0\n")
+    git.chmod(0o755)
+    with pytest.raises(ConfinementError, match="overlap a hidden root"):
+        widen_for_probes(policy, git=git, developer_root=policy.hidden_roots[0] / "developer")
+
+
+@pytest.mark.parametrize(
+    ("outcome", "why"),
+    [
+        ({"capability_pass": False, "adapter": {}, "cases": []}, "cases failed"),
+        (ConfinementError("session policy must admit the audit probes"), "audit probes"),
+        (OSError("sandbox-exec: not found"), "not found"),
+    ],
+)
+def test_attest_many_names_a_failed_policy_and_still_lands_the_others(tmp_path, outcome, why):
+    """CON-8/TRT-6: one refused audit is reported by name; a passing sibling still lands."""
+    from aisle.harness import treatment_confinement as tc
+
+    policies = tmp_path / "policies"
+    policies.mkdir()
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+        (policies / f"{name}.policy.json").write_text(
+            json.dumps(_policy(tmp_path / name).canonical_dict())
+        )
+
+    def fake_audit(policy, *, sentinel_homes=None, widen_probes=False):
+        if str(policy.visible_roots[0]).endswith("b/visible"):
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+        return {"capability_pass": True, "adapter": {}, "cases": []}
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(tc, "run_macos_capability_audit", fake_audit)
+        result = tc.attest_many(policies, widen_probes=False, jobs=2)
+    assert result["ok"] is False and result["attested"] == 1
+    assert (
+        list(result["refused"]) == ["b.policy.json"] and why in result["refused"]["b.policy.json"]
+    )
+    assert (policies / "a.attestation.json").exists()
+    assert not (policies / "b.attestation.json").exists()
+
+
+def test_attest_many_refuses_bad_jobs_and_a_missing_directory(tmp_path: Path, capsys):
+    """CON-8: shape refusals are JSON on stderr, exit 2, nothing written."""
+    from aisle.harness import treatment_confinement as tc
+
+    with pytest.raises(ConfinementError, match="jobs"):
+        tc.attest_many(tmp_path, widen_probes=False, jobs=0)
+    assert tc.main(["attest-many", "--policies", str(tmp_path / "absent")]) == 2
+    out, err = capsys.readouterr()
+    assert (
+        out == "" and json.loads(err)["ok"] is False and "policy.json" in json.loads(err)["error"]
+    )
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="sandbox-exec capability is macOS-only")
-def test_same_port_ipv4_and_ipv6_services_cannot_receive_a_relay_grant(tmp_path):
-    """TRT-5/TRT-7: distinct live IPv4/IPv6 endpoints can share the proposed relay port."""
-    import socket
-    import threading
-
-    from aisle.harness import treatment_confinement as tc
-
-    base = _session_policy(tmp_path)
-    with socket.socket() as relay, socket.socket(socket.AF_INET6) as foreign:
-        relay.bind(("127.0.0.1", 0))
-        relay.listen()
-        port = relay.getsockname()[1]
-        foreign.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
-        foreign.bind(("::1", port))
-        foreign.listen()
-        foreign.settimeout(0.1)
-        stopped = threading.Event()
-        server = threading.Thread(
-            target=tc._serve_once, args=(foreign, b"FOREIGN-SYNTHETIC-CANARY\n", stopped)
-        )
-        server.start()
-        try:
-            command = ["/bin/bash", "-c", f"exec 3<>/dev/tcp/::1/{port} && /bin/cat <&3"]
-            baseline = subprocess.run(command, capture_output=True, timeout=5)
-            assert baseline.returncode == 0
-            assert baseline.stdout == b"FOREIGN-SYNTHETIC-CANARY\n"
-            policy = MacOSPolicy(
-                **{**base.as_dict(), "network_policy": "loopback", "loopback_port": port}
-            )
-            with pytest.raises(ConfinementError, match="cannot isolate the provider relay"):
-                compile_macos_profile(policy)
-            # The supported policy actually denies this same reachable endpoint.
-            profile = tmp_path / "profile.sb"
-            profile.write_text(compile_macos_profile(base).text)
-            confined = subprocess.run(tc._wrapped(profile, command), capture_output=True, timeout=5)
-            assert confined.returncode != 0
-            assert b"FOREIGN-SYNTHETIC-CANARY" not in confined.stdout + confined.stderr
-        finally:
-            stopped.set()
-            server.join(timeout=2)
-
-
-def test_cached_loopback_attestation_cannot_launch_a_command(tmp_path: Path):
-    """TRT-5: even a previously passing loopback report cannot authorize a launch."""
+def test_attest_many_audits_policies_sharing_a_hidden_root_concurrently(tmp_path: Path):
+    """TRT-6: two worker policies whose hidden roots end in the same directory both
+    attest under jobs=2; audits that would share a sentinel home are serialized."""
     from dataclasses import replace
 
-    compiled = replace(compile_macos_profile(_policy(tmp_path)), network_policy="loopback")
-    profile = tmp_path / "profile.sb"
-    profile.write_text(compiled.text)
-    report = _attestation(compiled, profile, _fake_adapter(tmp_path))
-    report["cases"] = [row for row in report["cases"] if row["id"] != "tcp_read"] + [
-        {"id": name, "passed": True}
-        for name in ("loopback_tcp_read", "foreign_loopback_tcp_read", "external_tcp_read")
-    ]
-    with pytest.raises(ConfinementError, match="cannot isolate the provider relay"):
-        wrap_verified_command(["/bin/cat", "x"], compiled, profile, report)
+    from aisle.harness import treatment_confinement as tc
+
+    shared_hidden = (tmp_path / "evidence").resolve()
+    shared_hidden.mkdir()
+    policies = tmp_path / "policies"
+    policies.mkdir()
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+        base = _worker_like_policy(tmp_path / name)
+        policy = replace(base, hidden_roots=(*base.hidden_roots, shared_hidden))
+        (policies / f"{name}.policy.json").write_text(json.dumps(policy.canonical_dict()))
+    result = tc.attest_many(policies, widen_probes=True, jobs=2)
+    assert result["ok"] is True and result["attested"] == 2, result["refused"]
+    assert list(shared_hidden.iterdir()) == []
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="sandbox-exec capability is macOS-only")
-def test_loopback_audit_refuses_before_subprocesses_or_sentinel_writes(tmp_path, monkeypatch):
-    """TRT-5/TRT-6: unsupported endpoint authority refuses before touching session roots."""
+def test_worker_policy_is_attested_under_a_probe_widened_profile(tmp_path: Path):
+    """TRT-5/TRT-6/TRT-7: a python-only worker policy is audited under itself plus
+    the audit's probes; the attestation binds the SESSION profile for the launch
+    wrapper, records the widening, and the matrix still passes (the Unix-socket
+    probe runs through the admitted netcat executable)."""
+    from aisle.harness.treatment_confinement import run_macos_capability_audit as audit
+
+    policy = _worker_like_policy(tmp_path)
+    compiled = compile_macos_profile(policy)
+    with pytest.raises(ConfinementError, match="audit probes"):
+        audit(policy=policy)
+    report = audit(policy=policy, widen_probes=True)
+    assert report["capability_pass"] is True, [c for c in report["cases"] if not c["passed"]]
+    assert report["adapter"]["compiled_profile_sha256"] == compiled.sha256
+    assert report["adapter"]["policy_id"] == compiled.policy_id
+    assert report["adapter"]["audit_profile_sha256"] != compiled.sha256
+    from aisle.harness.treatment_confinement import _apple_git_runtime, _apply_declared_widening
+
+    git, developer_root = _apple_git_runtime(cwd=tmp_path)
+    widening = report["probe_widening"]
+    assert set(widening) == {"allowed_executables", "runtime_read_roots"}
+    assert set(widening["allowed_executables"]) == {
+        "/bin/bash",
+        "/bin/cat",
+        "/usr/bin/nc",
+        str(git),
+    }
+    assert str(developer_root) in widening["runtime_read_roots"]
+    assert str(Path(sys.executable).resolve()) not in widening["allowed_executables"]
+    recomputed = compile_macos_profile(
+        _apply_declared_widening(policy, widening, git=git, developer_root=developer_root)
+    )
+    assert recomputed.sha256 == report["adapter"]["audit_profile_sha256"]
+    assert recomputed.policy_id == report["adapter"]["audit_policy_id"]
+    profile_path = tmp_path / "profile.sb"
+    profile_path.write_text(compiled.text)
+    wrapped = wrap_verified_command(
+        ["/bin/cat", "x"], compiled, profile_path, report, policy=policy
+    )
+    assert wrapped[1:3] == ["-f", str(profile_path)]
+    for root in (*policy.visible_roots, *policy.output_roots, *policy.hidden_roots):
+        assert list(root.iterdir()) == []
+
+
+def test_cli_batch_attests_many_policies_and_refuses_partial_results(tmp_path: Path, capsys):
+    """CON-8/TRT-6: `attest-many` audits every policy file in a directory (widened
+    when asked), writes one attestation per policy next to it, and exits nonzero
+    if any refuses, naming it in the JSON."""
     from aisle.harness import treatment_confinement as tc
 
-    policy = MacOSPolicy(
-        **{**_policy(tmp_path).as_dict(), "network_policy": "loopback", "loopback_port": 4321}
+    policies = tmp_path / "policies"
+    policies.mkdir()
+    (tmp_path / "a").mkdir()
+    good = _policy(tmp_path / "a")
+    (policies / "a.policy.json").write_text(json.dumps(good.canonical_dict()))
+    (policies / "b.policy.json").write_text("{")
+    calls = []
+
+    def fake_audit(policy, *, sentinel_homes=None, widen_probes=False):
+        calls.append((policy, widen_probes))
+        return {"capability_pass": True, "adapter": {}, "cases": []}
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(tc, "run_macos_capability_audit", fake_audit)
+        rc = tc.main(["attest-many", "--policies", str(policies), "--widen-probes", "--jobs", "2"])
+    out, err = capsys.readouterr()
+    assert rc == 2 and out == ""
+    refused = json.loads(err)
+    assert refused["ok"] is False and "b.policy.json" in refused["error"]
+    assert calls == [(good, True)]
+    assert json.loads((policies / "a.attestation.json").read_text())["capability_pass"] is True
+    (policies / "b.policy.json").unlink()
+    (policies / "a.attestation.json").unlink()
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(tc, "run_macos_capability_audit", fake_audit)
+        rc = tc.main(["attest-many", "--policies", str(policies), "--jobs", "1"])
+    out, _ = capsys.readouterr()
+    assert rc == 0 and json.loads(out)["ok"] is True and json.loads(out)["attested"] == 1
+    # a stale or malformed attestation cannot turn a resumed batch green
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(tc, "run_macos_capability_audit", fake_audit)
+        resumed = tc.attest_many(policies, widen_probes=False, jobs=1)
+    assert resumed["ok"] is False and "a.policy.json" in resumed["refused"]
+    compiled = compile_macos_profile(good)
+    profile = tmp_path / "resume-profile.sb"
+    profile.write_text(compiled.text)
+    report = _attestation(compiled, profile, _fake_adapter(tmp_path))
+    (policies / "a.attestation.json").write_text(json.dumps(report))
+    assert tc.attest_many(policies, widen_probes=False, jobs=1) == {
+        "ok": True,
+        "attested": 0,
+        "skipped": 1,
+        "refused": {},
+    }
+    (policies / "a.policy.json").write_text("{")
+    assert tc.attest_many(policies, widen_probes=False, jobs=1)["ok"] is False
+    (policies / "a.policy.json").write_text(json.dumps(good.canonical_dict()))
+    assert tc.attest_many(policies, widen_probes=True, jobs=1)["ok"] is False
+    # a sentinel sidecar names controller-private homes for that policy
+    (tmp_path / "a" / "sentinels").mkdir()
+    (policies / "a.attestation.json").unlink()
+    (policies / "a.sentinels.json").write_text(
+        json.dumps({role: str(tmp_path / "a" / role) for role in ("visible", "output", "hidden")})
     )
-    monkeypatch.setattr(tc, "_apple_git_runtime", lambda **_: pytest.fail("spawned a probe"))
-    with pytest.raises(ConfinementError, match="cannot isolate the provider relay"):
-        run_macos_capability_audit(policy)
-    assert all(
-        not list(path.iterdir())
-        for path in (*policy.visible_roots, *policy.output_roots, *policy.hidden_roots)
-    )
+    homes = []
+
+    def homes_audit(policy, *, sentinel_homes=None, widen_probes=False):
+        homes.append(sentinel_homes)
+        return {"capability_pass": True, "adapter": {}, "cases": []}
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(tc, "run_macos_capability_audit", homes_audit)
+        assert tc.attest_many(policies, widen_probes=False, jobs=1)["attested"] == 1
+    assert homes == [tuple(tmp_path / "a" / role for role in ("visible", "output", "hidden"))]

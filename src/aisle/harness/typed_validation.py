@@ -335,7 +335,9 @@ def run_validation(
         retained_profile = output / "profile.sb"
         with retained_profile.open("xb") as stream:
             stream.write(Path(profile_path).read_bytes())
-        wrapped = wrap_verified_command(command, compiled, retained_profile, attestation)
+        wrapped = wrap_verified_command(
+            command, compiled, retained_profile, attestation, policy=policy
+        )
         _json(output / "runtime.json", runtime_record)
         _json(output / "bundle.json", bundle_manifest)
         _json(output / "snapshot.json", snapshot_record)
@@ -364,7 +366,9 @@ def run_validation(
         )
         if hashlib.sha256(python.read_bytes()).hexdigest() != python_sha256:
             raise ValidationError("validation interpreter drifted before launch")
-        wrapped = wrap_verified_command(command, compiled, retained_profile, attestation)
+        wrapped = wrap_verified_command(
+            command, compiled, retained_profile, attestation, policy=policy
+        )
         remaining = timeout_s - (time.monotonic() - started)
         if remaining <= 0:
             raise ValidationError("validation wall budget exhausted before launch")
@@ -485,5 +489,6 @@ def _verify_validation_binding_fields(binding, runtime_record, source_roots, par
         compiled,
         Path(binding["profile_path"]),
         binding["attestation"],
+        policy=policy,
     )
     return kwargs

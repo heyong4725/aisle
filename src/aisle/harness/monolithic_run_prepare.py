@@ -89,6 +89,7 @@ def prepare_monolithic_run(
         compiled,
         launch["profile_path"],
         launch["attestation"],
+        policy=policy,
     )
     config = {
         "schema_version": "aisle.monolith.worker-config.v1",

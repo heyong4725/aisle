@@ -32,6 +32,9 @@ report says whether the synthetic or a session policy was audited, and the
 report's hidden roots are digests, not paths. Only `deny-external` is supported.
 The proposed `loopback` grant is refused because a port pin cannot isolate
 one service across the host's IPv4 and IPv6 addresses. Previously passing
-loopback attestations cannot authorize a launch. This change preserves
-session-bound audit support but does not enable relay-backed confined sessions.
-See `docs/monolithic/matched-session.md`.
+loopback attestations cannot authorize a launch. `--widen-probes` attests an
+interpreter-only policy under itself plus the audit's own probes; the record
+then carries `audit_profile_sha256`/`audit_policy_id` beside the session's
+`compiled_profile_sha256`/`policy_id` and a `probe_widening` declaration.
+`attest-many` audits a directory of policies concurrently. See
+`docs/monolithic/matched-session.md`.
