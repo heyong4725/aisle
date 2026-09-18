@@ -15,13 +15,13 @@ from pathlib import Path
 
 from aisle.harness.treatment_ambient import verify_declared_environment
 from aisle.harness.treatment_confinement import (
-    _REQUIRED_CASE_IDS,
     EVIDENCE_CLASS,
     SANDBOX_EXEC,
     SCHEMA_VERSION,
     SYSTEM_PROFILE,
     _apple_git_runtime,
     compile_macos_profile,
+    required_case_ids,
 )
 from aisle.harness.typed_snapshot import _read
 from aisle.harness.worker_authority_probe import operation_case, operation_command
@@ -278,8 +278,8 @@ def audit_worker_capability(
         report["capability_pass"] = (
             report["error"] is None
             and not report["cleanup_errors"]
-            and len(report["cases"]) == len(_REQUIRED_CASE_IDS)
-            and {row["id"] for row in report["cases"]} == _REQUIRED_CASE_IDS
+            and len(report["cases"]) == len(required_case_ids("deny-external"))
+            and {row["id"] for row in report["cases"]} == required_case_ids("deny-external")
             and all(row["passed"] for row in (*report["cases"], *report["controls"]))
         )
         (output / "report.json").write_text(json.dumps(report, allow_nan=False))

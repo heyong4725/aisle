@@ -212,3 +212,10 @@ including the failed BND audit. Pilot v8 remains the historical fresh-seed
 registration; pilot v9 inherits its commitment unverified and does not
 authorize collection. A pilot run needs a fresh-seed run registration and
 execution-context admission for the revised graphs and cache.
+
+CSE v24 and pilot v10 supersede v23 and pilot v9 after #589 adds
+session-bound capability audits and refuses the unsupported loopback endpoint
+grant. They inherit #578's public-observation and cache source coverage,
+commitments and pending gates. Historical registrations remain unchanged.
+The inherited seed commitments remain unverified without private sources;
+these registrations do not authorize collection or relay-backed confinement.

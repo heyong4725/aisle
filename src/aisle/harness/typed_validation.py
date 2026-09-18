@@ -449,12 +449,7 @@ def _verify_validation_binding_fields(binding, runtime_record, source_roots, par
         raise ValidationError("validation binding fields are unresolved")
     if binding["schema_version"] != "aisle.typed-validation-binding.v1":
         raise ValidationError("validation binding schema is unsupported")
-    policy = MacOSPolicy(
-        **{
-            key: value if key == "network_policy" else tuple(Path(p) for p in value)
-            for key, value in binding["policy"].items()
-        }
-    )
+    policy = MacOSPolicy.from_canonical(binding["policy"])
     kwargs = {key: value for key, value in binding.items() if key != "schema_version"}
     kwargs["policy"] = policy
     kwargs["runtime_record"] = runtime_record

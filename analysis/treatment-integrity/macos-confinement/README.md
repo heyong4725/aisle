@@ -23,3 +23,15 @@ adapter hash, imported `system.sb` hash, compiled-profile hash, and policy id.
 Temporary synthetic hidden bytes and the compiled profile are removed after the
 audit; only their hashes, exposure booleans, and role-scoped policy metadata are
 retained.
+
+Since the session-bound attestation (2026-09-14), `audit-macos --policy
+<policy.json>` runs the same matrix under a session's exact policy
+(`MacOSPolicy.canonical_dict` JSON) so the retained record's profile hash and
+policy id are the ones `wrap_verified_command` demands; `policy_source` in the
+report says whether the synthetic or a session policy was audited, and the
+report's hidden roots are digests, not paths. Only `deny-external` is supported.
+The proposed `loopback` grant is refused because a port pin cannot isolate
+one service across the host's IPv4 and IPv6 addresses. Previously passing
+loopback attestations cannot authorize a launch. This change preserves
+session-bound audit support but does not enable relay-backed confined sessions.
+See `docs/monolithic/matched-session.md`.

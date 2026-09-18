@@ -33,12 +33,7 @@ def prepare_monolithic_run(
     if launch["runtime_record"] != runtime or launch["attestation"]["adapter"]["sha256"] != adapter:
         raise ValueError("worker declaration differs from admitted runtime or adapter")
     bundle, output = Path(launch["bundle"]).absolute(), Path(output).absolute()
-    policy = MacOSPolicy(
-        **{
-            key: value if key == "network_policy" else tuple(Path(p) for p in value)
-            for key, value in launch["policy"].items()
-        }
-    )
+    policy = MacOSPolicy.from_canonical(launch["policy"])
     protected = [
         Path(controller_root),
         *(Path(p) for p in views.values()),

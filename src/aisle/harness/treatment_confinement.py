@@ -9,11 +9,13 @@ separate treatment-integrity gates.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
 import platform
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -29,29 +31,66 @@ EVIDENCE_CLASS = "synthetic_unscored_capability"
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 SYSTEM_PROFILE = Path("/System/Library/Sandbox/Profiles/system.sb")
 _HASH_LENGTH = 64
-_REQUIRED_CASE_IDS = {
-    "absolute_hidden_read",
-    "alternate_worktree_hidden_read",
-    "declared_output_write",
-    "git_object_hidden_read",
-    "hidden_write",
-    "parent_traversal_hidden_read",
-    "subprocess_hidden_read",
-    "subprocess_visible_read",
-    "symlink_hidden_read",
-    "unrestricted_alternate_worktree_baseline",
-    "unrestricted_git_object_baseline",
-    "unrestricted_hidden_baseline",
-    "visible_git_object_read",
-    "visible_read",
-    "unrestricted_tcp_baseline",
-    "tcp_read",
-    "unrestricted_unix_socket_baseline",
-    "unix_socket_network_control",
-    "unix_socket_read",
-    "unrestricted_exec_baseline",
-    "unlisted_executable",
-}
+#: Only deny-external can currently enforce the declared endpoint authority.
+NETWORK_POLICIES = ("deny-external",)
+_LOOPBACK_REFUSAL = (
+    "loopback port policy cannot isolate the provider relay: macOS localhost "
+    "covers multiple local addresses; use deny-external until an exclusive "
+    "relay transport is implemented"
+)
+#: the preferred Unix-socket probe; an admitted Python interpreter is the fallback
+_NETCAT = "/usr/bin/nc"
+_PYTHON_SOCKET_CLIENT = (
+    "import socket,sys\n"
+    "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)\n"
+    "s.settimeout(2)\n"
+    "s.connect(sys.argv[1])\n"
+    "sys.stdout.buffer.write(s.recv(4096))\n"
+)
+_SENTINEL_DIR = ".aisle-capability"
+_BASE_CASE_IDS = frozenset(
+    {
+        "absolute_hidden_read",
+        "alternate_worktree_hidden_read",
+        "declared_output_write",
+        "git_object_hidden_read",
+        "hidden_write",
+        "parent_traversal_hidden_read",
+        "subprocess_hidden_read",
+        "subprocess_visible_read",
+        "symlink_hidden_read",
+        "unrestricted_alternate_worktree_baseline",
+        "unrestricted_git_object_baseline",
+        "unrestricted_hidden_baseline",
+        "visible_git_object_read",
+        "visible_read",
+        "unrestricted_tcp_baseline",
+        "unrestricted_unix_socket_baseline",
+        "unix_socket_network_control",
+        "unix_socket_read",
+        "unrestricted_exec_baseline",
+        "unlisted_executable",
+    }
+)
+
+
+def _require_network_policy(network_policy: str) -> None:
+    if network_policy == "loopback":
+        raise ConfinementError(_LOOPBACK_REFUSAL)
+    if network_policy not in NETWORK_POLICIES:
+        raise ConfinementError(f"unknown network policy: {network_policy}")
+
+
+def required_case_ids(network_policy: str) -> frozenset[str]:
+    """The case matrix for a supported, enforceable network policy."""
+    _require_network_policy(network_policy)
+    return _BASE_CASE_IDS | {"tcp_read"}
+
+
+def verify_relay_port(policy: Any, provider: Any) -> None:
+    """Refuse the unsupported loopback authority at provider admission (TRT-5)."""
+    if type(policy) is dict and policy.get("network_policy") == "loopback":
+        raise ValueError(_LOOPBACK_REFUSAL)
 
 
 class ConfinementError(RuntimeError):
@@ -68,10 +107,14 @@ class MacOSPolicy:
     allowed_executables: tuple[Path, ...]
     hidden_roots: tuple[Path, ...]
     network_policy: str
+    #: Retained for parsing old declarations; loopback authority is refused.
+    loopback_port: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        """Return constructor-compatible fields for tests and policy transforms."""
-        return {
+        """Return constructor-compatible fields for tests and policy transforms.
+        The port appears only when pinned, so every existing consumer of the
+        root/network fields sees exactly the shape it always did."""
+        fields = {
             "visible_roots": self.visible_roots,
             "output_roots": self.output_roots,
             "runtime_read_roots": self.runtime_read_roots,
@@ -79,9 +122,14 @@ class MacOSPolicy:
             "hidden_roots": self.hidden_roots,
             "network_policy": self.network_policy,
         }
+        if self.loopback_port is not None:
+            fields["loopback_port"] = self.loopback_port
+        return fields
 
     def canonical_dict(self) -> dict[str, Any]:
-        return {
+        """The identity form; the port appears only when a policy pins one, so a
+        deny-external policy keeps the identity it always had."""
+        canonical = {
             "allowed_executables": [str(path) for path in self.allowed_executables],
             "hidden_roots": [str(path) for path in self.hidden_roots],
             "network_policy": self.network_policy,
@@ -89,6 +137,44 @@ class MacOSPolicy:
             "runtime_read_roots": [str(path) for path in self.runtime_read_roots],
             "visible_roots": [str(path) for path in self.visible_roots],
         }
+        if self.loopback_port is not None:
+            canonical["loopback_port"] = self.loopback_port
+        return canonical
+
+    @classmethod
+    def from_canonical(cls, declared: Any) -> MacOSPolicy:
+        """Rebuild a policy from its canonical form; anything mis-shaped refuses."""
+        fields = set(_CANONICAL_ROOT_FIELDS) | {"network_policy"}
+        if (
+            type(declared) is not dict
+            or not fields <= set(declared)
+            or not set(declared) <= fields | {"loopback_port"}
+        ):
+            raise ConfinementError("policy must carry exactly the MacOSPolicy fields")
+        port = declared.get("loopback_port")
+        if (
+            type(declared["network_policy"]) is not str
+            or (port is not None and (type(port) is not int or isinstance(port, bool)))
+            or any(
+                not isinstance(declared[k], list) or any(type(p) is not str for p in declared[k])
+                for k in _CANONICAL_ROOT_FIELDS
+            )
+        ):
+            raise ConfinementError("policy fields must be lists of paths and a network policy")
+        return cls(
+            **{key: tuple(Path(p) for p in declared[key]) for key in _CANONICAL_ROOT_FIELDS},
+            network_policy=declared["network_policy"],
+            loopback_port=port,
+        )
+
+
+_CANONICAL_ROOT_FIELDS = (
+    "visible_roots",
+    "output_roots",
+    "runtime_read_roots",
+    "allowed_executables",
+    "hidden_roots",
+)
 
 
 @dataclass(frozen=True)
@@ -96,6 +182,7 @@ class CompiledProfile:
     text: str
     sha256: str
     policy_id: str
+    network_policy: str
 
 
 def _canonical_bytes(value: Any) -> bytes:
@@ -122,6 +209,10 @@ def _validate_roots(name: str, roots: tuple[Path, ...]) -> None:
     for path in roots:
         if not path.is_absolute():
             raise ConfinementError(f"{name} contains a relative path: {path}")
+        if not str(path).isascii() or not str(path).isprintable():
+            # SBPL literals are JSON-escaped; a non-ASCII name would compile
+            # to a different string than the directory it must guard.
+            raise ConfinementError(f"{name} contains a non-ASCII or unprintable path: {path}")
         if path == Path("/"):
             raise ConfinementError(f"{name} cannot authorize the filesystem root")
         if not path.exists():
@@ -139,8 +230,9 @@ def _contains(parent: Path, child: Path) -> bool:
 
 
 def _validate_policy(policy: MacOSPolicy) -> None:
-    if policy.network_policy != "deny-external":
-        raise ConfinementError("macOS capability audit requires deny-external network policy")
+    _require_network_policy(policy.network_policy)
+    if policy.loopback_port is not None:
+        raise ConfinementError("deny-external network policy cannot carry a relay port")
     for name in (
         "visible_roots",
         "output_roots",
@@ -189,12 +281,14 @@ def compile_macos_profile(policy: MacOSPolicy) -> CompiledProfile:
     )
     lines.extend([")", "(allow file-write*"])
     lines.extend(f"  (subpath {_sbpl_path(path)})" for path in policy.output_roots)
-    lines.extend([")", "(allow signal (target self))", ""])
+    lines.extend([")", "(allow signal (target self))"])
+    lines.append("")
     text = "\n".join(lines)
     return CompiledProfile(
         text=text,
         sha256=_sha256_bytes(text.encode()),
         policy_id=_sha256_bytes(_canonical_bytes(policy.canonical_dict())),
+        network_policy=policy.network_policy,
     )
 
 
@@ -336,6 +430,17 @@ def _platform_record() -> dict[str, str]:
     }
 
 
+def _serve_once(listener: socket.socket, payload: bytes, stopped: threading.Event) -> None:
+    while not stopped.is_set():
+        try:
+            connection, _ = listener.accept()
+        except TimeoutError:
+            continue
+        with connection:
+            connection.settimeout(1)
+            connection.sendall(payload)
+
+
 def _socket_capability_cases(profile_path: Path, cwd: Path, sentinel: bytes) -> list[dict]:
     """Exercise the same loopback read outside and inside the external profile."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
@@ -375,33 +480,35 @@ def _socket_capability_cases(profile_path: Path, cwd: Path, sentinel: bytes) -> 
         ]
 
 
-def _unix_socket_capability_cases(profile_path: Path, cwd: Path, sentinel: bytes) -> list[dict]:
-    """Distinguish local socket denial from executable or filesystem failure."""
-    endpoint = cwd / "fixture.sock"
+def _unix_socket_capability_cases(
+    profile_path: Path, cwd: Path, sentinel: bytes, client: list[str]
+) -> list[dict]:
+    """Distinguish local socket denial from executable or filesystem failure.
+
+    `client` is the admitted argv prefix that connects to a Unix socket path
+    and prints what it reads (nc, or an admitted Python interpreter)."""
+    # A session root may exceed macOS sockaddr_un.sun_path; the endpoint lives
+    # in a short controller-private directory outside every agent-readable root,
+    # which changes nothing about the deny (network) or control (allow) cases.
     control_path = profile_path.with_name("unix-network-control.sb")
     control_text = profile_path.read_text() + (
         "\n(allow network* (local unix-socket) (remote unix-socket))\n"
     )
     control_path.write_text(control_text)
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+    with (
+        tempfile.TemporaryDirectory(prefix="aisle-sock-", dir="/private/tmp") as socket_root,
+        socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener,
+    ):
+        endpoint = Path(socket_root) / "fixture.sock"
         listener.bind(str(endpoint))
         listener.listen()
         listener.settimeout(0.1)
         stopped = threading.Event()
-
-        def serve():
-            while not stopped.is_set():
-                try:
-                    connection, _ = listener.accept()
-                except TimeoutError:
-                    continue
-                with connection:
-                    connection.settimeout(1)
-                    connection.sendall(sentinel)
-
-        server = threading.Thread(target=serve, daemon=True)
+        server = threading.Thread(
+            target=_serve_once, args=(listener, sentinel, stopped), daemon=True
+        )
         server.start()
-        command = ["/usr/bin/nc", "-w", "2", "-U", str(endpoint)]
+        command = [*client, str(endpoint)]
         try:
             baseline = _run(command, cwd=cwd)
             confined = _run(_wrapped(profile_path, command), cwd=cwd)
@@ -425,8 +532,235 @@ def _unix_socket_capability_cases(profile_path: Path, cwd: Path, sentinel: bytes
         ]
 
 
-def run_macos_capability_audit() -> dict[str, Any]:
-    """Run the synthetic deny/allow matrix through the external adapter."""
+def _synthetic_policy(
+    visible: Path, output: Path, hidden: Path, git: Path, developer_root: Path
+) -> MacOSPolicy:
+    """The fixed policy of the synthetic (session-less) audit."""
+    return MacOSPolicy(
+        visible_roots=(visible,),
+        output_roots=(output,),
+        runtime_read_roots=(
+            Path("/Library/Apple").resolve(),
+            Path("/System").resolve(),
+            Path("/bin").resolve(),
+            Path("/usr/bin").resolve(),
+            Path("/usr/lib").resolve(),
+            Path("/usr/share").resolve(),
+            developer_root,
+        ),
+        allowed_executables=(
+            Path("/bin/bash").resolve(),
+            Path("/bin/cat").resolve(),
+            Path("/usr/bin/nc").resolve(),
+            git,
+        ),
+        hidden_roots=(hidden,),
+        network_policy="deny-external",
+    )
+
+
+def _socket_client(policy: MacOSPolicy) -> list[str]:
+    """The Unix-socket probe the policy already admits: `nc` when present,
+    otherwise an admitted Python interpreter. The audit never widens the arm's
+    executable grants for its own probes."""
+    netcat = Path(_NETCAT).resolve()
+    if netcat in policy.allowed_executables:
+        return [str(netcat), "-w", "2", "-U"]
+    for path in policy.allowed_executables:
+        if path.name.startswith("python"):
+            return [str(path), "-I", "-c", _PYTHON_SOCKET_CLIENT]
+    raise ConfinementError(
+        "session policy must admit a Unix-socket probe (/usr/bin/nc or a python interpreter)"
+    )
+
+
+def _check_session_policy(policy: MacOSPolicy, git: Path) -> list[str]:
+    """A session policy can only be attested if the audit's own probes are
+    admitted executables and its unlisted-executable control is not; returns
+    the admitted Unix-socket probe argv."""
+    _validate_policy(policy)
+    probes = {Path(p).resolve() for p in ("/bin/bash", "/bin/cat")} | {git}
+    missing = sorted(str(p) for p in probes - set(policy.allowed_executables))
+    if missing:
+        raise ConfinementError("session policy must admit the audit probes: " + ", ".join(missing))
+    control = Path("/usr/bin/printf").resolve()
+    if control in policy.allowed_executables:
+        raise ConfinementError(f"session policy admits the unlisted-executable control {control}")
+    return _socket_client(policy)
+
+
+def _last_directory(name: str, roots: tuple[Path, ...]) -> Path:
+    for root in reversed(roots):
+        if root.is_dir() and not root.is_symlink():
+            return root
+    raise ConfinementError(f"{name} holds no directory for a sentinel")
+
+
+def _sentinel_homes(
+    policy: MacOSPolicy, requested: tuple[Path, Path, Path] | None
+) -> tuple[Path, Path, Path]:
+    """Where the three sentinels go: the caller's directories (each inside a
+    root of the matching kind) or, by default, the last directory of each root
+    list. A live session's caller names controller-private homes so the audit
+    never writes into another arm's readable view."""
+    kinds = (
+        ("visible_roots", policy.visible_roots),
+        ("output_roots", policy.output_roots),
+        ("hidden_roots", policy.hidden_roots),
+    )
+    if requested is None:
+        return tuple(_last_directory(name, roots) for name, roots in kinds)
+    homes = []
+    for (name, roots), home in zip(kinds, requested, strict=True):
+        home = Path(home)
+        if (
+            not home.is_absolute()
+            or home.resolve() != home
+            or not home.is_dir()
+            or not any(_contains(root, home) for root in roots if root.is_dir())
+        ):
+            raise ConfinementError(f"sentinel home must be a canonical directory inside {name}")
+        homes.append(home)
+    return tuple(homes)
+
+
+def _place_sentinels(
+    policy: MacOSPolicy,
+    cleanup: contextlib.ExitStack,
+    homes: tuple[Path, Path, Path] | None = None,
+) -> tuple[Path, ...]:
+    """Fresh sentinel directories inside the session's own visible, output and
+    hidden roots. Each directory is registered for removal the moment it
+    exists, so a later failure never leaves one behind; anything already at a
+    sentinel path (file, directory or symlink) refuses."""
+    homes = _sentinel_homes(policy, homes)
+    sentinels = []
+    for home in homes:
+        path = home / _SENTINEL_DIR
+        if path.is_dir() and not path.is_symlink() and _reclaimable(path):
+            # residue of an audit that died uncleanly (SIGKILL): reclaim it
+            _remove_sentinel(path)
+        try:
+            path.mkdir()
+        except FileExistsError as exc:
+            raise ConfinementError(f"sentinel path already exists: {path}") from exc
+        except OSError as exc:
+            raise ConfinementError(f"sentinel path could not be created: {path}: {exc}") from exc
+        cleanup.callback(_remove_sentinel, path)
+        sentinels.append(path)
+        _owner_marker(path).write_text(
+            json.dumps({"schema_version": "aisle.sentinel-owner.v1", "pid": os.getpid()})
+        )
+    return tuple(sentinels)
+
+
+def _redacted_policy(policy: MacOSPolicy) -> dict[str, Any]:
+    """The attested policy with hidden roots replaced by their digests: the
+    report is retained beside session evidence and must not name the private
+    roots it protects. `policy_id` still binds the full canonical form."""
+    canonical = policy.canonical_dict()
+    canonical["hidden_roots"] = [
+        "sha256:" + _sha256_bytes(path.encode()) for path in canonical["hidden_roots"]
+    ]
+    canonical["hidden_roots_redacted"] = True
+    return canonical
+
+
+def _owner_marker(path: Path) -> Path:
+    return path / ".owner.json"
+
+
+def _reclaimable(path: Path) -> bool:
+    """A leftover sentinel from an audit process that no longer exists (a
+    SIGKILL mid-run) may be reclaimed; anything else refuses."""
+    marker_path = _owner_marker(path)
+    if marker_path.is_symlink() or not marker_path.is_file():
+        return False
+    try:
+        marker = json.loads(marker_path.read_bytes())
+        pid = marker["pid"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return False  # a corrupt or unreadable marker never authorizes removal
+    if (
+        type(pid) is not int
+        or isinstance(pid, bool)
+        or marker.get("schema_version") != "aisle.sentinel-owner.v1"
+    ):
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True  # the owner is gone
+    except OSError:
+        return False  # alive but not ours (EPERM) or undecidable
+    return False
+
+
+def _remove_sentinel(path: Path) -> None:
+    failures: list[str] = []
+
+    def record(_function, failed_path, exc_info):
+        failures.append(f"{failed_path}: {exc_info[1]}")
+
+    # onerror also works on the project's supported Python 3.11 runtime.
+    shutil.rmtree(path, onerror=record)
+    if path.exists() or path.is_symlink():
+        detail = f" ({failures[0]})" if failures else ""
+        raise ConfinementError(f"sentinel path could not be removed: {path}{detail}")
+
+
+def _fixture_roots(
+    policy: MacOSPolicy | None,
+    sentinel_homes: tuple[Path, Path, Path] | None,
+    root: Path,
+    git: Path,
+    developer_root: Path,
+    cleanup: contextlib.ExitStack,
+) -> tuple[MacOSPolicy, str, list[str], Path, Path, Path]:
+    """The audited policy and the three fixture directories: a synthetic policy
+    over fresh temporary roots, or the session policy with sentinels placed in
+    its own roots and registered for removal."""
+    if policy is None:
+        visible, output, hidden = root / "visible", root / "output", root / "hidden"
+        for path in (visible, output, hidden):
+            path.mkdir()
+        policy = _synthetic_policy(visible, output, hidden, git, developer_root)
+        return policy, "synthetic", _socket_client(policy), visible, output, hidden
+    client = _check_session_policy(policy, git)
+    visible, output, hidden = _place_sentinels(policy, cleanup, sentinel_homes)
+    return policy, "session", client, visible, output, hidden
+
+
+def _place_hidden_link(
+    visible: Path, hidden: Path, root: Path, source: str, hidden_sentinel: bytes
+) -> None:
+    """The symlink case proves following a link out of the visible root is
+    refused. Under a session policy the link targets a hidden directory of the
+    controller's private temporary tree, never the session's own hidden root: a
+    link is readable text, and its target would otherwise disclose that root's
+    path to the arm (the arm's real hidden root is still covered by the
+    absolute and parent-traversal cases)."""
+    link_target = hidden if source == "synthetic" else root / "hidden-target"
+    if source == "session":
+        link_target.mkdir()
+        (link_target / "secret.txt").write_bytes(hidden_sentinel)
+    (visible / "hidden-link").symlink_to(link_target, target_is_directory=True)
+
+
+def run_macos_capability_audit(
+    policy: MacOSPolicy | None = None,
+    *,
+    sentinel_homes: tuple[Path, Path, Path] | None = None,
+) -> dict[str, Any]:
+    """Run the synthetic deny/allow matrix through the external adapter.
+
+    Without a policy the audit runs its fixed synthetic policy in a private
+    temporary tree. With a session policy it runs the same matrix under that
+    exact policy, placing its sentinels inside the session's own roots (the
+    caller's `sentinel_homes`, or the last directory of each root list) and
+    removing them afterwards, so the retained attestation carries the profile
+    hash and policy id the launch wrapper will demand (TRT-5/TRT-7).
+    """
     if sys.platform != "darwin":
         raise ConfinementError(
             "macOS confinement capability requires macOS; no simulation accepted"
@@ -436,25 +770,32 @@ def run_macos_capability_audit() -> dict[str, Any]:
     if not SYSTEM_PROFILE.is_file():
         raise ConfinementError(f"required imported profile is unavailable: {SYSTEM_PROFILE}")
 
+    # Cheap shape checks first: no subprocess is spawned for a malformed call.
+    if policy is None and sentinel_homes is not None:
+        raise ConfinementError("sentinel homes require a session policy")
+    if policy is not None:
+        _validate_policy(policy)
+
     # Keep the Unix socket pathname below macOS sockaddr_un.sun_path limits.
-    with tempfile.TemporaryDirectory(
-        prefix="aisle-confinement-capability-", dir="/private/tmp"
-    ) as temporary:
+    with (
+        tempfile.TemporaryDirectory(
+            prefix="aisle-confinement-capability-", dir="/private/tmp"
+        ) as temporary,
+        contextlib.ExitStack() as cleanup,
+    ):
         root = Path(temporary).resolve()
-        visible = root / "visible"
-        output = root / "output"
-        hidden = root / "hidden"
-        for path in (visible, output, hidden):
-            path.mkdir()
+        git, developer_root = _apple_git_runtime(cwd=root)
+        policy, source, client, visible, output, hidden = _fixture_roots(
+            policy, sentinel_homes, root, git, developer_root, cleanup
+        )
         visible_sentinel = b"VISIBLE-SYNTHETIC-CAPABILITY\n"
         hidden_sentinel = b"HIDDEN-SYNTHETIC-CAPABILITY-7E4E\n"
         visible_file = visible / "allowed.txt"
         hidden_file = hidden / "secret.txt"
         visible_file.write_bytes(visible_sentinel)
         hidden_file.write_bytes(hidden_sentinel)
-        (visible / "hidden-link").symlink_to(hidden, target_is_directory=True)
+        _place_hidden_link(visible, hidden, root, source, hidden_sentinel)
 
-        git, developer_root = _apple_git_runtime(cwd=root)
         isolated_home = visible / "isolated-home"
         isolated_home.mkdir()
         git_environment = {
@@ -494,27 +835,6 @@ def run_macos_capability_audit() -> dict[str, Any]:
             env=git_environment,
         )
 
-        policy = MacOSPolicy(
-            visible_roots=(visible,),
-            output_roots=(output,),
-            runtime_read_roots=(
-                Path("/Library/Apple").resolve(),
-                Path("/System").resolve(),
-                Path("/bin").resolve(),
-                Path("/usr/bin").resolve(),
-                Path("/usr/lib").resolve(),
-                Path("/usr/share").resolve(),
-                developer_root,
-            ),
-            allowed_executables=(
-                Path("/bin/bash").resolve(),
-                Path("/bin/cat").resolve(),
-                Path("/usr/bin/nc").resolve(),
-                git,
-            ),
-            hidden_roots=(hidden,),
-            network_policy="deny-external",
-        )
         compiled = compile_macos_profile(policy)
         profile_path = root / "controller-profile.sb"
         profile_path.write_text(compiled.text, encoding="utf-8")
@@ -613,7 +933,7 @@ def run_macos_capability_audit() -> dict[str, Any]:
 
         denied_reads = {
             "absolute_hidden_read": str(hidden_file),
-            "parent_traversal_hidden_read": str(visible / ".." / "hidden" / "secret.txt"),
+            "parent_traversal_hidden_read": os.path.relpath(hidden_file, visible),
             "symlink_hidden_read": str(visible / "hidden-link" / "secret.txt"),
         }
         for case_id, path in denied_reads.items():
@@ -711,7 +1031,7 @@ def run_macos_capability_audit() -> dict[str, Any]:
         )
 
         cases.extend(_socket_capability_cases(profile_path, visible, hidden_sentinel))
-        cases.extend(_unix_socket_capability_cases(profile_path, visible, hidden_sentinel))
+        cases.extend(_unix_socket_capability_cases(profile_path, visible, hidden_sentinel, client))
         executable_command = ["/usr/bin/printf", "%s", hidden_sentinel.decode()]
         cases.append(
             _case_result(
@@ -762,7 +1082,8 @@ def run_macos_capability_audit() -> dict[str, Any]:
                 "Apple system.sb is a private interface and is hashed per audit",
             ],
             "platform": _platform_record(),
-            "policy": policy.canonical_dict(),
+            "policy": _redacted_policy(policy),
+            "policy_source": source,
             "ephemeral_profile_path": str(profile_path),
             "recorded_at": recorded_at.isoformat(),
             "schema_version": SCHEMA_VERSION,
@@ -781,12 +1102,17 @@ def run_macos_capability_audit() -> dict[str, Any]:
         }
 
 
-def write_macos_capability_audit(output: Path) -> dict[str, Any]:
+def write_macos_capability_audit(
+    output: Path,
+    policy: MacOSPolicy | None = None,
+    *,
+    sentinel_homes: tuple[Path, Path, Path] | None = None,
+) -> dict[str, Any]:
     """Retain one unscored audit without overwriting earlier evidence."""
     output = Path(output)
     if output.exists():
         raise ConfinementError(f"capability audit already exists: {output}")
-    report = run_macos_capability_audit()
+    report = run_macos_capability_audit(policy, sentinel_homes=sentinel_homes)
     output.parent.mkdir(parents=True, exist_ok=True)
     rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
     try:
@@ -806,6 +1132,7 @@ def wrap_verified_command(
     purpose: str = "unscored_capability",
 ) -> list[str]:
     """Bind an unscored command to the exact externally verified adapter."""
+    _require_network_policy(compiled.network_policy)
     if purpose != "unscored_capability":
         raise ConfinementError(
             "this macOS capability attestation cannot authorize confirmatory work"
@@ -827,11 +1154,17 @@ def wrap_verified_command(
         raise ConfinementError("adapter profile hash does not match compiled profile")
     if adapter.get("policy_id") != compiled.policy_id:
         raise ConfinementError("adapter policy id does not match compiled policy")
+    attested_policy = attestation.get("policy")
+    if (
+        not isinstance(attested_policy, dict)
+        or attested_policy.get("network_policy") != compiled.network_policy
+    ):
+        raise ConfinementError("adapter attestation network policy does not match compiled profile")
     cases = attestation.get("cases")
     if (
         not isinstance(cases, list)
         or any(not isinstance(row, dict) for row in cases)
-        or {row.get("id") for row in cases} != _REQUIRED_CASE_IDS
+        or {row.get("id") for row in cases} != required_case_ids(compiled.network_policy)
         or any(not row.get("passed") for row in cases)
     ):
         raise ConfinementError("adapter attestation contains a failed case")
@@ -855,14 +1188,48 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     audit = commands.add_parser("audit-macos")
     audit.add_argument("--output", type=Path, required=True)
+    audit.add_argument(
+        "--policy",
+        type=Path,
+        default=None,
+        help="session policy (MacOSPolicy.canonical_dict JSON) to attest under",
+    )
+    for role in ("visible", "output", "hidden"):
+        audit.add_argument(
+            f"--sentinel-{role}",
+            type=Path,
+            default=None,
+            help=f"directory inside the policy's {role} roots that receives that sentinel",
+        )
     return parser
+
+
+def load_policy(path: Path) -> MacOSPolicy:
+    """A MacOSPolicy from its canonical JSON form (lists of absolute paths)."""
+    try:
+        declared = json.loads(Path(path).read_bytes())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ConfinementError(f"policy file unreadable: {exc}") from exc
+    return MacOSPolicy.from_canonical(declared)
+
+
+def _sentinel_homes_from_args(args) -> tuple[Path, Path, Path] | None:
+    homes = (args.sentinel_visible, args.sentinel_output, args.sentinel_hidden)
+    if all(home is None for home in homes):
+        return None
+    if any(home is None for home in homes):
+        raise ConfinementError("sentinel homes must be given for visible, output and hidden")
+    return tuple(Path(home) for home in homes)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        report = write_macos_capability_audit(args.output)
-    except ConfinementError as exc:
+        policy = load_policy(args.policy) if args.policy is not None else None
+        report = write_macos_capability_audit(
+            args.output, policy, sentinel_homes=_sentinel_homes_from_args(args)
+        )
+    except (ConfinementError, OSError) as exc:
         print(json.dumps({"error": str(exc), "ok": False}, sort_keys=True), file=sys.stderr)
         return 2
     if not report["capability_pass"]:

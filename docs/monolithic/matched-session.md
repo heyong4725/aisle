@@ -71,6 +71,37 @@ process record, including on a nonzero process exit. Final snapshots and
 postflight failures remain in `matched-session.json` alongside the original
 launcher failure.
 
+The `attestation` must have been produced under the arm's exact confinement
+policy, or the launch wrapper refuses it: `python -m
+aisle.harness.treatment_confinement audit-macos --policy <policy.json>
+--output <attestation.json>` runs the full deny/allow matrix under that policy
+(its sentinels are placed inside the policy's own visible, output and hidden
+roots and removed afterwards) and retains the profile hash and policy id the
+wrapper demands (TRT-5/TRT-7). The policy must admit the audit's probes
+(`/bin/bash`, `/bin/cat`, the Apple developer Git, and either `/usr/bin/nc`
+or a Python interpreter for the Unix-socket case) and must not admit its
+unlisted-executable control (`/usr/bin/printf`). By default each sentinel goes
+into the last directory of the matching root list; `--sentinel-visible`,
+`--sentinel-output` and `--sentinel-hidden` name controller-private
+directories instead so the audit never writes into another arm's readable
+view. The retained report replaces hidden-root paths with their digests
+(`policy_id` still binds the full policy). A sentinel left behind by an audit
+process that died uncleanly is reclaimed on the next run; any other occupant
+refuses. Only `deny-external` (no network) is supported. The proposed
+`loopback` port policy is rejected during compilation, provider admission,
+audit startup, and launch verification, including for previously passing
+attestations. macOS SBPL's `localhost` selector covers every address owned by
+the host: a relay on `127.0.0.1:<port>` can coexist with a separate service on
+`[::1]:<port>`. A port number therefore cannot establish exclusive relay
+access. Literal IP endpoint selectors are rejected by the sandbox compiler.
+
+Session-bound audits remain available for `deny-external`. A pinned
+`provider.relay_port` configures a listener but grants no network authority.
+Relay-backed confined sessions remain unavailable until an exclusive transport
+is implemented and validated. This stop condition must not be bypassed with a
+broader policy or a cached attestation. The pilot still requires exact-context
+admission and independent confinement evidence before collection.
+
 Deterministic integration tests run real child processes for both arms through
 an explicitly synthetic pass-through adapter. Those tests cover the process
 boundary and failure retention. Their synthetic access logs and capability

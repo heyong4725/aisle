@@ -616,12 +616,8 @@ class ToolController:
                         raise AdmissionError(
                             "bound typed runtime requires a validation launch binding"
                         )
-                declared = current["confinement_bindings"][self.arm]["policy"]
-                policy = MacOSPolicy(
-                    **{
-                        key: value if key == "network_policy" else tuple(Path(p) for p in value)
-                        for key, value in declared.items()
-                    }
+                policy = MacOSPolicy.from_canonical(
+                    current["confinement_bindings"][self.arm]["policy"]
                 )
                 compiled = compile_macos_profile(policy)
                 python_hash = hashlib.sha256(self.python.read_bytes()).hexdigest()

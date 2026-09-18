@@ -1,7 +1,7 @@
 """MON-6/MON-13: every staged worker must pass admission before graph transport starts."""
 
 import json
-from dataclasses import asdict, replace
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -47,7 +47,7 @@ def _stage(tmp_path, *, share_home=False, direct_python=True):
         compiled = compile_macos_profile(policy)
         profile.write_text(compiled.text)
         launch.update(
-            policy=asdict(policy),
+            policy=policy.as_dict(),
             environment=environment,
             environment_record=environment_record,
             profile_path=str(profile),

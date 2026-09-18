@@ -57,12 +57,7 @@ def run_engineering_session(
             raise AdmissionError(
                 "process requires confinement, ambient and launch bindings"
             ) from exc
-        policy = MacOSPolicy(
-            **{
-                key: value if key == "network_policy" else tuple(Path(p) for p in value)
-                for key, value in declared.items()
-            }
-        )
+        policy = MacOSPolicy.from_canonical(declared)
         compiled = compile_macos_profile(policy)
         if (
             attestation.get("adapter", {}).get("sha256")
