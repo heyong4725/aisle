@@ -2,10 +2,10 @@
   "artifacts": [
     {
       "arm": "typed",
-      "author": "AISLE maintainers (typed L2 graph developed with full repository access; predates SPEC 440)",
+      "author": "AISLE maintainers; projected graph derived from the existing typed L2 graph with full repository access",
       "blind": false,
-      "path": "graphs/expert_t1_l2.yaml",
-      "sha256": "e910f9ba86317143737e9f0879fb3761b09ded80342e75ff5e80848e54fa5442"
+      "path": "graphs/pilot_t1_l2_typed.yaml",
+      "sha256": "33e1c6369d75bc6e738b532e5c01398e9269ea383f587afd5c244b26086ed5ef"
     },
     {
       "arm": "monolithic",

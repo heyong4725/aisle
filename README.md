@@ -14,6 +14,11 @@ measurement that people most often get wrong, and **Appendix C** is a graded
 set of exercises and hackathon tracks — several of which are genuinely open
 problems (**Appendix D** lists them with issue numbers).
 
+**Visiting research group?** Read
+**[`docs/lab-briefing-2026-09.md`](docs/lab-briefing-2026-09.md)** first: two
+pages on what has been measured, what has not and why, and where a graduate
+student can contribute this semester.
+
 <!-- claim:typed-composition/readme -->
 *AISLE is an **environment** in the reinforcement-learning sense — a simulated
 world with tasks, dynamics, and a frozen scorer that agents act in — and the
@@ -83,9 +88,14 @@ the whole measured record is
 **This table is the single current status page** (issue #142). Other overview
 pages link here; protocol and evidence pages may retain dated summaries for
 context, but must identify their snapshot and defer to this table on conflict.
-Status as of **2026-08-28**, commit `93de5e0`. Each row states the verdict its
-committed evidence supports, with that evidence's own qualifications — a
-hypothesis with no admissible data says so rather than reading as progress.
+Status as of **2026-09-14**, commit `fa339ee`. The measured record below is
+the **2026-08-28** record (commit `93de5e0`): no hypothesis or ablation has
+been measured since. What changed in between — the pre-registration program,
+the pilot-first order, and the still-pending #347 pilot — is in
+[Since 2026-08-28](#since-2026-08-28-the-pre-registration-program-and-the-pilot)
+at the end of this section. Each row states the verdict its committed evidence
+supports, with that evidence's own qualifications — a hypothesis with no
+admissible data says so rather than reading as progress.
 
 <!-- claim:development-ledger/readme -->
 **SUPPORTED structural status, not a confirmatory result:** this is the dated
@@ -187,6 +197,25 @@ Signed review notes: [`analysis/reports/agent_pr_review_notes.md`](analysis/repo
 The first pass could only review **2 of 5** skills, which any claim about
 human-in-the-loop governance of agent-authored robot code has to carry.
 
+### Since 2026-08-28: the pre-registration program and the pilot
+
+Between the snapshot above and 2026-09-14 the repository gained 235
+commits and **no new measured hypothesis or ablation result**. Nearly all of
+that work is the machinery that would make the headline result defensible
+when it runs. Stated as such:
+
+| Item | State on 2026-09-14 |
+|---|---|
+| Pre-registration program, SPEC 400–540 | Tooling implemented (`harness freeze/stats/exposure/semantic/threat/fault/monolith/perception/hardware`, each with fixtures and self-tests). All fifteen specs are **PROPOSED, human-review gated**; none authorizes confirmatory collection. Nine are **parked** under ADR-66 (430, 450, 460, 470, 480, 510, 520, 530, 540) |
+| Typed-vs-monolithic causal study (#347, SPEC 500) | **Unrun.** Confirmatory registration at v22 with all 7 integrity gates pending, two of them external reviews (#483 statistics, CON-14). Pilot v1 (2026-09-12) collected **zero sessions**: the executor admitted only the T1 oracle mode, both paired T1 surfaces put oracle state on the policy path, and the task band named no eligible stratum. A merged stack (#580–#588) bound a T1-L2 realistic pair as the instrument set; **pilot v8** (2026-09-13) is registered with collection pending on the session-bound confinement attestation (#589–#591). The task-band calibration (v13) records **BND-7 eligibility failed** for that candidate, 22 of 22 strata; any pilot on it carries that as a named limitation (`analysis/reports/cse_pilot_v1.md`, `analysis/freeze/cse-causal-study-pilot-v8/`) |
+| Execution order and moratorium (ADR-66, accepted 2026-09-11) | Pilot-first: run #347's pilot, then H6, before any new spec, platform, or hypothesis; one measured result every two weeks or infrastructure PRs stop. CON-9 amended the same week: documentation-only commits run format, lint, and unit only. The renumbering note: the pilot-first decision is **ADR-66**; ADR-65 is the frontend-conformance ADR (#568) |
+| Instrument ablations and pilots (synthetic or fixture; **not treatment effects**) | Semantic authorization (SPEC 480): held-plan replay, false-allow risk difference sensor_shield − no_shield **−0.93** (95% −0.97 to −0.82), n=60, same author for corpus and authorizer. Safety exposure (SPEC 470): guard-on **0/39** vs observe-only **32/39** at-risk traces, fake driver, no physics. Threat model (SPEC 460): **18/18** catalogued attacks blocked at the expected layer, one process; no boundary claim beyond that fixture. Fault bank (SPEC 450): v2 calibration gives every family ≥1 effective instance, leakage probe balanced accuracy 0.37 (p=0.80), bank **not sealed**. Perception audit (SPEC 490), second audit with the hardened auditor (2026-09-13, registered as calibration v11): **not eligible, 22 of 22 strata fail** on 320 scored evaluation frames; overhead stratum 214/320 (0.67), ibuprofen refuses 68 of 80, **0 wrong identity**, no threshold changed (`analysis/perception-audit/records/bnd-perception-corpus-03/`). Each README in `analysis/` states its own evidence kind |
+| M3 environment ladder, v2 | **Spearman 0.746** ranking agreement between the kinematic surrogate and Genesis over 16 graphs × 8 seeds on a spread population (0.76 excluding the contact-geometry set); supersedes the "undecidable" v0 row above. UNATTESTED dev measurement, self-authored population (`analysis/m3/v2/`) |
+| Local-model capability floor (qwen3:30b) | **0/5** schema-valid graphs, as pre-registered; two same-seed sessions bit-identical. UNATTESTED, n=5 (`analysis/local-arm/`) |
+| Halt contract for motion nodes | ADR-64 (accepted): a halt ends the episode, no in-episode resume. The declared halt contract itself is #562, **parked** until SPEC 460 ratifies or Phase 6 opens |
+| Related systems reviewed | PhyAgentOS (arXiv 2607.16636) and TypeGo (arXiv 2607.05482) assessed 2026-09-10/11; positioning in the paper's §7. PhyAgentOS runs on dora with the graph hidden behind an HTTP tool API — a shipped instance of this repository's monolithic control arm, which is the strongest external reason to run #347 |
+| Open owner-side gates | External reviews not yet arranged: statistical (#483), terminology (#484), independent reproduction (#485), external benchmark user (#486). No in-house work can satisfy these |
+
 ## Quickstart
 
 Use macOS arm64 or Linux CPU, Python >= 3.11, Git, rustup and
@@ -227,20 +256,29 @@ graphs/            expert + eval dataflows (T0..T4 desk, S1 retail,
 src/aisle/         scenes, bridge, verifier, reset, harness, mobility, nodes
                    (incl. world_model_env — the env-ladder surrogate — and
                    so101_driver — the Phase-6 hardware bridge, loopback-tested)
-harness CLIs       `uv run harness {validate,rollout,traces,report,skill,swap,probe}`
+harness CLIs       `uv run harness {validate,rollout,traces,report,skill,swap,
+                   probe,fleet,freeze,stats,exposure,semantic,threat,fault,
+                   monolith,perception,hardware}` (the last nine are the
+                   SPEC 400–540 pre-registration instruments)
 tools/             CI, trace_check, env_hash, campaign runners
-                   (h1..h4, h6, a3..a5, m3_ranking, judge_bench, vlm_judge,
-                   finetune_smolvla, hw_calibration, spikes/)
+                   (h1..h4, h6, a3..a5, matched_campaign, pilot_*, m3_ranking,
+                   judge_bench, vlm_judge, finetune_smolvla, hw_calibration,
+                   spikes/)
 tests/             unit / sim / graph markers; every MUST cited by a test
 analysis/          committed experiment findings: hypotheses (h1..h4, h6),
                    ablations (a1..a6), tiers (t2, t2_breakthrough, t3, t4,
-                   t4_inc2), m1, m3, ver-vlm, transit_collisions,
+                   t4_inc2), m1, m3, ver-vlm, local-arm, transit_collisions,
                    ver6-fidelity, s1-determinism, postmortems, transcripts,
-                   reports/
+                   reports/; the pre-registration record: freeze/ (content-
+                   addressed registrations), statistics, treatment-integrity,
+                   monolithic-control, fault-bank, threat-model,
+                   safety-exposure, semantic-authorization, perception-audit,
+                   instrument-audit, claim-evidence
 skills/            the registered library (5): s1-driver-v2, s3-driver-v1,
                    ik-transfer-v2, t2-scan-pose, t2-scan-tsm
-docs/              guides, design doc, contributor wiki, paper/ (v1.0),
-                   decisions/ (ADRs), generated/project-inventory.md
+docs/              guides, design doc, contributor wiki, lab briefing
+                   (lab-briefing-2026-09.md), paper/ (v1.0), decisions/
+                   (ADRs), generated/project-inventory.md
 runs/              gitignored: traces, videos, run manifests
 ```
 

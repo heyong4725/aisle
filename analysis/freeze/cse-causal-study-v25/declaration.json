@@ -10,12 +10,11 @@
   "artifacts": {
     "agent_adapters": "tools/agent_adapters.py",
     "analyzer": "src/aisle/harness/benchmark_statistics.py",
-    "bnd_calibration_manifest": "analysis/freeze/bnd-task-band-calibration-v11/freeze-manifest.json",
-    "bnd_perception_audit_report": "analysis/perception-audit/records/bnd-perception-corpus-03/report.json",
     "budget_ceiling": "harness/budget.toml",
     "dependency_declaration": "pyproject.toml",
     "dependency_lock": "uv.lock",
     "dora_runtime_selection": "dora-runtime.json",
+    "frontend_conformance_decision": "docs/decisions/ADR-65.md",
     "frontend_request_authorization_documentation": "docs/benchmark/v1/frontend-request-authorization.md",
     "matched_session_decision": "docs/decisions/ADR-62.md",
     "matched_session_documentation": "docs/monolithic/matched-session.md",
@@ -44,8 +43,11 @@
     "matched_source:src/aisle/harness/common.py": "src/aisle/harness/common.py",
     "matched_source:src/aisle/harness/frontend_app_server.py": "src/aisle/harness/frontend_app_server.py",
     "matched_source:src/aisle/harness/frontend_app_server_audit.py": "src/aisle/harness/frontend_app_server_audit.py",
+    "matched_source:src/aisle/harness/frontend_conformance.py": "src/aisle/harness/frontend_conformance.py",
     "matched_source:src/aisle/harness/frontend_dispatch.py": "src/aisle/harness/frontend_dispatch.py",
     "matched_source:src/aisle/harness/frontend_dispatch_audit.py": "src/aisle/harness/frontend_dispatch_audit.py",
+    "matched_source:src/aisle/harness/frontend_effects.py": "src/aisle/harness/frontend_effects.py",
+    "matched_source:src/aisle/harness/frontend_qualification.py": "src/aisle/harness/frontend_qualification.py",
     "matched_source:src/aisle/harness/frontend_request_audit.py": "src/aisle/harness/frontend_request_audit.py",
     "matched_source:src/aisle/harness/frontend_request_authority.py": "src/aisle/harness/frontend_request_authority.py",
     "matched_source:src/aisle/harness/guard_divergence.py": "src/aisle/harness/guard_divergence.py",
@@ -61,11 +63,15 @@
     "matched_source:src/aisle/harness/matched_session.py": "src/aisle/harness/matched_session.py",
     "matched_source:src/aisle/harness/matched_tool_service.py": "src/aisle/harness/matched_tool_service.py",
     "matched_source:src/aisle/harness/matched_tools.py": "src/aisle/harness/matched_tools.py",
+    "matched_source:src/aisle/harness/mcp_harness_authority.py": "src/aisle/harness/mcp_harness_authority.py",
+    "matched_source:src/aisle/harness/mcp_harness_source.py": "src/aisle/harness/mcp_harness_source.py",
+    "matched_source:src/aisle/harness/mcp_harness_transport.py": "src/aisle/harness/mcp_harness_transport.py",
     "matched_source:src/aisle/harness/monolith.py": "src/aisle/harness/monolith.py",
     "matched_source:src/aisle/harness/monolithic.py": "src/aisle/harness/monolithic.py",
     "matched_source:src/aisle/harness/monolithic_run_evidence.py": "src/aisle/harness/monolithic_run_evidence.py",
     "matched_source:src/aisle/harness/monolithic_run_prepare.py": "src/aisle/harness/monolithic_run_prepare.py",
     "matched_source:src/aisle/harness/pilot_records.py": "src/aisle/harness/pilot_records.py",
+    "matched_source:src/aisle/harness/provider_hosted.py": "src/aisle/harness/provider_hosted.py",
     "matched_source:src/aisle/harness/provider_relay.py": "src/aisle/harness/provider_relay.py",
     "matched_source:src/aisle/harness/provider_response_authority.py": "src/aisle/harness/provider_response_authority.py",
     "matched_source:src/aisle/harness/provider_runner.py": "src/aisle/harness/provider_runner.py",
@@ -137,9 +143,8 @@
     "monolithic_validators": "src/aisle/harness/monolithic.py",
     "nested_host_documentation": "docs/monolithic/code-mode-admission.md",
     "pilot_assignments_cli": "tools/pilot_assignments.py",
-    "pilot_decision": "docs/decisions/ADR-66.md",
     "pilot_records_cli": "tools/pilot_records.py",
-    "protocol": "analysis/freeze/cse-causal-study-pilot-v8/protocol.json",
+    "protocol": "analysis/freeze/cse-causal-study-v1/protocol.json",
     "protocol_template": "analysis/statistics/protocol-template.json",
     "provider_admission_documentation": "docs/monolithic/provider-admission.md",
     "public_observation_source:analysis/monolithic-control/experts-t1-l2-v1.json": "analysis/monolithic-control/experts-t1-l2-v1.json",
@@ -154,7 +159,7 @@
     "public_observation_source:src/aisle/harness/pilot_model_cache.py": "src/aisle/harness/pilot_model_cache.py",
     "public_observation_source:src/aisle/harness/pilot_policy_surface.py": "src/aisle/harness/pilot_policy_surface.py",
     "research_prompt": "harness/CLAUDE.research.md",
-    "seed_commitment_predecessor": "analysis/freeze/cse-causal-study-pilot-v8/freeze-manifest.json",
+    "seed_commitment_predecessor": "analysis/freeze/cse-causal-study-v24/freeze-manifest.json",
     "session_runner": "tools/campaign.py",
     "session_validators": "src/aisle/harness/causal_study.py",
     "simulator_bridge": "src/aisle/nodes/dora_genesis.py",
@@ -170,11 +175,11 @@
     "session_wall_s": 3600,
     "sim_episodes_per_session": 160
   },
-  "campaign_id": "cse-causal-study-pilot-v9",
+  "campaign_id": "cse-causal-study-v25",
   "commands": [
-    "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-pilot-v8/protocol.json --purpose power",
-    "uv run harness stats power --protocol analysis/freeze/cse-causal-study-pilot-v8/protocol.json --output analysis/freeze/cse-causal-study-pilot-v8/power.json",
-    "uv run harness freeze check --manifest analysis/freeze/cse-causal-study-pilot-v9/freeze-manifest.json --allow-withheld-seeds"
+    "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-v1/protocol.json --purpose power",
+    "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-v1/protocol.json --purpose freeze --output /tmp/cse-causal-study-v22-freeze-refusal.json",
+    "uv run harness freeze check --manifest analysis/freeze/cse-causal-study-v25/freeze-manifest.json --allow-withheld-seeds"
   ],
   "decision_rules": {
     "alpha": 0.05,
@@ -195,7 +200,6 @@
     },
     "stopping_rule": "fixed n from the frozen power analysis using pilot-only control success; absolute floor 10 randomized assignments per arm per agent-system x task stratum (CSE-8); no optional stopping or extension"
   },
-  "disposition": "registered 2026-09-13; collection pending. Supersedes the zero-session pilot-v1 lineage with the instrument set the pilot can actually run on (T1-L2 realistic pair, #581 to #586). Named limitations: BND-7 not eligible (recorded failed), external-review and parity gates pending, and the session-bound capability audit not merged (an unattested environment stops every session).",
   "endpoints": {
     "primary": [
       {
@@ -272,26 +276,21 @@
   "instrument_set": {
     "agent_systems": [
       {
+        "binary": "claude",
+        "frozen": false,
+        "id": "claude-code",
+        "version_observed": "2.1.261"
+      },
+      {
         "binary": "codex",
-        "binary_sha256": "b973d440acac501fd2594a43e7ca9ce41e0a65b9dfb28d0d7a7837c99e1261e3",
-        "frozen": true,
+        "frozen": false,
         "id": "codex-cli",
-        "install": "private prefix ~/aisle-private/codex-0.153.4 (the qualified darwin-arm64 binary, not the JS shim); ChatGPT-login credentials copied byte-identically into both arms' private CODEX_HOME, hash recorded only",
-        "version_observed": "0.153.4"
+        "version_observed": "0.151.0"
       }
     ],
-    "candidate": {
-      "id": "t1-l2-realistic",
-      "monolithic_module": "experts/monolithic/expert_t1_l2.py",
-      "monolithic_template": "graphs/monolithic_t1_l2.yaml",
-      "perception": "L2",
-      "reset": "teleport",
-      "typed_graph": "graphs/expert_t1_l2.yaml",
-      "verifier": "realistic (oracle demoted to the held-out scoring tap, BND-3)"
-    },
-    "candidate_table_sha256": "08a1dc56502abc4673cb0b54f01664382214bb473c3ef293b1df7b6c74f64778",
     "items": [
-      "short_composition:t1-l2-realistic"
+      "short_composition:TBD-by-bnd-task-band-calibration-v1",
+      "engineering:TBD-by-bnd-task-band-calibration-v1"
     ],
     "kind": "selected_task"
   },
@@ -300,7 +299,6 @@
       "gate": "CON-14 spec approval",
       "kind": "external_review",
       "owner_role": "project owner",
-      "pilot_record_2026_09_13": "pending; external review, not a pilot prerequisite (ADR-66 section 2); named limitation",
       "record": null,
       "status": "pending"
     },
@@ -308,7 +306,6 @@
       "gate": "STA-12 independent statistical review",
       "kind": "external_review",
       "owner_role": "independent statistician",
-      "pilot_record_2026_09_13": "pending; external review, not a pilot prerequisite (ADR-66 section 2); named limitation",
       "record": null,
       "status": "pending"
     },
@@ -316,7 +313,6 @@
       "gate": "MON-1 treatment table and expert parity (#344)",
       "kind": "machine_check",
       "owner_role": "parity harness; control surface exists, independent authorship and operator evidence remain pending",
-      "pilot_record_2026_09_13": "pending; the T1-L2 pair (#583) passes the interface, table and module checks but has no operator parity record at an immutable hash; named limitation",
       "record": null,
       "status": "pending"
     },
@@ -324,15 +320,13 @@
       "gate": "BND-12 task-band freeze (#346)",
       "kind": "machine_check",
       "owner_role": "task-band auditor",
-      "pilot_record_2026_09_13": "recorded failed: bnd-task-band-calibration-v11 regenerated the BND-5 perception audit on a 32-seed T1-L2 corpus; 22 of 22 strata below the 0.90 floor (BND-7), led by target_class=ibuprofen refusals; role open (BND-10). ADR-66 section 2: a failing machine gate is a named limitation of this pilot, not a blocker",
-      "record": "analysis/perception-audit/records/bnd-perception-corpus-03/report.json",
-      "status": "failed"
+      "record": null,
+      "status": "pending"
     },
     {
       "gate": "TRT confinement/mutation/agent-path (#353)",
       "kind": "machine_check",
       "owner_role": "integrity controller",
-      "pilot_record_2026_09_13": "pending; the session-bound capability audit (loopback relay policy) is not merged; an unattested environment is a stop condition for every session",
       "record": null,
       "status": "pending"
     },
@@ -340,8 +334,6 @@
       "gate": "seed commitment verification",
       "kind": "machine_check",
       "owner_role": "holder of the original private seed and salt sources",
-      "pilot_record_2026_09_13": "not applicable to this registration: it commits a fresh private seed source directly (no inheritance); kept for shape parity and left pending",
-      "public_observation_successor_note": "Inherited from pilot-v8 without access to private seed sources; verification remains pending. This byte-binding successor does not authorize a pilot run.",
       "record": null,
       "status": "pending"
     },
@@ -349,45 +341,19 @@
       "gate": "MON-8/MON-12 matched-session acceptance (#519)",
       "kind": "machine_check",
       "owner_role": "matched-session controller; complete acceptance evidence still required",
-      "pilot_record_2026_09_13": "pending; frontend conformance qualified on the T1 oracle development surface only (#568); the T1-L2 realistic surface runs under the same executor with the same admission checks; named limitation",
       "record": null,
       "status": "pending"
     }
   ],
   "issue": 347,
-  "pilot_design": {
-    "agent_system": "codex-cli 0.153.4 only (the owned provider relay, the ChatGPT-login account header and the pinned conformance profile are Codex-bound)",
-    "arm_order": "sealed balanced plan (revealed one assignment at a time); no longer a fixed alternation",
-    "arms": [
-      "typed",
-      "monolithic"
-    ],
-    "assignment": "tools/pilot_assignments.py create --protocol analysis/freeze/cse-causal-study-pilot-v8/protocol.json (sealed balanced plan, one typed and one monolithic assignment per temporal block, TRT-8/CSE-7); reveal exactly one assignment before each session; the ledger retains every assignment, started or not",
-    "below_cse8_floor": "6 per arm is below the CSE-8 floor of 10 by design; this registration can never become a confirmatory estimate (STA-3)",
-    "decision": "docs/decisions/ADR-66.md (pilot first; agent-drafted under the ADR-65 label, renumbered by #568)",
-    "executor": "tools/matched_campaign.py admit / run --purpose engineering / collect-run, then the held-out evaluation; retained and unscored, output root ~/aisle-private/raw/cse-causal-study-pilot-v8/<session>",
-    "records": "tools/pilot_records.py derives one aisle.stats.records.v1 row per ledger assignment; harness stats validate --purpose analysis; harness stats analyze; harness stats power from observed control success (CSE-8)",
-    "reporting": "analysis/reports/cse_pilot_v8.md; results enter docs/claim-evidence.yaml only as CSE-8 power inputs under the unrun confirmatory claim",
-    "rerun_policy": "no reruns; a failed attempt is retained under a new session id, never overwritten",
-    "session_success": "controller-run held-out evaluation of the retained final snapshot on the 32 private seeds after the agent process ends, oracle as the held-out scorer (BND-3); success iff at least 28 of 32 oracle successes; a launch failure counts as a failed seed (CSE-2, CSE-9)",
-    "sessions_per_arm": 6,
-    "stop_conditions": [
-      "wrong_object outcome",
-      "guard bypass",
-      "unattested environment",
-      "relay bypass (provider traffic outside the owned relay)",
-      "any oracle field on a policy input"
-    ],
-    "task_stratum": "short_composition on candidate t1-l2-realistic (T1 franka, L2 perception, realistic verifier); bnd-task-band-calibration-v11 records it as not perception-eligible (BND-7), carried as a machine-gate limitation per ADR-66"
-  },
-  "purpose": "pilot",
+  "purpose": "confirmatory",
   "schema_version": "aisle.freeze.declaration.v1",
   "seed_commitment": {
-    "inherited_from": "analysis/freeze/cse-causal-study-pilot-v8/freeze-manifest.json",
-    "rule": "32 distinct integers in [1000,9999) drawn once from the OS CSPRNG on 2026-09-13, retained only under ~/aisle-private/freeze/cse-causal-study-pilot-v8/, disjoint by value from every private seed list committed so far (including cse-causal-study-pilot-v1 and the cse-causal-study-v1 confirmatory commitment) and from the committed development seed lists; never inherited by a confirmatory declaration (ADR-66); revealed after the pilot closes. The same directory holds the controller-private 256-bit randomization seed for the sealed assignment plan (TRT-8); its commitment is recorded in the assignment ledger, never here.",
-    "salt_source": "~/aisle-private/freeze/cse-causal-study-pilot-v8/salt.bin",
-    "seeds_source": "~/aisle-private/freeze/cse-causal-study-pilot-v8/seeds.json"
+    "inherited_from": "analysis/freeze/cse-causal-study-v24/freeze-manifest.json",
+    "rule": "32 distinct integers in [1000,9999) drawn once from the OS CSPRNG, retained only under ~/aisle-private/freeze/cse-causal-study-v1/, disjoint by value from every committed dev/pilot seed list; revealed after the campaign closes",
+    "salt_source": "~/aisle-private/freeze/cse-causal-study-v1/salt.bin",
+    "seeds_source": "~/aisle-private/freeze/cse-causal-study-v1/seeds.json"
   },
   "spec": "500",
-  "superseded": "cse-causal-study-pilot-v8 (public goal/reset/calibration projection for the existing T1-L2 candidate and pinned public model-cache preparation; study rules, inherited seed commitment and all gate outcomes preserved; no collection authorization)"
+  "superseded": "cse-causal-study-v24 (probe-widened interpreter-only attestation and validated concurrent batch resume; seed commitment and pending gates preserved; no collection authorization)"
 }

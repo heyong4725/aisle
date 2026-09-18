@@ -139,7 +139,7 @@
     "pilot_assignments_cli": "tools/pilot_assignments.py",
     "pilot_decision": "docs/decisions/ADR-66.md",
     "pilot_records_cli": "tools/pilot_records.py",
-    "protocol": "analysis/freeze/cse-causal-study-pilot-v8/protocol.json",
+    "protocol": "analysis/freeze/cse-causal-study-pilot-v11/protocol.json",
     "protocol_template": "analysis/statistics/protocol-template.json",
     "provider_admission_documentation": "docs/monolithic/provider-admission.md",
     "public_observation_source:analysis/monolithic-control/experts-t1-l2-v1.json": "analysis/monolithic-control/experts-t1-l2-v1.json",
@@ -154,7 +154,7 @@
     "public_observation_source:src/aisle/harness/pilot_model_cache.py": "src/aisle/harness/pilot_model_cache.py",
     "public_observation_source:src/aisle/harness/pilot_policy_surface.py": "src/aisle/harness/pilot_policy_surface.py",
     "research_prompt": "harness/CLAUDE.research.md",
-    "seed_commitment_predecessor": "analysis/freeze/cse-causal-study-pilot-v8/freeze-manifest.json",
+    "seed_commitment_predecessor": "analysis/freeze/cse-causal-study-pilot-v10/freeze-manifest.json",
     "session_runner": "tools/campaign.py",
     "session_validators": "src/aisle/harness/causal_study.py",
     "simulator_bridge": "src/aisle/nodes/dora_genesis.py",
@@ -170,11 +170,11 @@
     "session_wall_s": 3600,
     "sim_episodes_per_session": 160
   },
-  "campaign_id": "cse-causal-study-pilot-v9",
+  "campaign_id": "cse-causal-study-pilot-v11",
   "commands": [
-    "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-pilot-v8/protocol.json --purpose power",
-    "uv run harness stats power --protocol analysis/freeze/cse-causal-study-pilot-v8/protocol.json --output analysis/freeze/cse-causal-study-pilot-v8/power.json",
-    "uv run harness freeze check --manifest analysis/freeze/cse-causal-study-pilot-v9/freeze-manifest.json --allow-withheld-seeds"
+    "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-pilot-v11/protocol.json --purpose power",
+    "uv run harness stats power --protocol analysis/freeze/cse-causal-study-pilot-v11/protocol.json --output analysis/freeze/cse-causal-study-pilot-v8/power.json",
+    "uv run harness freeze check --manifest analysis/freeze/cse-causal-study-pilot-v11/freeze-manifest.json --allow-withheld-seeds"
   ],
   "decision_rules": {
     "alpha": 0.05,
@@ -383,11 +383,11 @@
   "purpose": "pilot",
   "schema_version": "aisle.freeze.declaration.v1",
   "seed_commitment": {
-    "inherited_from": "analysis/freeze/cse-causal-study-pilot-v8/freeze-manifest.json",
+    "inherited_from": "analysis/freeze/cse-causal-study-pilot-v10/freeze-manifest.json",
     "rule": "32 distinct integers in [1000,9999) drawn once from the OS CSPRNG on 2026-09-13, retained only under ~/aisle-private/freeze/cse-causal-study-pilot-v8/, disjoint by value from every private seed list committed so far (including cse-causal-study-pilot-v1 and the cse-causal-study-v1 confirmatory commitment) and from the committed development seed lists; never inherited by a confirmatory declaration (ADR-66); revealed after the pilot closes. The same directory holds the controller-private 256-bit randomization seed for the sealed assignment plan (TRT-8); its commitment is recorded in the assignment ledger, never here.",
     "salt_source": "~/aisle-private/freeze/cse-causal-study-pilot-v8/salt.bin",
     "seeds_source": "~/aisle-private/freeze/cse-causal-study-pilot-v8/seeds.json"
   },
   "spec": "500",
-  "superseded": "cse-causal-study-pilot-v8 (public goal/reset/calibration projection for the existing T1-L2 candidate and pinned public model-cache preparation; study rules, inherited seed commitment and all gate outcomes preserved; no collection authorization)"
+  "superseded": "cse-causal-study-pilot-v10 (probe-widened interpreter-only attestation and validated concurrent batch resume; seed commitment and pending gates preserved; no collection authorization)"
 }

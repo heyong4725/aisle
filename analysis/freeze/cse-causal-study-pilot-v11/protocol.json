@@ -7,7 +7,7 @@
     "confidence_level": 0.95,
     "replicates": 10000
   },
-  "campaign_id": "cse-causal-study-pilot-v10",
+  "campaign_id": "cse-causal-study-pilot-v11",
   "campaign_phase": "pilot",
   "control_arm": "monolithic",
   "decision": {
@@ -54,7 +54,7 @@
     "population": "autonomous coding-agent sessions on the frozen task band",
     "summary": "risk_difference"
   },
-  "protocol_id": "cse-causal-study-pilot-v10-protocol-r0",
+  "protocol_id": "cse-causal-study-pilot-v11-protocol-r0",
   "randomization": {
     "plan": "sealed balanced plan over temporal blocks (tools/pilot_assignments.py); one typed_dataflow and one monolithic assignment per block",
     "seed": "controller-private 256-bit seed under ~/aisle-private/freeze/cse-causal-study-pilot-v8/ (never written into any artifact); the ledger records its commitment"

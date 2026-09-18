@@ -31,11 +31,13 @@ EVIDENCE_CLASS = "synthetic_unscored_capability"
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 SYSTEM_PROFILE = Path("/System/Library/Sandbox/Profiles/system.sb")
 _HASH_LENGTH = 64
-#: the two network policies a controller profile may compile (TRT-5/TRT-7):
-#: `deny-external` allows no network at all; `loopback` allows outbound
-#: connections to the local host only, so a confined frontend can reach the
-#: controller's provider relay and nothing else.
-NETWORK_POLICIES = ("deny-external", "loopback")
+#: Only deny-external can currently enforce the declared endpoint authority.
+NETWORK_POLICIES = ("deny-external",)
+_LOOPBACK_REFUSAL = (
+    "loopback port policy cannot isolate the provider relay: macOS localhost "
+    "covers multiple local addresses; use deny-external until an exclusive "
+    "relay transport is implemented"
+)
 #: the preferred Unix-socket probe; an admitted Python interpreter is the fallback
 _NETCAT = "/usr/bin/nc"
 #: the executables the audit's own probes need (plus the Apple developer Git);
@@ -50,9 +52,6 @@ _PYTHON_SOCKET_CLIENT = (
     "s.connect(sys.argv[1])\n"
     "sys.stdout.buffer.write(s.recv(4096))\n"
 )
-#: TEST-NET-1 (RFC 5737): never routable, so a permitted connect would hang
-#: while a sandbox denial fails at once with "Operation not permitted".
-_EXTERNAL_PROBE = "192.0.2.1"
 _SENTINEL_DIR = ".aisle-capability"
 _BASE_CASE_IDS = frozenset(
     {
@@ -80,37 +79,23 @@ _BASE_CASE_IDS = frozenset(
 )
 
 
-def required_case_ids(network_policy: str) -> frozenset[str]:
-    """The case matrix an attestation must carry for a compiled network policy."""
-    if network_policy == "deny-external":
-        return _BASE_CASE_IDS | {"tcp_read"}
+def _require_network_policy(network_policy: str) -> None:
     if network_policy == "loopback":
-        return _BASE_CASE_IDS | {
-            "loopback_tcp_read",
-            "foreign_loopback_tcp_read",
-            "external_tcp_read",
-        }
-    raise ConfinementError(f"unknown network policy: {network_policy}")
+        raise ConfinementError(_LOOPBACK_REFUSAL)
+    if network_policy not in NETWORK_POLICIES:
+        raise ConfinementError(f"unknown network policy: {network_policy}")
 
 
-def _loopback_rule(port: int) -> str:
-    """Outbound to one local port only: the arm's own provider relay. SBPL
-    accepts only `localhost` or `*` as the host, and `localhost` means every
-    address this host owns, so the port pin is what makes the grant exclusive:
-    the relay holds that port on 127.0.0.1 and the audit proves any other local
-    port is refused."""
-    return f'(allow network-outbound (remote ip "localhost:{port}"))'
+def required_case_ids(network_policy: str) -> frozenset[str]:
+    """The case matrix for a supported, enforceable network policy."""
+    _require_network_policy(network_policy)
+    return _BASE_CASE_IDS | {"tcp_read"}
 
 
 def verify_relay_port(policy: Any, provider: Any) -> None:
-    """A `loopback` policy and its provider binding must name the same relay
-    port (MON-8): the sandbox admits exactly that port and the relay binds it."""
-    if type(policy) is not dict or policy.get("network_policy") != "loopback":
-        return
-    pinned = policy.get("loopback_port")
-    declared = provider.get("relay_port") if type(provider) is dict else None
-    if type(declared) is not int or isinstance(declared, bool) or declared != pinned:
-        raise ValueError("provider relay_port must equal the confinement policy's loopback_port")
+    """Refuse the unsupported loopback authority at provider admission (TRT-5)."""
+    if type(policy) is dict and policy.get("network_policy") == "loopback":
+        raise ValueError(_LOOPBACK_REFUSAL)
 
 
 class ConfinementError(RuntimeError):
@@ -127,7 +112,7 @@ class MacOSPolicy:
     allowed_executables: tuple[Path, ...]
     hidden_roots: tuple[Path, ...]
     network_policy: str
-    #: the one local TCP port a `loopback` policy may reach (its provider relay)
+    #: Retained for parsing old declarations; loopback authority is refused.
     loopback_port: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
@@ -250,16 +235,9 @@ def _contains(parent: Path, child: Path) -> bool:
 
 
 def _validate_policy(policy: MacOSPolicy) -> None:
-    if policy.network_policy not in NETWORK_POLICIES:
-        raise ConfinementError(
-            "macOS capability audit requires a deny-external or loopback network policy"
-        )
-    port = policy.loopback_port
-    if policy.network_policy == "loopback":
-        if type(port) is not int or isinstance(port, bool) or not 0 < port < 65536:
-            raise ConfinementError("loopback network policy must pin one relay port")
-    elif port is not None:
-        raise ConfinementError("only a loopback network policy may carry a relay port")
+    _require_network_policy(policy.network_policy)
+    if policy.loopback_port is not None:
+        raise ConfinementError("deny-external network policy cannot carry a relay port")
     for name in (
         "visible_roots",
         "output_roots",
@@ -309,8 +287,6 @@ def compile_macos_profile(policy: MacOSPolicy) -> CompiledProfile:
     lines.extend([")", "(allow file-write*"])
     lines.extend(f"  (subpath {_sbpl_path(path)})" for path in policy.output_roots)
     lines.extend([")", "(allow signal (target self))"])
-    if policy.network_policy == "loopback":
-        lines.append(_loopback_rule(policy.loopback_port))
     lines.append("")
     text = "\n".join(lines)
     return CompiledProfile(
@@ -366,26 +342,6 @@ def _run(
             timeout=15,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise ConfinementError(
-            f"capability command failed to execute: {command[0]}: {exc}"
-        ) from exc
-
-
-#: the C locale keeps the probes' strerror text stable ("Operation not permitted")
-_PROBE_ENV = {"LC_ALL": "C", "LANG": "C"}
-
-
-def _run_denial_probe(command: list[str], *, cwd: Path) -> subprocess.CompletedProcess[bytes]:
-    """A probe that must be refused outright: a hang (the sandbox let the
-    connect through to an address that never answers) is recorded as a failed
-    case instead of aborting the whole audit."""
-    try:
-        return subprocess.run(
-            command, cwd=cwd, check=False, capture_output=True, env=_PROBE_ENV, timeout=15
-        )
-    except subprocess.TimeoutExpired as exc:
-        return subprocess.CompletedProcess(command, -1, b"", f"probe hung: {exc}".encode())
-    except OSError as exc:
         raise ConfinementError(
             f"capability command failed to execute: {command[0]}: {exc}"
         ) from exc
@@ -479,10 +435,6 @@ def _platform_record() -> dict[str, str]:
     }
 
 
-def _tcp_read_command(port: int, host: str = "127.0.0.1") -> list[str]:
-    return ["/bin/bash", "-c", f"exec 3<>/dev/tcp/{host}/{port} && /bin/cat <&3"]
-
-
 def _serve_once(listener: socket.socket, payload: bytes, stopped: threading.Event) -> None:
     while not stopped.is_set():
         try:
@@ -494,101 +446,43 @@ def _serve_once(listener: socket.socket, payload: bytes, stopped: threading.Even
             connection.sendall(payload)
 
 
-def _socket_capability_cases(
-    profile_path: Path, cwd: Path, sentinel: bytes, policy: MacOSPolicy
-) -> list[dict]:
-    """Exercise the same loopback read outside and inside the external profile.
-
-    Under `deny-external` the confined loopback read must be denied. Under
-    `loopback` it must succeed (the relay is reachable) while a connect to a
-    never-routable external address must be refused by the sandbox itself: a
-    permitted connect would hang, so the denial is proven by the immediate
-    "Operation not permitted" and the absence of any sentinel, never by a
-    timeout. That external probe has no unconfined baseline for the same
-    reason (it would hang until the TCP timeout). Under `loopback` the
-    listener serves its own canary, not the hidden sentinel, so the permitted
-    read is a declared allow rather than a hidden-byte exposure.
-    """
-    network_policy = policy.network_policy
-    served = sentinel if network_policy == "deny-external" else b"LOOPBACK-SYNTHETIC-CANARY\n"
-    # Under loopback the permitted listener sits on the pinned relay port (it
-    # must be free now, exactly as the relay will need it) and a second,
-    # foreign loopback listener proves the pin: any other local port is refused.
-    pinned = policy.loopback_port if network_policy == "loopback" else 0
-    with contextlib.ExitStack() as sockets:
-        listener = sockets.enter_context(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-        try:
-            listener.bind(("127.0.0.1", pinned))
-        except OSError as exc:
-            raise ConfinementError(
-                f"pinned relay port {pinned} is not free for the audit: {exc}"
-            ) from exc
-        listeners = [listener]
-        if network_policy == "loopback":
-            foreign = sockets.enter_context(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-            foreign.bind(("127.0.0.1", 0))
-            listeners.append(foreign)
+def _socket_capability_cases(profile_path: Path, cwd: Path, sentinel: bytes) -> list[dict]:
+    """Exercise the same loopback read outside and inside the external profile."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        listener.settimeout(0.1)
         stopped = threading.Event()
-        servers = []
-        for sock in listeners:
-            sock.listen()
-            sock.settimeout(0.1)
-            servers.append(
-                threading.Thread(target=_serve_once, args=(sock, served, stopped), daemon=True)
-            )
-        for server in servers:
-            server.start()
-        command = _tcp_read_command(listener.getsockname()[1])
+
+        def serve():
+            while not stopped.is_set():
+                try:
+                    connection, _ = listener.accept()
+                except TimeoutError:
+                    continue
+                with connection:
+                    connection.settimeout(1)
+                    connection.sendall(sentinel)
+
+        server = threading.Thread(target=serve, daemon=True)
+        server.start()
+        command = [
+            "/bin/bash",
+            "-c",
+            f"exec 3<>/dev/tcp/127.0.0.1/{listener.getsockname()[1]} && /bin/cat <&3",
+        ]
         try:
             baseline = _run(command, cwd=cwd)
             confined = _run(_wrapped(profile_path, command), cwd=cwd)
-            if network_policy == "loopback":
-                foreign_read = _run_denial_probe(
-                    _wrapped(profile_path, _tcp_read_command(foreign.getsockname()[1])), cwd=cwd
-                )
-                external = _run_denial_probe(
-                    _wrapped(profile_path, _tcp_read_command(9, host=_EXTERNAL_PROBE)), cwd=cwd
-                )
         finally:
             stopped.set()
-            for server in servers:
-                server.join(timeout=2)
-        cases = [
+            server.join(timeout=2)
+        return [
             _case_result(
-                "unrestricted_tcp_baseline", baseline, served, expected="baseline-exposure"
-            )
+                "unrestricted_tcp_baseline", baseline, sentinel, expected="baseline-exposure"
+            ),
+            _case_result("tcp_read", confined, sentinel, expected="deny"),
         ]
-        if network_policy == "deny-external":
-            cases.append(_case_result("tcp_read", confined, served, expected="deny"))
-            return cases
-        cases.append(
-            _case_result(
-                "loopback_tcp_read",
-                confined,
-                sentinel,
-                expected="allow",
-                extra_pass=confined.stdout == served,
-            )
-        )
-        cases.append(
-            _case_result(
-                "foreign_loopback_tcp_read",
-                foreign_read,
-                served,
-                expected="deny",
-                extra_pass=b"Operation not permitted" in foreign_read.stderr,
-            )
-        )
-        cases.append(
-            _case_result(
-                "external_tcp_read",
-                external,
-                served,
-                expected="deny",
-                extra_pass=b"Operation not permitted" in external.stderr,
-            )
-        )
-        return cases
 
 
 def _unix_socket_capability_cases(
@@ -685,24 +579,18 @@ def _socket_client(policy: MacOSPolicy) -> list[str]:
     )
 
 
-def _has_python(policy: MacOSPolicy) -> bool:
-    return any(path.name.startswith("python") for path in policy.allowed_executables)
-
-
 def widen_for_probes(
     policy: MacOSPolicy, *, git: Path, developer_root: Path
 ) -> tuple[MacOSPolicy, dict[str, list[str]]]:
     """The session policy plus exactly what the audit's probes need: the shell,
-    cat and the Apple Git as executables (netcat only when no Unix-socket probe
-    is admitted), and the read roots they load from. Nothing else changes: the
-    visible, output and hidden roots and the network policy are the session's.
+    cat, netcat and the Apple Git as executables, and the read roots they load
+    from. The visible, output and hidden roots and the network policy remain
+    the session's.
     Returns the widened policy and the additions, which the attestation records
     so the launch wrapper can recompute the audited profile from the session
     policy alone."""
     admitted = set(policy.allowed_executables)
-    wanted = [Path(p).resolve() for p in PROBE_EXECUTABLES[:2]] + [git]
-    if not _has_python(policy) and Path(_NETCAT).resolve() not in admitted:
-        wanted.append(Path(_NETCAT).resolve())
+    wanted = [Path(p).resolve() for p in PROBE_EXECUTABLES] + [git]
     executables = sorted({p for p in wanted if p not in admitted}, key=str)
     readable = (*policy.visible_roots, *policy.output_roots, *policy.runtime_read_roots)
     roots = []
@@ -877,10 +765,11 @@ def _reclaimable(path: Path) -> bool:
 def _remove_sentinel(path: Path) -> None:
     failures: list[str] = []
 
-    def record(_function, failed_path, exc):
-        failures.append(f"{failed_path}: {exc}")
+    def record(_function, failed_path, exc_info):
+        failures.append(f"{failed_path}: {exc_info[1]}")
 
-    shutil.rmtree(path, onexc=record)
+    # onerror also works on the project's supported Python 3.11 runtime.
+    shutil.rmtree(path, onerror=record)
     if path.exists() or path.is_symlink():
         detail = f" ({failures[0]})" if failures else ""
         raise ConfinementError(f"sentinel path could not be removed: {path}{detail}")
@@ -1222,7 +1111,7 @@ def run_macos_capability_audit(
             _case_result("hidden_write", forbidden_write, hidden_sentinel, expected="deny")
         )
 
-        cases.extend(_socket_capability_cases(profile_path, visible, hidden_sentinel, policy))
+        cases.extend(_socket_capability_cases(profile_path, visible, hidden_sentinel))
         cases.extend(_unix_socket_capability_cases(profile_path, visible, hidden_sentinel, client))
         executable_command = ["/usr/bin/printf", "%s", hidden_sentinel.decode()]
         cases.append(
@@ -1355,6 +1244,7 @@ def wrap_verified_command(
     session policy plus the audit's own probes; it is accepted only when the
     caller supplies that session `policy` and the wrapper recomputes the exact
     audited profile from the policy and the declared additions (TRT-5)."""
+    _require_network_policy(compiled.network_policy)
     if purpose != "unscored_capability":
         raise ConfinementError(
             "this macOS capability attestation cannot authorize confirmatory work"
@@ -1486,9 +1376,10 @@ def _sentinel_sidecar(path: Path) -> tuple[Path, Path, Path] | None:
 
 def attest_many(policies: Path, *, widen_probes: bool, jobs: int) -> dict[str, Any]:
     """Audit every `<name>.policy.json` in a directory, `jobs` at a time, writing
-    `<name>.attestation.json` beside each. A policy whose attestation already
-    exists is skipped, so a batch can be resumed; one that cannot be loaded or
-    attested is reported by name while the others still land. An optional
+    `<name>.attestation.json` beside each. A valid attestation already bound to
+    the policy and requested probe mode is skipped, so a batch can be resumed;
+    one that cannot be loaded or attested is reported by name while the others
+    still land. An optional
     `<name>.sentinels.json` names controller-private sentinel homes."""
     from concurrent.futures import ThreadPoolExecutor
 
@@ -1506,12 +1397,26 @@ def attest_many(policies: Path, *, widen_probes: bool, jobs: int) -> dict[str, A
     loaded: dict[Path, tuple[MacOSPolicy, tuple[Path, Path, Path] | None]] = {}
     skipped = 0
     for path in files:
-        if attestation_path(path).exists():
-            skipped += 1
-            continue
         try:
-            loaded[path] = (load_policy(path), _sentinel_sidecar(path))
-        except ConfinementError as exc:
+            policy, homes = load_policy(path), _sentinel_sidecar(path)
+            existing = attestation_path(path)
+            if existing.exists():
+                report = json.loads(existing.read_bytes())
+                if not isinstance(report, dict):
+                    raise ConfinementError("existing attestation is not an object")
+                if ("probe_widening" in report) != widen_probes:
+                    raise ConfinementError("existing attestation probe mode differs")
+                compiled = compile_macos_profile(policy)
+                with tempfile.TemporaryDirectory(prefix="aisle-attestation-check-") as temp:
+                    profile_path = Path(temp) / "profile.sb"
+                    profile_path.write_text(compiled.text)
+                    wrap_verified_command(
+                        ["/usr/bin/true"], compiled, profile_path, report, policy=policy
+                    )
+                skipped += 1
+                continue
+            loaded[path] = (policy, homes)
+        except (ConfinementError, OSError, ValueError, TypeError) as exc:
             refused[path.name] = str(exc)
 
     # Policies that would place a sentinel in the same directory (worker

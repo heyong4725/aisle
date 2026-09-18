@@ -127,6 +127,24 @@ now concrete: M1 hybrid ≥ classical on T1/T2 in sim; M5 wrong-medicine
 (the portable judge is the sim-to-real bridge). CONTRACT.md discipline
 means the swap is a driver node.
 
+## Ledger entry 2026-09-14 — pilot first (ADR-66)
+
+Between the 2026-08-28 snapshot and today the repository gained the
+pre-registration program (SPEC 400–540, all PROPOSED and human-review gated),
+twenty-two versions of the causal-study registration, and no new measured
+hypothesis result. ADR-66 (accepted 2026-09-11) reorders the work: run the
+#347 pilot, then H6, before any new spec, platform, or hypothesis; nine specs
+are parked; one measured result every two weeks or infrastructure PRs stop.
+The first pilot registration (v1, 2026-09-12) collected zero sessions and
+found three blockers — the executor admitted only the T1 oracle mode, both
+paired T1 surfaces put oracle state on the policy path, and the task band
+named no eligible stratum. A stack of merged PRs (#580–#588) bound a T1-L2
+realistic pair as the instrument set; pilot v8 (2026-09-13) is registered
+with collection pending on the session-bound confinement attestation
+(#589–#591). BND-7 eligibility is recorded as failed and is a named
+limitation of any pilot on that surface. Phase 6 scope and entry gates are
+unchanged; the GPU budget line in decision point 2 now also gates them.
+
 ## Owner decision points (in order of when they block)
 
 1. **Ratify this phase plan** (it is PROPOSED; protocol ADRs follow
