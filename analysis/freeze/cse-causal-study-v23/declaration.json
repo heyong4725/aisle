@@ -27,7 +27,7 @@
     "matched_source:docs/monolithic/treatment-table-t1-l2.json": "docs/monolithic/treatment-table-t1-l2.json",
     "matched_source:env/limits.toml": "env/limits.toml",
     "matched_source:experts/monolithic/expert_t1_l2.py": "experts/monolithic/expert_t1_l2.py",
-    "matched_source:graphs/monolithic_t1_l2.yaml": "graphs/monolithic_t1_l2.yaml",
+    "matched_source:graphs/pilot_t1_l2_monolithic.yaml": "graphs/pilot_t1_l2_monolithic.yaml",
     "matched_source:src/aisle/__init__.py": "src/aisle/__init__.py",
     "matched_source:src/aisle/embodiment.py": "src/aisle/embodiment.py",
     "matched_source:src/aisle/harness/_code_mode_protocol/__init__.py": "src/aisle/harness/_code_mode_protocol/__init__.py",
@@ -147,6 +147,17 @@
     "protocol": "analysis/freeze/cse-causal-study-v1/protocol.json",
     "protocol_template": "analysis/statistics/protocol-template.json",
     "provider_admission_documentation": "docs/monolithic/provider-admission.md",
+    "public_observation_source:analysis/monolithic-control/experts-t1-l2-v1.json": "analysis/monolithic-control/experts-t1-l2-v1.json",
+    "public_observation_source:analysis/monolithic-control/treatment-table-t1-l2-v1.json": "analysis/monolithic-control/treatment-table-t1-l2-v1.json",
+    "public_observation_source:docs/decisions/ADR-pilot-public-observations.md": "docs/decisions/ADR-pilot-public-observations.md",
+    "public_observation_source:docs/monolithic/public-observations.md": "docs/monolithic/public-observations.md",
+    "public_observation_source:graphs/pilot_t1_l2_monolithic.yaml": "graphs/pilot_t1_l2_monolithic.yaml",
+    "public_observation_source:graphs/pilot_t1_l2_typed.yaml": "graphs/pilot_t1_l2_typed.yaml",
+    "public_observation_source:graphs/turn_plans/pilot_t1_l2_monolithic.json": "graphs/turn_plans/pilot_t1_l2_monolithic.json",
+    "public_observation_source:graphs/turn_plans/pilot_t1_l2_typed.json": "graphs/turn_plans/pilot_t1_l2_typed.json",
+    "public_observation_source:registry/manifests/pilot-policy-surface.yaml": "registry/manifests/pilot-policy-surface.yaml",
+    "public_observation_source:src/aisle/harness/pilot_model_cache.py": "src/aisle/harness/pilot_model_cache.py",
+    "public_observation_source:src/aisle/harness/pilot_policy_surface.py": "src/aisle/harness/pilot_policy_surface.py",
     "research_prompt": "harness/CLAUDE.research.md",
     "seed_commitment_predecessor": "analysis/freeze/cse-causal-study-v22/freeze-manifest.json",
     "session_runner": "tools/campaign.py",
@@ -167,7 +178,7 @@
   "campaign_id": "cse-causal-study-v23",
   "commands": [
     "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-v1/protocol.json --purpose power",
-    "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-v1/protocol.json --purpose freeze --output /tmp/cse-causal-study-v23-freeze-refusal.json",
+    "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-v1/protocol.json --purpose freeze --output /tmp/cse-causal-study-v22-freeze-refusal.json",
     "uv run harness freeze check --manifest analysis/freeze/cse-causal-study-v23/freeze-manifest.json --allow-withheld-seeds"
   ],
   "decision_rules": {
@@ -344,5 +355,5 @@
     "seeds_source": "~/aisle-private/freeze/cse-causal-study-v1/seeds.json"
   },
   "spec": "500",
-  "superseded": "cse-causal-study-v22 (session-bound confinement attestation: loopback network policy for the provider relay and the capability audit run under the session's exact policy (TRT-5/TRT-7); seed commitment, collection rules and all pending gates preserved)"
+  "superseded": "cse-causal-study-v22 (public goal/reset/calibration projection for the existing T1-L2 candidate and pinned public model-cache preparation; study rules, inherited seed commitment and all gate outcomes preserved; no collection authorization)"
 }

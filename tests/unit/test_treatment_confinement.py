@@ -343,10 +343,10 @@ def test_live_capability_blocks_unix_socket_with_matching_network_control():
     assert report["confirmatory_ready"] is False
 
 
-# --- session-bound attestation and the loopback relay policy (PR7 part 2) ---
+# --- session-bound attestation and unsupported relay authority ---
 
 
-def _session_policy(tmp_path: Path, *, network_policy: str = "loopback") -> MacOSPolicy:
+def _session_policy(tmp_path: Path) -> MacOSPolicy:
     """A policy shaped like a real arm's: the audit's probes must be admitted
     executables and the Apple developer tree a runtime read root."""
     from aisle.harness.treatment_confinement import _apple_git_runtime
@@ -372,62 +372,38 @@ def _session_policy(tmp_path: Path, *, network_policy: str = "loopback") -> MacO
         runtime_read_roots=runtime_roots,
         allowed_executables=executables,
         hidden_roots=(hidden.resolve(),),
-        network_policy=network_policy,
-        loopback_port=_free_port() if network_policy == "loopback" else None,
+        network_policy="deny-external",
     )
 
 
-def _free_port() -> int:
-    import socket
-
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
-
-
-def test_loopback_policy_allows_only_localhost_outbound(tmp_path: Path):
-    """TRT-5/TRT-7: the relay policy admits outbound loopback and nothing else;
-    the deny-external profile carries no network allowance at all."""
+def test_old_loopback_policy_parses_but_is_not_compilable(tmp_path: Path):
+    """TRT-5: old policy declarations remain readable but cannot grant broad endpoints."""
     from aisle.harness.treatment_confinement import NETWORK_POLICIES
 
-    assert NETWORK_POLICIES == ("deny-external", "loopback")
-    base = _policy(tmp_path).as_dict()
-    pinned = MacOSPolicy(**{**base, "network_policy": "loopback", "loopback_port": 4321})
-    loopback = compile_macos_profile(pinned)
-    denied = compile_macos_profile(MacOSPolicy(**{**base, "network_policy": "deny-external"}))
-    assert '(allow network-outbound (remote ip "localhost:4321"))' in loopback.text
-    assert "localhost:*" not in loopback.text
-    assert "network*" not in loopback.text and "network-inbound" not in loopback.text
-    assert "network" not in denied.text
-    assert loopback.network_policy == "loopback" and denied.network_policy == "deny-external"
-    assert loopback.sha256 != denied.sha256 and loopback.policy_id != denied.policy_id
-    other = compile_macos_profile(MacOSPolicy(**{**pinned.as_dict(), "loopback_port": 4322}))
-    assert other.policy_id != loopback.policy_id
-    assert "loopback_port" not in denied.text
-    assert "loopback_port" not in MacOSPolicy(**base).canonical_dict()
-    assert pinned.canonical_dict()["loopback_port"] == 4321
+    assert NETWORK_POLICIES == ("deny-external",)
+    base = _policy(tmp_path)
+    assert "loopback_port" not in base.canonical_dict()
+    assert MacOSPolicy.from_canonical(base.canonical_dict()) == base
+    pinned = MacOSPolicy(**{**base.as_dict(), "network_policy": "loopback", "loopback_port": 4321})
     assert MacOSPolicy.from_canonical(pinned.canonical_dict()) == pinned
-    for bad in (
-        {**base, "network_policy": "loopback"},
-        {**base, "network_policy": "loopback", "loopback_port": 0},
-        {**base, "network_policy": "loopback", "loopback_port": True},
-        {**base, "network_policy": "deny-external", "loopback_port": 4321},
-    ):
-        with pytest.raises(ConfinementError, match="port"):
-            compile_macos_profile(MacOSPolicy(**bad))
+    with pytest.raises(ConfinementError, match="cannot isolate the provider relay"):
+        compile_macos_profile(pinned)
+    with pytest.raises(ConfinementError, match="cannot carry a relay port"):
+        compile_macos_profile(MacOSPolicy(**{**base.as_dict(), "loopback_port": 4321}))
 
 
-def test_relay_port_must_match_the_pinned_loopback_port():
-    """MON-8: a loopback policy and its provider binding name the same relay port."""
+def test_provider_admission_refuses_loopback_even_when_ports_match():
+    """TRT-5/MON-8: matching port numbers cannot establish exclusive relay authority."""
     from aisle.harness.treatment_confinement import verify_relay_port
 
-    policy = {"network_policy": "loopback", "loopback_port": 4321}
-    verify_relay_port(policy, {"base_url": "https://x", "relay_port": 4321})
     verify_relay_port({"network_policy": "deny-external"}, {"base_url": "https://x"})
     verify_relay_port(None, {"base_url": "https://x"})
-    for provider in ({"base_url": "https://x"}, {"base_url": "https://x", "relay_port": 4322}):
-        with pytest.raises(ValueError, match="relay_port"):
-            verify_relay_port(policy, provider)
+    for port in (None, 4321, 4322):
+        with pytest.raises(ValueError, match="cannot isolate the provider relay"):
+            verify_relay_port(
+                {"network_policy": "loopback", "loopback_port": 4321},
+                {"base_url": "https://x", "relay_port": port},
+            )
 
 
 def test_roots_must_be_printable_ascii(tmp_path: Path):
@@ -440,51 +416,26 @@ def test_roots_must_be_printable_ascii(tmp_path: Path):
         )
 
 
-def test_required_case_ids_follow_the_network_policy():
-    """TRT-6: under loopback the TCP denial is replaced by a loopback allow
-    control plus an external denial; every other case is unchanged."""
+def test_required_case_ids_refuse_unsupported_network_authority():
+    """TRT-6: unsupported loopback authority has no passing audit case matrix."""
     from aisle.harness.treatment_confinement import required_case_ids
 
-    denied = required_case_ids("deny-external")
-    loopback = required_case_ids("loopback")
-    assert "tcp_read" in denied and "loopback_tcp_read" not in denied
-    assert loopback - denied == {
-        "loopback_tcp_read",
-        "foreign_loopback_tcp_read",
-        "external_tcp_read",
-    }
-    assert denied - loopback == {"tcp_read"}
-    with pytest.raises(ConfinementError):
-        required_case_ids("unrestricted")
+    assert "tcp_read" in required_case_ids("deny-external")
+    for network in ("loopback", "unrestricted"):
+        with pytest.raises(ConfinementError):
+            required_case_ids(network)
 
 
-def test_launch_wrapper_requires_the_case_set_of_the_compiled_network_policy(tmp_path: Path):
-    """TRT-5: a deny-external attestation cannot authorize a loopback profile,
-    and the attested policy's network value must match the compiled one."""
-    policy = MacOSPolicy(
-        **{**_policy(tmp_path).as_dict(), "network_policy": "loopback", "loopback_port": 4321}
-    )
-    compiled = compile_macos_profile(policy)
-    profile_path = tmp_path / "profile.sb"
-    profile_path.write_text(compiled.text)
-    adapter_path = _fake_adapter(tmp_path)
-    report = _attestation(compiled, profile_path, adapter_path)
-    report["policy"] = policy.canonical_dict()
-    with pytest.raises(ConfinementError, match="failed case"):
-        wrap_verified_command(["/bin/cat", "x"], compiled, profile_path, report)
-    report["cases"] = [
-        {"id": case_id, "passed": True}
-        for case_id in {row["id"] for row in report["cases"]} - {"tcp_read"}
-        | {"loopback_tcp_read", "foreign_loopback_tcp_read", "external_tcp_read"}
-    ]
-    assert wrap_verified_command(["/bin/cat", "x"], compiled, profile_path, report)[1:3] == [
-        "-f",
-        str(profile_path),
-    ]
-    for broken in ({"network_policy": "deny-external"}, [], None):
+def test_launch_wrapper_requires_matching_attested_network_policy(tmp_path: Path):
+    """TRT-5: an attestation must name the same supported policy as the profile."""
+    compiled = compile_macos_profile(_policy(tmp_path))
+    profile = tmp_path / "profile.sb"
+    profile.write_text(compiled.text)
+    report = _attestation(compiled, profile, _fake_adapter(tmp_path))
+    for broken in ({"network_policy": "loopback"}, [], None):
         report["policy"] = broken
         with pytest.raises(ConfinementError, match="network policy"):
-            wrap_verified_command(["/bin/cat", "x"], compiled, profile_path, report)
+            wrap_verified_command(["/bin/cat", "x"], compiled, profile, report)
 
 
 def test_sentinel_placement_is_transactional_and_refuses_occupied_paths(tmp_path: Path):
@@ -613,8 +564,8 @@ def test_load_policy_round_trips_the_canonical_form_and_the_cli_refuses_with_jso
 @pytest.mark.skipif(sys.platform != "darwin", reason="sandbox-exec capability is macOS-only")
 def test_session_policy_audit_binds_the_launch_profile_and_leaves_no_sentinels(tmp_path: Path):
     """TRT-5/TRT-6/TRT-7: the audit run under a session's exact policy yields an
-    attestation the launch wrapper accepts, proves loopback reaches and external
-    connects are refused, and removes every sentinel it placed in the roots."""
+    attestation the launch wrapper accepts, proves network connects are refused,
+    and removes every sentinel it placed in the roots."""
     from aisle.harness.treatment_confinement import SANDBOX_EXEC, required_case_ids
 
     before = set(Path("/private/tmp").glob("aisle-sock-*"))
@@ -633,17 +584,16 @@ def test_session_policy_audit_binds_the_launch_profile_and_leaves_no_sentinels(t
     assert str(policy.hidden_roots[0]) not in json.dumps(report)
     assert report["adapter"]["compiled_profile_sha256"] == compiled.sha256
     assert report["adapter"]["policy_id"] == compiled.policy_id
-    assert set(cases) == required_case_ids("loopback")
+    assert set(cases) == required_case_ids("deny-external")
     assert report["summary"] == {
         "baseline_tests": 7,
         "capability_pass": True,
-        "declared_allow_tests": 5,
+        "declared_allow_tests": 4,
         "denial_detection_rate": 1.0,
-        "denial_tests": 11,
+        "denial_tests": 10,
         "false_alarm_rate": 0.0,
     }
-    assert cases["loopback_tcp_read"]["passed"] and not cases["loopback_tcp_read"]["denied"]
-    for denial in ("foreign_loopback_tcp_read", "external_tcp_read"):
+    for denial in ("tcp_read",):
         assert cases[denial]["passed"] and cases[denial]["denied"], cases[denial]
         assert not cases[denial]["sentinel_exposed"]
     assert set(Path("/private/tmp").glob("aisle-sock-*")) == before
@@ -983,7 +933,7 @@ def test_worker_policy_is_attested_under_a_probe_widened_profile(tmp_path: Path)
     """TRT-5/TRT-6/TRT-7: a python-only worker policy is audited under itself plus
     the audit's probes; the attestation binds the SESSION profile for the launch
     wrapper, records the widening, and the matrix still passes (the Unix-socket
-    probe runs through the admitted interpreter)."""
+    probe runs through the admitted netcat executable)."""
     from aisle.harness.treatment_confinement import run_macos_capability_audit as audit
 
     policy = _worker_like_policy(tmp_path)
@@ -1000,7 +950,12 @@ def test_worker_policy_is_attested_under_a_probe_widened_profile(tmp_path: Path)
     git, developer_root = _apple_git_runtime(cwd=tmp_path)
     widening = report["probe_widening"]
     assert set(widening) == {"allowed_executables", "runtime_read_roots"}
-    assert set(widening["allowed_executables"]) == {"/bin/bash", "/bin/cat", str(git)}
+    assert set(widening["allowed_executables"]) == {
+        "/bin/bash",
+        "/bin/cat",
+        "/usr/bin/nc",
+        str(git),
+    }
     assert str(developer_root) in widening["runtime_read_roots"]
     assert str(Path(sys.executable).resolve()) not in widening["allowed_executables"]
     recomputed = compile_macos_profile(
@@ -1052,11 +1007,26 @@ def test_cli_batch_attests_many_policies_and_refuses_partial_results(tmp_path: P
         rc = tc.main(["attest-many", "--policies", str(policies), "--jobs", "1"])
     out, _ = capsys.readouterr()
     assert rc == 0 and json.loads(out)["ok"] is True and json.loads(out)["attested"] == 1
-    # an existing attestation is skipped so a batch can be resumed
+    # a stale or malformed attestation cannot turn a resumed batch green
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(tc, "run_macos_capability_audit", fake_audit)
         resumed = tc.attest_many(policies, widen_probes=False, jobs=1)
-    assert resumed == {"ok": True, "attested": 0, "skipped": 1, "refused": {}}
+    assert resumed["ok"] is False and "a.policy.json" in resumed["refused"]
+    compiled = compile_macos_profile(good)
+    profile = tmp_path / "resume-profile.sb"
+    profile.write_text(compiled.text)
+    report = _attestation(compiled, profile, _fake_adapter(tmp_path))
+    (policies / "a.attestation.json").write_text(json.dumps(report))
+    assert tc.attest_many(policies, widen_probes=False, jobs=1) == {
+        "ok": True,
+        "attested": 0,
+        "skipped": 1,
+        "refused": {},
+    }
+    (policies / "a.policy.json").write_text("{")
+    assert tc.attest_many(policies, widen_probes=False, jobs=1)["ok"] is False
+    (policies / "a.policy.json").write_text(json.dumps(good.canonical_dict()))
+    assert tc.attest_many(policies, widen_probes=True, jobs=1)["ok"] is False
     # a sentinel sidecar names controller-private homes for that policy
     (tmp_path / "a" / "sentinels").mkdir()
     (policies / "a.attestation.json").unlink()

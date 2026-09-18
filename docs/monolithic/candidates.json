@@ -29,9 +29,9 @@
       "perception": "L2",
       "verifier": "realistic",
       "reset": "teleport",
-      "typed_graph": "graphs/expert_t1_l2.yaml",
-      "turn_plan": "graphs/turn_plans/expert_t1_l2.json",
-      "monolithic_template": "graphs/monolithic_t1_l2.yaml",
+      "typed_graph": "graphs/pilot_t1_l2_typed.yaml",
+      "turn_plan": "graphs/turn_plans/pilot_t1_l2_typed.json",
+      "monolithic_template": "graphs/pilot_t1_l2_monolithic.yaml",
       "monolithic_module": "experts/monolithic/expert_t1_l2.py",
       "documents": {
         "treatment_table": "docs/monolithic/treatment-table-t1-l2.json",

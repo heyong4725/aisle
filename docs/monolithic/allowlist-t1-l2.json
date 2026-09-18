@@ -9,8 +9,8 @@
   },
   "typed": {
     "editable": [
-      "graphs/expert_t1_l2.yaml",
-      "graphs/turn_plans/expert_t1_l2.json",
+      "graphs/pilot_t1_l2_typed.yaml",
+      "graphs/turn_plans/pilot_t1_l2_typed.json",
       "registry/manifests/detected-pose.yaml",
       "registry/manifests/detector-openvocab.yaml",
       "registry/manifests/grasp-planner-topdown.yaml",

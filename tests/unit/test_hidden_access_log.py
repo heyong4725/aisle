@@ -303,8 +303,8 @@ def test_process_names_come_from_every_admitted_executable(tmp_path: Path):
     reason="the unified log is macOS-only",
 )
 def test_live_collector_sees_a_real_sandbox_denial(tmp_path: Path):
-    """TRT-6: a confined read of a hidden path under a real profile is reported by
-    the sandbox and lands as a hidden-target denial with a complete log."""
+    """TRT-6: a real denied read is retained when the host reports it; when
+    macOS suppresses reports, missing controls make the log incomplete."""
     from aisle.harness.treatment_confinement import MacOSPolicy, compile_macos_profile
 
     roots = _roots(tmp_path)
@@ -328,9 +328,9 @@ def test_live_collector_sees_a_real_sandbox_denial(tmp_path: Path):
         adapter_active=True,
         profile_path=profile,
         marker=hal.marker_command(["/bin/cat"]),
-        grace_s=3.0,
+        grace_s=hal.DEFAULT_GRACE_S,
     ) as collector:
-        assert collector.started and collector.markers == {"start": True, "end": False}
+        assert collector.started
         result = subprocess.run(
             ["/usr/bin/sandbox-exec", "-f", str(profile), "/bin/cat", str(hidden / "secret.txt")],
             capture_output=True,
@@ -338,15 +338,109 @@ def test_live_collector_sees_a_real_sandbox_denial(tmp_path: Path):
         )
         assert result.returncode != 0 and b"HIDDEN" not in result.stdout
     log = json.loads((output / "hidden-access-log.json").read_text())
-    assert log["complete"] is True
-    assert {"decision": "deny", "surface": "file-read-data", "target_class": "hidden"} in log[
-        "events"
-    ]
+    record = json.loads((output / "hidden-access-collection.json").read_text())
+    if all(record["markers"].values()):
+        assert log["complete"] is True
+        assert {"decision": "deny", "surface": "file-read-data", "target_class": "hidden"} in log[
+            "events"
+        ]
+        assert record["counts"]["markers"] >= 2
+    else:
+        assert log["complete"] is False
     assert "HIDDEN" not in json.dumps(log)
+    assert "aisle-canary" not in json.dumps(record) and "aisle-canary" not in json.dumps(log)
+
+
+def test_marker_requires_the_selected_executable_and_a_read_denial(tmp_path: Path):
+    """TRT-6: a report about the canary from another process or operation cannot
+    substitute for the marker executable's denied read."""
+    collector = hal.SandboxReportCollector(
+        names={"cat", "codex"},
+        roots=_roots(tmp_path),
+        output=tmp_path / "collection",
+        adapter_active=True,
+        profile_path=tmp_path / "profile.sb",
+        marker=["/bin/cat"],
+    )
+    canary = "/private/tmp/aisle-canary-example/start-example"
+    collector._lines = [
+        json.dumps(_row(f"Sandbox: codex(1) deny(1) file-read-data {canary}")),
+        json.dumps(_row(f"Sandbox: cat(2) deny(1) file-write-data {canary}")),
+    ]
+    assert collector._seen(canary) is False  # noqa: SLF001
+    collector._lines.append(json.dumps(_row(f"Sandbox: cat(2) deny(1) file-read-data {canary}")))
+    assert collector._seen(canary) is True  # noqa: SLF001
+
+
+def test_other_denials_on_a_canary_are_retained_as_events(tmp_path: Path, monkeypatch):
+    """TRT-6: only the marker executable's file-read denial is removed from
+    session events; another process or operation on that path remains visible."""
+    canary = "/private/tmp/aisle-canary-example/start-example"
+    rows = [
+        _row(f"Sandbox: codex(1) deny(1) file-read-data {canary}"),
+        _row(f"Sandbox: cat(2) deny(1) file-write-data {canary}"),
+        _row(f"Sandbox: cat(2) deny(1) file-read-data {canary}"),
+    ]
+    monkeypatch.setattr(hal.SandboxReportCollector, "_run_marker", lambda self, name: False)
+    output = tmp_path / "collection"
+    collector = hal.SandboxReportCollector(
+        names={"cat", "codex"},
+        roots=_roots(tmp_path),
+        output=output,
+        adapter_active=True,
+        profile_path=tmp_path / "profile.sb",
+        marker=["/bin/cat"],
+        command=_fake_log(tmp_path, rows),
+        grace_s=0.1,
+    )
+    collector._canaries.append(canary)  # noqa: SLF001
+    with collector:
+        pass
+    record = json.loads((output / "hidden-access-collection.json").read_text())
+    log = json.loads((output / "hidden-access-log.json").read_text())
+    assert record["counts"]["markers"] == 1
+    assert record["counts"]["selected"] == 2
+    assert [event["surface"] for event in log["events"]] == [
+        "file-read-data",
+        "file-write-data",
+    ]
+
+
+def test_marker_coverage_cannot_certify_an_unprobed_process_name(tmp_path: Path, monkeypatch):
+    """TRT-6: working cat controls cannot claim complete logging for an
+    additionally admitted codex process that the collector never probed."""
+    monkeypatch.setattr(hal.SandboxReportCollector, "_run_marker", lambda self, name: True)
+    output = tmp_path / "collection"
+    collector_roots = _roots(tmp_path)
+    with hal.SandboxReportCollector(
+        names={"cat", "codex"},
+        roots=collector_roots,
+        output=output,
+        adapter_active=True,
+        profile_path=tmp_path / "profile.sb",
+        marker=["/bin/cat"],
+        command=_fake_log(tmp_path, []),
+        grace_s=0.1,
+    ):
+        pass
+    log = json.loads((output / "hidden-access-log.json").read_text())
     record = json.loads((output / "hidden-access-collection.json").read_text())
     assert record["markers"] == {"start": True, "end": True}
-    assert record["counts"]["markers"] >= 2
-    assert "aisle-canary" not in json.dumps(record) and "aisle-canary" not in json.dumps(log)
+    assert record["coverage"]["unprobed_process_names"] == ["codex"]
+    assert log["complete"] is False
+    single_output = tmp_path / "single-process"
+    with hal.SandboxReportCollector(
+        names={"cat"},
+        roots=collector_roots,
+        output=single_output,
+        adapter_active=True,
+        profile_path=tmp_path / "profile.sb",
+        marker=["/bin/cat"],
+        command=_fake_log(tmp_path / "single-stream", []),
+        grace_s=0.1,
+    ):
+        pass
+    assert json.loads((single_output / "hidden-access-log.json").read_text())["complete"] is True
 
 
 @pytest.mark.skipif(
@@ -425,6 +519,31 @@ def test_fake_stream_markers_fail_closed_without_a_report(tmp_path: Path, monkey
     record = json.loads((output / "hidden-access-collection.json").read_text())
     assert record["markers"] == {"start": False, "end": False}
     assert record["stream"]["ended_cleanly"] is True
+
+
+def test_canary_uses_the_system_temp_dir_when_private_tmp_is_absent(tmp_path: Path, monkeypatch):
+    """TRT-6: the controller still runs and retains an incomplete log on hosts
+    without macOS's /private/tmp, as in Linux CI."""
+    roots = _roots(tmp_path)
+    is_dir = Path.is_dir
+    monkeypatch.setattr(
+        Path, "is_dir", lambda path: False if path == Path("/private/tmp") else is_dir(path)
+    )
+    monkeypatch.setattr(hal.SandboxReportCollector, "_run_marker", lambda self, name: False)
+    output = tmp_path / "collection"
+    with hal.SandboxReportCollector(
+        names={"cat"},
+        roots=roots,
+        output=output,
+        adapter_active=True,
+        profile_path=tmp_path / "profile.sb",
+        marker=["/bin/cat"],
+        command=_fake_log(tmp_path, []),
+        grace_s=0.1,
+    ) as collector:
+        canary_parent = Path(collector._canary_dir.name).parent  # noqa: SLF001
+        assert canary_parent != Path("/private/tmp")
+    assert json.loads((output / "hidden-access-log.json").read_text())["complete"] is False
 
 
 def test_engineering_session_collects_its_own_access_log(tmp_path: Path, monkeypatch):

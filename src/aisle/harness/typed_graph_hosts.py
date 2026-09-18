@@ -162,6 +162,63 @@ def _source(node, participant_files=PARTICIPANT_FILES):
     return source if source in participant_files else None
 
 
+def _public_observation_routes(authored, baseline, trusted):
+    """BND-2/BND-3: preserve private instruments while allowing public policy wiring."""
+    baseline_policy = {n["id"] for n in baseline["nodes"]} - set(trusted)
+    policy = {n["id"] for n in authored["nodes"]} - set(trusted)
+
+    def source(spec):
+        return spec["source"] if isinstance(spec, dict) else spec
+
+    public = {
+        source(spec)
+        for node in baseline["nodes"]
+        if node["id"] in baseline_policy
+        for spec in node.get("inputs", {}).values()
+        if source(spec).split("/")[0] not in baseline_policy
+    }
+
+    def fixed_inputs(node, policy_nodes):
+        fixed = {}
+        for port, spec in node.get("inputs", {}).items():
+            route = source(spec)
+            parts = route.split("/")
+            policy_ingress = (
+                node["id"] == "budget-guard"
+                and port in {"joint_cmd", "gripper_cmd"}
+                or node["id"] == "rollout-client"
+                and port == "episode_feedback"
+                or node["id"] == "turn-barrier"
+                and re.fullmatch(r"done_\d+", port)
+            )
+            if policy_ingress and len(parts) == 2 and parts[0] in policy_nodes:
+                if node["id"] == "turn-barrier" and parts[1] != "turn_done":
+                    raise GraphHostError("pilot barrier input is not a turn acknowledgement")
+                continue
+            fixed[port] = spec
+        return fixed
+
+    for node in authored["nodes"]:
+        if node["id"] in trusted:
+            if not _json_equal(
+                fixed_inputs(node, policy),
+                fixed_inputs(trusted[node["id"]], baseline_policy),
+            ):
+                raise GraphHostError("pilot trusted instrument inputs have changed")
+        else:
+            for port, spec in node.get("inputs", {}).items():
+                route = source(spec)
+                # Realistic rollout rewrites only the episode_result port.
+                # An alias or scalar form of the template edge would evade it.
+                oracle_alias = route == "verifier-oracle/episode_result" and (
+                    port != "episode_result" or not isinstance(spec, dict)
+                )
+                if oracle_alias or (route.split("/")[0] not in policy and route not in public):
+                    raise GraphHostError(
+                        "pilot policy input is outside the public observation surface"
+                    )
+
+
 def replace_authored_nodes(
     authored,
     baseline,
@@ -195,6 +252,8 @@ def replace_authored_nodes(
         if type(expansions) is not dict or not set(expansions) <= set(bindings):
             raise GraphHostError("expansion environment has an undeclared node")
         trusted = {n["id"]: n for n in baseline["nodes"] if _source(n, participant_files) is None}
+        if "pilot-policy-surface" in trusted:
+            _public_observation_routes(authored, baseline, trusted)
         result = copy.deepcopy(authored)
         seen, assigned = set(), set()
         for node in result["nodes"]:

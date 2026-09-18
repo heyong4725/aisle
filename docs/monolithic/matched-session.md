@@ -82,7 +82,9 @@ on positive controls, not on stream liveness alone: at the start and at the
 end of the window the controller runs the arm's own admitted executable
 (interpreter, else shell, else cat) under the arm's profile against a fresh
 controller-owned canary under `/private/tmp/aisle-canary-*` whose read the
-profile denies, and requires the sandbox to report exactly that denial. A
+profile denies, and requires a file-read denial from that executable on the
+exact canary. The collection record lists selected process names the markers
+did not probe; any such name leaves `complete` false. A
 missing marker, a stream that started late, died, or had to be killed, or a
 reader failure all leave `complete` false and the attempt excluded
 (`hidden_access_log_incomplete`); a policy that admits no interpreter, shell
@@ -91,8 +93,10 @@ workers are provisioned dynamically (no worker policy to select). Allows are
 never reported, so `visible_allows` stays zero, and selection is by process
 name because the kernel's report carries no ancestry: the controller runs one
 session at a time and no capability audit during a session, and the retained
-pids let a reviewer cross-check the selection. Both are stated limitations,
-not hidden ones. The supplied capability must match the bound adapter,
+pids let a reviewer cross-check the selection. Distinct executables that share
+one process name also cannot be distinguished by this sensor, so an independent
+coverage check is still required before treating the log as complete study
+evidence. These are stated limitations. The supplied capability must match the bound adapter,
 compiled profile and current adapter bytes. This capability is limited to
 unscored engineering work; it does not establish the independent study gates.
 The runner uses the plan's environment, zero prior spend and the declared token
@@ -117,34 +121,34 @@ directories instead so the audit never writes into another arm's readable
 view. The retained report replaces hidden-root paths with their digests
 (`policy_id` still binds the full policy). A sentinel left behind by an audit
 process that died uncleanly is reclaimed on the next run; any other occupant
-refuses. Two network policies compile: `deny-external` (no network) and
-`loopback`, which pins ONE local TCP port (`loopback_port`) so a confined
-frontend can reach exactly its provider relay; the launch binding's
-`provider.relay_port` must equal it (the relay binds that port) and admission
-refuses a mismatch. Under `loopback` the attestation carries a
-`loopback_tcp_read` allow case on the pinned port, a `foreign_loopback_tcp_read`
-case proving another local port is refused, and an `external_tcp_read` case
-proving an external connect is refused outright. SBPL's `localhost` names every
-address this host owns, so the pin, not the host, is what makes the grant
-exclusive. A worker or validator policy admits only an interpreter and cannot
-run the audit's probes: `--widen-probes` audits it under the policy plus
-exactly those probes (the shell, cat, the Apple Git, and netcat only when no
-Unix-socket probe is admitted) and the read roots they load from, while the
-attestation still binds the SESSION profile and records the widening under
-`probe_widening`; the launch wrapper accepts it only when the widening it
-recomputes from the session policy and THIS host's own developer Git equals
-that declaration, so nothing but the audit's probes can ride along and an
-attestation from another host cannot verify. `attest-many --policies <dir>
-[--widen-probes] [--jobs N]` audits every `<name>.policy.json` in a directory
-concurrently (policies that would share a sentinel home are serialized) and
-writes `<name>.attestation.json` beside each; an existing attestation is
-skipped so a batch resumes, every policy it could not attest is named (CON-8),
-and an optional `<name>.sentinels.json` names that policy's controller-private
-sentinel homes. The attestation is an unsigned controller-owned document: the
+refuses. Only `deny-external` (no network) is supported. The proposed
+`loopback` port policy is rejected during compilation, provider admission,
+audit startup, and launch verification, including for previously passing
+attestations. macOS SBPL's `localhost` selector covers every address owned by
+the host: a relay on `127.0.0.1:<port>` can coexist with a separate service on
+`[::1]:<port>`. A port number therefore cannot establish exclusive relay
+access. Literal IP endpoint selectors are rejected by the sandbox compiler.
+
+A worker or validator policy admits only an interpreter and cannot run the
+audit's probes. `--widen-probes` audits it under the policy plus exactly those
+probes and the read roots they load from. The attestation binds the session
+profile and records the additions under `probe_widening`; the launch wrapper
+recomputes the audited profile from the session policy and the host's Apple Git.
+`attest-many --policies <dir> [--widen-probes] [--jobs N]` audits each
+`<name>.policy.json` concurrently, serializing policies that share a sentinel
+home. It writes `<name>.attestation.json` beside each policy, validates
+existing attestations before skipping them, and names each policy it cannot
+attest (CON-8). An optional `<name>.sentinels.json` names controller-private
+sentinel homes. The attestation is an unsigned controller-owned document:
 recomputation guards against tool misuse, not against an author who can edit
-the retained file. A session whose
-attestation was not produced this way is unattested, which the pilot
-registration names as a stop condition.
+that document.
+
+A pinned `provider.relay_port` configures a listener but grants no network
+authority. Relay-backed confined sessions remain unavailable until an
+exclusive transport is implemented and validated. This stop condition must
+not be bypassed with a broader policy or a cached attestation. The pilot
+still requires exact-context admission and independent confinement evidence
+before collection.
 
 Deterministic integration tests run real child processes for both arms through
 an explicitly synthetic pass-through adapter. Those tests cover the process
@@ -603,3 +607,8 @@ stop (a session at its ceiling is an exclusion under MON-8/MON-12), so no row is
 censored under CSE-13 until the runner retains one. A session directory outside
 the ledger, a completed session without held-out evidence, or evidence that
 belongs to another session refuses (STA-3/STA-11/CSE-8).
+
+The `t1-l2-realistic` candidate uses the paired
+[public observation graphs and pinned cache preparer](public-observations.md).
+Bind the selected candidate table and worker environment before admission;
+old receipts do not qualify a changed graph or model-cache context.

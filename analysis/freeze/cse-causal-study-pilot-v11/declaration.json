@@ -28,7 +28,7 @@
     "matched_source:docs/monolithic/treatment-table-t1-l2.json": "docs/monolithic/treatment-table-t1-l2.json",
     "matched_source:env/limits.toml": "env/limits.toml",
     "matched_source:experts/monolithic/expert_t1_l2.py": "experts/monolithic/expert_t1_l2.py",
-    "matched_source:graphs/monolithic_t1_l2.yaml": "graphs/monolithic_t1_l2.yaml",
+    "matched_source:graphs/pilot_t1_l2_monolithic.yaml": "graphs/pilot_t1_l2_monolithic.yaml",
     "matched_source:src/aisle/__init__.py": "src/aisle/__init__.py",
     "matched_source:src/aisle/embodiment.py": "src/aisle/embodiment.py",
     "matched_source:src/aisle/harness/_code_mode_protocol/__init__.py": "src/aisle/harness/_code_mode_protocol/__init__.py",
@@ -50,7 +50,6 @@
     "matched_source:src/aisle/harness/frontend_request_authority.py": "src/aisle/harness/frontend_request_authority.py",
     "matched_source:src/aisle/harness/guard_divergence.py": "src/aisle/harness/guard_divergence.py",
     "matched_source:src/aisle/harness/heldout_eval.py": "src/aisle/harness/heldout_eval.py",
-    "matched_source:src/aisle/harness/hidden_access_log.py": "src/aisle/harness/hidden_access_log.py",
     "matched_source:src/aisle/harness/matched_app_server.py": "src/aisle/harness/matched_app_server.py",
     "matched_source:src/aisle/harness/matched_collection.py": "src/aisle/harness/matched_collection.py",
     "matched_source:src/aisle/harness/matched_dynamic_run.py": "src/aisle/harness/matched_dynamic_run.py",
@@ -143,6 +142,17 @@
     "protocol": "analysis/freeze/cse-causal-study-pilot-v11/protocol.json",
     "protocol_template": "analysis/statistics/protocol-template.json",
     "provider_admission_documentation": "docs/monolithic/provider-admission.md",
+    "public_observation_source:analysis/monolithic-control/experts-t1-l2-v1.json": "analysis/monolithic-control/experts-t1-l2-v1.json",
+    "public_observation_source:analysis/monolithic-control/treatment-table-t1-l2-v1.json": "analysis/monolithic-control/treatment-table-t1-l2-v1.json",
+    "public_observation_source:docs/decisions/ADR-pilot-public-observations.md": "docs/decisions/ADR-pilot-public-observations.md",
+    "public_observation_source:docs/monolithic/public-observations.md": "docs/monolithic/public-observations.md",
+    "public_observation_source:graphs/pilot_t1_l2_monolithic.yaml": "graphs/pilot_t1_l2_monolithic.yaml",
+    "public_observation_source:graphs/pilot_t1_l2_typed.yaml": "graphs/pilot_t1_l2_typed.yaml",
+    "public_observation_source:graphs/turn_plans/pilot_t1_l2_monolithic.json": "graphs/turn_plans/pilot_t1_l2_monolithic.json",
+    "public_observation_source:graphs/turn_plans/pilot_t1_l2_typed.json": "graphs/turn_plans/pilot_t1_l2_typed.json",
+    "public_observation_source:registry/manifests/pilot-policy-surface.yaml": "registry/manifests/pilot-policy-surface.yaml",
+    "public_observation_source:src/aisle/harness/pilot_model_cache.py": "src/aisle/harness/pilot_model_cache.py",
+    "public_observation_source:src/aisle/harness/pilot_policy_surface.py": "src/aisle/harness/pilot_policy_surface.py",
     "research_prompt": "harness/CLAUDE.research.md",
     "seed_commitment_predecessor": "analysis/freeze/cse-causal-study-pilot-v10/freeze-manifest.json",
     "session_runner": "tools/campaign.py",
@@ -163,7 +173,7 @@
   "campaign_id": "cse-causal-study-pilot-v11",
   "commands": [
     "uv run harness stats validate --protocol analysis/freeze/cse-causal-study-pilot-v11/protocol.json --purpose power",
-    "uv run harness stats power --protocol analysis/freeze/cse-causal-study-pilot-v11/protocol.json --output analysis/freeze/cse-causal-study-pilot-v11/power.json",
+    "uv run harness stats power --protocol analysis/freeze/cse-causal-study-pilot-v11/protocol.json --output analysis/freeze/cse-causal-study-pilot-v8/power.json",
     "uv run harness freeze check --manifest analysis/freeze/cse-causal-study-pilot-v11/freeze-manifest.json --allow-withheld-seeds"
   ],
   "decision_rules": {
@@ -331,6 +341,7 @@
       "kind": "machine_check",
       "owner_role": "holder of the original private seed and salt sources",
       "pilot_record_2026_09_13": "not applicable to this registration: it commits a fresh private seed source directly (no inheritance); kept for shape parity and left pending",
+      "public_observation_successor_note": "Inherited from pilot-v8 without access to private seed sources; verification remains pending. This byte-binding successor does not authorize a pilot run.",
       "record": null,
       "status": "pending"
     },
@@ -378,5 +389,5 @@
     "seeds_source": "~/aisle-private/freeze/cse-causal-study-pilot-v8/seeds.json"
   },
   "spec": "500",
-  "superseded": "cse-causal-study-pilot-v10 (hidden-access log collected from the macOS sandbox's own denial reports for the launch window, completeness attested by start/end positive-control markers run with the arm's own admitted executable, retained beside a collection record (TRT-6); seed commitment, collection rules and all pending gates preserved)"
+  "superseded": "cse-causal-study-pilot-v10 (probe-widened interpreter-only attestation and validated concurrent batch resume; seed commitment and pending gates preserved; no collection authorization)"
 }

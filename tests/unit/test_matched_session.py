@@ -1228,14 +1228,15 @@ def test_v2_development_protocol_admits_the_t1_l2_pair_with_its_own_documents(tm
         "timeout_s": 30,
     }
     plan = admit_pair(control, candidates, roots, development=protocol)
-    assert plan["development"]["typed_graph"] == "graphs/expert_t1_l2.yaml"
+    assert plan["development"]["typed_graph"] == "graphs/pilot_t1_l2_typed.yaml"
     assert plan["development"]["verifier"] == "realistic"
     documents = plan["development"]["documents"]
     expected = monolith.table_report(control, write=False, documents=documents)["immutable_id"]
     assert plan["surface"]["treatment_table_id"] == expected
     assert expected != monolith.table_report(control, write=False)["immutable_id"]
     assert plan["surface"]["interface_map_id"] == "mon-interface-map-t1-l2-v1"
-    assert "graphs/monolithic_t1_l2.yaml" in plan["surface"]["artifact_hashes"]
+    assert "graphs/pilot_t1_l2_monolithic.yaml" in plan["surface"]["artifact_hashes"]
+    assert "src/aisle/harness/pilot_policy_surface.py" in plan["surface"]["artifact_hashes"]
     assert verify_plan(plan, control, roots) == plan
     (control / "experts/monolithic/expert_t1_l2.py").unlink()
     with pytest.raises(AdmissionError, match="artifact missing"):

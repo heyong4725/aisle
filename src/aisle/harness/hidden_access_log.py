@@ -15,8 +15,9 @@ them. A log can therefore only claim completeness through positive controls:
 at the start and at the end of the window the controller runs the session's
 own admitted executable under the session profile against a controller-owned
 canary whose read is denied, and requires the sandbox to report exactly that
-denial. A missing marker fails closed (`complete: false`); a collector
-built without markers can never claim completeness, whatever the stream did.
+denial. A missing marker or a selected process name without a marker fails
+closed (`complete: false`); a collector built without markers can never claim
+completeness, whatever the stream did.
 The kernel reports the first occurrence of a denial as its own line and
 coalesces further identical ones into `N duplicate reports for ...`, so a
 summary weighs N events and a plain report one.
@@ -237,9 +238,17 @@ class SandboxReportCollector:
             lines = list(self._lines)
         for line in lines:
             report = _report_in(_row(line))
-            if report is not None and report["target"] == canary:
+            if report is not None and self._is_marker_report(report, canary):
                 return True
         return False
+
+    def _is_marker_report(self, report: dict[str, Any], canary: str) -> bool:
+        return (
+            self.marker is not None
+            and report["target"] == canary
+            and report["process"] == Path(self.marker[0]).name[:PROCESS_NAME_LIMIT]
+            and report["operation"].startswith("file-read")
+        )
 
     def _run_marker(self, name: str) -> bool:
         """Read a fresh controller-owned canary through the session's own
@@ -289,8 +298,9 @@ class SandboxReportCollector:
             self.started = self._line_or_eof.wait(self.start_timeout_s) and bool(self._lines)
             self._started_at = self.now()
             if self.marker is not None:
+                canary_parent = "/private/tmp" if Path("/private/tmp").is_dir() else None
                 self._canary_dir = tempfile.TemporaryDirectory(
-                    prefix="aisle-canary-", dir="/private/tmp"
+                    prefix="aisle-canary-", dir=canary_parent
                 )
                 self.markers["start"] = self.started and self._run_marker("start")
         except BaseException:
@@ -355,11 +365,17 @@ class SandboxReportCollector:
             and reader_ok
             and returncode in (0, -signal.SIGTERM)
         )
+        marker_name = (
+            None if self.marker is None else Path(self.marker[0]).name[:PROCESS_NAME_LIMIT]
+        )
+        unprobed_names = sorted(self.names - ({marker_name} if marker_name is not None else set()))
         complete = (
             self.started
             and ended_cleanly
             and self.markers is not None
             and all(self.markers.values())
+            and marker_name in self.names
+            and not unprobed_names
         )
         events: list[dict[str, str]] = []
         pids: dict[str, set[int]] = {}
@@ -383,7 +399,7 @@ class SandboxReportCollector:
                 counts["unparsed"] += 1
                 continue
             counts["reports"] += 1
-            if any(report["target"] == canary for canary in self._canaries):
+            if any(self._is_marker_report(report, canary) for canary in self._canaries):
                 counts["markers"] += 1
                 continue
             if report["process"] not in self.names:
@@ -412,6 +428,10 @@ class SandboxReportCollector:
             "command": self.command,
             "window": {"started_at": self._started_at, "finished_at": finished_at},
             "selection": {"process_names": sorted(self.names)},
+            "coverage": {
+                "marker_process_name": marker_name,
+                "unprobed_process_names": unprobed_names,
+            },
             "counts": counts,
             "target_kinds": kinds,
             "pids": {name: sorted(values) for name, values in sorted(pids.items())},
