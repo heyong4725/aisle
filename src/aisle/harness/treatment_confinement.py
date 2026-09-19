@@ -115,6 +115,11 @@ class MacOSPolicy:
     #: Retained for parsing old declarations; loopback authority is refused.
     loopback_port: int | None = None
 
+    @property
+    def readable_roots(self) -> tuple[Path, ...]:
+        """Everything the confined process may read: visible, output and runtime roots."""
+        return (*self.visible_roots, *self.output_roots, *self.runtime_read_roots)
+
     def as_dict(self) -> dict[str, Any]:
         """Return constructor-compatible fields for tests and policy transforms.
         The port appears only when pinned, so every existing consumer of the
@@ -250,7 +255,7 @@ def _validate_policy(policy: MacOSPolicy) -> None:
         if not executable.is_file() or not os.access(executable, os.X_OK):
             raise ConfinementError(f"allowed executable is not runnable: {executable}")
 
-    readable = (*policy.visible_roots, *policy.output_roots, *policy.runtime_read_roots)
+    readable = policy.readable_roots
     for hidden in policy.hidden_roots:
         for allowed in readable:
             if _contains(allowed, hidden) or _contains(hidden, allowed):
@@ -592,7 +597,7 @@ def widen_for_probes(
     admitted = set(policy.allowed_executables)
     wanted = [Path(p).resolve() for p in PROBE_EXECUTABLES] + [git]
     executables = sorted({p for p in wanted if p not in admitted}, key=str)
-    readable = (*policy.visible_roots, *policy.output_roots, *policy.runtime_read_roots)
+    readable = policy.readable_roots
     roots = []
     for candidate in (*(Path(p).resolve() for p in PROBE_READ_ROOTS), developer_root):
         if not candidate.is_dir():

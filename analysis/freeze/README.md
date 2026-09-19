@@ -225,3 +225,9 @@ attestation for interpreter-only session policies and validates existing
 attestations when a batch resumes. The Unix socket probe uses the audited
 netcat executable on macOS. The inherited seed commitments and all pending
 gates remain unchanged; these registrations do not authorize collection.
+
+CSE v26 and pilot v12 supersede v25 and pilot v11 after #591 adds a retained
+macOS sandbox denial log with start and end controls. A log with missing
+reports or unprobed executable names remains incomplete. The inherited seed
+commitments and all pending gates remain unchanged; these registrations do not
+authorize collection.

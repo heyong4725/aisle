@@ -10,10 +10,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from aisle.harness.hidden_access_log import SCHEMA_VERSION as ACCESS_LOG_SCHEMA_VERSION
 from aisle.harness.treatment_integrity import ManifestError, create_treatment_manifest
 
 SCHEMA_VERSION = "aisle.treatment-postflight.v2"
-ACCESS_LOG_SCHEMA_VERSION = "aisle.hidden-access-log.v1"
 
 
 class PostflightError(RuntimeError):

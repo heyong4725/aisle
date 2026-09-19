@@ -41,6 +41,7 @@ CONTROLLER_FILES = (
     "tools/campaign.py",
     "src/aisle/harness/matched_session.py",
     "src/aisle/harness/candidates.py",
+    "src/aisle/harness/hidden_access_log.py",
     "src/aisle/harness/matched_evidence.py",
     "src/aisle/harness/matched_collection.py",
     "src/aisle/harness/monolithic_run_evidence.py",

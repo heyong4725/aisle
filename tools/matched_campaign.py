@@ -7,21 +7,88 @@ Its historical treatment and scoring entry points are deliberately not invoked.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 from pathlib import Path
 
 import campaign
 
+from aisle.harness.hidden_access_log import (
+    AuthorityRoots,
+    SandboxReportCollector,
+    marker_command,
+    process_names,
+)
 from aisle.harness.matched_evidence import retain_run
 from aisle.harness.matched_frontend import FrontendToolBudget
 from aisle.harness.matched_session import AdmissionError, admit_pair, execute_session, verify_plan
 from aisle.harness.matched_tool_service import ToolService
 from aisle.harness.matched_tools import ToolController
 from aisle.harness.treatment_confinement import (
+    SANDBOX_EXEC,
     MacOSPolicy,
     compile_macos_profile,
     wrap_verified_command,
 )
+
+COLLECTOR = "macos-sandbox-reports"
+COLLECTION_DIR = "access-collection"
+
+
+def _worker_policies(preparations) -> list[dict]:
+    """Every worker policy inside the controller's per-run preparations: a
+    typed run is a list of stage maps (worker name -> launch), a monolithic run
+    is one launch. A dynamic preparation (a provider template, workers
+    provisioned at run time) carries no policy to select, so it refuses."""
+    found: list[dict] = []
+
+    def walk(value) -> None:
+        if isinstance(value, dict):
+            if "policy" in value:
+                found.append(value["policy"])
+            elif "provider" in value:
+                raise AdmissionError(
+                    "sandbox-report collection cannot select dynamically provisioned workers"
+                )
+            else:
+                for item in value.values():
+                    walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    walk(preparations or [])
+    return found
+
+
+def _access_log_collector(
+    plan: dict, arm: str, profile_path: Path, destination: Path, worker_preparations
+):
+    """The sandbox-report collector for one launch: selects every process name
+    the session's policies admit (the arm, the validator, every prepared
+    worker), classifies targets against the arm's own authority roots and runs
+    its positive-control markers with the arm's own admitted executable under
+    the arm's profile. `adapter_active` is settled by the launcher once the
+    wrapped command is verified."""
+    declared = plan["confinement_bindings"][arm]["policy"]
+    policies = [declared]
+    if "typed_validation" in plan:
+        policies.append(plan["typed_validation"]["policy"])
+    policies.extend(_worker_policies(worker_preparations))
+    policy = MacOSPolicy.from_canonical(declared)
+    marker = marker_command(declared["allowed_executables"])
+    if marker is None:
+        raise AdmissionError(
+            "sandbox-report collection needs an admitted interpreter, shell or cat for its markers"
+        )
+    return SandboxReportCollector(
+        names=process_names(policies),
+        roots=AuthorityRoots(readable=policy.readable_roots, hidden=policy.hidden_roots),
+        output=destination / COLLECTION_DIR,
+        adapter_active=False,
+        profile_path=Path(profile_path),
+        marker=marker,
+    )
 
 
 def run_engineering_session(
@@ -34,7 +101,7 @@ def run_engineering_session(
     session_id: str,
     profile_path: Path,
     attestation: dict,
-    hidden_access_log: Path,
+    hidden_access_log: Path | dict,
     purpose: str = "engineering",
     worker_preparations: list | None = None,
 ) -> dict:
@@ -42,11 +109,28 @@ def run_engineering_session(
 
     This records engineering infrastructure evidence, never baseline outcomes.
     Adapter capability does not replace the independent study prerequisites.
+    `hidden_access_log` is either a controller-supplied log path or
+    `{"collect": "macos-sandbox-reports"}`, in which case the sandbox's own
+    denial reports are streamed for the launch window and retained as the log.
     """
 
     authority_references = {}
+    collect = isinstance(hidden_access_log, dict)
+    if collect:
+        if hidden_access_log != {"collect": COLLECTOR}:
+            raise AdmissionError("unsupported hidden access log collector")
+        hidden_access_log = Path(output) / COLLECTION_DIR / "hidden-access-log.json"
 
     def launch(destination: Path) -> dict:
+        collector = (
+            _access_log_collector(plan, arm, profile_path, destination, worker_preparations)
+            if collect
+            else None
+        )
+        with collector if collector is not None else contextlib.nullcontext():
+            return _launch(destination, collector)
+
+    def _launch(destination: Path, collector: SandboxReportCollector | None) -> dict:
         current = verify_plan(plan, root, visible_roots)
         manifest = current["arms"][arm]
         try:
@@ -76,6 +160,9 @@ def run_engineering_session(
         command = wrap_verified_command(
             argv, compiled, retained_profile, attestation, policy=policy
         )
+        if collector is not None:
+            # only a launch the real, verified adapter wraps is confined
+            collector.adapter_active = Path(command[0]).resolve() == SANDBOX_EXEC
         app_server = "app_server" in current["launch_bindings"][arm]
         with (destination / "launch.json").open("x") as stream:
             json.dump(
@@ -285,7 +372,11 @@ def main(argv: list[str] | None = None) -> int:
                 session_id=args.session_id,
                 profile_path=Path(request["profile_path"]),
                 attestation=request["attestation"],
-                hidden_access_log=Path(request["hidden_access_log"]),
+                hidden_access_log=(
+                    request["hidden_access_log"]
+                    if isinstance(request["hidden_access_log"], dict)
+                    else Path(request["hidden_access_log"])
+                ),
                 purpose=args.purpose,
                 worker_preparations=request.get("worker_preparations"),
             )

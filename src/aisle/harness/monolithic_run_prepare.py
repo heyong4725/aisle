@@ -51,7 +51,7 @@ def prepare_monolithic_run(
         raise ValueError("worker bundle reservation is redirected or overlaps protected state")
     if bundle.exists() and (not bundle.is_dir() or any(bundle.iterdir())):
         raise ValueError("worker bundle reservation is not empty; resume refused")
-    readable = (*policy.visible_roots, *policy.output_roots, *policy.runtime_read_roots)
+    readable = policy.readable_roots
     if any(output.is_relative_to(p) or p.is_relative_to(output) for p in readable) or not any(
         output.is_relative_to(p) for p in policy.hidden_roots
     ):
