@@ -37,6 +37,11 @@ def test_ordinary_typed_child_retains_preparation_and_gate_refusal(tmp_path):
         dirs_exist_ok=True,
         ignore=shutil.ignore_patterns("__pycache__"),
     )
+    # This fixture exercises the retained env-hash refusal.  Give the rollout
+    # subprocess an importable engine sentinel so the earlier availability
+    # gate does not replace the refusal under test when the optional wheel is
+    # absent.  Keep it out of the sealed interpreter runtime below.
+    (controller.root / "src/genesis.py").write_text("__version__ = 'test-sentinel'\n")
     packages = tmp_path / "runtime-packages"
     packages.mkdir()
     for name in (
