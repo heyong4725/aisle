@@ -248,7 +248,7 @@ uv run --extra sim --locked harness rollout --graph graphs/expert_t0.yaml --tier
     --episodes 2 --seeds 0..1 --no-idea-gate --env-baseline local \
     --sim-engine genesis
 
-# Optional GPU backend: install once after `uv sync`, then avoid syncing it away
+# Optional GPU backend: install after `uv sync --extra sim --locked`
 uv run --no-sync python tools/nexus_runtime.py install
 uv run --no-sync python tools/nexus_runtime.py verify
 uv run --no-sync harness rollout --graph graphs/expert_t0.yaml --tier T0 \

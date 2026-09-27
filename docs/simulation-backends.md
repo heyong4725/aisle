@@ -109,11 +109,11 @@ experiment requires cross-platform math consistency.
 
 ## Keep optional wheels installed
 
-Plain `uv sync`, and `uv run` without `--no-sync`, restore the locked
-environment and remove the out-of-lock Nexus and Rapier wheels. After either
+`uv sync` removes the out-of-lock Nexus and Rapier wheels. After either
 optional installer runs, use `uv run --no-sync ...` for verification, tests,
-and rollouts. If a command reports that an optional engine is not installed,
-rerun its installer and verifier.
+and rollouts so no sync step runs or changes the installed environment. If a
+command reports that an optional engine is not installed, rerun its installer
+and verifier.
 
 More detail:
 

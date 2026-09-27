@@ -241,16 +241,16 @@ uv run --no-sync python tools/rapier_runtime.py install
 
 `--rapier ../rapier` builds from a local checkout instead.
 
-`--no-sync` matters here: a syncing `uv run` would reinstall the locked
-environment first and take the Nexus wheel back out, which is the renderer
-this engine needs.
+Keep `--no-sync` on the installer and subsequent commands so no sync step runs
+or changes the environment containing the out-of-lock Nexus wheel that this
+engine needs for rendering.
 
 `tools/rapier_runtime.py verify` reports the solver's receipt and the
 renderer's together, so a half-installed environment is visible before a run
 rather than at the first render. Its engine constants live in
 `src/aisle/sim/rapier_physics.toml`, alongside the Nexus ones.
 
-Run the same graph through rapier without syncing the two wheels away:
+Run the same graph through rapier without another sync step:
 
 ```bash
 uv run --no-sync python tools/rapier_runtime.py verify
