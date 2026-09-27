@@ -536,7 +536,7 @@
   "declaration_sha256": "sha256:133acc8fb0533a0487cff997b85b172ee9ca113f59b09e1d40d1121069fc3054",
   "frozen": false,
   "gate_record_hashes": {},
-  "git_head": "6173684e8129dff85bcb3411a1f011bee4b96aab",
+  "git_head": "cabf2eb5d3be7fc960d4737cd64e449e26f5997d",
   "issue": 347,
   "pending_gates": [
     "BND-12 task-band freeze (#346)",
