@@ -19,6 +19,8 @@ That sync also removes the optional engine wheels, silently: neither
 lock ([getting started](getting-started.md) §3b and §3c), so any `uv sync`
 drops them and `--sim-engine nexus` then refuses at the `sim_engine` gate
 with `simulation engine 'nexus' is not installed in this environment`.
+The complete install and selection matrix is in the
+[simulation backend guide](simulation-backends.md).
 Reinstall them from the commits `engine-runtime.json` pins:
 
 ```bash

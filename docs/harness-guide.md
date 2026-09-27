@@ -54,7 +54,7 @@ the scene (ADR-67, ADR-68); it defaults to `genesis` and is recorded in the
 manifest as `sim_engine`, beside a digest of the engine realization and the
 wheel's build receipt. `nexus` (GPU) and `rapier` (CPU, rendering through
 the Nexus viewer) refuse before launch when their wheels are not installed
-(see [getting started](getting-started.md) §3b and §3c), and results are not
+(see the [simulation backend guide](simulation-backends.md)), and results are not
 comparable across engines. A graph whose bridge node declares
 `AISLE_SIM_ENGINE` owns the choice: passing a different `--sim-engine` is
 refused rather than silently overridden. The same flag is on
@@ -62,7 +62,7 @@ refused rather than silently overridden. The same flag is on
 and `harness fleet`.
 
 ```bash
-uv run harness rollout --graph graphs/expert_t0.yaml --tier T0 \
+uv run --no-sync harness rollout --graph graphs/expert_t0.yaml --tier T0 \
     --episodes 2 --seeds 0..1 --no-idea-gate --env-baseline local --sim-engine nexus
 ```
 
