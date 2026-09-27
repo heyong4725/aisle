@@ -164,15 +164,14 @@ Genesis record.
   edit also moves the Genesis digest. Over-inclusive by design: it may
   report a change that did not affect the run, and can never report two
   different physics as the same environment.
-- Still owed: the rollout layer records neither `sim_engine_hash` nor the
-  receipt yet, so a run manifest's `sim_engine` string remains the only
-  engine discriminator until that wiring lands. And a `dirty: true` source
-  (the nexus checkout today) means the receipt's commit does not fully
-  identify the build.
-- Known gaps on Nexus: `get_dofs_velocity` on robots reports zeros
-  (generalized velocities are not read back), a fixed-root robot's base is
-  re-based through the body buffer (SPEC 210 mobile), and URDF inertial
-  `rpy` orientation is ignored by rapier3d-urdf (translation applied).
+- The rollout manifest records `sim_engine_hash` together with the engine
+  build receipt. Because that receipt is the only source provenance for an
+  out-of-lock wheel, the gate refuses Nexus or rapier when a required solver
+  or renderer receipt is absent, malformed, or identifies dirty sources.
+- Nexus reads generalized robot velocities back from its DoF state, and both
+  alternative backends re-base a fixed-root robot through the body buffer for
+  the SPEC 210 mobile embodiment. The published rapier 0.36.0 loader carries
+  the URDF fixed-axis `rpy` correction described above.
 
 ## Alternatives rejected
 

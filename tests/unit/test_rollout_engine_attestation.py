@@ -86,3 +86,14 @@ def test_gate_carries_the_engine_build_into_the_manifest_facts(captured_hash_cmd
     gates = _gates(root, "nexus")
     assert gates["sim_engine_build"] == ENGINE_FACTS
     assert gates["sim_engine_build"]["sim_engine_hash"] != gates["env_hash"]
+
+
+def test_gate_refuses_an_installed_out_of_lock_engine_without_a_receipt(monkeypatch):
+    """CON-5/ADR-67: importability does not identify an out-of-lock wheel.
+    The trusted checker must stop the run when its only source receipt is
+    absent, before validation or launch can turn it into evidence."""
+    monkeypatch.setattr("aisle.sim.engine_available", lambda engine: True)
+    root = Path(__file__).resolve().parents[2]
+    refused = _gates(root, "nexus")
+    assert refused["ok"] is False and refused["gate"] == "env_hash"
+    assert "build receipt" in refused["detail"]

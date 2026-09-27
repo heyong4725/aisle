@@ -18,8 +18,10 @@ logs on stderr, exit 0 iff ok.
 
 --sim-engine <engine> adds ADR-67's engine attestation to any mode: the
 `sim` block (`sim_engine_hash` over src/aisle/sim/** plus the engine build
-receipt) and that engine's own distribution in the attested set. It is
-recorded, never a gate: the frozen set stays engine neutral.
+receipt) and that engine's own distribution in the attested set. The digest
+is recorded beside the engine-neutral frozen-set hash; an out-of-lock engine
+without a usable clean-source receipt is refused because the receipt is its
+only source provenance.
 """
 
 import argparse
@@ -329,6 +331,48 @@ def _engine_build(root: Path, engine: str) -> dict | None:
     return build
 
 
+def _receipt_problem(receipt: object, *, label: str, source: str) -> str | None:
+    """Why one out-of-lock wheel receipt cannot identify its source bytes."""
+    if not isinstance(receipt, dict):
+        return f"{label} build receipt is missing or malformed"
+    if receipt.get("schema_version") != 1:
+        return f"{label} build receipt has an unsupported schema"
+    for field in ("wheel", "version", "platform"):
+        if not isinstance(receipt.get(field), str) or not receipt[field].strip():
+            return f"{label} build receipt has no {field}"
+    sources = receipt.get("sources")
+    if not isinstance(sources, dict) or source not in sources:
+        return f"{label} build receipt does not identify its {source} source"
+    for name, identified in sources.items():
+        if not isinstance(identified, dict):
+            return f"{label} build receipt has a malformed {name} source"
+        commit = identified.get("commit")
+        if not isinstance(commit, str) or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+            return f"{label} build receipt has no full commit for {name}"
+        if identified.get("dirty") is not False:
+            return f"{label} build receipt identifies a dirty {name} source"
+    return None
+
+
+def engine_build_problem(engine: str, build: object) -> str | None:
+    """Fail-closed provenance verdict for an engine's out-of-lock wheels.
+
+    Genesis comes from the uv lock and has no separate receipt. Nexus needs
+    one clean-source receipt; rapier needs both its solver receipt and the
+    nested Nexus renderer receipt (ADR-67/ADR-68, CON-5).
+    """
+    if engine == "genesis":
+        return None
+    if engine == "nexus":
+        return _receipt_problem(build, label="Nexus", source="nexus")
+    if engine == "rapier":
+        problem = _receipt_problem(build, label="rapier", source="rapier")
+        if problem is not None:
+            return problem
+        return _receipt_problem(build.get("renderer"), label="Nexus renderer", source="nexus")
+    return f"unknown simulation engine {engine!r}"
+
+
 def environment_inventory() -> dict:
     """Gate-time capture for the post-session audit (PR #69 review F1/F3):
     EVERY installed distribution -> {version, record_sha256}. The RECORD
@@ -509,7 +553,7 @@ def main() -> int:
     parser.add_argument(
         "--sim-engine",
         default=None,
-        help="ADR-67 engine (genesis|nexus): report the engine-specific "
+        help="ADR-67 engine (genesis|nexus|rapier): report the engine-specific "
         "sim_engine_hash and attest that engine's own distribution",
     )
     args = parser.parse_args()
@@ -538,11 +582,14 @@ def main() -> int:
     env_hash, n_files = compute_env_hash(args.root)
     report: dict = {"ok": True, "env_hash": env_hash, "n_files": n_files}
     if args.sim_engine:
-        # ADR-67: recorded beside env_hash, never a gate; the frozen set is
-        # engine neutral and the realization package is not in it
-        report["sim"] = sim_engine_hash(
-            args.root, args.sim_engine, _engine_build(args.root, args.sim_engine)
-        )
+        # ADR-67: the digest is recorded beside the engine-neutral env_hash.
+        # An out-of-lock engine must also carry the clean build receipt that
+        # is its only source provenance.
+        build = _engine_build(args.root, args.sim_engine)
+        report["sim"] = sim_engine_hash(args.root, args.sim_engine, build)
+        build_problem = engine_build_problem(args.sim_engine, build)
+        if build_problem is not None:
+            report.update(ok=False, error=build_problem, engine_build_problem=build_problem)
 
     if args.write:
         hash_path = args.root / HASH_FILE
